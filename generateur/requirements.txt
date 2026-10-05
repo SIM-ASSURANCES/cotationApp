@@ -1,6 +1,3 @@
-# Versions figées de TOUTES les dépendances (directes et indirectes).
-# Fichier produit par « pip freeze » après « pip install -r requirements.in » :
-# ne pas le modifier à la main (voir docs/installation.md).
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1

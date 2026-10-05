@@ -1,0 +1,431 @@
+// Tests d'intégration : vraie base PostgreSQL de test (npm run test:integration).
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { ajouterMois } from "@/domaine/calcul/dates";
+import type { VersionSaisie } from "@/domaine/calcul/parametrage";
+import type { Souscripteur } from "@/domaine/cotation/saisie";
+
+import { lireJournal } from "./audit";
+import { creerClient, initialiserMotifsRefus } from "./clients";
+import {
+  accepter,
+  creerBrouillon,
+  expirerCotations,
+  lireCotation,
+  listerCotations,
+  modifierBrouillon,
+  refuser,
+  renvoyerEnBrouillon,
+  soumettre,
+  valider,
+  type SaisieCotation,
+} from "./cotations";
+import { enregistrerDroit, initialiserProfilsEtDroits } from "./droits";
+import { allouerNumero } from "./numerotation";
+import { aujourdhui, creerProduit, creerTaxe, creerVersion } from "./parametrage";
+import { obtenirPrisma } from "./prisma";
+import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
+import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
+
+const MDP = "phrase-de-passe-inventee-2026";
+const unique = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`;
+
+let admin: UtilisateurCourant;
+let technique: UtilisateurCourant;
+let technique2: UtilisateurCourant;
+let commercial: UtilisateurCourant;
+let gestionnaire: UtilisateurCourant;
+let dg: UtilisateurCourant;
+let comptabilite: UtilisateurCourant;
+
+async function compte(identifiant: string): Promise<UtilisateurCourant> {
+  return versUtilisateurCourant(await obtenirPrisma().utilisateur.findUniqueOrThrow({ where: { identifiant }, include: { profil: true } }));
+}
+async function nouveauCompte(profil: string): Promise<UtilisateurCourant> {
+  const identifiant = unique(profil.toLowerCase().replace(/_/g, "-"));
+  await creerUtilisateur(admin, { identifiant, nom: profil, profil, motDePasse: MDP }, null);
+  return compte(identifiant);
+}
+
+const CODE = unique("COT").toUpperCase().replace(/-/g, "_");
+const BRANCHE = `SANTE_${CODE}`;
+const prospect: Souscripteur = { type: "PHYSIQUE", nom: "KOUADIO", prenoms: "Test", raison_sociale: "", telephone: "0700000000", email: "", adresse: "" };
+
+/** Produit de test inspiré de l'offre BENI (T1) ; seuil de double validation à 20 000 000 F, validité 3 mois. */
+const versionBeni = (): VersionSaisie => ({
+  dateEffet: "2020-01-01",
+  arrondi: { precision: 1, sens: "PROCHE", niveau: "LIGNE", composanteAbsorbante: "TAXE" },
+  prorata: { actif: true, primeMinimale: null },
+  fractionnement: { tranchesMax: 4, repartitionPourcent: null, decalagesMois: null, frais: "0" },
+  cotation: { validiteMois: 3, formulesMax: 3 },
+  seuilValidationTtc: "20000000",
+  formules: [
+    { code: "SOLO", libelle: "Solo", tauxCouverture: null, primeUnitaire: "93581.33", accessoireMode: "FIXE", accessoireValeur: "3000" },
+    { code: "FAMILLE", libelle: "Famille", tauxCouverture: null, primeUnitaire: "252657.63", accessoireMode: "FIXE", accessoireValeur: "210000" },
+  ],
+});
+
+/** Cotation T1 par défaut : 3 Solo + 60 Famille = 15 888 000 F (sous le seuil de 20 000 000). */
+const saisie = (surcharge: Partial<SaisieCotation> = {}): SaisieCotation => ({
+  codeProduit: CODE,
+  clientId: null,
+  souscripteur: prospect,
+  dateEffet: "2026-01-01",
+  dateEcheance: "2026-12-31",
+  nombreTranches: 4,
+  lignes: [{ codeFormule: "SOLO", effectif: 3 }, { codeFormule: "FAMILLE", effectif: 60 }],
+  motifForcage: null,
+  assures: [],
+  risque: {},
+  ...surcharge,
+});
+
+/** Au-dessus du seuil : 100 familles = 26 000 000 F. */
+const grosse = () => saisie({ lignes: [{ codeFormule: "FAMILLE", effectif: 100 }] });
+
+async function emise(auteur = commercial, s = saisie()): Promise<number> {
+  const id = await creerBrouillon(auteur, s, null);
+  const r = await soumettre(auteur, id, null);
+  expect(r.statut).toBe("EMISE");
+  return id;
+}
+
+beforeAll(async () => {
+  await initialiserProfilsEtDroits();
+  await initialiserMotifsRefus();
+  const id = unique("admin");
+  await creerAdministrateurInitial({ identifiant: id, nom: "Admin", motDePasse: MDP });
+  admin = await compte(id);
+  [technique, technique2, commercial, gestionnaire, dg, comptabilite] = [
+    await nouveauCompte("TECHNIQUE"),
+    await nouveauCompte("TECHNIQUE"),
+    await nouveauCompte("COMMERCIAL"),
+    await nouveauCompte("GESTIONNAIRE_PRODUCTION"),
+    await nouveauCompte("DIRECTION_GENERALE"),
+    await nouveauCompte("COMPTABILITE"),
+  ];
+  await creerTaxe(technique, { branche: BRANCHE, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
+  await creerProduit(technique, { code: CODE, libelle: "Santé BENI (test)", gamme: "RELAX", branche: BRANCHE }, null);
+  await creerVersion(technique, CODE, versionBeni(), null);
+});
+
+afterAll(async () => {
+  await obtenirPrisma().$disconnect();
+});
+
+describe("T1 : cotation BENI, de la saisie à l'émission", () => {
+  it("un brouillon porte les montants du moteur (15 888 000) et n'a pas de numéro", async () => {
+    const id = await creerBrouillon(commercial, saisie(), null);
+    const c = (await lireCotation(commercial, id))!;
+
+    expect(c.statut).toBe("BROUILLON");
+    expect(c.numero).toBeNull();
+    expect(c.resultat.totaux.arrondi.ttc.toString()).toBe("15888000");
+    expect(c.resultat.lignes.map((l) => l.arrondi.ttc.toString())).toEqual(["288000", "15600000"]);
+    expect(c.echeancier?.map((t) => t.montant.toString())).toEqual(["3972000", "3972000", "3972000", "3972000"]);
+  });
+
+  it("l'émission attribue COT-AAAA-MM-NNNN et fixe la validité à « date + 3 mois »", async () => {
+    const id = await creerBrouillon(commercial, saisie(), null);
+    const r = await soumettre(commercial, id, null);
+    const c = (await lireCotation(commercial, id))!;
+    const aujourdhuiIso = aujourdhui();
+
+    expect(r.statut).toBe("EMISE");
+    expect(c.numero).toMatch(/^COT-\d{4}-\d{2}-\d{4}$/);
+    expect(c.numero).toContain(`COT-${aujourdhuiIso.slice(0, 4)}-${aujourdhuiIso.slice(5, 7)}-`);
+    expect(c.dateEtablissement).toBe(aujourdhuiIso);
+    expect(c.dateValidite).toBe(ajouterMois(aujourdhuiIso, 3));
+    expect(c.statutEffectif).toBe("EMISE");
+    expect(c.filigrane).toBeNull();
+  });
+
+  it("le résultat recalculé depuis les paramètres figés est identique au résultat stocké", async () => {
+    const id = await emise();
+    const brut = await obtenirPrisma().cotation.findUniqueOrThrow({ where: { id } });
+    const c = (await lireCotation(commercial, id))!;
+
+    expect((brut.resultat as { totaux: { ttc: string } }).totaux.ttc).toBe(c.resultat.totaux.arrondi.ttc.toFixed());
+    expect(brut.ttcTotal!.toFixed(0)).toBe("15888000");
+  });
+});
+
+describe("cotation figée dès l'émission (CDC §4.1)", () => {
+  it("refuse toute modification d'une cotation émise : par l'application et en SQL direct", async () => {
+    const id = await emise();
+    const prisma = obtenirPrisma();
+
+    await expect(modifierBrouillon(commercial, id, saisie({ nombreTranches: 2 }), null)).rejects.toThrow(/figée/);
+    await expect(prisma.$executeRawUnsafe(`UPDATE cotations SET lignes = '[]'::jsonb WHERE id = ${id}`)).rejects.toThrow(/cotation figée/);
+    await expect(prisma.$executeRawUnsafe(`UPDATE cotations SET ttc_total = 1 WHERE id = ${id}`)).rejects.toThrow(/cotation figée/);
+    await expect(prisma.$executeRawUnsafe(`UPDATE cotations SET numero = 'COT-X' WHERE id = ${id}`)).rejects.toThrow(/cotation figée/);
+    await expect(prisma.$executeRawUnsafe(`UPDATE cotations SET statut = 'BROUILLON' WHERE id = ${id}`)).rejects.toThrow(/cotation figée/);
+    await expect(prisma.$executeRawUnsafe(`DELETE FROM cotations WHERE id = ${id}`)).rejects.toThrow(/suppression interdite/);
+  });
+
+  it("seul l'auteur modifie et soumet son brouillon", async () => {
+    const id = await creerBrouillon(commercial, saisie(), null);
+
+    await expect(modifierBrouillon(gestionnaire, id, saisie(), null)).rejects.toThrow(/auteur/);
+    await expect(soumettre(gestionnaire, id, null)).rejects.toThrow(/auteur/);
+    await expect(modifierBrouillon(commercial, id, saisie({ nombreTranches: 2 }), null)).resolves.toBeUndefined();
+    expect((await lireCotation(commercial, id))!.nombreTranches).toBe(2);
+  });
+});
+
+describe("numérotation continue et sans trou (CDC §11.4)", () => {
+  it("8 émissions simultanées reçoivent 8 numéros consécutifs, sans doublon ni trou", async () => {
+    const ids = await Promise.all(Array.from({ length: 8 }, () => creerBrouillon(commercial, saisie(), null)));
+    await Promise.all(ids.map((id) => soumettre(commercial, id, null)));
+
+    const numeros = (await Promise.all(ids.map((id) => lireCotation(commercial, id)))).map((c) => Number(c!.numero!.slice(-4))).sort((a, b) => a - b);
+
+    expect(new Set(numeros).size).toBe(8);
+    expect(numeros[7] - numeros[0]).toBe(7);
+  });
+
+  it("une émission annulée ne laisse aucun trou", async () => {
+    const prisma = obtenirPrisma();
+    const date = aujourdhui();
+    const avant = await prisma.$transaction((tx) => allouerNumero(tx, "FAC", date));
+    await expect(
+      prisma.$transaction(async (tx) => {
+        await allouerNumero(tx, "FAC", date);
+        throw new Error("échec après l'attribution du numéro");
+      }),
+    ).rejects.toThrow(/échec/);
+    const apres = await prisma.$transaction((tx) => allouerNumero(tx, "FAC", date));
+
+    expect(Number(apres.slice(-4))).toBe(Number(avant.slice(-4)) + 1);
+  });
+
+  it("chaque type de document a son propre compteur, qui avance de 1 en 1", async () => {
+    const prisma = obtenirPrisma();
+    const date = aujourdhui();
+    const alloue = async (p: "AV" | "REC") => Number((await prisma.$transaction((tx) => allouerNumero(tx, p, date))).slice(-4));
+    const [av1, rec1] = [await alloue("AV"), await alloue("REC")];
+    const [av2, rec2] = [await alloue("AV"), await alloue("REC")];
+
+    expect(av2).toBe(av1 + 1);
+    expect(rec2).toBe(rec1 + 1); // les avoirs n'ont pas fait avancer les reçus, ni l'inverse
+  });
+});
+
+describe("T13 : forçage de prime et double validation", () => {
+  const forcee = () => saisie({ lignes: [{ codeFormule: "SOLO", effectif: 3, primeForcee: "80000" }, { codeFormule: "FAMILLE", effectif: 60 }], motifForcage: "Remise accordée par la Direction" });
+
+  it("prime forcée par un commercial : « À valider », sans numéro ; l'auteur ne peut pas valider", async () => {
+    const id = await creerBrouillon(commercial, forcee(), null);
+    const r = await soumettre(commercial, id, null);
+    const c = (await lireCotation(commercial, id))!;
+
+    expect(r).toEqual({ statut: "A_VALIDER", numero: null });
+    expect(c.statut).toBe("A_VALIDER");
+    expect(c.numero).toBeNull();
+    expect(c.raisonsValidation).toEqual(["PRIME_FORCEE"]);
+    expect(c.lignes[0]).toMatchObject({ code: "SOLO", primeTarif: "93581.33", primeForcee: "80000" });
+    expect(c.resultat.lignes[0].exact.nette.toString()).toBe("240000"); // 3 × 80 000 : la prime forcée est celle du calcul
+    await expect(valider(commercial, id, null)).rejects.toBeInstanceOf(ErreurAcces); // le commercial n'a pas le droit « Valide »
+  });
+
+  it("un valideur (Technique ou DG) autre que l'auteur valide : la cotation est émise avec son numéro", async () => {
+    const id = await creerBrouillon(commercial, forcee(), null);
+    await soumettre(commercial, id, null);
+
+    const numero = await valider(technique, id, null);
+    const c = (await lireCotation(commercial, id))!;
+
+    expect(numero).toMatch(/^COT-/);
+    expect(c.statut).toBe("EMISE");
+    expect(c.numero).toBe(numero);
+    const brut = await obtenirPrisma().cotation.findUniqueOrThrow({ where: { id } });
+    expect(brut.valideParId).toBe(technique.id);
+    await expect(valider(dg, id, null)).rejects.toThrow(/pas à valider/); // déjà émise
+  });
+
+  it("l'auteur ne peut pas valider sa propre cotation, même s'il a le droit « Valide » (Technique)", async () => {
+    const id = await creerBrouillon(technique, forcee(), null);
+    await soumettre(technique, id, null);
+
+    await expect(valider(technique, id, null)).rejects.toThrow(/propre cotation/);
+    await expect(valider(technique2, id, null)).resolves.toMatch(/^COT-/);
+  });
+
+  it("le forçage exige un motif, même minime ; une prime identique au tarif n'est pas un forçage", async () => {
+    await expect(
+      creerBrouillon(commercial, saisie({ lignes: [{ codeFormule: "SOLO", effectif: 1, primeForcee: "93581.34" }] }), null),
+    ).rejects.toThrow(/motif/);
+    const id = await creerBrouillon(commercial, saisie({ lignes: [{ codeFormule: "SOLO", effectif: 1, primeForcee: "93581.33" }] }), null);
+    expect((await soumettre(commercial, id, null)).statut).toBe("EMISE");
+  });
+
+  it("un TTC au-dessus du seuil du produit passe « À valider » sans forçage ; la DG valide", async () => {
+    const id = await creerBrouillon(gestionnaire, grosse(), null);
+    const r = await soumettre(gestionnaire, id, null);
+
+    expect(r.statut).toBe("A_VALIDER");
+    expect((await lireCotation(gestionnaire, id))!.raisonsValidation).toEqual(["SEUIL_DEPASSE"]);
+    await expect(valider(dg, id, null)).resolves.toMatch(/^COT-/);
+  });
+
+  it("le droit de forcer est vérifié : un profil sans droit « Demande » ou « Valide » ne peut pas forcer", async () => {
+    try {
+      await enregistrerDroit(admin, { profil: "COMMERCIAL", action: "FORCER_PRIME", niveau: "AUCUN" }, null);
+      await expect(creerBrouillon(commercial, forcee(), null)).rejects.toBeInstanceOf(ErreurAcces);
+    } finally {
+      await enregistrerDroit(admin, { profil: "COMMERCIAL", action: "FORCER_PRIME", niveau: "DEMANDE" }, null);
+    }
+  });
+
+  it("une cotation « À valider » est figée pour l'auteur ; renvoyée en brouillon, elle redevient modifiable", async () => {
+    const id = await creerBrouillon(commercial, forcee(), null);
+    await soumettre(commercial, id, null);
+
+    await expect(modifierBrouillon(commercial, id, saisie(), null)).rejects.toThrow(/figée/);
+    await renvoyerEnBrouillon(commercial, id, "", null);
+    await expect(modifierBrouillon(commercial, id, saisie(), null)).resolves.toBeUndefined();
+    expect((await lireCotation(commercial, id))!.statut).toBe("BROUILLON");
+  });
+
+  it("un valideur qui renvoie la cotation doit dire pourquoi ; un tiers sans droit ne peut pas la renvoyer", async () => {
+    const id = await creerBrouillon(commercial, forcee(), null);
+    await soumettre(commercial, id, null);
+
+    await expect(renvoyerEnBrouillon(technique, id, "", null)).rejects.toThrow(/raison/);
+    await expect(renvoyerEnBrouillon(gestionnaire, id, "je veux la modifier", null)).rejects.toBeInstanceOf(ErreurAcces);
+    await expect(renvoyerEnBrouillon(technique, id, "Remise trop forte", null)).resolves.toBeUndefined();
+  });
+});
+
+describe("T11 : cotation expirée", () => {
+  /** Recule la fin de validité d'une cotation émise. Le déclencheur est suspendu le temps de l'opération : le test simule le temps qui passe. */
+  async function remonterLeTemps(id: number, dateValidite: string): Promise<void> {
+    const prisma = obtenirPrisma();
+    await prisma.$executeRawUnsafe(`ALTER TABLE cotations DISABLE TRIGGER cotations_figees`);
+    try {
+      await prisma.$executeRawUnsafe(`UPDATE cotations SET date_validite = '${dateValidite}' WHERE id = ${id}`);
+    } finally {
+      await prisma.$executeRawUnsafe(`ALTER TABLE cotations ENABLE TRIGGER cotations_figees`);
+    }
+  }
+
+  it("expirée : statut « Expirée », filigrane « EXPIRÉE », transformation impossible", async () => {
+    const id = await emise();
+    await remonterLeTemps(id, "2020-06-30");
+    const c = (await lireCotation(commercial, id))!;
+
+    expect(c.statutEffectif).toBe("EXPIREE");
+    expect(c.filigrane).toBe("EXPIRÉE");
+    await expect(accepter(commercial, id, ["SOLO"], null)).rejects.toThrow(/expirée/);
+    expect(await obtenirPrisma().police.count({ where: { cotationId: id } })).toBe(0);
+  });
+
+  it("la mise à jour d'expiration est persistée, journalisée, et définitive : même en SQL, une expirée ne devient pas acceptée", async () => {
+    const id = await emise();
+    await remonterLeTemps(id, "2020-06-30");
+
+    expect(await expirerCotations()).toBeGreaterThanOrEqual(1);
+    expect((await obtenirPrisma().cotation.findUniqueOrThrow({ where: { id } })).statut).toBe("EXPIREE");
+    expect((await lireJournal({ action: "COTATION_EXPIREE" })).lignes.some((l) => l.objet === `cotation ${id}`)).toBe(true);
+    await expect(obtenirPrisma().$executeRawUnsafe(`UPDATE cotations SET statut = 'ACCEPTEE' WHERE id = ${id}`)).rejects.toThrow(/cotation figée/);
+    await expect(refuser(commercial, id, "AUTRE", "", null)).rejects.toThrow(/émise et encore valide/);
+  });
+
+  it("le dernier jour de validité, la cotation est encore acceptable", async () => {
+    const id = await emise();
+    await remonterLeTemps(id, aujourdhui());
+
+    expect((await lireCotation(commercial, id))!.statutEffectif).toBe("EMISE");
+    await expect(accepter(commercial, id, ["SOLO"], null)).resolves.toBeDefined();
+  });
+});
+
+describe("acceptation et transformation en police (CDC §9.4)", () => {
+  it("le client retient une formule : la police reprend la formule retenue, les assurés et l'échéancier", async () => {
+    const assures = [{ ordre: 1, nom_prenoms: "Test Inventé", date_naissance: "1985-03-12", sexe: "F" as const, lien: "Souscripteur", formule: "FAMILLE" }];
+    const id = await emise(commercial, saisie({ assures }));
+
+    const { numeroPolice } = await accepter(commercial, id, ["FAMILLE"], null);
+    const police = await obtenirPrisma().police.findUniqueOrThrow({ where: { numero: numeroPolice } });
+    const c = (await lireCotation(commercial, id))!;
+
+    expect(numeroPolice).toMatch(/^POL-\d{4}-\d{6}$/);
+    expect(c.statut).toBe("ACCEPTEE");
+    expect(c.numeroPolice).toBe(numeroPolice);
+    expect(c.formulesRetenues).toEqual(["FAMILLE"]);
+    expect(police.ttcTotal.toFixed(0)).toBe("15600000"); // seule la formule Famille
+    expect((police.assures as { sexe: string }[])[0].sexe).toBe("F");
+    expect((police.echeancier as { montant: string }[]).map((t) => t.montant)).toEqual(["3900000", "3900000", "3900000", "3900000"]);
+  });
+
+  it("on ne peut accepter qu'une fois, ni une formule absente de la cotation", async () => {
+    const id = await emise();
+
+    await expect(accepter(commercial, id, ["INCONNUE"], null)).rejects.toThrow(/au moins une formule/);
+    await accepter(commercial, id, ["SOLO", "FAMILLE"], null);
+    await expect(accepter(commercial, id, ["SOLO"], null)).rejects.toThrow(/Seule une cotation émise/);
+  });
+
+  it("une cotation non émise ne peut pas être acceptée", async () => {
+    const id = await creerBrouillon(commercial, saisie(), null);
+
+    await expect(accepter(commercial, id, ["SOLO"], null)).rejects.toThrow(/Seule une cotation émise/);
+  });
+});
+
+describe("refus (CDC §9.3)", () => {
+  it("exige un motif de la liste paramétrable ; la cotation refusée ne s'accepte plus", async () => {
+    const id = await emise();
+
+    await expect(refuser(commercial, id, "", "", null)).rejects.toThrow(/motif/);
+    await expect(refuser(commercial, id, "MOTIF_INVENTE", "", null)).rejects.toThrow(/motif/);
+    await refuser(commercial, id, "PRIX_TROP_ELEVE", "Budget dépassé", null);
+    const c = (await lireCotation(commercial, id))!;
+
+    expect(c.statut).toBe("REFUSEE");
+    expect(c.motifRefusCode).toBe("PRIX_TROP_ELEVE");
+    await expect(accepter(commercial, id, ["SOLO"], null)).rejects.toThrow(/Seule une cotation émise/);
+  });
+});
+
+describe("saisie, droits et traçabilité", () => {
+  it("réserve la création aux profils « Oui » ; la DG et la Comptabilité ne créent pas, la DG consulte", async () => {
+    await expect(creerBrouillon(dg, saisie(), null)).rejects.toBeInstanceOf(ErreurAcces);
+    await expect(creerBrouillon(comptabilite, saisie(), null)).rejects.toBeInstanceOf(ErreurAcces);
+    await expect(creerBrouillon(admin, saisie(), null)).rejects.toBeInstanceOf(ErreurAcces);
+    await expect(listerCotations(dg)).resolves.toBeDefined();
+    await expect(listerCotations(comptabilite)).rejects.toBeInstanceOf(ErreurAcces);
+  });
+
+  it("refuse un sexe invalide, une formule en double et une formule inconnue ; garde le sexe valide", async () => {
+    const assure = { ordre: 1, nom_prenoms: "Test", date_naissance: "1990-01-01", sexe: "M" as const, lien: "Souscripteur", formule: "SOLO" };
+
+    await expect(creerBrouillon(commercial, saisie({ assures: [{ ...assure, sexe: "X" as "M" }] }), null)).rejects.toThrow(/sexe invalide/);
+    await expect(creerBrouillon(commercial, saisie({ lignes: [{ codeFormule: "SOLO", effectif: 1 }, { codeFormule: "SOLO", effectif: 2 }] }), null)).rejects.toThrow(/qu'une fois/);
+    await expect(creerBrouillon(commercial, saisie({ lignes: [{ codeFormule: "NOPE", effectif: 1 }] }), null)).rejects.toBeInstanceOf(ErreurMetier);
+    const id = await creerBrouillon(commercial, saisie({ assures: [assure], risque: { marque: "Yamaha" } }), null);
+    const c = (await lireCotation(commercial, id))!;
+    expect(c.assures[0].sexe).toBe("M");
+    expect(c.risque).toEqual({ marque: "Yamaha" });
+  });
+
+  it("copie le client choisi dans la cotation : la cotation ne bouge pas si le client change ensuite", async () => {
+    const clientId = await creerClient(commercial, { ...prospect, nom: "CLIENT ENREGISTRÉ" }, null);
+    const id = await creerBrouillon(commercial, saisie({ clientId, souscripteur: { ...prospect, nom: "ignoré" } }), null);
+
+    expect((await lireCotation(commercial, id))!.souscripteur.nom).toBe("CLIENT ENREGISTRÉ");
+    await obtenirPrisma().client.update({ where: { id: clientId }, data: { nom: "RENOMMÉ" } });
+    expect((await lireCotation(commercial, id))!.souscripteur.nom).toBe("CLIENT ENREGISTRÉ");
+  });
+
+  it("journalise création, forçage, validation, émission, acceptation et refus", async () => {
+    const actions = new Set((await lireJournal({})).lignes.map((l) => l.action));
+    const plusLoin = new Set<string>();
+    for (const a of ["COTATION_CREEE", "COTATION_SOUMISE", "PRIME_FORCEE", "DOCUMENT_VALIDE", "DOCUMENT_EMIS", "COTATION_ACCEPTEE", "COTATION_REFUSEE", "POLICE_CREEE", "COTATION_RENVOYEE"]) {
+      if ((await lireJournal({ action: a })).lignes.length > 0) plusLoin.add(a);
+    }
+
+    expect(actions.size).toBeGreaterThan(0);
+    expect([...plusLoin].sort()).toEqual(["COTATION_ACCEPTEE", "COTATION_CREEE", "COTATION_REFUSEE", "COTATION_RENVOYEE", "COTATION_SOUMISE", "DOCUMENT_EMIS", "DOCUMENT_VALIDE", "POLICE_CREEE", "PRIME_FORCEE"]);
+  });
+});

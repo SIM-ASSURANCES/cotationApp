@@ -10,7 +10,7 @@ function formulaireBeni(surcharge: Record<string, string> = {}): FormData {
   const champs: Record<string, string> = {
     dateEffet: "2026-01-01", precision: "1", sens: "PROCHE", niveau: "LIGNE", composante: "TAXE",
     prorataActif: "on", primeMinimale: "", tranchesMax: "4", repartition: "", decalages: "", frais: "0",
-    validiteJours: "90", formulesMax: "3", seuil: "20000000", ...surcharge,
+    validiteMois: "3", formulesMax: "3", seuil: "20000000", ...surcharge,
   };
   for (const [k, v] of Object.entries(champs)) d.append(k, v);
   for (const f of [

@@ -35,7 +35,7 @@ export function lireVersion(donnees: FormData): VersionSaisie {
       decalagesMois: liste(champOuNull(donnees, "decalages"))?.map(Number) ?? null,
       frais: champ(donnees, "frais") || "0",
     },
-    cotation: { validiteJours: Number(champ(donnees, "validiteJours")), formulesMax: Number(champ(donnees, "formulesMax")) },
+    cotation: { validiteMois: Number(champ(donnees, "validiteMois")), formulesMax: Number(champ(donnees, "formulesMax")) },
     seuilValidationTtc: champOuNull(donnees, "seuil"),
     formules: colonne("formule_code").map((code, i) => ({
       code: code.trim().toUpperCase(),

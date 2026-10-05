@@ -40,7 +40,7 @@ const versionBeni = (surcharge: Partial<VersionSaisie> = {}): VersionSaisie => (
   arrondi: { precision: 1, sens: "PROCHE", niveau: "LIGNE", composanteAbsorbante: "TAXE" },
   prorata: { actif: true, primeMinimale: null },
   fractionnement: { tranchesMax: 4, repartitionPourcent: null, decalagesMois: null, frais: "0" },
-  cotation: { validiteJours: 90, formulesMax: 3 },
+  cotation: { validiteMois: 3, formulesMax: 3 },
   seuilValidationTtc: null,
   formules: [
     { code: "SOLO", libelle: "Solo", tauxCouverture: null, primeUnitaire: "93581.33", accessoireMode: "FIXE", accessoireValeur: "3000" },

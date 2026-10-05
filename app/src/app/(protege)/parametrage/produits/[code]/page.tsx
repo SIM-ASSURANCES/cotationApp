@@ -28,7 +28,7 @@ function Resume({ v }: { v: VersionProduit }) {
         Arrondi : {v.arrondi.precision} F, {LIBELLE_SENS[v.arrondi.sens].toLowerCase()}, {LIBELLE_NIVEAU[v.arrondi.niveau].toLowerCase()}, écart absorbé par{" "}
         {LIBELLE_COMPOSANTE[v.arrondi.composanteAbsorbante].toLowerCase()} · Prorata {v.prorata.actif ? "actif" : "inactif"}
         {v.prorata.primeMinimale ? `, prime minimale ${net(v.prorata.primeMinimale)}` : ""} · Fractionnement jusqu'à {v.fractionnement.tranchesMax} tranche(s)
-        {net(v.fractionnement.frais) !== "0" ? `, frais ${net(v.fractionnement.frais)}` : ""} · Validité {v.cotation.validiteJours} j
+        {net(v.fractionnement.frais) !== "0" ? `, frais ${net(v.fractionnement.frais)}` : ""} · Validité {v.cotation.validiteMois} mois
         {v.seuilValidationTtc ? ` · Double validation au-delà de ${net(v.seuilValidationTtc)} F TTC` : ""}
       </p>
       <table className="w-full max-w-3xl border-collapse">
@@ -141,7 +141,7 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
               <Champ nom="repartition" libelle="Répartition en % (ex. 40 ; 30 ; 30), vide = tranches égales" requis={false} valeur={base?.fractionnement.repartitionPourcent?.join(" ; ") ?? ""} autoComplete="off" />
               <Champ nom="decalages" libelle="Décalages en mois (ex. 0 ; 3 ; 6), vide = réguliers" requis={false} valeur={base?.fractionnement.decalagesMois?.join(" ; ") ?? ""} autoComplete="off" />
               <Champ nom="frais" libelle="Frais de fractionnement (ajoutés aux accessoires)" valeur={base ? net(base.fractionnement.frais) : "0"} autoComplete="off" />
-              <Champ nom="validiteJours" libelle="Validité d'une cotation (jours)" valeur={String(base?.cotation.validiteJours ?? 90)} autoComplete="off" />
+              <Champ nom="validiteMois" libelle="Validité d'une cotation (mois, à partir de la date d'établissement)" valeur={String(base?.cotation.validiteMois ?? 3)} autoComplete="off" />
               <Champ nom="formulesMax" libelle="Formules comparées au plus" valeur={String(base?.cotation.formulesMax ?? 3)} autoComplete="off" />
               <Champ nom="seuil" libelle="Seuil de TTC pour la double validation (facultatif)" requis={false} valeur={base?.seuilValidationTtc ? net(base.seuilValidationTtc) : ""} autoComplete="off" />
             </div>

@@ -6,8 +6,11 @@ import nextEnv from "@next/env";
 nextEnv.loadEnvConfig(process.cwd());
 
 const { initialiserProfilsEtDroits } = await import("../src/serveur/droits");
+const { initialiserMotifsRefus } = await import("../src/serveur/clients");
 const { obtenirPrisma } = await import("../src/serveur/prisma");
 
 const { profilsCrees, droitsCrees } = await initialiserProfilsEtDroits();
 console.log(`Profils créés : ${profilsCrees} ; droits par défaut créés : ${droitsCrees}.`);
+const motifs = await initialiserMotifsRefus();
+console.log(`Motifs de refus créés : ${motifs}.`);
 await obtenirPrisma().$disconnect();

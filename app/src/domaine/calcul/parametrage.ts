@@ -31,7 +31,8 @@ export type VersionSaisie = {
     decalagesMois: number[] | null;
     frais: string;
   };
-  cotation: { validiteJours: number; formulesMax: number };
+  /** Validité en MOIS à partir de la date d'établissement (T1 : « date + 3 mois »). */
+  cotation: { validiteMois: number; formulesMax: number };
   /** Seuil de TTC au-dessus duquel la double validation est exigée (CDC §4.1). */
   seuilValidationTtc: string | null;
   formules: FormuleSaisie[];
@@ -93,8 +94,8 @@ export function problemesVersion(v: VersionSaisie): string[] {
   if (decalagesMois && (decalagesMois.length > tranchesMax || decalagesMois.some((m, i) => !Number.isInteger(m) || m < 0 || (i > 0 && m <= decalagesMois[i - 1])))) {
     p.push("Les décalages en mois doivent être des entiers croissants, au plus un par tranche autorisée.");
   }
-  if (!Number.isInteger(v.cotation.validiteJours) || v.cotation.validiteJours < 1 || v.cotation.validiteJours > 3650) {
-    p.push("La validité de la cotation doit être de 1 à 3 650 jours.");
+  if (!Number.isInteger(v.cotation.validiteMois) || v.cotation.validiteMois < 1 || v.cotation.validiteMois > 60) {
+    p.push("La validité de la cotation doit être de 1 à 60 mois.");
   }
   if (!Number.isInteger(v.cotation.formulesMax) || v.cotation.formulesMax < 1 || v.cotation.formulesMax > 10) {
     p.push("Le nombre maximal de formules comparées doit être de 1 à 10.");

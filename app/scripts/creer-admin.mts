@@ -46,6 +46,7 @@ function lireMasque(question: string): Promise<string> {
 const { initialiserProfilsEtDroits } = await import("../src/serveur/droits");
 const { creerAdministrateurInitial } = await import("../src/serveur/utilisateurs");
 const { ErreurMetier } = await import("../src/serveur/types");
+const { initialiserMotifsRefus } = await import("../src/serveur/clients");
 const { obtenirPrisma } = await import("../src/serveur/prisma");
 
 const lecteur = createInterface({ input: process.stdin, output: process.stdout });
@@ -61,6 +62,7 @@ try {
     throw new ErreurMetier("Les deux saisies du mot de passe sont différentes.");
   }
   await initialiserProfilsEtDroits();
+  await initialiserMotifsRefus();
   const id = await creerAdministrateurInitial({ identifiant, nom, motDePasse });
   console.log(`Admin système créé (identifiant : ${identifiant.toLowerCase()}, numéro ${id}). Vous pouvez vous connecter.`);
 } catch (erreur) {

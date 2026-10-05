@@ -3,7 +3,7 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 
 import { peutAgir, peutLire, type CodeAction } from "@/domaine/droits";
-import { calculer, type AssietteTaxe, type ModeAccessoire, type ResultatCalcul, type RegleArrondi } from "@/domaine/calcul/calcul";
+import { calculer, type EntreeCalcul, type AssietteTaxe, type ModeAccessoire, type ResultatCalcul, type RegleArrondi } from "@/domaine/calcul/calcul";
 import { dateValide, type DateIso } from "@/domaine/calcul/dates";
 import { genererEcheancier, type Tranche } from "@/domaine/calcul/echeancier";
 import { ErreurCalcul, type Precision } from "@/domaine/calcul/montant";
@@ -107,7 +107,7 @@ export async function creerTaxe(acteur: UtilisateurCourant, saisie: TaxeSaisie, 
   });
 }
 
-type ClientLecture = Pick<Prisma.TransactionClient, "taxe" | "produit">;
+export type ClientLecture = Pick<Prisma.TransactionClient, "taxe" | "produit">;
 
 async function taxeEnVigueur(client: ClientLecture, branche: string, date: DateIso): Promise<TaxeSaisie> {
   const lignes = await client.taxe.findMany({ where: { branche } });
@@ -197,7 +197,7 @@ function versVersion(v: Prisma.ProduitVersionGetPayload<{ include: { formules: t
       decalagesMois: (v.fractionnementDecalagesMois as number[] | null) ?? null,
       frais: texte(v.fraisFractionnement),
     },
-    cotation: { validiteJours: v.validiteJours, formulesMax: v.formulesMax },
+    cotation: { validiteMois: v.validiteMois, formulesMax: v.formulesMax },
     seuilValidationTtc: v.seuilValidationTtc ? texte(v.seuilValidationTtc) : null,
     formules: v.formules
       .map(
@@ -256,7 +256,7 @@ export async function creerVersion(acteur: UtilisateurCourant, codeProduit: stri
         fractionnementRepartition: saisie.fractionnement.repartitionPourcent ?? undefined,
         fractionnementDecalagesMois: saisie.fractionnement.decalagesMois ?? undefined,
         fraisFractionnement: saisie.fractionnement.frais,
-        validiteJours: saisie.cotation.validiteJours,
+        validiteMois: saisie.cotation.validiteMois,
         formulesMax: saisie.cotation.formulesMax,
         seuilValidationTtc: saisie.seuilValidationTtc,
         creePar: acteur.identifiant,
@@ -308,23 +308,30 @@ export type ReponseCalcul = {
   doubleValidationRequise: boolean;
 };
 
+/** Paramètres résolus pour un calcul : version du produit à la date du document, taxe à la date d'effet. */
+export type ContexteCalcul = {
+  produit: { id: number; code: string; libelle: string };
+  version: VersionProduit;
+  taxe: TaxeSaisie;
+};
+
 /**
- * Calcule les primes d'un produit avec les paramètres EN VIGUEUR : la version du produit à la date
- * du document, la taxe de la branche à la date d'effet de la police (CDC §8.1). Le moteur
- * (domaine/calcul) reste pur : ce service ne fait que lui fournir les paramètres.
+ * Trouve les paramètres EN VIGUEUR : la version du produit à la date du document, la taxe de la
+ * branche à la date d'effet de la police (CDC §8.1).
  */
-export async function calculerPourProduit(acteur: UtilisateurCourant, demande: DemandeCalcul): Promise<ReponseCalcul> {
-  await exigerConsultation(acteur);
-  const dateDocument = demande.dateDocument ?? aujourdhui();
-  for (const d of [demande.dateEffet, demande.dateEcheance, dateDocument]) {
+export async function resoudreContexte(
+  client: ClientLecture,
+  codeProduit: string,
+  dateDocument: DateIso,
+  dateEffet: DateIso,
+): Promise<ContexteCalcul> {
+  for (const d of [dateEffet, dateDocument]) {
     if (!dateValide(d)) {
       throw new ErreurMetier(`Date invalide : « ${d} ».`);
     }
   }
-
-  const prisma = obtenirPrisma();
-  const produit = await prisma.produit.findUnique({
-    where: { code: demande.codeProduit },
+  const produit = await client.produit.findUnique({
+    where: { code: codeProduit },
     include: { versions: { include: { formules: true } } },
   });
   if (!produit) {
@@ -333,33 +340,47 @@ export async function calculerPourProduit(acteur: UtilisateurCourant, demande: D
   if (!produit.actif) {
     throw new ErreurMetier("Ce produit est inactif.");
   }
-  const versions = produit.versions.map(versVersion);
-  const version = enVigueur(versions, dateDocument);
+  const version = enVigueur(produit.versions.map(versVersion), dateDocument);
   if (!version) {
     throw new ErreurMetier(`Aucun paramétrage de « ${produit.code} » en vigueur au ${dateDocument}.`);
   }
-  const taxe = await taxeEnVigueur(prisma, produit.branche, demande.dateEffet);
+  const taxe = await taxeEnVigueur(client, produit.branche, dateEffet);
+  return { produit: { id: produit.id, code: produit.code, libelle: produit.libelle }, version, taxe };
+}
 
-  const nombreTranches = demande.nombreTranches ?? 1;
-  if (!Number.isInteger(nombreTranches) || nombreTranches < 1 || nombreTranches > version.fractionnement.tranchesMax) {
+export type LigneDemande = {
+  codeFormule: string;
+  effectif: number;
+  /** Prime unitaire forcée (CDC §4.1) : remplace le tarif ; le motif et la validation sont exigés par l'appelant. */
+  primeForcee?: string | null;
+};
+
+/** Construit l'entrée du moteur à partir du contexte. La prime de tarif de chaque ligne est renvoyée à part. */
+export function construireEntree(
+  contexte: ContexteCalcul,
+  demande: { dateEffet: DateIso; dateEcheance: DateIso; lignes: LigneDemande[]; nombreTranches: number },
+): { entree: EntreeCalcul; primesTarif: Record<string, string> } {
+  const { version, taxe } = contexte;
+  if (!Number.isInteger(demande.nombreTranches) || demande.nombreTranches < 1 || demande.nombreTranches > version.fractionnement.tranchesMax) {
     throw new ErreurMetier(`Ce produit autorise de 1 à ${version.fractionnement.tranchesMax} tranche(s).`);
   }
-
+  const primesTarif: Record<string, string> = {};
   const lignes = demande.lignes.map((l) => {
     const formule = version.formules.find((f) => f.code === l.codeFormule);
     if (!formule) {
       throw new ErreurMetier(`Formule « ${l.codeFormule} » inconnue pour ce produit.`);
     }
+    primesTarif[formule.code] = formule.primeUnitaire;
     return {
       code: formule.code,
-      primeUnitaire: formule.primeUnitaire,
+      primeUnitaire: l.primeForcee ?? formule.primeUnitaire,
       effectif: l.effectif,
       accessoire: { mode: formule.accessoireMode, valeur: formule.accessoireValeur },
     };
   });
-
-  try {
-    const resultat = calculer({
+  return {
+    primesTarif,
+    entree: {
       dateEffet: demande.dateEffet,
       dateEcheance: demande.dateEcheance,
       lignes,
@@ -367,34 +388,67 @@ export async function calculerPourProduit(acteur: UtilisateurCourant, demande: D
         prorata: version.prorata,
         arrondi: version.arrondi,
         taxe: { tauxPourcent: taxe.tauxPourcent, assiette: taxe.assiette },
-        fraisFractionnement: nombreTranches > 1 ? version.fractionnement.frais : undefined,
+        fraisFractionnement: demande.nombreTranches > 1 ? version.fractionnement.frais : undefined,
       },
-    });
-    const { repartitionPourcent, decalagesMois } = version.fractionnement;
+    },
+  };
+}
+
+/** Moteur + échéancier. Les erreurs de calcul deviennent des refus lisibles. */
+export function executerCalcul(
+  entree: EntreeCalcul,
+  fractionnement: { repartitionPourcent: string[] | null; decalagesMois: number[] | null },
+  nombreTranches: number,
+): { resultat: ResultatCalcul; echeancier: Tranche[] | null } {
+  try {
+    const resultat = calculer(entree);
+    const { repartitionPourcent, decalagesMois } = fractionnement;
     const echeancier =
       nombreTranches > 1
         ? genererEcheancier({
             ttc: resultat.totaux.arrondi.ttc,
             nombreTranches,
-            dateEffet: demande.dateEffet,
+            dateEffet: entree.dateEffet,
             repartitionPourcent: repartitionPourcent?.length === nombreTranches ? repartitionPourcent : undefined,
             decalagesMois: decalagesMois?.length === nombreTranches ? decalagesMois : undefined,
-            arrondi: { precision: version.arrondi.precision, sens: version.arrondi.sens },
+            arrondi: { precision: entree.parametres.arrondi.precision, sens: entree.parametres.arrondi.sens },
           })
         : null;
-    return {
-      produit: { code: produit.code, libelle: produit.libelle },
-      versionDu: version.dateEffet,
-      taxe: { branche: taxe.branche, tauxPourcent: taxe.tauxPourcent, dateEffet: taxe.dateEffet },
-      libelles: Object.fromEntries(version.formules.map((f) => [f.code, f.libelle])),
-      resultat,
-      echeancier,
-      doubleValidationRequise: exigeDoubleValidation(resultat.totaux.arrondi.ttc, version.seuilValidationTtc),
-    };
+    return { resultat, echeancier };
   } catch (erreur) {
     if (erreur instanceof ErreurCalcul) {
       throw new ErreurMetier(erreur.message);
     }
     throw erreur;
   }
+}
+
+/**
+ * Calcule les primes d'un produit avec les paramètres EN VIGUEUR. Le moteur (domaine/calcul) reste
+ * pur : ce service ne fait que lui fournir les paramètres.
+ */
+export async function calculerPourProduit(acteur: UtilisateurCourant, demande: DemandeCalcul): Promise<ReponseCalcul> {
+  await exigerConsultation(acteur);
+  const dateDocument = demande.dateDocument ?? aujourdhui();
+  if (!dateValide(demande.dateEcheance)) {
+    throw new ErreurMetier(`Date invalide : « ${demande.dateEcheance} ».`);
+  }
+  const contexte = await resoudreContexte(obtenirPrisma(), demande.codeProduit, dateDocument, demande.dateEffet);
+  const nombreTranches = demande.nombreTranches ?? 1;
+  const { entree } = construireEntree(contexte, {
+    dateEffet: demande.dateEffet,
+    dateEcheance: demande.dateEcheance,
+    lignes: demande.lignes,
+    nombreTranches,
+  });
+  const { resultat, echeancier } = executerCalcul(entree, contexte.version.fractionnement, nombreTranches);
+  return {
+    produit: { code: contexte.produit.code, libelle: contexte.produit.libelle },
+    versionDu: contexte.version.dateEffet,
+    taxe: { branche: contexte.taxe.branche, tauxPourcent: contexte.taxe.tauxPourcent, dateEffet: contexte.taxe.dateEffet },
+    libelles: Object.fromEntries(contexte.version.formules.map((f) => [f.code, f.libelle])),
+    resultat,
+    echeancier,
+    doubleValidationRequise: exigeDoubleValidation(resultat.totaux.arrondi.ttc, contexte.version.seuilValidationTtc),
+  };
 }

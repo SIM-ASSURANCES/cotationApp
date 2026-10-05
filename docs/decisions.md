@@ -68,6 +68,25 @@ Journal des décisions du projet, avec leur date. Une décision n'est jamais eff
 - **Décision** : la table `journal_audit` est protégée par des déclencheurs PostgreSQL qui refusent UPDATE, DELETE et TRUNCATE ; une seule fonction du code l'écrit (`journaliser`, dans `src/serveur/audit.ts`) et une règle ESLint interdit tout autre accès. L'écriture se fait dans la même transaction que l'action journalisée.
 - **Limite** : un super-utilisateur PostgreSQL peut supprimer les déclencheurs. En production, l'application doit se connecter avec un rôle qui n'est pas propriétaire de la table (à prévoir au déploiement).
 
+## D9 — Moteur de calcul : règles retenues et hypothèses à confirmer
+
+- **Date** : 05/10/2026 (phase 1). Le moteur est `app/src/domaine/calcul/` : fonctions pures, `Decimal` partout (D3), seule source des montants (CDC §5).
+- **Règles du CDC appliquées telles quelles** : prime nette = prime unitaire × effectif × coefficient de prorata ; prorata = (échéance − effet + 1) / 365 ; accessoires fixe / par tête / par famille / % de la nette ; taxe sur nette + accessoires ; TTC = nette + accessoires + taxe ; paramètres résolus **à la date du document** (version du produit) et **à la date d'effet de la police** (taxe).
+- **Arrondi** (CDC §8.5) : les trois composantes et le TTC sont arrondis selon la précision et le sens du produit ; l'écart éventuel est absorbé par la composante choisie, si bien que le TTC arrondi égale **toujours** nette + accessoires + taxe (contrôle bloquant, §8.1). Niveau « ligne » : le total est la somme des lignes arrondies ; niveau « total » : seule la somme exacte est arrondie.
+- **Échéancier** (§8.4) : tranches égales (TTC / n) ou selon une répartition en %, arrondies comme le produit ; la dernière tranche absorbe l'écart ; somme = TTC vérifiée. Les frais de fractionnement s'ajoutent aux accessoires et sont taxés.
+- **Taxe de T3** : 120 633 × 1,5 % = **1 809,495** exactement. Le « 1 809,50 » du CDC est l'écriture à deux décimales ; au franc, c'est 1 809.
+
+**Hypothèses à faire confirmer par la Direction Technique** (le CDC ne tranche pas) :
+
+| # | Point | Hypothèse retenue |
+| --- | --- | --- |
+| H1 | Accessoires de T1 : « acc. 3 000 » et « acc. 210 000 » | mode « fixe » pour les deux (littéral). Le chiffre est le même en « par tête » (1 000 × 3) et « par famille » (3 500 × 60) |
+| H2 | Prime minimale | appliquée **par formule** (par ligne), pas sur le total de la police |
+| H3 | Contrat de 366 jours (année bissextile, du 01/01 au 31/12) | le coefficient vaut 366/365 (> 1), comme la formule du CDC. Faut-il le plafonner à 1 pour une année civile complète ? |
+| H4 | Précision d'arrondi | s'applique à la prime nette, aux accessoires, à la taxe et au TTC (pas seulement au TTC) |
+| H5 | « Proposition » de la Comptabilité sur les taxes (CDC §4) | non implémentée : il faut un circuit de validation. Le profil ne peut que consulter |
+| H6 | Validité d'une cotation : « 90 jours » (§7) ou « date + 3 mois » (T1) | paramètre en jours ; à trancher en phase 2 |
+
 ## Décisions en attente
 
 | Sujet | Qui décide | Échéance |
@@ -78,3 +97,4 @@ Journal des décisions du projet, avec leur date. Une décision n'est jamais eff
 | Q3 : dossier partagé réseau SIM (CDC §14.2, T14) depuis un VPS | Superviseur | avant la phase 5 |
 | Q4 : colonne « Sexe » des modèles : ajouter `assures[].sexe` au dictionnaire ou la retirer | Direction Technique | avant la phase 4 |
 | Q5 : qui balise les ~20 modèles Word | Superviseur, Technique | avant la phase 3 |
+| H1 à H6 : hypothèses du moteur de calcul (voir D9) | Direction Technique | avant la recette |

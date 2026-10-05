@@ -12,6 +12,16 @@ export default async function LayoutProtege({ children }: LayoutProps<"/">) {
 
   const liens: LienNavigation[] = [{ href: "/", libelle: "Accueil" }];
   if (!utilisateur.doitChangerMotDePasse) {
+    const [parametrage, cotation] = await Promise.all([
+      niveauDuProfil(utilisateur.profil, "PARAMETRER_PRODUITS"),
+      niveauDuProfil(utilisateur.profil, "CREER_COTATION"),
+    ]);
+    if (peutLire(parametrage)) {
+      liens.push({ href: "/parametrage/produits", libelle: "Produits" }, { href: "/parametrage/taxes", libelle: "Taxes" });
+    }
+    if (peutLire(parametrage) || peutLire(cotation)) {
+      liens.push({ href: "/calcul", libelle: "Calcul" });
+    }
     if (await niveauDuProfil(utilisateur.profil, "GERER_UTILISATEURS").then((n) => n === "OUI")) {
       liens.push({ href: "/admin/utilisateurs", libelle: "Utilisateurs" }, { href: "/admin/droits", libelle: "Droits" });
     }

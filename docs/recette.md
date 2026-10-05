@@ -46,13 +46,26 @@ docker compose run --rm -v ${PWD}/essais:/essais generateur python scripts/test_
 | `docker compose up` : les 4 services démarrent | | **non exécuté** (Docker absent) ; syntaxe du fichier compose validée seulement |
 | Connexion fonctionnelle derrière un proxy HTTPS | | **non exécuté** |
 
+## 2 bis. Phase 1 : paramétrage et moteur de calcul
+
+| Vérification | Comment | Résultat |
+| --- | --- | --- |
+| Moteur pur (domaine) : T1, T3, échéancier, accessoires, assiette, frais, prime minimale, refus d'entrées invalides | `npm test` | 84 verts au total (dont 48 pour le moteur) |
+| Invariants sur **72 règles d'arrondi × 40 cotations aléatoires** : TTC = nette + accessoires + taxe après arrondi, montants multiples de la précision, total cohérent | idem | vert |
+| Échéancier : somme des tranches = TTC sur **1 000 cas aléatoires** (précision 1, 10, 100, 1 000 ; 3 sens ; 1 à 12 tranches) | idem | vert (a révélé un défaut : 100/3 × 3 ≠ 100 en décimal, corrigé) |
+| T1, T3, historisation par date d'effet, droits, déclencheurs de l'historique, via la **base** | `npm run test:integration` | 30 verts |
+| Mutations : bornes du prorata (162 jours) et arrondi « inférieur » au lieu de « plus proche » | à la main, puis code restauré | détectées (13 tests en échec pour la première, plusieurs pour la seconde) |
+| Écrans (taxes, produits, calcul) : T1 et T3 affichés, erreurs, droits par profil | parcours HTTP, 23 contrôles | 23 sur 23 |
+| Montant en lettres (CDC §8.6), côté générateur : 11 592 000 → « onze millions cinq cent quatre-vingt-douze mille francs CFA » | `pytest` | 38 verts au total |
+| Versions épinglées (Auth.js, Next, Prisma, decimal.js) | test dans `npm test` | vert ; échoue si une version devient une plage |
+
 ## 3. Cas de test du CDC (§16.1)
 
 | N° | Cas | État |
 | --- | --- | --- |
-| T1 | Cotation santé BENI (2 formules) | non commencé (phase 1) |
+| T1 | Cotation santé BENI (2 formules) | **montants VERTS (phase 1)** : Solo HT 280 744 / taxe 4 256 / TTC 288 000 ; Famille HT 15 159 458 / taxe 230 542 / TTC 15 600 000 ; total 15 888 000 ; TTC par personne 96 000 et par famille 260 000. Vérifiés en test unitaire, de bout en bout via la base, et à l'écran. Reste : « validité = date + 3 mois » (phase 2, cotation). |
 | T2 | Facture groupe CGE-SN | non commencé (phase 4) |
-| T3 | Facture individuelle YAO (prorata) | non commencé (phases 1 et 4) |
+| T3 | Facture individuelle YAO (prorata) | **calcul VERT (phase 1)** : 163 jours, coefficient 0,44658, taxe de 1,5 % sur 120 633 = **1 809,495** exactement (1 809,50 à deux décimales, 1 809 au franc), jamais 2 292. Reste : paiement 41 000, restant dû et reçu REC (phase 4). |
 | T4 | Correction de facture (avoir) | non commencé (phase 4) |
 | T5 | SECURVIE avec 3 bénéficiaires | non commencé (phase 4) |
 | T6 | CP VOL, cases à cocher | non commencé (phase 4) |

@@ -1,0 +1,31 @@
+/** Actions du journal d'audit (CDC §15.4). La liste s'allonge avec les phases suivantes. */
+export const ACTIONS_AUDIT = [
+  // Connexion
+  "CONNEXION_REUSSIE",
+  "CONNEXION_ECHEC",
+  "CONNEXION_REFUSEE_COMPTE_VERROUILLE",
+  "CONNEXION_REFUSEE_COMPTE_INACTIF",
+  "COMPTE_VERROUILLE",
+  "DECONNEXION",
+  // Utilisateurs et droits
+  "UTILISATEUR_CREE",
+  "UTILISATEUR_MODIFIE",
+  "UTILISATEUR_DESACTIVE",
+  "UTILISATEUR_REACTIVE",
+  "MOT_DE_PASSE_CHANGE",
+  "MOT_DE_PASSE_REINITIALISE",
+  "DROIT_MODIFIE",
+  // Prévues par le CDC, branchées dans les phases suivantes
+  "MODELE_DEPOSE",
+  "MODELE_PUBLIE",
+  "PARAMETRE_MODIFIE",
+  "PRIME_FORCEE",
+  "DOCUMENT_VALIDE",
+  "DOCUMENT_EMIS",
+  "DOCUMENT_REEDITE",
+  "AVOIR_EMIS",
+  "DOCUMENT_TELECHARGE",
+  "ECRITURE_PARTAGE_ECHEC",
+] as const;
+
+export type ActionAudit = (typeof ACTIONS_AUDIT)[number];

@@ -29,3 +29,72 @@ model Parametre {
   @@unique([cle, dateEffet])
   @@map("parametres")
 }
+
+/// Profil du CDC §4 (Commercial, Technique...). Les codes sont définis dans src/domaine/droits.ts.
+model Profil {
+  id           Int           @id @default(autoincrement())
+  code         String        @unique
+  libelle      String
+  droits       ProfilDroit[]
+  utilisateurs Utilisateur[]
+
+  @@map("profils")
+}
+
+/// Droit d'un profil sur une action : modifiable par l'Admin système (« droits paramétrables »).
+model ProfilDroit {
+  profilId Int    @map("profil_id")
+  /// Code d'action (CREER_COTATION...), voir src/domaine/droits.ts.
+  action   String
+  /// Code de niveau (AUCUN, LECTURE, DEMANDE, PROPOSITION, OUI_SOUS_SEUIL, OUI, VALIDE).
+  niveau   String
+  profil   Profil @relation(fields: [profilId], references: [id], onDelete: Cascade)
+
+  @@id([profilId, action])
+  @@map("profils_droits")
+}
+
+/// Compte de connexion au back-office. Jamais supprimé : désactivé (actif = false), pour garder l'historique.
+model Utilisateur {
+  id                    Int            @id @default(autoincrement())
+  /// En minuscules (normalisé avant l'enregistrement).
+  identifiant           String         @unique
+  nom                   String
+  /// Empreinte scrypt du mot de passe (format « scrypt$N$r$p$sel$empreinte »), jamais le mot de passe.
+  motDePasseHash        String         @map("mot_de_passe_hash")
+  profilId              Int            @map("profil_id")
+  actif                 Boolean        @default(true)
+  /// Vrai après une création ou une réinitialisation par l'administrateur : changement obligatoire.
+  doitChangerMotDePasse Boolean        @default(false) @map("doit_changer_mot_de_passe")
+  echecsConsecutifs     Int            @default(0) @map("echecs_consecutifs")
+  verrouilleJusqua      DateTime?      @map("verrouille_jusqua")
+  derniereConnexionLe   DateTime?      @map("derniere_connexion_le")
+  creeLe                DateTime       @default(now()) @map("cree_le")
+  modifieLe             DateTime       @updatedAt @map("modifie_le")
+  profil                Profil         @relation(fields: [profilId], references: [id], onDelete: Restrict)
+  evenements            JournalAudit[]
+
+  @@map("utilisateurs")
+}
+
+/// Journal d'audit (CDC §15.4) : ajout seul. Un déclencheur PostgreSQL refuse UPDATE, DELETE et
+/// TRUNCATE (voir la migration). Écrit par une seule fonction : src/serveur/audit.ts.
+model JournalAudit {
+  id                     BigInt       @id @default(autoincrement())
+  horodatage             DateTime     @default(now())
+  utilisateurId          Int?         @map("utilisateur_id")
+  /// Copie de l'identifiant au moment de l'action : lisible même si le compte évolue.
+  utilisateurIdentifiant String?      @map("utilisateur_identifiant")
+  action                 String
+  objetType              String?      @map("objet_type")
+  objetId                String?      @map("objet_id")
+  avant                  Json?
+  apres                  Json?
+  adresseIp              String?      @map("adresse_ip")
+  utilisateur            Utilisateur? @relation(fields: [utilisateurId], references: [id], onDelete: Restrict)
+
+  @@index([horodatage])
+  @@index([action])
+  @@index([utilisateurId])
+  @@map("journal_audit")
+}

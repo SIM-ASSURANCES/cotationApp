@@ -13,12 +13,17 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "migrate:deploy": "prisma migrate deploy",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "initialiser": "tsx --conditions=react-server scripts/initialiser.mts",
+    "creer-admin": "tsx --conditions=react-server scripts/creer-admin.mts",
+    "test:integration:preparer": "node scripts/preparer-base-test.mjs",
+    "test:integration": "npm run test:integration:preparer && vitest run --config vitest.integration.config.mts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "next": "16.3.8",
+    "next-auth": "5.0.0-beta.32",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
@@ -28,12 +33,15 @@
     "@next/env": "16.3.8",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24.19.1",
+    "@types/pg": "8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
+    "pg": "8.23.1",
     "prisma": "7.10.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.0.3"
   }

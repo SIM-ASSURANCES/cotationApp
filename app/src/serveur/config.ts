@@ -26,6 +26,10 @@ const schemaConfig = z.object({
   GENERATEUR_SECRET: z
     .string({ error: messageSi("doit être une chaîne de caractères") })
     .min(32, { error: messageSi("doit contenir au moins 32 caractères") }),
+  // Clé de signature des sessions : Auth.js la lit lui-même, on exige sa présence au démarrage.
+  AUTH_SECRET: z
+    .string({ error: messageSi("doit être une chaîne de caractères") })
+    .min(32, { error: messageSi("doit contenir au moins 32 caractères") }),
 });
 
 export type Config = z.infer<typeof schemaConfig>;

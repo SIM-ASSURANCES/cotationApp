@@ -7,6 +7,7 @@ const configComplete = {
   DATABASE_URL: "postgresql://utilisateur_test:mot_de_passe_test@localhost:5432/sim_documents_test",
   GENERATEUR_URL: "http://127.0.0.1:8001",
   GENERATEUR_SECRET: "secret-de-test-invente-0123456789-abcdefghij",
+  AUTH_SECRET: "cle-de-session-de-test-inventee-0123456789-abcdef",
 };
 
 /** Message de l'erreur levée par fn (échoue si fn ne lève rien). */
@@ -48,5 +49,6 @@ describe("validerConfig", () => {
     expect(message).toContain("DATABASE_URL : obligatoire");
     expect(message).toContain("GENERATEUR_URL : obligatoire");
     expect(message).toContain("GENERATEUR_SECRET : obligatoire");
+    expect(message).toContain("AUTH_SECRET : obligatoire");
   });
 });

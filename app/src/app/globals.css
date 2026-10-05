@@ -1,23 +1,42 @@
 @import "tailwindcss";
 
+/* Charte graphique SIM Assurances CI :
+   bleu foncé Pantone 004B9C (RVB 0, 75, 156), bleu clair Pantone 51AEE2 (RVB 81, 174, 226).
+   Typographie institutionnelle : Montserrat. */
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #14213d;
+  --sim-bleu: #004b9c;
+  --sim-ciel: #51aee2;
+  --sim-marine: #1a2a7a;
+  --surface: #f3f7fb;
+  --bordure: #d5e0ec;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-sim-bleu: var(--sim-bleu);
+  --color-sim-ciel: var(--sim-ciel);
+  --color-sim-marine: var(--sim-marine);
+  --color-surface: var(--surface);
+  --color-bordure: var(--bordure);
+  --font-sans: var(--font-montserrat), Arial, Helvetica, sans-serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+/* Bandeau en dégradé bleu marine vers bleu clair, comme les titres de la charte. */
+.bandeau-sim {
+  background: linear-gradient(90deg, var(--sim-marine) 0%, var(--sim-bleu) 55%, #1885b8 100%);
+  color: #ffffff;
+}
+
+:focus-visible {
+  outline: 3px solid var(--sim-ciel);
+  outline-offset: 2px;
 }

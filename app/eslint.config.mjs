@@ -10,6 +10,10 @@ const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   {
+    // Texte en français : l'apostrophe droite est courante dans le JSX et sans danger.
+    rules: { "react/no-unescaped-entities": "off" },
+  },
+  {
     files: ["src/domaine/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
@@ -83,6 +87,21 @@ const eslintConfig = defineConfig([
               message: `composants/ n'importe jamais serveur/ ni Prisma : les données arrivent par les props. ${SENS}`,
             },
           ],
+        },
+      ],
+    },
+  },
+  // Journal d'audit (CDC §15.4) : une seule fonction l'écrit. Tout accès à journalAudit hors de
+  // src/serveur/audit.ts est refusé ; les autres fichiers appellent journaliser() ou lireJournal().
+  {
+    files: ["src/**/*.{ts,tsx}", "scripts/**/*.{ts,mts}"],
+    ignores: ["src/serveur/audit.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "MemberExpression[property.name='journalAudit']",
+          message: "Le journal d'audit ne s'utilise que par src/serveur/audit.ts (journaliser, lireJournal).",
         },
       ],
     },

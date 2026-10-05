@@ -54,3 +54,10 @@ logs/
 .DS_Store
 Thumbs.db
 desktop.ini
+docs/branding/
+docs/CHARTE GRAPHIQUE*.pdf
+PLAN_CLAUDE_CODE_*.md
+
+# --- Polices des modèles Word : sous licence, copiées à la main (voir generateur/polices/README.md)
+generateur/polices/*
+!generateur/polices/README.md

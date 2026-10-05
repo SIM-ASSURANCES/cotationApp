@@ -23,3 +23,11 @@ _À compléter._
 ## 5. Vérifications après déploiement
 
 _À compléter._
+
+## Éléments déjà établis (à intégrer aux sections ci-dessus)
+
+- **Application, sans Docker** : `npm run build` produit un dossier autonome `app/.next/standalone/`, complété par `public/` et `.next/static/`. On le lance avec `node server.js` depuis ce dossier, sous forme de service Windows ou systemd. Les variables `PORT` et `HOSTNAME` règlent l'écoute ; par défaut, toutes les interfaces (`0.0.0.0`) sur le port 3000.
+- **Secrets** : Next.js recopie dans `.next/standalone/` le fichier `.env` du poste qui a construit l'application. Il ne doit **jamais** être déployé tel quel : le serveur reçoit son propre `.env` de production, ou des variables d'environnement définies dans le service.
+- **Base de données** : `npm run migrate:deploy` (`prisma migrate deploy`) est la **seule** commande de migration autorisée sur un serveur. Jamais `prisma migrate dev`, qui peut proposer de vider la base.
+- **Démarrage** : si une variable obligatoire manque ou est invalide, l'application s'arrête aussitôt (code de sortie 1) en listant les variables en faute.
+- **Contrôle** : `GET /api/sante` renvoie HTTP 200 et `{"statut":"ok","base":"ok","generateur":"ok"}` quand tout fonctionne, et HTTP 503 sinon.

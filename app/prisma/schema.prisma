@@ -1,0 +1,31 @@
+// Schéma de la base PostgreSQL de SIM Documents.
+// Documentation : https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  // Client généré dans src/generated/ (ignoré par Git), recréé par `npx prisma generate`.
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Prisma 7 : l'adresse de la base se règle dans prisma7.config.ts, plus ici.
+}
+
+/// Paramètre du cahier des charges, historisé : changer une valeur, c'est ajouter
+/// une ligne avec une nouvelle date d'effet, jamais modifier une ligne existante.
+model Parametre {
+  id        Int      @id @default(autoincrement())
+  /// Identifiant du paramètre.
+  cle       String
+  /// Valeur en texte, convertie par le code qui la lit (un montant en Decimal, jamais en flottant).
+  valeur    String
+  /// Date à partir de laquelle la valeur s'applique.
+  dateEffet DateTime @map("date_effet") @db.Date
+  creeLe    DateTime @default(now()) @map("cree_le")
+  /// Auteur de la saisie (identifiant de l'utilisateur, en attendant l'authentification).
+  creePar   String   @map("cree_par")
+
+  @@unique([cle, dateEffet])
+  @@map("parametres")
+}

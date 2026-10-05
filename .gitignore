@@ -7,6 +7,9 @@
 .env
 .env.*
 !.env.example
+# Certificats et clés privées
+*.pem
+*.key
 
 # --- Node.js / Next.js (app/) ---------------------------------------
 node_modules/
@@ -16,6 +19,8 @@ build/
 coverage/
 *.tsbuildinfo
 npm-debug.log*
+# Fichier géré par Next.js, recréé par `next dev`, `next build` et `next typegen`
+next-env.d.ts
 
 # --- Code généré (client Prisma...) : recréé par les outils ----------
 **/generated/

@@ -8,6 +8,13 @@ Fiche destinée à l'administrateur du serveur et au superviseur. Elle est tenue
 | --- | --- | --- |
 | | | |
 
+## Constats du développement (à reporter dans le tableau)
+
+- **Node.js 24 (LTS)** pour l'application : version exigée par `app/package.json` (poste de développement : 24.20.0).
+- **PostgreSQL** : poste de développement en version 18.6.
+- **Accès HTTPS sortant pendant l'installation** : paquets npm (`registry.npmjs.org`) et moteur de migration de Prisma, téléchargé depuis `binaries.prisma.sh` au premier usage (un miroir interne est possible avec la variable `PRISMA_ENGINES_MIRROR`).
+- **Port de l'application** : 3000 par défaut, réglable avec les variables `PORT` et `HOSTNAME`.
+
 ## À prévoir plus tard (hors du socle actuel)
 
 - **File de tâches** pour la génération en masse (avis d'échéance, relances, certificats) : Celery ou RQ, avec Redis. Pas encore développée ; à prévoir sur le serveur.

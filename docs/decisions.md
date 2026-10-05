@@ -28,6 +28,7 @@ Journal des décisions du projet, avec leur date. Une décision n'est jamais eff
   - Python : `decimal.Decimal`, jamais `float`.
 - **Raisons** : un nombre à virgule flottante ne représente pas exactement la plupart des montants (0,1 + 0,2 ≠ 0,3 en flottant). Un écart d'arrondi est inacceptable sur une prime, une taxe ou une facture.
 - **Conséquence** : chaque arrondi est explicite, suivant une règle paramétrée, jamais laissé au langage.
+- **Point à confirmer au début du moteur de calcul** : `src/domaine/` n'a pas le droit d'importer Prisma (D4). Le `Decimal` de Prisma 7 étant celui de la bibliothèque Decimal.js, le domaine pourra utiliser `decimal.js` directement.
 
 ## D4 — Une seule application Next.js découpée en couches
 
@@ -40,7 +41,7 @@ Journal des décisions du projet, avec leur date. Une décision n'est jamais eff
 
   Il n'y a pas deux paquets `frontend/` et `backend/`.
 - **Raisons** : on garde la même séparation des responsabilités, sans la complexité d'un monorepo (deux paquets, deux constructions, un contrat d'API à maintenir entre eux). Le portail RH a dû être restructuré après coup en `frontend/` et `backend/` ; ici, la séparation existe dès le départ.
-- **Règle** : les dépendances vont dans un seul sens, `app/` et `composants/` → `serveur/` → `domaine/`, jamais l'inverse. ESLint la fait respecter (`no-restricted-imports`).
+- **Règle** : les dépendances vont dans un seul sens, `app/` → `serveur/` → `domaine/`, jamais l'inverse. `composants/` n'importe jamais `serveur/` : les pages de `app/` lui passent les données. ESLint fait respecter ces règles (`no-restricted-imports`, dans `app/eslint.config.mjs`).
 - **Évolution possible** : extraire `domaine/` et `serveur/` dans un paquet séparé si un second consommateur apparaît.
 
 ## Décisions en attente

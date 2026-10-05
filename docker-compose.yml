@@ -1,0 +1,105 @@
+# SIM Documents : application, générateur, base PostgreSQL et Redis sur un seul hôte (VPS Linux).
+#
+# Lancement :  docker compose up -d --build
+# Prérequis  : fichier .env à la racine (modèle : .env.example) ; polices dans generateur/polices/.
+# Seul le port 3000 de l'application est publié, et SEULEMENT sur 127.0.0.1 : un proxy inverse
+# (Dokploy/Traefik, Caddy, nginx...) assure le HTTPS public et lui transmet les requêtes.
+# La base, Redis et le générateur ne sont joignables que depuis ce réseau Docker.
+
+name: sim-documents
+
+x-securite: &securite
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+  postgres:
+    image: postgres:18-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?définir POSTGRES_USER dans .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?définir POSTGRES_PASSWORD dans .env}
+      POSTGRES_DB: ${POSTGRES_DB:?définir POSTGRES_DB dans .env}
+    volumes:
+      # PostgreSQL 18 : l'image attend le volume sur /var/lib/postgresql (et non /data).
+      - donnees_postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    # Pas de cap_drop ici : l'entrée de l'image démarre en root puis abandonne ses privilèges (il lui faut SETUID/SETGID).
+    restart: unless-stopped
+    # Mot de passe obligatoire. Réservé à la file de tâches de la phase 5 ; rien ne l'utilise encore.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?définir REDIS_PASSWORD dans .env}", "--appendonly", "yes"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    volumes:
+      - donnees_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # Étape de migration et d'installation : applique les migrations puis s'arrête. Sert aussi aux
+  # scripts :  docker compose run --rm outils npm run creer-admin
+  outils:
+    build:
+      context: ./app
+      target: outils
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # Variables exigées par la validation de la configuration de l'application.
+      GENERATEUR_URL: http://generateur:8001
+      GENERATEUR_SECRET: ${GENERATEUR_SECRET:?définir GENERATEUR_SECRET dans .env}
+      AUTH_SECRET: ${AUTH_SECRET:?définir AUTH_SECRET dans .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  generateur:
+    build:
+      context: ./generateur
+    <<: *securite
+    environment:
+      GENERATEUR_SECRET: ${GENERATEUR_SECRET:?définir GENERATEUR_SECRET dans .env}
+      DELAI_CONVERSION_S: ${DELAI_CONVERSION_S:-60}
+    volumes:
+      # Documents émis et profil LibreOffice : conservés entre les redémarrages et les mises à jour.
+      - documents:/donnees
+    # Aucun port publié : joignable uniquement par l'application, à l'adresse http://generateur:8001
+
+  app:
+    build:
+      context: ./app
+      target: execution
+    <<: *securite
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      GENERATEUR_URL: http://generateur:8001
+      GENERATEUR_SECRET: ${GENERATEUR_SECRET}
+      AUTH_SECRET: ${AUTH_SECRET:?définir AUTH_SECRET dans .env}
+      # Derrière le proxy HTTPS : Auth.js fait confiance à l'hôte transmis par le proxy.
+      AUTH_TRUST_HOST: "true"
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      outils:
+        condition: service_completed_successfully
+      generateur:
+        condition: service_started
+
+volumes:
+  donnees_postgres:
+  donnees_redis:
+  documents:

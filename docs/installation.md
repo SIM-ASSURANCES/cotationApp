@@ -58,6 +58,8 @@ notepad .env
 Dans `.env` :
 - **`DATABASE_URL`** : mettre l'utilisateur PostgreSQL du poste, `postgres` ou un rôle personnel, à condition qu'il ait le droit `CREATEDB`. Remplacer ensuite `MOT_DE_PASSE` par son mot de passe. Les caractères spéciaux du mot de passe doivent être encodés : `@` → `%40`, `:` → `%3A`, `/` → `%2F`, `#` → `%23`, `%` → `%25`, `$` → `%24`. Changer aussi l'hôte ou le port s'ils diffèrent.
 - **`GENERATEUR_SECRET`** : coller le secret de la section 3, entre les guillemets.
+- **`AUTH_SECRET`** : une **seconde** clé, différente, qui signe les sessions de connexion. Même commande que la section 3 pour la générer.
+- **`TEST_DATABASE_URL`** (facultative) : base des tests d'intégration. Copier `DATABASE_URL` en remplaçant le nom de la base par `sim_documents_test` (le nom **doit** finir par `_test`).
 
 Base de données :
 
@@ -67,13 +69,25 @@ npm run migrate:deploy
 
 Cette commande applique les migrations du dépôt. Elle **crée la base `sim_documents`** si elle n'existe pas, à condition que l'utilisateur PostgreSQL ait le droit `CREATEDB`, ce qui est le cas de `postgres`. Le message attendu se termine par « All migrations have been successfully applied. »
 
+Profils, droits et premier administrateur :
+
+```powershell
+npm run initialiser
+npm run creer-admin
+```
+
+`initialiser` crée les 6 profils du CDC §4 et leurs droits par défaut ; on peut le relancer sans risque, il n'écrase jamais un droit modifié. `creer-admin` te demande l'identifiant, le nom, puis le mot de passe **dans le terminal**, sans l'afficher (12 caractères minimum). Ce mot de passe ne passe par aucun fichier.
+
 Vérifications :
 
 ```powershell
 npm run typecheck
 npm run lint
 npm test
+npm run test:integration
 ```
+
+`npm test` ne touche pas à la base. `npm run test:integration` utilise une **vraie base PostgreSQL de test** (`TEST_DATABASE_URL`) : elle est **supprimée et recréée** à chaque exécution, et la commande refuse de s'exécuter si son nom ne finit pas par `_test`. L'utilisateur PostgreSQL doit avoir le droit `CREATEDB`.
 
 Lancement en développement :
 
@@ -81,7 +95,7 @@ Lancement en développement :
 npm run dev
 ```
 
-La page d'accueil est sur http://localhost:3000. On arrête avec `Ctrl+C`.
+L'application est sur http://localhost:3000 : elle redirige vers la page de connexion. Se connecter avec le compte créé par `npm run creer-admin`. On arrête avec `Ctrl+C`.
 
 ## 5. Générateur (`generateur/`)
 
@@ -159,3 +173,7 @@ On écrit `curl.exe` et non `curl` : dans Windows PowerShell 5.1, `curl` est un 
   ```
 
   Avec Windows PowerShell 5.1, `pip freeze > requirements.txt` écrirait le fichier en UTF-16, illisible pour Git : d'où `Out-File -Encoding ascii`.
+
+## 9. Avec Docker (déploiement)
+
+Le déploiement sur le VPS utilise Docker Compose : voir [deploiement.md](deploiement.md). Docker n'est pas nécessaire pour développer.

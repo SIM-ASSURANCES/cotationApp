@@ -1,0 +1,10 @@
+# Ne jamais envoyer à Docker : secrets, dépendances du poste, résultats de construction.
+.env
+.env.*
+!.env.example
+node_modules
+.next
+src/generated
+*.log
+Dockerfile
+.dockerignore

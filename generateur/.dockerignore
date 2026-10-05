@@ -1,0 +1,11 @@
+# Ne jamais envoyer à Docker : secrets, environnement virtuel du poste, tests.
+.env
+.env.*
+!.env.example
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+tests
+Dockerfile
+.dockerignore

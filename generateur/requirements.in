@@ -1,0 +1,12 @@
+# Dépendances DIRECTES du générateur, sans version.
+# Les versions figées (dépendances indirectes comprises) sont dans
+# requirements.txt, obtenu par « pip freeze » après installation.
+fastapi            # API HTTP et documentation OpenAPI (/docs)
+uvicorn            # serveur HTTP qui exécute l'application FastAPI
+pydantic-settings  # lecture et validation de la configuration (.env)
+docxtpl            # fusion des modèles Word (balises Jinja)
+pypdf              # assemblage des PDF
+qrcode             # QR code de vérification
+num2words          # montants en toutes lettres
+pytest             # tests
+httpx              # client HTTP utilisé par les tests (TestClient de FastAPI)

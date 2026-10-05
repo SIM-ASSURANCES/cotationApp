@@ -31,3 +31,5 @@ _À compléter._
 - **Base de données** : `npm run migrate:deploy` (`prisma migrate deploy`) est la **seule** commande de migration autorisée sur un serveur. Jamais `prisma migrate dev`, qui peut proposer de vider la base.
 - **Démarrage** : si une variable obligatoire manque ou est invalide, l'application s'arrête aussitôt (code de sortie 1) en listant les variables en faute.
 - **Contrôle** : `GET /api/sante` renvoie HTTP 200 et `{"statut":"ok","base":"ok","generateur":"ok"}` quand tout fonctionne, et HTTP 503 sinon.
+- **Générateur** : installation par `pip install -r requirements.txt` dans un environnement virtuel ; lancement par `python -m app` depuis `generateur/`, qui lit l'adresse et le port dans `generateur/.env` (défaut : `127.0.0.1:8001`, machine locale uniquement). Prévoir `PYTHONUTF8=1` dans l'environnement du service. Contrôle : `GET http://127.0.0.1:8001/sante` doit indiquer `"libreoffice_trouve": true`.
+- **Secret partagé** : `GENERATEUR_SECRET` doit être identique dans `app/.env` et `generateur/.env` ; un secret propre au serveur, jamais celui d'un poste de développement.

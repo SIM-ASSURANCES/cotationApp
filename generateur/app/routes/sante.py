@@ -12,7 +12,9 @@ router = APIRouter(tags=["santé"])
 
 
 class Sante(BaseModel):
-    statut: Literal["ok"]
+    # « degrade » : le service répond mais ne peut pas convertir (LibreOffice absent).
+    # L'application traduit tout statut autre que « ok » par generateur: "ko".
+    statut: Literal["ok", "degrade"]
     version: str
     libreoffice_trouve: bool
 
@@ -20,8 +22,9 @@ class Sante(BaseModel):
 @router.get("/sante", summary="État du générateur")
 def sante(parametres: Annotated[Parametres, Depends(obtenir_parametres)]) -> Sante:
     # Vérifie seulement que l'exécutable existe : LibreOffice n'est pas lancé ici.
+    libreoffice_trouve = parametres.libreoffice_chemin.is_file()
     return Sante(
-        statut="ok",
+        statut="ok" if libreoffice_trouve else "degrade",
         version=__version__,
-        libreoffice_trouve=parametres.libreoffice_chemin.is_file(),
+        libreoffice_trouve=libreoffice_trouve,
     )

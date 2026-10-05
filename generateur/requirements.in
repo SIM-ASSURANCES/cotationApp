@@ -6,7 +6,7 @@ uvicorn            # serveur HTTP qui exécute l'application FastAPI
 pydantic-settings  # lecture et validation de la configuration (.env)
 docxtpl            # fusion des modèles Word (balises Jinja)
 pypdf              # assemblage des PDF
-qrcode             # QR code de vérification
+qrcode[pil]        # QR code de vérification (Pillow : images PNG)
 num2words          # montants en toutes lettres
 pytest             # tests
 httpx              # client HTTP utilisé par les tests (TestClient de FastAPI)

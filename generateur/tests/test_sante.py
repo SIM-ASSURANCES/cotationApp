@@ -7,14 +7,14 @@ from app.config import charger_parametres, obtenir_parametres
 from app.main import app
 
 
-def test_sante_repond_200_sans_secret(client: TestClient) -> None:
+def test_sante_est_degradee_sans_libreoffice(client: TestClient) -> None:
     reponse = client.get("/sante")
 
     assert reponse.status_code == 200
     assert reponse.json() == {
-        "statut": "ok",
+        "statut": "degrade",  # le chemin de test pointe vers un fichier absent
         "version": __version__,
-        "libreoffice_trouve": False,  # le chemin de test pointe vers un fichier absent
+        "libreoffice_trouve": False,
     }
 
 
@@ -27,4 +27,6 @@ def test_sante_signale_libreoffice_quand_le_fichier_existe(
         _env_file=None, libreoffice_chemin=soffice
     )
 
-    assert client.get("/sante").json()["libreoffice_trouve"] is True
+    corps = client.get("/sante").json()
+    assert corps["libreoffice_trouve"] is True
+    assert corps["statut"] == "ok"

@@ -1,0 +1,16 @@
+# Fins de ligne LF dans le dépôt ET dans les copies de travail, comme le
+# demande .editorconfig, même si Git est réglé avec core.autocrlf=true
+# (réglage par défaut de Git pour Windows).
+* text=auto eol=lf
+
+# Scripts de l'invite de commandes Windows : CRLF obligatoire.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Fichiers binaires : aucune conversion.
+*.docx binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

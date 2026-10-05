@@ -1,0 +1,51 @@
+# =====================================================================
+# SIM Documents : fichiers à ne JAMAIS versionner.
+# Ce fichier fait partie du tout premier commit, avant tout fichier .env.
+# =====================================================================
+
+# --- Secrets : seuls les modèles .env.example sont versionnés --------
+.env
+.env.*
+!.env.example
+
+# --- Node.js / Next.js (app/) ---------------------------------------
+node_modules/
+.next/
+out/
+build/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+
+# --- Code généré (client Prisma...) : recréé par les outils ----------
+**/generated/
+
+# --- Python (generateur/) -------------------------------------------
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# --- Documents produits : ils peuvent contenir des données clients ---
+sortie/
+*.pdf
+*.docx
+# Seule exception, pour plus tard : documents de test INVENTÉS.
+!generateur/tests/fixtures/**/*.pdf
+!generateur/tests/fixtures/**/*.docx
+# Fichiers de verrouillage de Word et de LibreOffice
+~$*
+.~lock.*#
+
+# --- Journaux : ils peuvent contenir des données ---------------------
+*.log
+logs/
+
+# --- Éditeurs et système --------------------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini

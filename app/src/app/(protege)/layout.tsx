@@ -16,6 +16,9 @@ export default async function LayoutProtege({ children }: LayoutProps<"/">) {
       niveauDuProfil(utilisateur.profil, "PARAMETRER_PRODUITS"),
       niveauDuProfil(utilisateur.profil, "CREER_COTATION"),
     ]);
+    if (peutLire(cotation)) {
+      liens.push({ href: "/cotations", libelle: "Cotations" });
+    }
     if (peutLire(parametrage)) {
       liens.push({ href: "/parametrage/produits", libelle: "Produits" }, { href: "/parametrage/taxes", libelle: "Taxes" });
     }

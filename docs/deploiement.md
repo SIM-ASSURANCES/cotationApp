@@ -89,6 +89,8 @@ docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTG
 
 Copier les sauvegardes **hors du VPS** (elles contiennent des données de santé : stockage chiffré, accès restreint).
 
+> **Le volume « documents » est le SEUL exemplaire des documents émis** (décision D11 : plus de dossier partagé réseau). Sa sauvegarde quotidienne, copiée hors du VPS, n'est pas optionnelle : sans elle, la perte du disque fait perdre les contrats émis. Prévoir aussi une surveillance de l'espace disque.
+
 ## 8. Sécurité : points d'attention
 
 - `.env` : droits `600`, jamais commité, valeurs distinctes de celles des postes de développement.

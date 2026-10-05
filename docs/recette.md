@@ -59,11 +59,22 @@ docker compose run --rm -v ${PWD}/essais:/essais generateur python scripts/test_
 | Montant en lettres (CDC §8.6), côté générateur : 11 592 000 → « onze millions cinq cent quatre-vingt-douze mille francs CFA » | `pytest` | 38 verts au total |
 | Versions épinglées (Auth.js, Next, Prisma, decimal.js) | test dans `npm test` | vert ; échoue si une version devient une plage |
 
+## 2 ter. Phase 2 : cotation
+
+| Vérification | Comment | Résultat |
+| --- | --- | --- |
+| Règles pures : statuts, expiration (dernier jour valable), forçage, raisons de validation, valideur ≠ auteur, numérotation, saisie (sexe compris) | `npm test` | 110 verts au total |
+| Cotation de bout en bout via la base : T1, T11, T13, figement, acceptation en police, refus, droits, journal | `npm run test:integration` | 57 verts au total (27 pour la cotation) |
+| Numérotation sans trou : 8 émissions simultanées = 8 numéros consécutifs ; une transaction annulée ne laisse aucun trou | idem | vert |
+| Mutations (code cassé volontairement, puis restauré) : « l'auteur peut valider », « plus de contrôle d'expiration », « compteur hors transaction » | à la main | chacune détectée par 2 tests |
+| Écrans : en soumettant les **vrais formulaires** (champs `$ACTION_*`, comme un navigateur sans JavaScript) : création, soumission, émission, acceptation → police, forçage → validation par un autre profil, refus avec motif, modification, erreurs de saisie, droits par profil, filigrane | parcours HTTP, 28 contrôles | 28 sur 28 |
+| Non vérifié | | le comportement JavaScript côté navigateur (ajout et retrait de lignes d'assurés et de risque) et le rendu visuel : pas de navigateur piloté dans cette session |
+
 ## 3. Cas de test du CDC (§16.1)
 
 | N° | Cas | État |
 | --- | --- | --- |
-| T1 | Cotation santé BENI (2 formules) | **montants VERTS (phase 1)** : Solo HT 280 744 / taxe 4 256 / TTC 288 000 ; Famille HT 15 159 458 / taxe 230 542 / TTC 15 600 000 ; total 15 888 000 ; TTC par personne 96 000 et par famille 260 000. Vérifiés en test unitaire, de bout en bout via la base, et à l'écran. Reste : « validité = date + 3 mois » (phase 2, cotation). |
+| T1 | Cotation santé BENI (2 formules) | **montants VERTS (phase 1)** : Solo HT 280 744 / taxe 4 256 / TTC 288 000 ; Famille HT 15 159 458 / taxe 230 542 / TTC 15 600 000 ; total 15 888 000 ; TTC par personne 96 000 et par famille 260 000. Vérifiés en test unitaire, de bout en bout via la base, et à l'écran. **Validité « date + 3 mois » VERTE (phase 2)** : émise le jour J, la cotation est valide jusqu'à J + 3 mois (durée paramétrable par produit, D10). Le PDF de la cotation arrive en phase 3. |
 | T2 | Facture groupe CGE-SN | non commencé (phase 4) |
 | T3 | Facture individuelle YAO (prorata) | **calcul VERT (phase 1)** : 163 jours, coefficient 0,44658, taxe de 1,5 % sur 120 633 = **1 809,495** exactement (1 809,50 à deux décimales, 1 809 au franc), jamais 2 292. Reste : paiement 41 000, restant dû et reçu REC (phase 4). |
 | T4 | Correction de facture (avoir) | non commencé (phase 4) |
@@ -73,7 +84,7 @@ docker compose run --rm -v ${PWD}/essais:/essais generateur python scripts/test_
 | T8 | Génération en masse | non commencé (phase 5) |
 | T9 | Modèle avec balise inconnue | non commencé (phase 3) |
 | T10 | Régénération historique | non commencé (phase 3) |
-| T11 | Cotation expirée | non commencé (phase 2) |
+| T11 | Cotation expirée | **VERT (phase 2)** : statut « Expirée » le lendemain de la fin de validité, drapeau de filigrane « EXPIRÉE » (affiché sur la fiche ; le filigrane dans le PDF ré-édité viendra avec la phase 3), transformation en police impossible, et impossible même en SQL direct (déclencheur). |
 | T12 | QR code | non commencé (phase 3) |
-| T13 | Double validation | non commencé (phase 2) ; la règle « le valideur n'est pas l'auteur » est préparée dans les droits (niveau « Valide » distinct de « Oui ») |
-| T14 | Dossier partagé indisponible | non commencé (phase 5, selon la réponse à Q3) |
+| T13 | Double validation | **VERT (phase 2)** : prime forcée par un commercial → « À valider », sans numéro ; l'auteur ne peut pas valider (refusé par le service, bouton absent à l'écran), même s'il est Technique ; un autre valideur (Technique ou DG) valide et la cotation est émise. Le motif est obligatoire dès le moindre écart. |
+| T14 | **Stockage indisponible à l'émission** (redéfini par D11 : plus de dossier partagé) | non commencé (phase 5) : document conservé en attente, alerte à l'administrateur, reprise automatique |

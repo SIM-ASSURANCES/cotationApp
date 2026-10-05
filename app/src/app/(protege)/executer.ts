@@ -30,6 +30,20 @@ export async function executerAction(
   return { succes };
 }
 
+/** Variante qui renvoie la valeur de l'opération (ex. l'identifiant créé) : à utiliser avant une redirection. */
+export async function avecMessage<T>(
+  operation: (acteur: UtilisateurCourant, adresseIp: string | null) => Promise<T>,
+): Promise<{ ok: true; valeur: T } | { ok: false; etat: EtatFormulaire }> {
+  const acteur = await exigerUtilisateur();
+  try {
+    return { ok: true, valeur: await operation(acteur, await adresseIpCourante()) };
+  } catch (erreur) {
+    if (erreur instanceof ErreurMetier) return { ok: false, etat: { erreur: erreur.message } };
+    if (erreur instanceof ErreurAcces) return { ok: false, etat: { erreur: "Vous n'avez pas le droit d'effectuer cette action." } };
+    throw erreur;
+  }
+}
+
 /** Texte d'un champ de formulaire. */
 export const champ = (donnees: FormData, nom: string): string => String(donnees.get(nom) ?? "").trim();
 

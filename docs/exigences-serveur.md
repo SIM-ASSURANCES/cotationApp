@@ -6,14 +6,15 @@ Fiche destinée à l'administrateur du serveur et au superviseur. Depuis la déc
 
 | Exigence | Détail | Statut |
 | --- | --- | --- |
-| Système | Linux 64 bits (distribution à préciser) | à confirmer (Q1) |
+| Système | Linux 64 bits (distribution à préciser) ; VPS du portail RH | à confirmer |
 | Docker | Docker Engine + plugin Compose v2 | à confirmer |
 | Accès Internet sortant | à la construction : images Docker, paquets Debian, npm, PyPI, Google Fonts (Montserrat). À l'exécution : aucun | à confirmer |
 | Proxy inverse HTTPS | certificat valide sur le domaine de l'application, transmission de `Host`, `X-Forwarded-For`, `X-Forwarded-Proto` | à confirmer (Q1) |
 | Pare-feu | ouvrir uniquement 80 et 443 | |
-| Domaine | nom de domaine de l'application | à confirmer (Q1) |
+| Domaine | nom de domaine de l'application | à définir par le superviseur |
 | Sauvegarde | base (quotidienne) et volume des documents ; copie hors VPS ; test de restauration trimestriel | à planifier |
 | Polices des modèles | fichiers de polices (Tahoma notamment) à copier dans l'image : licence à confirmer | à confirmer (Q2) |
+| Stockage des documents émis | volume persistant (`documents`) : **seul exemplaire** des contrats, plus de dossier partagé (D11) ; espace disque surveillé, sauvegarde automatique quotidienne copiée hors du VPS | à planifier |
 | Flux vers le service public de vérification des QR codes | domaine stable valable 10 ans (CDC §14.1) | à définir (phase 3) |
 
 ## Constats du développement

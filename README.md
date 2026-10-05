@@ -2,7 +2,7 @@
 
 Module de génération automatique des documents d'assurance de SIM Assurances CI : cotations, conditions particulières et générales, factures, avoirs, reçus, avis d'échéance et relances (cahier des charges v1.0 du 25/09/2026).
 
-> **État : phases 0 et 1 terminées** : socle, connexion, droits, journal d'audit, puis paramétrage historisé des produits et des taxes et moteur de calcul des primes (T1 et T3 verts). Pas encore de cotation ni de documents : voir le plan par phases.
+> **État : phases 0 à 2 terminées** : socle, connexion, droits, journal d'audit ; paramétrage historisé et moteur de calcul (T1, T3) ; cotation avec forçage, double validation, numérotation sans trou, expiration et transformation en police (T11, T13). Pas encore de documents PDF : voir le plan par phases.
 
 ## Structure
 

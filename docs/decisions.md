@@ -85,16 +85,54 @@ Journal des décisions du projet, avec leur date. Une décision n'est jamais eff
 | H3 | Contrat de 366 jours (année bissextile, du 01/01 au 31/12) | le coefficient vaut 366/365 (> 1), comme la formule du CDC. Faut-il le plafonner à 1 pour une année civile complète ? |
 | H4 | Précision d'arrondi | s'applique à la prime nette, aux accessoires, à la taxe et au TTC (pas seulement au TTC) |
 | H5 | « Proposition » de la Comptabilité sur les taxes (CDC §4) | non implémentée : il faut un circuit de validation. Le profil ne peut que consulter |
-| H6 | Validité d'une cotation : « 90 jours » (§7) ou « date + 3 mois » (T1) | paramètre en jours ; à trancher en phase 2 |
+| H6 | Validité d'une cotation : « 90 jours » (§7) ou « date + 3 mois » (T1) | **réglé** : « date + 3 mois », paramétrable en mois (D10) |
+
+## D10 — Validité d'une cotation : « date + 3 mois », paramétrable en mois par produit
+
+- **Date** : 05/10/2026, décision de Thierry (phase 2). Remplace l'hypothèse H6 et le paramètre « validité en jours » de la phase 1.
+- **Décision** : la fin de validité est la date d'établissement (jour de l'émission) + N mois, N étant un paramètre de la version du produit (3 par défaut), comme dans le cas T1. Si le mois d'arrivée est plus court, c'est son dernier jour (30/11 + 3 mois = 28/02). Le jour de la fin de validité est encore valable ; la cotation devient « Expirée » le lendemain.
+- **Règle d'arbitrage** : quand le texte du CDC se contredit (§7 « 90 jours par défaut » contre T1 « date + 3 mois »), **les cas de test du CDC font foi**.
+- **Question ajoutée pour la Technique** : confirmer « 3 mois » (et non 90 jours) comme durée par défaut, et la durée propre à chaque produit.
+
+## D11 — Plus de dossier partagé : stockage sur volume persistant
+
+- **Date** : 05/10/2026, décision du superviseur. Remplace CDC §14.2 (dossier partagé réseau SIM) : le VPS ne peut pas joindre ce partage.
+- **Décision** : les documents émis sont conservés sur un **volume de stockage persistant** du VPS (volume Docker `documents`). L'accès se fait par un écran **« Documents émis »** (recherche par police, client, type et date ; téléchargement individuel ou en ZIP), à construire avec les phases 3 et 5. Une **sauvegarde automatique** de ce volume est obligatoire : c'est désormais **le seul exemplaire** des contrats émis (voir deploiement.md §7).
+- **T14 devient** : « stockage indisponible à l'émission → document conservé en attente, alerte à l'administrateur, reprise automatique ». À réaliser en phase 5.
+
+## D12 — VPS du portail, balisage des modèles, champ sexe
+
+- **Date** : 05/10/2026, décisions du superviseur.
+- **VPS** : celui du portail RH ; le nom de domaine reste à définir.
+- **Dictionnaire** : `assures[].sexe` est **ajouté** au dictionnaire (valeurs « M », « F », ou vide si inconnu). La cotation le saisit et le conserve déjà.
+- **Balisage des modèles Word** : Thierry balise d'abord, puis la Technique ajoute ses propres modèles. **Conséquence** : le guide « rédiger un modèle Word » et les **contrôles au dépôt** (CDC §6.7 : balises inconnues rejetées avec leur emplacement, blocs mal fermés, marqueurs hérités) deviennent **essentiels** en phase 3, parce que d'autres personnes que Thierry déposeront des modèles.
+
+## D13 — Cotation : règles retenues et hypothèses à confirmer
+
+- **Date** : 05/10/2026 (phase 2). Code : `app/src/domaine/cotation/` (règles pures) et `app/src/serveur/cotations.ts`.
+- **Statuts** (CDC §9.3) : Brouillon → (soumission) → « À valider » si une prime est forcée **ou** si le TTC dépasse le seuil du produit, sinon directement « Émise ». « À valider » → « Émise » par un valideur, ou → Brouillon (renvoi). « Émise » → Acceptée, Refusée ou Expirée. Un **brouillon n'a pas de numéro** : COT-AAAA-MM-NNNN est attribué à l'émission, par un compteur annuel incrémenté dans la transaction d'émission (continu, sans trou).
+- **Figement** : dès l'émission, un déclencheur PostgreSQL interdit toute modification des données (montants, formules, souscripteur, dates…) et toute suppression ; une cotation Acceptée, Refusée ou Expirée ne change plus du tout. Une cotation expirée ne peut donc **jamais** être acceptée, même en SQL direct (T11).
+- **Forçage de prime** : on force la **prime unitaire** d'une formule ; le moteur recalcule avec cette prime (aucun montant n'est saisi). Motif obligatoire (5 caractères au moins) pour tout écart, même minime ; une prime identique au tarif n'est pas un forçage. Forcer exige le droit « Demande » ou « Valide » sur « Forcer une prime ».
+- **Acceptation** : le client retient une ou plusieurs formules ; le module recalcule sur ces seules formules avec les paramètres **figés** de la cotation, puis crée la police (formules retenues, assurés, échéancier). La saisie du client est copiée dans la cotation : modifier le client ensuite ne change pas une cotation déjà établie.
+
+| # | Point | Hypothèse retenue (à faire confirmer par la Direction Technique) |
+| --- | --- | --- |
+| H7 | Qui valide | tout profil ayant le droit « Valide » sur « Forcer une prime » (Technique, Direction Générale), pour un forçage **comme** pour un dépassement de seuil ; jamais l'auteur |
+| H8 | Total d'une cotation à plusieurs formules | somme des formules, comme dans T1 (Solo + Famille = 15 888 000) ; le comparatif d'options alternatives se lit ligne par ligne |
+| H9 | Qui modifie et soumet un brouillon | son auteur seul |
+| H10 | Numéro de police | **format provisoire** POL-AAAA-NNNNNN, produit par une seule fonction ; le format réel est une question en attente |
+| H11 | Aperçu et émission du PDF | phase 3 (fusion des modèles) ; la cotation est déjà numérotée, figée, et porte le drapeau de filigrane « EXPIRÉE » |
+| H12 | Refus d'une cotation « À valider » par un valideur | renvoi en brouillon avec une raison obligatoire |
 
 ## Décisions en attente
 
 | Sujet | Qui décide | Échéance |
 | --- | --- | --- |
 | Nouveau dépôt dédié, ou module du dépôt portailrh | Superviseur | à fixer |
-| Q1 : le VPS est-il celui du portail RH (Dokploy) ? Domaine de l'application | Superviseur | avant la phase 6 |
+| Nom de domaine de l'application (le VPS est celui du portail RH) | Superviseur | avant la phase 6 |
 | Q2 : copie des polices Microsoft (Tahoma, Calibri, Arial…) dans l'image Docker | Superviseur | avant le test de fidélité sous Linux |
-| Q3 : dossier partagé réseau SIM (CDC §14.2, T14) depuis un VPS | Superviseur | avant la phase 5 |
-| Q4 : colonne « Sexe » des modèles : ajouter `assures[].sexe` au dictionnaire ou la retirer | Direction Technique | avant la phase 4 |
-| Q5 : qui balise les ~20 modèles Word | Superviseur, Technique | avant la phase 3 |
-| H1 à H6 : hypothèses du moteur de calcul (voir D9) | Direction Technique | avant la recette |
+| Durée de validité d'une cotation : confirmer « 3 mois » (D10) | Direction Technique | avant la recette |
+| Format du numéro de police (provisoire : POL-AAAA-NNNNNN) | Direction Technique | avant la recette |
+| H1 à H5 (moteur de calcul, voir D9) et H7 à H12 (cotation, voir D13) | Direction Technique | avant la recette |
+
+Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir), Q3 (plus de dossier partagé : D11), Q4 (`assures[].sexe` ajouté : D12), Q5 (Thierry balise d'abord, puis la Technique : D12), H6 (validité en mois : D10).

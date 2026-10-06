@@ -51,7 +51,7 @@ Lecture :
 - **Arial et Segoe UI Symbol** : présents dans l'image en B, mais absents du PDF LibreOffice, comme sur le poste Windows en 1.1 (la police réellement utilisée à leur place n'a pas été identifiée ; DejaVu Sans figure dans le PDF). Sans effet sur la pagination de ce modèle ; à surveiller si un autre modèle en dépend davantage.
 - **Conséquence pour le VPS** : les polices Tahoma et Calibri doivent être présentes dans l'image pour garder la pagination de Word. Elles ne sont pas versionnées (licence, question Q2 au superviseur) : le déploiement les copie à la main dans `generateur/polices/`.
 
-Limite : un seul modèle (CP RELAXSANTE) a été testé. Les autres modèles Word (facture, avenants, CG) restent à passer au test à mesure qu'ils arrivent.
+Limite : un seul modèle (CP RELAXSANTE) a été testé. Les autres modèles Word (facture, avenants, CG) restent à passer au test : outils prêts (`generateur/scripts/exporter_word.ps1` et `test_fidelite_lot.py`, essayés sur ce seul modèle) et déroulement dans [plan-test-modeles.md](plan-test-modeles.md). Lot complet : non exécuté.
 
 ## 2. Phase 0 : socle, connexion, droits, audit
 

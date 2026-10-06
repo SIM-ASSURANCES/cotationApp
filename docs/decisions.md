@@ -124,13 +124,44 @@ Journal des décisions du projet, avec leur date. Une décision n'est jamais eff
 | H11 | Aperçu et émission du PDF | phase 3 (fusion des modèles) ; la cotation est déjà numérotée, figée, et porte le drapeau de filigrane « EXPIRÉE » |
 | H12 | Refus d'une cotation « À valider » par un valideur | renvoi en brouillon avec une raison obligatoire |
 
+## D14 — Décisions du 05/10/2026 : compléments
+
+- **Date** : 05/10/2026, décisions du superviseur ; consignées le 06/10/2026 (reliquat de la phase 3). Complètent D11 et D12, qui en portent déjà l'essentiel :
+  - **Déploiement** sur le VPS du portail RH (D12). Le **nom de domaine** reste à définir : il sera lu dans une variable d'environnement **`URL_PUBLIQUE`** (adresse de vérification des QR codes, CDC §14.1), ajoutée avec l'émission des documents. Aucune adresse n'est écrite en dur.
+  - **Dictionnaire** : `assures[].sexe` ajouté (§6.3.2, D12) ; il figure dans `app/src/domaine/documents/dictionnaire.ts`.
+  - **Plus de dossier partagé** : stockage persistant sur le VPS, écran « Documents émis », sauvegarde du volume ; T14 devient « stockage indisponible à l'émission » (phase 5) (D11).
+  - **Balisage** : Thierry, puis la Technique, qui déposera ses propres modèles (D12).
+  - **Polices Microsoft dans l'image Docker** : **en attente de l'accord du superviseur** (question Q2). Elles ne sont pas dans le dépôt ; une image qui les contient n'est **jamais publiée dans un registre public** (Docker Hub, GitHub…) : elle se construit sur le VPS, ou dans un registre privé. Sans elles, la pagination de Word n'est pas reproduite (recette.md §1.2) : le générateur se déclare alors « dégradé » (`/sante`), et l'application affiche `generateur: "ko"`.
+
+## D15 — Modèles Word : bibliothèque, contrôles, fusion (phase 3a)
+
+- **Date** : 06/10/2026 (phase 3a). Code : `app/src/domaine/documents/` (dictionnaire, contrôles, cycle), `app/src/serveur/modeles.ts`, `generateur/app/analyse.py`, `fusion.py`, `filtres.py`.
+- **Dictionnaire, source unique** : il est écrit **une seule fois**, dans l'application (`dictionnaire.ts`). Il sert aux contrôles au dépôt, à la construction des données (`champsInconnus` refuse un nom inventé), à l'aide intégrée (page « Aide à la rédaction des modèles ») et aux données fictives de l'aperçu. Le générateur, lui, **ne connaît pas le dictionnaire** : il relève des faits (balises, emplacement, champs Word, polices) et c'est l'application qui décide (rejet, avertissement).
+- **Stockage des modèles** : chaque version déposée (le .docx tel quel, son empreinte SHA-256) est conservée **dans PostgreSQL**, avec ses métadonnées : une seule sauvegarde (celle de la base) couvre les modèles. Une version n'est jamais modifiée ni supprimée, et une version publiée ne change plus du tout (déclencheurs). Le PDF des CG et CS, produit **une seule fois** à la publication, est conservé avec la version.
+- **Cycle** : Brouillon (dépôt réussi) → Soumis (par son auteur) → Publié (par un autre utilisateur ayant le droit « Publier », jamais l'auteur, vérifié aussi par la base). Un dépôt **refusé n'est pas enregistré** (le refus est journalisé). « Archivé » n'est pas stocké : une version publiée est « remplacée » dès qu'une version publiée plus récente est en vigueur. Une publication n'est jamais rétroactive (date d'effet ≥ aujourd'hui).
+- **Fusion** : `StrictUndefined` (une donnée absente arrête la génération, avec son chemin : « donnée absente : « souscripteur.prenoms » »), `autoescape`, **bac à sable Jinja** (un modèle déposé n'atteint aucun objet interne). Une donnée présente mais vide (null) s'écrit vide : c'est la construction des données qui décide qu'il n'y a pas de valeur. Sont refusés au dépôt : les calculs (`+ - * /`), le filtre `default` (il masquerait une donnée absente), `set`, `include`, les appels de fonction autres que `bloc()`.
+- **Filtres** : séparateur de milliers = **espace insécable U+00A0** ; l'espace fine U+202F est absente d'Arial Narrow et de MS Gothic, utilisées par les modèles (vérifié avec `fc-list` dans l'image). Les décimales reçues s'écrivent telles quelles ; un flottant est refusé. `case` n'accepte qu'un booléen.
+- **Piège de la syntaxe du CDC** : `{{ risque.statut == "PROPRIETAIRE" | case }}` (§6.2) est lu par Jinja comme `risque.statut == ("PROPRIETAIRE" | case)` et affiche « False ». La condition doit être **entre parenthèses** : `{{ (risque.statut == "PROPRIETAIRE") | case }}`. Le dépôt sans parenthèses est refusé, avec ce message.
+- **Listes longues** (§6.5) : au-delà du seuil (paramètre historisé, 10 par défaut), chaque boucle `{%tr for %}` (ligne de tableau) ou `{%p for %}` (paragraphes) du corps sur la liste est remplacée par « Voir annexe – Liste des assurés (N personnes) », sur toute la largeur du tableau ; la liste complète est rendue par le modèle d'annexe de cette liste, à la fin du PDF. Une boucle écrite dans une ligne de texte ne peut pas passer en annexe : la génération s'arrête avec un message.
+- **Sous-modèles** : `{{ bloc("garanties", f.code) }}`, seul dans son paragraphe, insère le sous-modèle de nom « garanties » et de clé le code de la formule (celui du produit, à défaut le commun). Le sous-modèle est fusionné avec les mêmes données ; il ne peut pas appeler `bloc()` à son tour.
+- **Aperçu** (§6.6) : données fictives couvrant tout le dictionnaire, nombre d'assurés au choix (T7), emplacements d'images gris. Pour l'aperçu seulement, un sous-modèle ou une annexe pas encore publiés sont pris dans leur dernière version déposée.
+
+| # | Point | Hypothèse retenue (à faire confirmer) |
+| --- | --- | --- |
+| H13 | Noms des éléments de `societe.rib[]`, `societe.mobile_money[]`, `societe.recours[]` (non nommés par le CDC) | `rib[].banque`, `rib[].numero` ; `mobile_money[].operateur`, `mobile_money[].numero_marchand` ; `recours[].libelle`, `recours[].url` |
+| H14 | Marqueurs hérités (« XXX », « 00/00/00 », « ___ »…, CDC §6.7) | **avertissement**, pas rejet : une ligne « ________ » pour une signature manuscrite est légitime |
+| H15 | Champs obligatoires par type (CDC §6.7) | seul l'exemple du CDC est appliqué : une facture doit contenir `doc.numero`, `prime.ttc`, `societe.rccm` ; les autres types n'en ont pas encore |
+| H16 | Un modèle par rôle | une seule annexe par liste, un seul sous-modèle par (nom, clé), une seule relance par niveau, pour un même produit (ou en commun) ; plusieurs CP par produit restent possibles |
+| H17 | Balises permises dans des CG / CS | `produit.cg_libelle`, `produit.cg_visa`, `produit.cg_date` / `produit.cs_libelle`, `produit.cs_visa`, rendues à la publication avec le visa saisi au dépôt |
+
 ## Décisions en attente
 
 | Sujet | Qui décide | Échéance |
 | --- | --- | --- |
 | Nouveau dépôt dédié, ou module du dépôt portailrh | Superviseur | à fixer |
-| Nom de domaine de l'application (le VPS est celui du portail RH) | Superviseur | avant la phase 6 |
-| Q2 : copie des polices Microsoft (Tahoma, Calibri, Arial…) dans l'image Docker | Superviseur | avant le test de fidélité sous Linux |
+| Nom de domaine de l'application (le VPS est celui du portail RH ; variable `URL_PUBLIQUE`, D14) | Superviseur | avant la phase 6 |
+| Q2 : copie des polices Microsoft (Tahoma, Calibri, Arial…) dans l'image Docker ; jamais dans un registre public (D14) | Superviseur | avant la mise en production |
+| H13 à H17 (modèles Word, voir D15) | Direction Technique | avant le balisage des modèles |
 | Durée de validité d'une cotation : confirmer « 3 mois » (D10) | Direction Technique | avant la recette |
 | Format du numéro de police (provisoire : POL-AAAA-NNNNNN) | Direction Technique | avant la recette |
 | H1 à H5 (moteur de calcul, voir D9) et H7 à H12 (cotation, voir D13) | Direction Technique | avant la recette |

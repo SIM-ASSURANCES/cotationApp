@@ -87,7 +87,7 @@ npm test
 npm run test:integration
 ```
 
-`npm test` ne touche pas à la base. `npm run test:integration` utilise une **vraie base PostgreSQL de test** (`TEST_DATABASE_URL`) : elle est **supprimée et recréée** à chaque exécution, et la commande refuse de s'exécuter si son nom ne finit pas par `_test`. L'utilisateur PostgreSQL doit avoir le droit `CREATEDB`.
+`npm test` ne touche pas à la base. `npm run test:e2e` exige en plus le **générateur lancé** (section 5) : il dépose et génère de vrais modèles de test. `npm run test:integration` utilise une **vraie base PostgreSQL de test** (`TEST_DATABASE_URL`) : elle est **supprimée et recréée** à chaque exécution, et la commande refuse de s'exécuter si son nom ne finit pas par `_test`. L'utilisateur PostgreSQL doit avoir le droit `CREATEDB`.
 
 Lancement en développement :
 

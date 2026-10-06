@@ -10,16 +10,18 @@ import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "@/serveur/ty
  * message à l'écran ; toute autre erreur remonte (elle est journalisée par le serveur).
  */
 export async function executerAction(
-  operation: (acteur: UtilisateurCourant, adresseIp: string | null) => Promise<void>,
+  operation: (acteur: UtilisateurCourant, adresseIp: string | null) => Promise<void | string[]>,
   succes: string,
   cheminARafraichir: string,
 ): Promise<EtatFormulaire> {
   const acteur = await exigerUtilisateur();
+  let details: string[] | void;
   try {
-    await operation(acteur, await adresseIpCourante());
+    // Une opération peut renvoyer des remarques à afficher sous le message de réussite.
+    details = await operation(acteur, await adresseIpCourante());
   } catch (erreur) {
     if (erreur instanceof ErreurMetier) {
-      return { erreur: erreur.message };
+      return { erreur: erreur.message, ...(erreur.details.length ? { details: erreur.details } : {}) };
     }
     if (erreur instanceof ErreurAcces) {
       return { erreur: "Vous n'avez pas le droit d'effectuer cette action." };
@@ -27,7 +29,7 @@ export async function executerAction(
     throw erreur;
   }
   revalidatePath(cheminARafraichir);
-  return { succes };
+  return { succes, ...(details?.length ? { details } : {}) };
 }
 
 /** Variante qui renvoie la valeur de l'opération (ex. l'identifiant créé) : à utiliser avant une redirection. */
@@ -38,7 +40,7 @@ export async function avecMessage<T>(
   try {
     return { ok: true, valeur: await operation(acteur, await adresseIpCourante()) };
   } catch (erreur) {
-    if (erreur instanceof ErreurMetier) return { ok: false, etat: { erreur: erreur.message } };
+    if (erreur instanceof ErreurMetier) return { ok: false, etat: { erreur: erreur.message, ...(erreur.details.length ? { details: erreur.details } : {}) } };
     if (erreur instanceof ErreurAcces) return { ok: false, etat: { erreur: "Vous n'avez pas le droit d'effectuer cette action." } };
     throw erreur;
   }

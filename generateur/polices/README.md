@@ -27,3 +27,5 @@ Copier les fichiers de polices d'un poste Windows sous licence vers un serveur p
 ## Vérifier ce que contient l'image
 
 Pendant `docker compose build`, la liste des familles installées est affichée (étape `fc-list`).
+
+En fonctionnement, `GET /sante` du générateur vérifie Tahoma et Calibri (avec `fc-list`) : si l'une manque, il se déclare « dégradé » (`"polices_manquantes": ["Tahoma"]`) et l'application affiche `generateur: "ko"`. Au dépôt d'un modèle, une police qu'il utilise et qui manque ici fait l'objet d'un avertissement.

@@ -5,6 +5,7 @@ fastapi            # API HTTP et documentation OpenAPI (/docs)
 uvicorn            # serveur HTTP qui exécute l'application FastAPI
 pydantic-settings  # lecture et validation de la configuration (.env)
 docxtpl            # fusion des modèles Word (balises Jinja)
+docxcompose        # sous-modèles insérés par bloc() (dépendance optionnelle de docxtpl)
 pypdf              # assemblage des PDF
 qrcode[pil]        # QR code de vérification (Pillow : images PNG)
 num2words          # montants en toutes lettres

@@ -90,6 +90,26 @@ Limite : un seul modèle (CP RELAXSANTE) a été testé. Les autres modèles Wor
 | Écrans : en soumettant les **vrais formulaires** (champs `$ACTION_*`, comme un navigateur sans JavaScript) : création, soumission, émission, acceptation → police, forçage → validation par un autre profil, refus avec motif, modification, erreurs de saisie, droits par profil, filigrane | parcours HTTP, 28 contrôles | 28 sur 28 |
 | Non vérifié | | le comportement JavaScript côté navigateur (ajout et retrait de lignes d'assurés et de risque) et le rendu visuel : pas de navigateur piloté dans cette session |
 
+## 2 quater. Phase 3a : modèles Word, contrôles au dépôt, fusion, conversion (06/10/2026)
+
+| Vérification | Comment | Résultat |
+| --- | --- | --- |
+| `/sante` du générateur : « dégradé » si Tahoma ou Calibri manque (`fc-list`), ou si la liste des polices est impossible | `pytest` (polices simulées) ; puis l'image réelle | 6 tests verts ; image avec les polices : `{"statut":"ok", "polices_manquantes":[]}` et `/api/sante` ok |
+| Filtres `montant`, `lettres`, `date`, `dateheure`, `pct`, `case` : rendus, refus (flottant, date sans heure, `case` sur autre chose qu'un booléen), jamais d'espace ordinaire dans un montant | `pytest` (`test_filtres.py`) | verts |
+| Analyse au dépôt : données lues et emplacement (corps, en-tête, cellule de tableau), balise coupée que docxtpl ne recolle pas, balise non fermée, blocs if/for mal fermés ou croisés, filtre inconnu, `default`, calcul, `set`, appels, attributs « _ », champ Word (Ctrl+F9), `case` sans parenthèses, guillemets de Word, polices | `pytest` (`test_analyse.py`), modèles de test produits par python-docx | 19 verts |
+| Décision au dépôt (dictionnaire, champs Word, sans balise, CG/CS, facture, avertissements polices et marqueurs) ; dictionnaire (noms, exemples, données fictives sans nom inventé) ; cycle de vie et version en vigueur | `npm test` (`documents.test.ts`) | 27 verts (137 au total) |
+| Fusion : donnée absente nommée par son chemin (« souscripteur.prenoms », « assures[].date_naissance »), null écrit vide, échappement de « & » et « < », bac à sable, sous-modèle `bloc()`, image, listes longues (tableau, paragraphes, boucle en ligne refusée, sans modèle d'annexe refusée, seuil paramétrable) | `pytest` (`test_fusion.py`) | 15 verts |
+| Un modèle de test avec **chaque filtre** produit un PDF dans le conteneur ; le rendu de chaque filtre est vérifié dans le **texte extrait du PDF** | `pytest` dans le conteneur (`test_generation.py`) | vert. Sous Windows, ce test est sauté : pypdf lit mal le texte accentué des PDF du LibreOffice Windows 26.8 (« à » lu « a! »), alors que `pdftotext` lit correctement ces mêmes PDF |
+| **Contrôle visuel des cases ☒ ☐** dans le conteneur (PDF converti en image) | modèle de test : cases dans un texte en Calibri, puis en MS Gothic (comme les modèles actuels) | **correct** dans les deux cas. En Calibri, qui n'a pas ces caractères, LibreOffice les dessine avec DejaVu Sans ; en MS Gothic, avec MS Gothic (`pdffonts`). Choix du séparateur de milliers : U+00A0, car U+202F manque dans Arial Narrow et MS Gothic (`fc-list ':charset=202f'`) |
+| Rendu d'un CP de test complet (25 assurés, sous-modèle, annexe, images) dans le conteneur | PDF converti en image et relu | renvoi « Voir annexe – Liste des assurés (25 personnes) » sur toute la largeur du tableau ; tableau de garanties inséré par formule ; page 2 : annexe des 25 assurés |
+| Bibliothèque via la **base** (générateur simulé) : droits, refus de dépôt non enregistré et journalisé, empreinte, numérotation, soumission par l'auteur, publication par la DG, renvoi, date future, CG converties **une seule fois**, aperçu, seuil historisé | `npm run test:integration` (`modeles.integration.test.ts`) | 12 verts (69 au total) |
+| Déclencheurs : version jamais modifiée ni supprimée, cycle imposé, publication par l'auteur refusée **par la base**, modèle jamais supprimé | idem, en SQL direct | verts |
+| **Bout en bout** : vraie base de test **et** vrai générateur, avec les modèles de test de `generateur/tests/fixtures/` | `npm run test:e2e` (générateur lancé) | 4 verts : T9, champ Word, aperçu et T7, CG publiée en PDF |
+| Écrans, version de production (`npm start`), en soumettant les **vrais formulaires** (fichiers compris) : droits par profil, aide, création, T9 et champ Word refusés avec emplacement, fichier de 3 Mo transmis (limite de 1 Mo des Server Actions levée), dépôt, téléchargement identique, 401/403, aperçus (refus expliqués sans annexe ni sous-modèle), annexe publiée par les écrans puis T7, soumission, publication (date passée refusée), seuil | parcours HTTP, 35 contrôles | 35 sur 35 |
+| Image Docker reconstruite : migration `modeles` appliquée par `outils`, 4 services « healthy », `/api/sante` ok | `docker compose build`, `up -d` | vert |
+| Mutations : « tout nom est connu du dictionnaire » ; « plus de contrôle des balises coupées » | à la main, puis code restauré | détectées (3 tests, puis 1) |
+| Non vérifié | | le rendu dans un vrai navigateur (pas de navigateur piloté) ; les **vrais** modèles de SIM (ils ne sont pas réunis : voir plan-test-modeles.md) ; l'ouverture dans Word d'un document dont une liste est passée en annexe (la ligne de renvoi est construite par le générateur ; LibreOffice l'affiche correctement) |
+
 ## 3. Cas de test du CDC (§16.1)
 
 | N° | Cas | État |
@@ -100,11 +120,11 @@ Limite : un seul modèle (CP RELAXSANTE) a été testé. Les autres modèles Wor
 | T4 | Correction de facture (avoir) | non commencé (phase 4) |
 | T5 | SECURVIE avec 3 bénéficiaires | non commencé (phase 4) |
 | T6 | CP VOL, cases à cocher | non commencé (phase 4) |
-| T7 | Liste de plus de 10 assurés | non commencé (phase 3) |
+| T7 | Liste de plus de 10 assurés | **VERT (phase 3a)** : 25 assurés, seuil 10 → le corps affiche « Voir annexe – Liste des assurés (25 personnes) » et l'annexe complète est à la fin du PDF. Testé au niveau du .docx (`test_fusion.py`), du PDF dans le conteneur (`test_generation.py`), de bout en bout (`npm run test:e2e`) et par les écrans (aperçu à 25 assurés). Seuil paramétrable (historisé). Reste avec l'émission : les autres listes (bénéficiaires…) sur un vrai document. |
 | T8 | Génération en masse | non commencé (phase 5) |
-| T9 | Modèle avec balise inconnue | non commencé (phase 3) |
-| T10 | Régénération historique | non commencé (phase 3) |
+| T9 | Modèle avec balise inconnue | **VERT (phase 3a)** : le dépôt d'un .docx contenant `{{ client.nom }}` est refusé avec « Balise inconnue « client.nom » … — corps, tableau 1, ligne 2, colonne 1 : « {{ client.nom }} » » ; rien n'est enregistré, le refus est journalisé. Testé dans l'analyse (`pytest`), la décision (`npm test`), la base (`test:integration`), de bout en bout (`test:e2e`) et par l'écran. |
+| T10 | Régénération historique | **préparé (phase 3a)** : chaque version de modèle est conservée, jamais écrasée (déclencheurs), et la version en vigueur à une date est calculée. La réédition d'un document émis viendra avec l'émission (phase 3b). |
 | T11 | Cotation expirée | **VERT (phase 2)** : statut « Expirée » le lendemain de la fin de validité, drapeau de filigrane « EXPIRÉE » (affiché sur la fiche ; le filigrane dans le PDF ré-édité viendra avec la phase 3), transformation en police impossible, et impossible même en SQL direct (déclencheur). |
-| T12 | QR code | non commencé (phase 3) |
+| T12 | QR code | non commencé (phase 3b) |
 | T13 | Double validation | **VERT (phase 2)** : prime forcée par un commercial → « À valider », sans numéro ; l'auteur ne peut pas valider (refusé par le service, bouton absent à l'écran), même s'il est Technique ; un autre valideur (Technique ou DG) valide et la cotation est émise. Le motif est obligatoire dès le moindre écart. |
 | T14 | **Stockage indisponible à l'émission** (redéfini par D11 : plus de dossier partagé) | non commencé (phase 5) : document conservé en attente, alerte à l'administrateur, reprise automatique |

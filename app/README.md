@@ -25,7 +25,8 @@ La sécurité des pages se vérifie à deux niveaux : `src/proxy.ts` (premier fi
 | `npm run lint` | ESLint, y compris le sens des couches. |
 | `npm run typecheck` | Génère les types des routes (`next typegen`), puis vérifie les types (`tsc --noEmit`). |
 | `npm test` | Tests Vitest (une seule exécution). |
-| `npm run test:integration` | Tests sur une vraie base PostgreSQL de test (`TEST_DATABASE_URL`, supprimée et recréée à chaque fois). |
+| `npm run test:integration` | Tests sur une vraie base PostgreSQL de test (`TEST_DATABASE_URL`, supprimée et recréée à chaque fois). Le générateur y est simulé. |
+| `npm run test:e2e` | Tests de bout en bout : base de test **et** vrai générateur (`GENERATEUR_URL`, à lancer avant), avec les modèles de test de `generateur/tests/fixtures/`. |
 | `npm run initialiser` | Crée les profils du CDC §4 et leurs droits par défaut (sans écraser les droits modifiés). |
 | `npm run creer-admin` | Crée le premier Admin système ; le mot de passe se saisit dans le terminal. |
 | `npm run migrate:deploy` | Applique les migrations existantes : **seule commande de migration autorisée sur un serveur** (jamais `prisma migrate dev`). |

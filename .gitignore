@@ -61,3 +61,5 @@ PLAN_CLAUDE_CODE_*.md
 # --- Polices des modèles Word : sous licence, copiées à la main (voir generateur/polices/README.md)
 generateur/polices/*
 !generateur/polices/README.md
+
+PHASE_3_instructions_claude_code.md

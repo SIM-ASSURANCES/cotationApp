@@ -10,9 +10,16 @@ export type UtilisateurCourant = {
   doitChangerMotDePasse: boolean;
 };
 
-/** Refus pour une raison que l'utilisateur peut lire (affichée telle quelle). */
+/** Refus pour une raison que l'utilisateur peut lire (affichée telle quelle, avec ses détails éventuels). */
 export class ErreurMetier extends Error {
   override name = "ErreurMetier";
+  constructor(
+    message: string,
+    /** Liste à afficher sous le message (ex. chaque problème d'un modèle Word refusé, avec son emplacement). */
+    readonly details: string[] = [],
+  ) {
+    super(message);
+  }
 }
 
 /** Droit insuffisant. */

@@ -52,12 +52,12 @@ docker compose ps                                   # tous les services « runni
 curl -s http://127.0.0.1:3000/api/sante             # {"statut":"ok","base":"ok","generateur":"ok"}
 curl -s -o /dev/null -w "%{http_code}\n" https://<domaine>/api/documents    # 401 : les routes sont protégées
 docker compose exec generateur python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8001/sante').read().decode())"
-                                                    # "libreoffice_trouve": true
+                                                    # "libreoffice_trouve": true, "polices_manquantes": []
 ```
 
 Puis, dans un navigateur : connexion, page « Journal d'audit » (la connexion y apparaît), déconnexion. Lancer enfin le **test de fidélité sous Linux** (recette.md, §1.2).
 
-`generateur: "ko"` dans `/api/sante` signifie que le générateur est arrêté **ou** que LibreOffice est introuvable dans l'image.
+`generateur: "ko"` dans `/api/sante` signifie que le générateur est arrêté, que LibreOffice est introuvable dans l'image, **ou** que Tahoma ou Calibri manque (polices non copiées dans `generateur/polices/` avant la construction) : le `/sante` du générateur en donne le détail (`"polices_manquantes"`).
 
 ## 5. Mise à jour
 

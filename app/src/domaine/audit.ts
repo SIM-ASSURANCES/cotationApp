@@ -37,6 +37,13 @@ export const ACTIONS_AUDIT = [
   "POLICE_CREEE",
   "CLIENT_CREE",
   "MOTIF_REFUS_CREE",
+  // Bibliothèque de modèles (phase 3) ; MODELE_DEPOSE et MODELE_PUBLIE sont plus haut
+  "MODELE_CREE",
+  "MODELE_DEPOT_REFUSE",
+  "MODELE_SOUMIS",
+  "MODELE_RENVOYE",
+  "MODELE_TELECHARGE",
+  "MODELE_APERCU",
 ] as const;
 
 export type ActionAudit = (typeof ACTIONS_AUDIT)[number];

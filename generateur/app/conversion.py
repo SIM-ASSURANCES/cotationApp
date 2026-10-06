@@ -14,9 +14,15 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 OPTIONS_PDF = '{"UseLosslessCompression":{"type":"boolean","value":"true"}}'
+
+# Un profil LibreOffice ne supporte qu'une conversion à la fois : deux demandes simultanées (le
+# serveur HTTP traite les requêtes en parallèle) sont donc mises l'une après l'autre. La génération
+# en masse (phase 5) passera par une file de tâches.
+_UNE_A_LA_FOIS = threading.Lock()
 
 
 class ConversionEchouee(Exception):
@@ -69,17 +75,18 @@ def convertir_en_pdf(
         str(dossier_sortie),
         str(docx),
     ]
-    processus = subprocess.Popen(
-        commande,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        start_new_session=sys.platform != "win32",
-    )
-    try:
-        processus.communicate(timeout=delai_s)
-    except subprocess.TimeoutExpired:
-        _tuer_arbre(processus)
-        raise ConversionDelaiDepasse(f"conversion interrompue après {delai_s} s") from None
+    with _UNE_A_LA_FOIS:
+        processus = subprocess.Popen(
+            commande,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=sys.platform != "win32",
+        )
+        try:
+            processus.communicate(timeout=delai_s)
+        except subprocess.TimeoutExpired:
+            _tuer_arbre(processus)
+            raise ConversionDelaiDepasse(f"conversion interrompue après {delai_s} s") from None
 
     if processus.returncode != 0 or not pdf.is_file():
         raise ConversionEchouee(f"LibreOffice a échoué (code {processus.returncode})")

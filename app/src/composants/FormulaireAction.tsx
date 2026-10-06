@@ -37,14 +37,28 @@ export function FormulaireAction({
         {enCours ? "En cours…" : libelleBouton}
       </button>
       {etat.erreur ? (
-        <p role="alert" className="mt-2 text-sm font-medium text-red-700">
-          {etat.erreur}
-        </p>
+        <div role="alert" className="mt-2 text-sm font-medium text-red-700">
+          <p>{etat.erreur}</p>
+          {etat.details?.length ? (
+            <ul className="mt-1 list-disc space-y-1 pl-5 font-normal">
+              {etat.details.map((detail, i) => (
+                <li key={i}>{detail}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       ) : null}
       {etat.succes ? (
-        <p role="status" className="mt-2 text-sm font-medium text-green-700">
-          {etat.succes}
-        </p>
+        <div role="status" className="mt-2 text-sm font-medium text-green-700">
+          <p>{etat.succes}</p>
+          {etat.details?.length ? (
+            <ul className="mt-1 list-disc space-y-1 pl-5 font-normal text-amber-800">
+              {etat.details.map((detail, i) => (
+                <li key={i}>{detail}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       ) : null}
     </form>
   );

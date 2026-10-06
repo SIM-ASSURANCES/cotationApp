@@ -2,7 +2,7 @@
 
 Module de génération automatique des documents d'assurance de SIM Assurances CI : cotations, conditions particulières et générales, factures, avoirs, reçus, avis d'échéance et relances (cahier des charges v1.0 du 25/09/2026).
 
-> **État : phases 0 à 2 terminées** : socle, connexion, droits, journal d'audit ; paramétrage historisé et moteur de calcul (T1, T3) ; cotation avec forçage, double validation, numérotation sans trou, expiration et transformation en police (T11, T13). Pas encore de documents PDF : voir le plan par phases.
+> **État : phases 0 à 2 terminées, phase 3a terminée** : socle, connexion, droits, journal d'audit ; paramétrage historisé et moteur de calcul (T1, T3) ; cotation avec forçage, double validation, numérotation sans trou, expiration et transformation en police (T11, T13) ; bibliothèque de modèles Word avec contrôles au dépôt (T9), fusion, filtres, listes longues en annexe (T7), aperçu PDF. Reste la phase 3b : émission des documents (assemblage CP + CG, QR code, empreinte, réédition T10, T12).
 
 ## Structure
 
@@ -38,7 +38,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 
 | Où | Commande |
 | --- | --- |
-| `app/` | `npm run typecheck`, `npm run lint`, `npm test`, `npm run test:integration` (base de test) |
+| `app/` | `npm run typecheck`, `npm run lint`, `npm test`, `npm run test:integration` (base de test), `npm run test:e2e` (base de test **et** générateur lancé) |
 | `generateur/` | `pytest` (environnement virtuel activé) |
 
 ## Documentation
@@ -47,6 +47,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 - [Exigences pour le serveur](docs/exigences-serveur.md) : ce que l'administrateur doit préparer.
 - [Guide de déploiement](docs/deploiement.md) : VPS Linux, Docker Compose, destiné à l'administrateur.
 - [Recette](docs/recette.md) : ce qui a été vérifié, et ce qui ne l'est pas encore.
+- Comptes rendus : [phase 2](docs/compte-rendu-phase-2.md), [phase 3a](docs/compte-rendu-phase-3a.md) ; [plan de test de tous les modèles Word](docs/plan-test-modeles.md).
 - [Cahier des charges](docs/cdc.md) : conversion texte du CDC v1.0.
 
 ## Règles du dépôt

@@ -71,11 +71,12 @@ function analyse(chemins: string[], surcharge: Partial<Analyse> = {}): Analyse {
   };
 }
 
-let prochaineAnalyse: Analyse = analyse(["souscripteur.nom"]);
+const SOCLE_CP = ["police.numero", "souscripteur.nom", "police.date_effet", "police.date_echeance", "prime.ttc"];
+let prochaineAnalyse: Analyse = analyse(SOCLE_CP);
 const demandesPdf: DemandePdf[] = [];
 
 beforeEach(() => {
-  prochaineAnalyse = analyse(["souscripteur.nom"]);
+  prochaineAnalyse = analyse(SOCLE_CP);
   demandesPdf.length = 0;
 });
 
@@ -142,7 +143,7 @@ describe("bibliothèque de modèles : droits (CDC §4)", () => {
 describe("dépôt d'une version", () => {
   it("T9 : balise inconnue → refus détaillé, rien d'enregistré, refus journalisé", async () => {
     const id = await cp();
-    prochaineAnalyse = analyse(["client.nom"], { references: [{ chemin: "client.nom", balise: "{{ client.nom }}", emplacement: { ...ici, tableau: 1, ligne: 2, colonne: 1, extrait: "{{ client.nom }}" } }] });
+    prochaineAnalyse = analyse([...SOCLE_CP, "client.nom"], { references: [...analyse(SOCLE_CP).references, { chemin: "client.nom", balise: "{{ client.nom }}", emplacement: { ...ici, tableau: 1, ligne: 2, colonne: 1, extrait: "{{ client.nom }}" } }] });
     const refus = await deposerVersion(technique, id, depot(), null).catch((e: unknown) => e);
     expect(refus).toBeInstanceOf(ErreurDepot);
     expect((refus as ErreurDepot).details).toEqual([
@@ -155,13 +156,13 @@ describe("dépôt d'une version", () => {
 
   it("dépôt accepté : brouillon n° 1, empreinte SHA-256, avertissements conservés", async () => {
     const id = await cp();
-    prochaineAnalyse = analyse(["souscripteur.nom", "prime.ttc"], { polices_absentes: ["Bodoni MT"] });
+    prochaineAnalyse = analyse(SOCLE_CP, { polices_absentes: ["Bodoni MT"] });
     const d = depot("contenu-1");
     const r = await deposerVersion(technique, id, d, null);
     expect(r.numero).toBe(1);
     expect(r.avertissements[0].message).toContain("Bodoni MT");
     const modele = (await lireModele(technique, id))!;
-    expect(modele.versions[0]).toMatchObject({ numero: 1, statut: "BROUILLON", empreinte: createHash("sha256").update(d.fichier).digest("hex"), champsUtilises: ["prime.ttc", "souscripteur.nom"] });
+    expect(modele.versions[0]).toMatchObject({ numero: 1, statut: "BROUILLON", empreinte: createHash("sha256").update(d.fichier).digest("hex"), champsUtilises: [...SOCLE_CP].sort() });
     expect((await fichierVersion(dg, modele.versions[0].id, null)).contenu).toEqual(d.fichier);
     await deposerVersion(technique, id, depot("contenu-2"), null);
     expect((await lireModele(technique, id))!.versions.map((v) => v.numero)).toEqual([2, 1]);

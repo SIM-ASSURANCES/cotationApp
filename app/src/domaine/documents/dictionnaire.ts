@@ -180,7 +180,7 @@ export const CHAMPS: readonly Champ[] = [
   c("qr_code", "image", "QR code de vérification", undefined, S4),
   c("doc.url_verification", "texte", "Adresse de vérification", "https://exemple.ci/verif/exemple", S4),
   c("doc.empreinte", "texte", "Empreinte SHA-256 du document", "0000000000000000000000000000000000000000000000000000000000000000", S4),
-  c("doc.facture_origine", "texte", "Facture annulée (avoir)", "", S4),
+  c("doc.facture_origine", "texte", "Facture d'origine : facture annulée (avoir), facture réglée (reçu)", "FAC-2026-09-0003", S4),
 ];
 
 const PAR_CHEMIN = new Map(CHAMPS.map((champ) => [champ.chemin, champ]));

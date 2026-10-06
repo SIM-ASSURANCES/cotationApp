@@ -26,6 +26,13 @@ const schemaConfig = z.object({
   GENERATEUR_SECRET: z
     .string({ error: messageSi("doit être une chaîne de caractères") })
     .min(32, { error: messageSi("doit contenir au moins 32 caractères") }),
+  // Adresse publique de l'application (https://domaine), base des QR codes (« URL_PUBLIQUE/verif/… »,
+  // CDC §14.1, D14). Facultative tant que le domaine n'est pas connu : sans elle, aucun document
+  // ne peut être émis (message clair à l'émission), le reste fonctionne.
+  URL_PUBLIQUE: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.url({ protocol: /^https?$/, error: "doit être une adresse http:// ou https:// (ex. https://documents.exemple.ci)" }).optional(),
+  ),
   // Clé de signature des sessions : Auth.js la lit lui-même, on exige sa présence au démarrage.
   AUTH_SECRET: z
     .string({ error: messageSi("doit être une chaîne de caractères") })

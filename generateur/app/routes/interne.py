@@ -11,6 +11,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
+from pypdf.errors import PdfReadError as PdfError
 
 from app.analyse import Analyse, analyser
 from app.config import Parametres, obtenir_parametres
@@ -19,6 +20,7 @@ from app.fusion import LISTES_LONGUES, ErreurFusion, Image
 from app.generation import generer_pdf
 from app.lettres import MontantInvalide, montant_en_lettres
 from app.securite import verifier_secret
+from app import stockage
 
 # Le secret est exigé au niveau du routeur : toute route ajoutée ici est protégée d'office.
 router = APIRouter(prefix="/interne", tags=["interne"], dependencies=[Depends(verifier_secret)])
@@ -75,7 +77,18 @@ class DemandeDocument(BaseModel):
     sous_modeles: dict[str, dict[str, str]] = Field(
         default={}, description="Sous-modèles .docx (base64) de bloc(nom, clé) : {nom: {clé: docx}}"
     )
-    images: dict[str, ImageDemandee] = Field(default={}, description="qr_code, signature_sim, cachet_sim")
+    images: dict[str, ImageDemandee] = Field(default={}, description="signature_sim, cachet_sim (qr_code : voir qr)")
+    qr: "QrDemande | None" = Field(default=None, description="QR code de vérification, produit ici (image qr_code)")
+    pieces_jointes: list[str] = Field(default=[], description="PDF (base64) ajoutés à la fin, dans l'ordre : CS, puis CG")
+    filigrane: str | None = Field(default=None, max_length=40, description="Texte en diagonale sur chaque page (« EXPIRÉE »)")
+
+
+class QrDemande(BaseModel):
+    url: str = Field(min_length=10, max_length=500)
+    largeur_mm: float = Field(default=25, gt=0, le=100)
+
+
+DemandeDocument.model_rebuild()
 
 
 @router.post(
@@ -100,6 +113,10 @@ def document_pdf(demande: DemandeDocument, parametres: Annotated[Parametres, Dep
                 for nom, par_cle in demande.sous_modeles.items()
             },
             images={nom: Image(_decoder(i.png, f"image {nom}"), i.largeur_mm) for nom, i in demande.images.items()},
+            qr_url=demande.qr.url if demande.qr else None,
+            qr_largeur_mm=demande.qr.largeur_mm if demande.qr else 25,
+            pieces_jointes=[_decoder(p, "pièce jointe") for p in demande.pieces_jointes],
+            filigrane=demande.filigrane,
         )
     except ErreurFusion as erreur:
         raise HTTPException(status_code=422, detail=str(erreur)) from None
@@ -107,4 +124,63 @@ def document_pdf(demande: DemandeDocument, parametres: Annotated[Parametres, Dep
         raise HTTPException(status_code=504, detail="conversion PDF trop longue : interrompue") from None
     except ConversionEchouee:
         raise HTTPException(status_code=502, detail="conversion PDF impossible (LibreOffice)") from None
+    except PdfError:
+        raise HTTPException(status_code=422, detail="pièce jointe illisible : ce n'est pas un PDF valide") from None
     return Response(content=pdf, media_type="application/pdf")
+
+
+# ------------------------------------------------------------------ Stockage des documents émis (ajout seul)
+
+
+class DemandeEcriture(BaseModel):
+    chemin: str = Field(description="Chemin relatif, ex. RELAXSANTE/2026/10/COTATION/COT-2026-10-0001_v1.pdf")
+    contenu: str = Field(description="Fichier, en base64")
+
+
+class ReponseEcriture(BaseModel):
+    chemin: str
+    empreinte: str
+    taille: int
+
+
+@router.post("/stockage", summary="Stocke un document émis (jamais d'écrasement : 409 si le chemin existe)")
+def stocker(demande: DemandeEcriture, parametres: Annotated[Parametres, Depends(obtenir_parametres)]) -> ReponseEcriture:
+    contenu = _decoder(demande.contenu, "contenu")
+    try:
+        empreinte = stockage.ecrire(stockage.racine(parametres.dossier_sortie), demande.chemin, contenu)
+    except stockage.CheminInvalide as erreur:
+        raise HTTPException(status_code=422, detail=str(erreur)) from None
+    except stockage.DejaStocke:
+        raise HTTPException(status_code=409, detail="un document est déjà stocké à ce chemin : il n'est jamais écrasé") from None
+    return ReponseEcriture(chemin=demande.chemin, empreinte=empreinte, taille=len(contenu))
+
+
+@router.get("/stockage", summary="Lit un document stocké", response_class=Response)
+def lire_stockage(chemin: str, parametres: Annotated[Parametres, Depends(obtenir_parametres)]) -> Response:
+    try:
+        contenu = stockage.lire(stockage.racine(parametres.dossier_sortie), chemin)
+    except stockage.CheminInvalide as erreur:
+        raise HTTPException(status_code=422, detail=str(erreur)) from None
+    except stockage.Introuvable:
+        raise HTTPException(status_code=404, detail="document introuvable dans le stockage") from None
+    return Response(content=contenu, media_type="application/octet-stream")
+
+
+class FichierZip(BaseModel):
+    chemin: str
+    nom: str
+
+
+class DemandeZip(BaseModel):
+    fichiers: list[FichierZip] = Field(min_length=1, max_length=500)
+
+
+@router.post("/stockage/zip", summary="Archive ZIP de documents stockés", response_class=Response)
+def zip_stockage(demande: DemandeZip, parametres: Annotated[Parametres, Depends(obtenir_parametres)]) -> Response:
+    try:
+        contenu = stockage.zipper(stockage.racine(parametres.dossier_sortie), [(f.chemin, f.nom) for f in demande.fichiers])
+    except stockage.CheminInvalide as erreur:
+        raise HTTPException(status_code=422, detail=str(erreur)) from None
+    except stockage.Introuvable as erreur:
+        raise HTTPException(status_code=404, detail=f"document introuvable dans le stockage : {erreur}") from None
+    return Response(content=contenu, media_type="application/zip")

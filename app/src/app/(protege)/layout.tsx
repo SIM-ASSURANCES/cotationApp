@@ -24,8 +24,16 @@ export default async function LayoutProtege({ children }: LayoutProps<"/">) {
     if (peutLire(depotModele) || peutLire(publicationModele)) {
       liens.push({ href: "/modeles", libelle: "Modèles Word" });
     }
+    const lectureDocuments = await Promise.all(
+      (["CREER_COTATION", "EMETTRE_CONTRAT", "EMETTRE_FACTURE", "EMETTRE_AVOIR", "ENREGISTRER_PAIEMENT"] as const).map((action) =>
+        niveauDuProfil(utilisateur.profil, action),
+      ),
+    );
+    if (lectureDocuments.some(peutLire)) {
+      liens.push({ href: "/documents", libelle: "Documents émis" });
+    }
     if (peutLire(parametrage)) {
-      liens.push({ href: "/parametrage/produits", libelle: "Produits" }, { href: "/parametrage/taxes", libelle: "Taxes" });
+      liens.push({ href: "/parametrage/produits", libelle: "Produits" }, { href: "/parametrage/taxes", libelle: "Taxes" }, { href: "/parametrage/societe", libelle: "Société" });
     }
     if (peutLire(parametrage) || peutLire(cotation)) {
       liens.push({ href: "/calcul", libelle: "Calcul" });

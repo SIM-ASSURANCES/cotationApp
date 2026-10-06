@@ -145,6 +145,17 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
               <Champ nom="formulesMax" libelle="Formules comparées au plus" valeur={String(base?.cotation.formulesMax ?? 3)} autoComplete="off" />
               <Champ nom="seuil" libelle="Seuil de TTC pour la double validation (facultatif)" requis={false} valeur={base?.seuilValidationTtc ? net(base.seuilValidationTtc) : ""} autoComplete="off" />
             </div>
+            <h3 className="mb-1 font-semibold">Références contractuelles (CDC §7)</h3>
+            <p className="mb-2 text-sm text-zinc-700">
+              Modèles de conditions générales et spéciales joints au contrat (codes de la bibliothèque « Modèles Word ») et visas cités
+              dans les CP. À l'émission, le visa doit être celui des CG jointes, sinon l'émission est refusée.
+            </p>
+            <div className="mb-4 grid max-w-4xl gap-x-6 sm:grid-cols-2">
+              <Champ nom="cgModeleCode" libelle="Code du modèle de CG (facultatif)" requis={false} valeur={base?.references?.cgModeleCode ?? ""} autoComplete="off" />
+              <Champ nom="cgVisa" libelle="Visa des CG cité dans les CP" requis={false} valeur={base?.references?.cgVisa ?? ""} autoComplete="off" />
+              <Champ nom="csModeleCode" libelle="Code du modèle de CS (facultatif)" requis={false} valeur={base?.references?.csModeleCode ?? ""} autoComplete="off" />
+              <Champ nom="csVisa" libelle="Visa des CS" requis={false} valeur={base?.references?.csVisa ?? ""} autoComplete="off" />
+            </div>
             <h3 className="mb-2 font-semibold">Formules</h3>
             <LignesFormules
               initiales={(base?.formules ?? []).map((f) => ({

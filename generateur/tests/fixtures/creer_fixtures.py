@@ -37,10 +37,11 @@ FIXTURES: dict[str, bytes] = {
         "Fait à {{ doc.lieu_emission }}, le {{ doc.date_emission | date }}. {{ societe.raison_sociale }}, RCCM {{ societe.rccm }}.",
         police="Calibri",
     ),
-    # T9 : balise hors dictionnaire, dans une cellule de tableau.
+    # T9 : balise hors dictionnaire, dans une cellule de tableau (le reste est correct, socle obligatoire compris).
     "t9_balise_inconnue.docx": document(
         "CONDITIONS PARTICULIÈRES – police n° {{ police.numero }}",
         [["Nom du client", "Téléphone"], ["{{ client.nom }}", "{{ souscripteur.telephone }}"]],
+        "Souscripteur : {{ souscripteur.nom }} ; du {{ police.date_effet | date }} au {{ police.date_echeance | date }} ; prime TTC {{ prime.ttc | montant }}",
     ),
     # Piège réel du 02/10 : une « balise » saisie comme champ Word (Ctrl+F9).
     "champ_word.docx": avec_champ_word("Souscripteur : ", " souscripteur.nom "),
@@ -59,6 +60,25 @@ FIXTURES: dict[str, bytes] = {
     "garanties_solo.docx": document(
         "Garanties de la formule Solo (tableau inventé)",
         [["Garantie", "Taux", "Plafond"], ["Hospitalisation", "80 %", "1 500 000"], ["Pharmacie", "80 %", "300 000"]],
+        police="Calibri",
+    ),
+    # Cotation (offre de type BENI) : socle obligatoire, tableau des formules, totaux, QR code (T1).
+    "cotation_test.docx": document(
+        "COTATION n° {{ doc.numero }} ({{ doc.version }}) – {{ produit.libelle }}",
+        "Souscripteur : {% if souscripteur.type == 'MORALE' %}{{ souscripteur.raison_sociale }}{% else %}{{ souscripteur.nom }} {{ souscripteur.prenoms }}{% endif %}",
+        "Période : du {{ police.date_effet | date }} au {{ police.date_echeance | date }} ({{ police.duree_jours }} jours)",
+        [
+            ["Formule", "Effectif", "Prime unitaire HT", "Prime HT", "Accessoires", "Taxe", "TTC"],
+            ["{%tr for f in formules %}", "", "", "", "", "", ""],
+            ["{{ f.libelle }}", "{{ f.effectif }}", "{{ f.prime_unitaire | montant }}", "{{ f.prime_nette | montant }}", "{{ f.accessoires | montant }}", "{{ f.taxe | montant }}", "{{ f.ttc | montant }}"],
+            ["{%tr endfor %}", "", "", "", "", "", ""],
+        ],
+        "Total HT : {{ prime.nette | montant }} ; accessoires : {{ prime.accessoires | montant }} ; taxe ({{ prime.taux_taxe | pct }}) : {{ prime.taxe | montant }}",
+        "Total TTC : {{ prime.ttc | montant }} F CFA, soit {{ prime.ttc | lettres }}.",
+        "Établie à {{ doc.lieu_emission }} le {{ doc.date_emission | date }}, valable jusqu'au {{ doc.date_validite | date }}.",
+        "{{ societe.raison_sociale }}",
+        "{{ qr_code }}",
+        "Vérification : {{ doc.url_verification }}",
         police="Calibri",
     ),
     # Conditions générales : texte fixe et le seul visa.

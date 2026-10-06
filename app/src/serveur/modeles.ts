@@ -478,11 +478,15 @@ const LARGEUR_IMAGE_MM: Record<string, number> = { qr_code: 25, signature_sim: 4
 
 type Candidat = { modeleId: number; type: string; produitId: number | null; listeAnnexe: string | null; blocNom: string | null; blocCle: string | null };
 
+/** Versions retenues des modèles associés (annexes, sous-modèles) : conservées avec le document émis (T10). */
+export type VersionsAssociees = { annexes: Record<string, number>; sousModeles: Record<string, Record<string, number>> };
+
 /**
- * Pour l'aperçu : la version en vigueur de chaque sous-modèle et de chaque annexe (celle du produit
- * avant la commune), ou à défaut la dernière déposée, pour pouvoir essayer avant de publier.
+ * Annexes et sous-modèles à utiliser : la version publiée en vigueur de chacun (celle du produit
+ * avant la commune). Pour l'aperçu seulement (`apercu`), à défaut, la dernière déposée, pour pouvoir
+ * essayer avant de publier.
  */
-async function modelesAssocies(produitId: number | null, jour: DateIso) {
+export async function modelesAssocies(produitId: number | null, jour: DateIso, apercu = true) {
   const prisma = obtenirPrisma();
   const modeles = await prisma.modele.findMany({
     where: { type: { in: ["SOUS_MODELE", "ANNEXE"] }, OR: [{ produitId: null }, ...(produitId !== null ? [{ produitId }] : [])] },
@@ -492,7 +496,7 @@ async function modelesAssocies(produitId: number | null, jour: DateIso) {
   const choix = new Map<string, { versionId: number; m: Candidat }>();
   for (const m of modeles) {
     const versions = m.versions.map(cycle);
-    const retenue = versionEnVigueur(versions, jour) ?? versions.reduce<VersionCycle | null>((max, v) => (!max || v.numero > max.numero ? v : max), null);
+    const retenue = versionEnVigueur(versions, jour) ?? (apercu ? versions.reduce<VersionCycle | null>((max, v) => (!max || v.numero > max.numero ? v : max), null) : null);
     if (!retenue) continue;
     const cle = m.type === "ANNEXE" ? `A:${m.listeAnnexe}` : `S:${m.blocNom}:${m.blocCle}`;
     choix.set(cle, { versionId: retenue.id, m: { modeleId: m.id, ...m } });
@@ -502,13 +506,57 @@ async function modelesAssocies(produitId: number | null, jour: DateIso) {
   );
   const annexes: Record<string, Uint8Array> = {};
   const sousModeles: Record<string, Record<string, Uint8Array>> = {};
+  const ids: VersionsAssociees = { annexes: {}, sousModeles: {} };
   for (const { versionId, m } of choix.values()) {
     const fichier = fichiers.get(versionId);
     if (!fichier) continue;
-    if (m.type === "ANNEXE" && m.listeAnnexe) annexes[m.listeAnnexe] = fichier;
-    if (m.type === "SOUS_MODELE" && m.blocNom && m.blocCle) (sousModeles[m.blocNom] ??= {})[m.blocCle] = fichier;
+    if (m.type === "ANNEXE" && m.listeAnnexe) {
+      annexes[m.listeAnnexe] = fichier;
+      ids.annexes[m.listeAnnexe] = versionId;
+    }
+    if (m.type === "SOUS_MODELE" && m.blocNom && m.blocCle) {
+      (sousModeles[m.blocNom] ??= {})[m.blocCle] = fichier;
+      (ids.sousModeles[m.blocNom] ??= {})[m.blocCle] = versionId;
+    }
   }
-  return { annexes, sousModeles };
+  return { annexes, sousModeles, ids };
+}
+
+/** Fichiers des versions associées conservées avec un document émis : la réédition retrouve les mêmes (T10). */
+export async function fichiersAssocies(ids: VersionsAssociees) {
+  const tous = [...Object.values(ids.annexes), ...Object.values(ids.sousModeles).flatMap((parCle) => Object.values(parCle))];
+  const fichiers = new Map(
+    (await obtenirPrisma().modeleVersion.findMany({ where: { id: { in: tous } }, select: { id: true, fichier: true } })).map((f) => [f.id, f.fichier]),
+  );
+  const lire = (id: number) => {
+    const fichier = fichiers.get(id);
+    if (!fichier) throw new ErreurMetier("Version de modèle associée introuvable.");
+    return fichier;
+  };
+  return {
+    annexes: Object.fromEntries(Object.entries(ids.annexes).map(([liste, id]) => [liste, lire(id)])),
+    sousModeles: Object.fromEntries(Object.entries(ids.sousModeles).map(([nom, parCle]) => [nom, Object.fromEntries(Object.entries(parCle).map(([cle, id]) => [cle, lire(id)]))])),
+  };
+}
+
+/** Version PUBLIÉE en vigueur à une date d'un modèle (choisi par son type et son produit, ou par son code). */
+export async function versionPublieeEnVigueur(
+  critere: { type: TypeModele; produitId: number } | { code: string },
+  date: DateIso,
+): Promise<{ modele: { id: number; code: string; libelle: string; type: string }; version: { id: number; numero: number; visa: string | null; dateDocument: DateIso | null } } | null> {
+  const modeles = await obtenirPrisma().modele.findMany({
+    where: "code" in critere ? { code: critere.code } : { type: critere.type, produitId: critere.produitId },
+    include: { versions: { select: { ...champsVersion, visa: true, dateDocument: true } } },
+    orderBy: { id: "asc" },
+  });
+  for (const m of modeles) {
+    const enVigueur = versionEnVigueur(m.versions.map(cycle), date);
+    if (enVigueur) {
+      const v = m.versions.find((x) => x.id === enVigueur.id)!;
+      return { modele: { id: m.id, code: m.code, libelle: m.libelle, type: m.type }, version: { id: v.id, numero: v.numero, visa: v.visa, dateDocument: v.dateDocument ? depuisDate(v.dateDocument) : null } };
+    }
+  }
+  return null;
 }
 
 /**

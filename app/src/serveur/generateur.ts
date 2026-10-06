@@ -21,6 +21,12 @@ export type DemandePdf = {
   /** Sous-modèles de bloc(nom, clé) : { nom: { clé: docx } }. */
   sousModeles?: Record<string, Record<string, Uint8Array>>;
   images?: Record<string, ImagePng>;
+  /** QR code de vérification : le générateur le dessine à partir de l'adresse (image qr_code). */
+  qr?: { url: string; largeurMm?: number };
+  /** PDF ajoutés à la fin, dans l'ordre (CS, puis CG : CDC §6.8). */
+  piecesJointes?: Uint8Array[];
+  /** Texte en diagonale sur chaque page (« EXPIRÉE », « APERÇU »). */
+  filigrane?: string;
 };
 
 export type ClientGenerateur = {
@@ -39,14 +45,18 @@ const DELAI_PDF_MS = 180_000;
 const base64 = (octets: Uint8Array): string => Buffer.from(octets).toString("base64");
 const enBase64 = <T,>(table: Record<string, T>, f: (v: T) => unknown) => Object.fromEntries(Object.entries(table).map(([k, v]) => [k, f(v)]));
 
-async function appeler(chemin: string, corps: unknown, delaiMs: number): Promise<Response> {
+/**
+ * Appel d'une route /interne du générateur (POST avec un corps JSON, ou GET sans corps). Un refus
+ * expliqué (422, 409, 404) devient une ErreurGenerateur au message lisible.
+ */
+export async function appelerGenerateur(chemin: string, corps: unknown, delaiMs: number): Promise<Response> {
   const config = obtenirConfig();
   let reponse: Response;
   try {
     reponse = await fetch(new URL(chemin, config.GENERATEUR_URL), {
-      method: "POST",
+      method: corps === undefined ? "GET" : "POST",
       headers: { "Content-Type": "application/json", "X-Generateur-Secret": config.GENERATEUR_SECRET },
-      body: JSON.stringify(corps),
+      body: corps === undefined ? undefined : JSON.stringify(corps),
       signal: AbortSignal.timeout(delaiMs),
       cache: "no-store",
     });
@@ -64,6 +74,9 @@ async function appeler(chemin: string, corps: unknown, delaiMs: number): Promise
   if (reponse.status === 422 && detail) {
     throw new ErreurGenerateur(`Génération impossible : ${detail}.`);
   }
+  if ((reponse.status === 409 || reponse.status === 404) && detail) {
+    throw new ErreurGenerateur(`Stockage : ${detail}.`);
+  }
   throw new ErreurGenerateur(
     reponse.status === 504
       ? "La conversion en PDF a pris trop de temps et a été interrompue."
@@ -73,7 +86,7 @@ async function appeler(chemin: string, corps: unknown, delaiMs: number): Promise
 
 const clientHttp: ClientGenerateur = {
   async analyser(modele) {
-    const reponse = await appeler("/interne/modeles/analyse", { modele: base64(modele) }, DELAI_ANALYSE_MS);
+    const reponse = await appelerGenerateur("/interne/modeles/analyse", { modele: base64(modele) }, DELAI_ANALYSE_MS);
     const lu = schemaAnalyse.safeParse(await reponse.json());
     if (!lu.success) {
       console.error(`[generateur] analyse : réponse inattendue (${lu.error.message})`);
@@ -82,7 +95,7 @@ const clientHttp: ClientGenerateur = {
     return lu.data;
   },
   async genererPdf(d) {
-    const reponse = await appeler(
+    const reponse = await appelerGenerateur(
       "/interne/documents/pdf",
       {
         modele: base64(d.modele),
@@ -91,6 +104,9 @@ const clientHttp: ClientGenerateur = {
         annexes: enBase64(d.annexes ?? {}, base64),
         sous_modeles: enBase64(d.sousModeles ?? {}, (parCle) => enBase64(parCle, base64)),
         images: enBase64(d.images ?? {}, (i) => ({ png: base64(i.png), largeur_mm: i.largeurMm })),
+        qr: d.qr ? { url: d.qr.url, largeur_mm: d.qr.largeurMm ?? 25 } : null,
+        pieces_jointes: (d.piecesJointes ?? []).map(base64),
+        filigrane: d.filigrane ?? null,
       },
       DELAI_PDF_MS,
     );

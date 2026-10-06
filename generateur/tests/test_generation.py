@@ -99,6 +99,40 @@ def test_t7_annexe_en_fin_de_pdf(parametres) -> None:  # type: ignore[no-untyped
     assert all(f"ASSURE{i:02d}" in annexe for i in range(1, 26))
 
 
+def donnees_t1() -> dict:  # type: ignore[type-arg]
+    """Cotation T1 (offre BENI), montants du moteur de calcul de l'application."""
+    return {
+        "doc": {"numero": "COT-2026-10-0001", "version": "v1", "lieu_emission": "Abidjan", "date_emission": "2026-10-06", "date_validite": "2027-01-06", "url_verification": "https://documents.exemple.ci/verif/" + "j" * 43},
+        "produit": {"libelle": "Santé BENI"},
+        "souscripteur": {"type": "PHYSIQUE", "nom": "KOUADIO", "prenoms": "Awa", "raison_sociale": None},
+        "police": {"date_effet": "2026-01-01", "date_echeance": "2026-12-31", "duree_jours": 365},
+        "formules": [
+            {"libelle": "Solo", "effectif": 3, "prime_unitaire": "93581.33", "prime_nette": "280744", "accessoires": "3000", "taxe": "4256", "ttc": "288000"},
+            {"libelle": "Famille", "effectif": 60, "prime_unitaire": "252657.63", "prime_nette": "15159458", "accessoires": "210000", "taxe": "230542", "ttc": "15600000"},
+        ],
+        "prime": {"nette": "15440202", "accessoires": "213000", "taux_taxe": "1.5", "taxe": "234798", "ttc": "15888000"},
+        "societe": {"raison_sociale": "SIM Assurances Côte d'Ivoire"},
+    }
+
+
+@texte_lisible
+def test_cotation_t1_complete_qr_cg_filigrane(parametres) -> None:  # type: ignore[no-untyped-def]
+    """Cotation T1 : montants de T1, QR code, CG jointes à la fin, filigrane « EXPIRÉE » (T11)."""
+    from tests.fixtures.creer_fixtures import ICI
+    from tests.test_pdf_stockage import pdf_texte
+
+    modele = (ICI / "cotation_test.docx").read_bytes()
+    pdf = generer_pdf(parametres, modele, donnees_t1(), seuil_liste=10, qr_url=donnees_t1()["doc"]["url_verification"], pieces_jointes=[pdf_texte("CONDITIONS GENERALES")], filigrane="EXPIRÉE")
+    contenu = pages(pdf)
+    assert len(contenu) == 2 and "CONDITIONS GENERALES" in contenu[-1]
+    texte = contenu[0]
+    for attendu in ("COT-2026-10-0001", "288 000", "15 600 000", "Total TTC : 15 888 000 F CFA", "quinze millions huit cent quatre-vingt-huit mille francs CFA", "06/01/2027"):
+        assert attendu in texte, attendu
+    assert all("EXPIRÉE" in t for t in contenu)
+    images = list(PdfReader(io.BytesIO(pdf)).pages[0].images)
+    assert len(images) == 1  # le QR code
+
+
 # ------------------------------------------------------------------ Routes
 
 

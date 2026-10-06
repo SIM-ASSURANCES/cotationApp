@@ -44,6 +44,8 @@ export const ACTIONS_AUDIT = [
   "MODELE_RENVOYE",
   "MODELE_TELECHARGE",
   "MODELE_APERCU",
+  // Documents émis (phase 3b) ; DOCUMENT_EMIS, DOCUMENT_REEDITE, DOCUMENT_TELECHARGE sont plus haut
+  "DOCUMENT_ANNULE",
 ] as const;
 
 export type ActionAudit = (typeof ACTIONS_AUDIT)[number];

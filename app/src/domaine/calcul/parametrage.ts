@@ -36,7 +36,14 @@ export type VersionSaisie = {
   /** Seuil de TTC au-dessus duquel la double validation est exigée (CDC §4.1). */
   seuilValidationTtc: string | null;
   formules: FormuleSaisie[];
+  /**
+   * Références contractuelles (CDC §7) : modèle de CG (et de CS) joint au contrat, et visa cité dans
+   * les CP. À l'assemblage, ce visa doit être celui des CG jointes (contrôle bloquant, §6.8).
+   */
+  references?: ReferencesContractuelles;
 };
+
+export type ReferencesContractuelles = { cgModeleCode: string | null; cgVisa: string | null; csModeleCode: string | null; csVisa: string | null };
 
 export type TaxeSaisie = {
   branche: string;
@@ -69,6 +76,14 @@ export function codeValide(code: string): boolean {
 /** Liste des problèmes d'une version saisie (vide si elle est valide). */
 export function problemesVersion(v: VersionSaisie): string[] {
   const p: string[] = [];
+  const r = v.references;
+  if (r) {
+    for (const [code, visa, quoi] of [[r.cgModeleCode, r.cgVisa, "conditions générales"], [r.csModeleCode, r.csVisa, "conventions spéciales"]] as const) {
+      if ((code === null) !== (visa === null)) p.push(`Références des ${quoi} : le code du modèle et le visa vont ensemble.`);
+      if (code !== null && !/^[A-Z0-9_-]{2,60}$/.test(code)) p.push(`Code du modèle des ${quoi} invalide.`);
+      if (visa !== null && (visa.trim().length < 3 || visa.length > 120)) p.push(`Visa des ${quoi} invalide (3 à 120 caractères).`);
+    }
+  }
   if (!dateValide(v.dateEffet)) p.push("La date d'effet est invalide.");
   if (!PRECISIONS.includes(v.arrondi.precision)) p.push("La précision d'arrondi doit être 1, 10, 100 ou 1 000.");
   if (!SENS_ARRONDI.includes(v.arrondi.sens)) p.push("Le sens d'arrondi est invalide.");

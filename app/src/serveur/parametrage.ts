@@ -199,6 +199,7 @@ function versVersion(v: Prisma.ProduitVersionGetPayload<{ include: { formules: t
     },
     cotation: { validiteMois: v.validiteMois, formulesMax: v.formulesMax },
     seuilValidationTtc: v.seuilValidationTtc ? texte(v.seuilValidationTtc) : null,
+    references: { cgModeleCode: v.cgModeleCode, cgVisa: v.cgVisa, csModeleCode: v.csModeleCode, csVisa: v.csVisa },
     formules: v.formules
       .map(
         (f): FormuleSaisie => ({
@@ -259,6 +260,10 @@ export async function creerVersion(acteur: UtilisateurCourant, codeProduit: stri
         validiteMois: saisie.cotation.validiteMois,
         formulesMax: saisie.cotation.formulesMax,
         seuilValidationTtc: saisie.seuilValidationTtc,
+        cgModeleCode: saisie.references?.cgModeleCode ?? null,
+        cgVisa: saisie.references?.cgVisa?.trim() ?? null,
+        csModeleCode: saisie.references?.csModeleCode ?? null,
+        csVisa: saisie.references?.csVisa?.trim() ?? null,
         creePar: acteur.identifiant,
         formules: {
           create: saisie.formules.map((f) => ({

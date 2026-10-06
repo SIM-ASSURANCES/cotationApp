@@ -26,16 +26,26 @@ type RegleType = {
   /** Document fixe (CG, CS) : converti UNE fois en PDF à la publication, avec son visa. */
   fixe: boolean;
   produit: "obligatoire" | "facultatif" | "aucun";
-  /** Champs que tout modèle de ce type doit contenir (CDC §6.7). */
-  obligatoires: readonly string[];
+  /**
+   * Champs que tout modèle de ce type doit contenir (CDC §6.7), sinon le dépôt est refusé. Une liste
+   * imbriquée se lit « l'un de » : le souscripteur est une personne physique (nom) ou morale
+   * (raison sociale).
+   */
+  obligatoires: readonly (string | readonly string[])[];
 };
 
+const SOUSCRIPTEUR = ["souscripteur.nom", "souscripteur.raison_sociale"] as const;
+/** Socle commun des CP, cotations et reçus (décision du 06/10/2026, correction de H15). */
+const SOCLE = (numero: string) => [numero, SOUSCRIPTEUR, "police.date_effet", "police.date_echeance", "prime.ttc"] as const;
+
 export const REGLES: Record<TypeModele, RegleType> = {
-  CP: { libelle: "Conditions particulières", genere: true, fixe: false, produit: "obligatoire", obligatoires: [] },
-  COTATION: { libelle: "Cotation", genere: true, fixe: false, produit: "obligatoire", obligatoires: [] },
+  CP: { libelle: "Conditions particulières", genere: true, fixe: false, produit: "obligatoire", obligatoires: SOCLE("police.numero") },
+  // Une cotation n'a pas encore de numéro de police : son numéro est celui du document (COT-…), H18.
+  COTATION: { libelle: "Cotation", genere: true, fixe: false, produit: "obligatoire", obligatoires: SOCLE("doc.numero") },
   FACTURE: { libelle: "Facture", genere: true, fixe: false, produit: "facultatif", obligatoires: ["doc.numero", "prime.ttc", "societe.rccm"] },
   AVOIR: { libelle: "Avoir", genere: true, fixe: false, produit: "facultatif", obligatoires: [] },
-  RECU: { libelle: "Reçu", genere: true, fixe: false, produit: "facultatif", obligatoires: [] },
+  // Reçu : montant payé et facture réglée (H18).
+  RECU: { libelle: "Reçu", genere: true, fixe: false, produit: "facultatif", obligatoires: [...SOCLE("police.numero"), "paiements[].montant", "doc.facture_origine"] },
   AVIS_ECHEANCE: { libelle: "Avis d'échéance", genere: true, fixe: false, produit: "facultatif", obligatoires: [] },
   RELANCE: { libelle: "Relance", genere: true, fixe: false, produit: "facultatif", obligatoires: [] },
   ANNEXE: { libelle: "Annexe (liste longue)", genere: true, fixe: false, produit: "facultatif", obligatoires: [] },

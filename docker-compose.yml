@@ -61,6 +61,7 @@ services:
       GENERATEUR_URL: http://generateur:8001
       GENERATEUR_SECRET: ${GENERATEUR_SECRET:?définir GENERATEUR_SECRET dans .env}
       AUTH_SECRET: ${AUTH_SECRET:?définir AUTH_SECRET dans .env}
+      URL_PUBLIQUE: ${URL_PUBLIQUE:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,6 +88,8 @@ services:
       GENERATEUR_URL: http://generateur:8001
       GENERATEUR_SECRET: ${GENERATEUR_SECRET}
       AUTH_SECRET: ${AUTH_SECRET:?définir AUTH_SECRET dans .env}
+      # Base des QR codes de vérification (D14) ; vide : aucun document ne peut être émis.
+      URL_PUBLIQUE: ${URL_PUBLIQUE:-}
       # Derrière le proxy HTTPS : Auth.js fait confiance à l'hôte transmis par le proxy.
       AUTH_TRUST_HOST: "true"
     ports:

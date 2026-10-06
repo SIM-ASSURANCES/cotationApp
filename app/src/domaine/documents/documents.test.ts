@@ -18,12 +18,16 @@ import {
 const ici = (paragraphe = 1, extrait = ""): Emplacement => ({ partie: "corps", paragraphe, tableau: null, ligne: null, colonne: null, extrait });
 const cellule = (tableau: number, ligne: number, colonne: number, extrait: string): Emplacement => ({ partie: "corps", paragraphe: 4, tableau, ligne, colonne, extrait });
 
+/** Socle obligatoire des CP (police, souscripteur, dates, prime TTC). */
+const SOCLE_CP = ["police.numero", "souscripteur.nom", "police.date_effet", "police.date_echeance", "prime.ttc"];
+const refs = (chemins: string[]) => chemins.map((chemin) => ({ chemin, balise: `{{ ${chemin} }}`, emplacement: ici() }));
+
 function analyse(surcharge: Partial<Analyse> = {}): Analyse {
   return {
     docx_valide: true,
     erreur: null,
-    nombre_balises: 1,
-    references: [{ chemin: "souscripteur.nom", balise: "{{ souscripteur.nom }}", emplacement: ici() }],
+    nombre_balises: SOCLE_CP.length,
+    references: refs(SOCLE_CP),
     problemes: [],
     champs_word: [],
     blocs: [],
@@ -81,7 +85,7 @@ describe("contrôles au dépôt (CDC §6.7)", () => {
   it("T9 : {{ client.nom }} est rejeté avec un message et son emplacement", () => {
     const r = controlerDepot(
       "CP",
-      analyse({ references: [{ chemin: "client.nom", balise: "{{ client.nom }}", emplacement: cellule(1, 2, 1, "{{ client.nom }}") }] }),
+      analyse({ references: [...refs(SOCLE_CP), { chemin: "client.nom", balise: "{{ client.nom }}", emplacement: cellule(1, 2, 1, "{{ client.nom }}") }] }),
     );
     expect(r.rejets).toEqual([
       {
@@ -142,6 +146,29 @@ describe("contrôles au dépôt (CDC §6.7)", () => {
     );
     expect(r.rejets).toHaveLength(1);
     expect(r.rejets[0].message).toContain("seules les balises du visa");
+  });
+
+  it("CP, cotation, reçu : numéro, souscripteur, dates d'effet et d'échéance, prime TTC obligatoires (correction de H15)", () => {
+    const vide = analyse({ references: refs(["produit.libelle"]) });
+    expect(controlerDepot("CP", vide).rejets.map((c) => c.message)).toEqual([
+      "Champ obligatoire pour un modèle de conditions particulières absent : {{ police.numero }}.",
+      "Champ obligatoire pour un modèle de conditions particulières absent : {{ souscripteur.nom }} ou {{ souscripteur.raison_sociale }}.",
+      "Champ obligatoire pour un modèle de conditions particulières absent : {{ police.date_effet }}.",
+      "Champ obligatoire pour un modèle de conditions particulières absent : {{ police.date_echeance }}.",
+      "Champ obligatoire pour un modèle de conditions particulières absent : {{ prime.ttc }}.",
+    ]);
+    // Personne morale : la raison sociale suffit.
+    expect(controlerDepot("CP", analyse({ references: refs(["police.numero", "souscripteur.raison_sociale", "police.date_effet", "police.date_echeance", "prime.ttc"]) })).rejets).toEqual([]);
+    // Cotation : son numéro est doc.numero (pas encore de police).
+    const cotation = ["doc.numero", "souscripteur.nom", "police.date_effet", "police.date_echeance", "prime.ttc"];
+    expect(controlerDepot("COTATION", analyse({ references: refs(cotation) })).rejets).toEqual([]);
+    expect(controlerDepot("COTATION", analyse()).rejets.map((c) => c.message)).toEqual(["Champ obligatoire pour un modèle de cotation absent : {{ doc.numero }}."]);
+    // Reçu : en plus, le montant payé et la facture réglée.
+    expect(controlerDepot("RECU", analyse()).rejets.map((c) => c.message)).toEqual([
+      "Champ obligatoire pour un modèle de reçu absent : {{ paiements[].montant }}.",
+      "Champ obligatoire pour un modèle de reçu absent : {{ doc.facture_origine }}.",
+    ]);
+    expect(controlerDepot("RECU", analyse({ references: refs([...SOCLE_CP, "paiements[].montant", "doc.facture_origine"]) })).rejets).toEqual([]);
   });
 
   it("facture : doc.numero, prime.ttc et societe.rccm obligatoires", () => {

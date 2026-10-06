@@ -94,7 +94,11 @@ export function controlerDepot(type: TypeModele, analyse: Analyse): ResultatCont
 
   const utilises = new Set(analyse.references.map((r) => r.chemin));
   for (const obligatoire of regle.obligatoires) {
-    if (!utilises.has(obligatoire)) rejets.push(constat(`Champ obligatoire pour un modèle de ${regle.libelle.toLowerCase()} absent : {{ ${obligatoire} }}.`, null));
+    const unDe: readonly string[] = typeof obligatoire === "string" ? [obligatoire] : obligatoire;
+    if (!unDe.some((chemin) => utilises.has(chemin))) {
+      const attendu = unDe.map((chemin) => `{{ ${chemin} }}`).join(" ou ");
+      rejets.push(constat(`Champ obligatoire pour un modèle de ${regle.libelle.toLowerCase()} absent : ${attendu}.`, null));
+    }
   }
 
   if (analyse.polices_absentes === null) {

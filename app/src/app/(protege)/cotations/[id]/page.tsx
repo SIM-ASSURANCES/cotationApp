@@ -8,10 +8,11 @@ import { LIBELLE_RAISON } from "@/domaine/cotation/validation";
 import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
 import { listerMotifsRefus } from "@/serveur/clients";
 import { lireCotation } from "@/serveur/cotations";
+import { documentsDe } from "@/serveur/documents";
 import { niveauDuProfil } from "@/serveur/droits";
 import { exigerDroit } from "@/serveur/session";
 
-import { accepterCotation, refuserCotation, renvoyerCotation, soumettreCotation, validerCotation } from "../actions";
+import { accepterCotation, emettreCpDeCotation, emettrePdfDeCotation, reediterDocument, refuserCotation, renvoyerCotation, soumettreCotation, validerCotation } from "../actions";
 
 const f = (m: Montant) => formaterMontant(m);
 const entree = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2";
@@ -25,11 +26,17 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
     notFound();
   }
 
-  const [niveauCotation, niveauForcage, motifs] = await Promise.all([
+  const [niveauCotation, niveauForcage, niveauContrat, motifs, documents] = await Promise.all([
     niveauDuProfil(utilisateur.profil, "CREER_COTATION"),
     niveauDuProfil(utilisateur.profil, "FORCER_PRIME"),
+    niveauDuProfil(utilisateur.profil, "EMETTRE_CONTRAT"),
     listerMotifsRefus(),
+    documentsDe(utilisateur, { cotationId: c.id }),
   ]);
+  const pdfCotation = documents.filter((d) => d.type === "COTATION");
+  const pdfCp = documents.filter((d) => d.type === "CP");
+  const emise = c.numero !== null && c.statut !== "BROUILLON" && c.statut !== "A_VALIDER";
+  const derniere = (numero: string) => Math.max(...documents.filter((x) => x.numero === numero).map((x) => x.version));
   const estAuteur = c.auteurId === utilisateur.id;
   const agit = peutAgir(niveauCotation);
   const x = c.resultat;
@@ -160,7 +167,56 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
       ) : null}
 
       <section className="mt-8 grid max-w-3xl gap-6">
-        <p className="text-sm text-zinc-600">L'aperçu et l'émission du PDF (fusion du modèle Word) arrivent avec la phase 3 : la cotation est déjà numérotée et figée à l'émission.</p>
+        <div className="rounded border border-bordure p-4">
+          <h2 className="mb-2 font-semibold">Documents PDF</h2>
+          <div className="mb-3 flex flex-wrap items-end gap-4">
+            <a href={`/api/cotations/${c.id}/apercu`} target="_blank" className="rounded border border-sim-bleu px-3 py-1 text-sm font-medium text-sim-bleu hover:bg-surface">
+              Aperçu PDF (filigrane « APERÇU »)
+            </a>
+            {emise && pdfCotation.length === 0 && agit ? (
+              <FormulaireAction action={emettrePdfDeCotation} libelleBouton="Émettre le PDF de la cotation" discret>
+                <input type="hidden" name="id" value={c.id} />
+              </FormulaireAction>
+            ) : null}
+            {c.numeroPolice && pdfCp.length === 0 && peutAgir(niveauContrat) ? (
+              <FormulaireAction action={emettreCpDeCotation} libelleBouton={`Émettre les conditions particulières (police ${c.numeroPolice})`} discret>
+                <input type="hidden" name="id" value={c.id} />
+              </FormulaireAction>
+            ) : null}
+          </div>
+          {documents.length > 0 ? (
+            <table className="w-full border-collapse text-sm">
+              <tbody>
+                {documents.map((d) => (
+                  <tr key={d.id} className="border-b border-bordure">
+                    <td className="p-1">
+                      {d.libelleType} {d.numero} v{d.version}
+                      {d.filigrane ? ` (${d.filigrane})` : ""}
+                    </td>
+                    <td className="p-1">{d.dateEmission}</td>
+                    <td className="p-1">{d.statut.libelle}</td>
+                    <td className="p-1">
+                      <a href={`/api/documents/${d.id}`} className="text-sim-bleu underline">PDF</a>
+                    </td>
+                    <td className="p-1 font-mono text-xs" title="Empreinte SHA-256">{d.empreinte.slice(0, 16)}…</td>
+                    <td className="p-1">
+                      {d.version === derniere(d.numero) && (d.type === "CP" ? peutAgir(niveauContrat) : agit) ? (
+                        <FormulaireAction action={reediterDocument} libelleBouton="Rééditer" discret>
+                          <input type="hidden" name="id" value={c.id} />
+                          <input type="hidden" name="documentId" value={d.id} />
+                        </FormulaireAction>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-sm text-zinc-600">
+              {emise ? "Aucun PDF émis pour l'instant." : "Le PDF définitif (numéro, QR code) est émis avec la cotation ; avant, seul l'aperçu est possible."}
+            </p>
+          )}
+        </div>
 
         {peutModifier(c.statut) && estAuteur && agit ? (
           <div className="flex flex-wrap items-start gap-4 rounded border border-bordure p-4">

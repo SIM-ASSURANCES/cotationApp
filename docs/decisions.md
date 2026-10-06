@@ -150,9 +150,38 @@ Journal des décisions du projet, avec leur date. Une décision n'est jamais eff
 | --- | --- | --- |
 | H13 | Noms des éléments de `societe.rib[]`, `societe.mobile_money[]`, `societe.recours[]` (non nommés par le CDC) | `rib[].banque`, `rib[].numero` ; `mobile_money[].operateur`, `mobile_money[].numero_marchand` ; `recours[].libelle`, `recours[].url` |
 | H14 | Marqueurs hérités (« XXX », « 00/00/00 », « ___ »…, CDC §6.7) | **avertissement**, pas rejet : une ligne « ________ » pour une signature manuscrite est légitime |
-| H15 | Champs obligatoires par type (CDC §6.7) | seul l'exemple du CDC est appliqué : une facture doit contenir `doc.numero`, `prime.ttc`, `societe.rccm` ; les autres types n'en ont pas encore |
+| H15 | Champs obligatoires par type (CDC §6.7) | ~~seule la facture~~ **corrigée le 06/10/2026 (D16)** : facture, CP, cotation et reçu ont des champs obligatoires |
 | H16 | Un modèle par rôle | une seule annexe par liste, un seul sous-modèle par (nom, clé), une seule relance par niveau, pour un même produit (ou en commun) ; plusieurs CP par produit restent possibles |
 | H17 | Balises permises dans des CG / CS | `produit.cg_libelle`, `produit.cg_visa`, `produit.cg_date` / `produit.cs_libelle`, `produit.cs_visa`, rendues à la publication avec le visa saisi au dépôt |
+
+## D16 — Décisions du 06/10/2026 : champs obligatoires, polices
+
+- **Date** : 06/10/2026, décisions de Thierry.
+- **Champs obligatoires (correction de H15)** : en plus de la facture, les modèles de **CP**, de **cotation** et de **reçu** sont refusés au dépôt s'il leur manque : le numéro, le souscripteur (`souscripteur.nom` **ou** `souscripteur.raison_sociale` : personne physique ou morale), `police.date_effet`, `police.date_echeance` et `prime.ttc` ; pour le reçu, en plus, le montant payé et la facture réglée. Le numéro est `police.numero` (CP, reçu) ; pour la cotation, voir H18.
+- **Polices** : Tahoma est **remplacée dans les modèles** (police cible en cours de test, Arial pressentie) ; Calibri reste rendue par **Carlito** dans l'image. **Le Dockerfile ne change pas encore** : il changera quand le test D (fidélité avec la police retenue) aura validé le choix. À faire à ce moment, en même temps : retirer Tahoma et Calibri des polices exigées par `/sante` (`generateur/app/polices.py`, `POLICES_REQUISES`), sans quoi le générateur se déclarera « dégradé » dans une image qui ne les contient plus.
+
+## D17 — Émission des documents : assemblage, QR code, archivage (phase 3b)
+
+- **Date** : 06/10/2026 (phase 3b). Code : `app/src/serveur/documents.ts`, `app/src/domaine/documents/emission.ts` et `donnees.ts`, `generateur/app/pdf.py` et `stockage.py`.
+- **Assemblage** (§6.8) : un seul PDF, CP → annexes → CS → CG. Les CG et CS jointes sont les versions **publiées** en vigueur des modèles désignés par le paramétrage du produit (nouvelles « références contractuelles » d'une version de produit : code du modèle et visa). **Contrôle bloquant** : le visa cité par le produit doit être celui des CG (et des CS) jointes. Un produit sans CG ne peut pas émettre de CP.
+- **QR code** (§14.1) : jeton de **256 bits** aléatoires (base64url), propre à chaque version du document, jamais l'identifiant ni le numéro. Le QR code contient `URL_PUBLIQUE/verif/{jeton}`. Page publique : type, numéro, version, date, statut en temps réel (valide, expiré, « Annulée – avoir AV-… »), produit, souscripteur masqué (« K****** A. »), empreinte. Jeton inconnu : page neutre. 30 consultations par minute et par adresse IP, puis refus (429).
+- **Empreinte et archivage** (§14.3) : SHA-256 du PDF final, enregistrée avec le document, affichée sur la page de vérification, et **contrôlée à chaque téléchargement** (un fichier altéré est refusé). Stockage en **ajout seul** derrière **une seule interface** (`serveur/stockage.ts`) : aujourd'hui le volume `documents` du générateur (`/donnees/sortie/documents`), écriture atomique, jamais d'écrasement (le générateur refuse un chemin existant), fichier en lecture seule. En base, un document émis n'est jamais modifié ni supprimé (déclencheur) ; seule l'annulation par un avoir s'ajoute, une fois.
+- **Régénération à l'identique** (T10) : chaque document enregistre la version exacte du modèle principal, des annexes, des sous-modèles, des CS et des CG, la date des paramètres du produit, et les données fusionnées. Une réédition reprend **tout cela**, même après la publication d'une nouvelle version ; elle crée une nouvelle version (fichier et jeton nouveaux), liée à la première.
+- **Cotation** : aperçu PDF à tout moment (filigrane « APERÇU », rien n'est stocké) ; PDF définitif émis **aussitôt après l'émission** de la cotation ; réédition d'une cotation expirée avec le filigrane « EXPIRÉE » (T11). Les CP s'émettent depuis la fiche de la cotation acceptée.
+- **Société** : les valeurs `societe.*`, le lieu d'émission, le signataire et les images (signature scannée, cachet) sont des paramètres historisés (écran « Société »), jamais écrits dans les modèles.
+
+| # | Point | Hypothèse retenue (à faire confirmer) |
+| --- | --- | --- |
+| H18 | Champs obligatoires (D16) : numéro d'une cotation ; montant et facture d'un reçu | cotation : `doc.numero` (COT-…), car une cotation n'a pas encore de police ; reçu : `paiements[].montant` et `doc.facture_origine` (décrit désormais comme « facture annulée (avoir) ou réglée (reçu) ») |
+| H19 | Champ du dictionnaire que l'application ne connaît pas (profession, intermédiaires, nantissement…) | présent dans les données avec la valeur null : il s'écrit vide. Seul un nom **absent** fait échouer la génération |
+| H20 | `doc.empreinte` | un document ne peut pas contenir sa propre empreinte : null dans le PDF ; l'empreinte est sur la page de vérification et dans « Documents émis » |
+| H21 | Droits sur les documents émis (lecture, émission, réédition) | selon le type : cotation ← « Créer une cotation » ; CP ← « Émettre un contrat » (le « sous seuil » du Gestionnaire n'est pas encore contrôlé) ; facture, avis, relance ← « Émettre une facture » ; avoir et annulation ← « Émettre un avoir » ; reçu ← « Enregistrer un paiement » |
+| H22 | Où sont les fichiers | sur le volume du générateur ; l'application y accède par ses routes internes (écriture, lecture, ZIP) |
+| H23 | Émission du PDF d'une cotation | automatique après l'émission ; si elle échoue (modèle non publié, générateur arrêté…), la cotation reste émise et le bouton « Émettre le PDF » permet de recommencer. Le PDF d'une cotation ne joint pas les CG (seulement les CP) |
+| H24 | Réédition | images (signature, cachet) : celles en vigueur le jour de la réédition (elles ne sont pas conservées avec le document) ; filigrane « EXPIRÉE » si la cotation a expiré, « ANNULÉ » si le document a été annulé par un avoir |
+| H25 | Statut « Expiré » de la page de vérification | selon la fin de validité enregistrée à l'émission |
+| H26 | Plusieurs modèles de CP pour un même produit (H16 les permet) | l'émission prend le plus ancien qui a une version en vigueur : un critère de choix (individuel, famille, groupe…) reste à définir |
+| H27 | Limite de la page de vérification | 30 requêtes par minute et par adresse IP, en mémoire du serveur (une seule instance) |
 
 ## Décisions en attente
 
@@ -162,6 +191,8 @@ Journal des décisions du projet, avec leur date. Une décision n'est jamais eff
 | Nom de domaine de l'application (le VPS est celui du portail RH ; variable `URL_PUBLIQUE`, D14) | Superviseur | avant la phase 6 |
 | Q2 : copie des polices Microsoft (Tahoma, Calibri, Arial…) dans l'image Docker ; jamais dans un registre public (D14) | Superviseur | avant la mise en production |
 | H13 à H17 (modèles Word, voir D15) | Direction Technique | avant le balisage des modèles |
+| Police de remplacement de Tahoma (test D) ; puis Dockerfile et polices exigées par `/sante` (D16) | Thierry | avant la mise en production |
+| H18 à H27 (émission des documents, voir D17) | Direction Technique | avant la recette |
 | Durée de validité d'une cotation : confirmer « 3 mois » (D10) | Direction Technique | avant la recette |
 | Format du numéro de police (provisoire : POL-AAAA-NNNNNN) | Direction Technique | avant la recette |
 | H1 à H5 (moteur de calcul, voir D9) et H7 à H12 (cotation, voir D13) | Direction Technique | avant la recette |

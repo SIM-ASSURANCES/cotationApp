@@ -37,6 +37,12 @@ export function lireVersion(donnees: FormData): VersionSaisie {
     },
     cotation: { validiteMois: Number(champ(donnees, "validiteMois")), formulesMax: Number(champ(donnees, "formulesMax")) },
     seuilValidationTtc: champOuNull(donnees, "seuil"),
+    references: {
+      cgModeleCode: champOuNull(donnees, "cgModeleCode")?.toUpperCase() ?? null,
+      cgVisa: champOuNull(donnees, "cgVisa"),
+      csModeleCode: champOuNull(donnees, "csModeleCode")?.toUpperCase() ?? null,
+      csVisa: champOuNull(donnees, "csVisa"),
+    },
     formules: colonne("formule_code").map((code, i) => ({
       code: code.trim().toUpperCase(),
       libelle: libelles[i] ?? "",

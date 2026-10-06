@@ -154,6 +154,12 @@ model ProduitVersion {
   validiteMois                Int       @default(3) @map("validite_mois")
   formulesMax                 Int       @default(3) @map("formules_max")
   seuilValidationTtc          Decimal?  @map("seuil_validation_ttc") @db.Decimal(18, 6)
+  /// Références contractuelles (CDC §7) : code du modèle de CG (et de CS) joint au contrat, et visa
+  /// cité dans les CP. À l'assemblage, ce visa doit être celui des CG jointes (contrôle bloquant, §6.8).
+  cgModeleCode                String?   @map("cg_modele_code")
+  cgVisa                      String?   @map("cg_visa")
+  csModeleCode                String?   @map("cs_modele_code")
+  csVisa                      String?   @map("cs_visa")
   creeLe                      DateTime  @default(now()) @map("cree_le")
   creePar                     String    @map("cree_par")
   produit                     Produit   @relation(fields: [produitId], references: [id], onDelete: Restrict)
@@ -357,8 +363,61 @@ model ModeleVersion {
   pdf                 Bytes?
   pdfEmpreinte        String?   @map("pdf_empreinte")
   modele              Modele    @relation(fields: [modeleId], references: [id], onDelete: Restrict)
+  documents           DocumentEmis[]
 
   @@unique([modeleId, numero])
   @@index([statut])
   @@map("modele_versions")
+}
+
+/// Document émis (CDC §14) : un PDF stocké en AJOUT SEUL sur le volume persistant (D11). Une
+/// réédition est une nouvelle ligne (version + 1) liée à la première, avec son propre fichier et son
+/// propre jeton. Seule l'annulation par un avoir peut être ajoutée ensuite (déclencheur PostgreSQL).
+model DocumentEmis {
+  id                 Int           @id @default(autoincrement())
+  /// COTATION, CP, FACTURE, AVOIR, RECU… (types de modèles, domaine/documents/modeles.ts).
+  type               String
+  /// Numéro du document (COT-2026-10-0001, POL-2026-000001…), commun à toutes ses versions.
+  numero             String
+  /// 1 = émission ; 2, 3… = rééditions.
+  version            Int
+  /// Première émission du document (null pour elle-même).
+  origineId          Int?          @map("origine_id")
+  /// Jeton du QR code (256 bits aléatoires, base64url) : jamais l'identifiant ni le numéro.
+  jeton              String        @unique
+  /// Chemin relatif dans le stockage (volume persistant).
+  chemin             String        @unique
+  /// SHA-256 du PDF final.
+  empreinte          String
+  taille             Int
+  produitCode        String        @map("produit_code")
+  policeNumero       String?       @map("police_numero")
+  /// Pour la recherche (écran « Documents émis ») ; le public ne voit que la version masquée.
+  souscripteurNom    String        @map("souscripteur_nom")
+  souscripteurMasque String        @map("souscripteur_masque")
+  cotationId         Int?          @map("cotation_id")
+  policeId           Int?          @map("police_id")
+  dateEmission       DateTime      @map("date_emission") @db.Date
+  /// Cotation : fin de validité (statut « Expirée » sur la page de vérification).
+  dateValidite       DateTime?     @map("date_validite") @db.Date
+  /// Régénération à l'identique (T10) : version exacte du modèle, versions des annexes, sous-modèles,
+  /// CS et CG, date des paramètres du produit, et données fusionnées.
+  modeleVersionId    Int           @map("modele_version_id")
+  versionsAssociees  Json          @map("versions_associees")
+  parametresDate     DateTime      @map("parametres_date") @db.Date
+  donnees            Json
+  filigrane          String?
+  emisLe             DateTime      @default(now()) @map("emis_le")
+  emisPar            String        @map("emis_par")
+  /// Annulation par un avoir (T12) : renseignée une seule fois, jamais effacée.
+  annuleParNumero    String?       @map("annule_par_numero")
+  annuleLe           DateTime?     @map("annule_le")
+  modeleVersion      ModeleVersion @relation(fields: [modeleVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([numero, version])
+  @@index([type])
+  @@index([policeNumero])
+  @@index([souscripteurNom])
+  @@index([dateEmission])
+  @@map("documents_emis")
 }

@@ -21,18 +21,37 @@ Outil : `generateur/scripts/test_fidelite.py` (voir son en-tête pour l'usage). 
 
 Ce résultat sert de **référence** : avec les polices d'origine, LibreOffice est fidèle sur ce modèle.
 
-### 1.2 Linux dans le conteneur : NON EXÉCUTÉ
+### 1.2 Linux dans le conteneur : exécuté le 06/10/2026
 
-Docker n'est pas installé sur le poste de développement. Le test sous Linux, le seul qui compte pour le VPS, reste à faire :
+Mêmes fichiers qu'en 1.1 (le CP rempli de données inventées et son PDF exporté par Word, hors dépôt). Docker 29.7.2 sur Docker Desktop. Commandes :
 
 ```powershell
-# 1. Placer les polices dans generateur/polices/ (voir son README), puis construire l'image
 docker compose build generateur
-# 2. Mettre le CP de test et son PDF Word dans un dossier essais/ (hors dépôt) et lancer le test
 docker compose run --rm -v ${PWD}/essais:/essais generateur python scripts/test_fidelite.py --modele /essais/CP_test.docx --reference /essais/CP_test_word.pdf
 ```
 
-À noter ici : le résultat (pages Word / LibreOffice, fins de page, polices substituées), d'abord **sans** les polices Microsoft (cas le plus défavorable), puis **avec**. Écart de version à surveiller : l'image utilise le LibreOffice de Debian, pas le 26.8 du poste.
+Image : `python:3.14-slim-trixie` + **LibreOffice 25.2.3.2** (paquet Debian `libreoffice-writer-nogui`), à comparer au 26.8.0.3 du poste Windows (§1.1). Polices libres de l'image : Carlito, Liberation, DejaVu.
+
+- **A, sans polices Microsoft** : dossier `generateur/polices/` vidé (README seul), image reconstruite. Cas le plus défavorable.
+- **B, avec polices Microsoft** : les 21 fichiers de `generateur/polices/` (dont Tahoma, Calibri, Symbol, Segoe UI Symbol, Arial).
+
+Mots par page comptés avec `pdftotext` (poppler) sur les trois PDF, polices lues avec `pdffonts`.
+
+| | Word (référence) | A : sans polices | B : avec polices |
+| --- | --- | --- | --- |
+| Pages | 13 | 13 | 13 |
+| Mots par page (1 à 13) | 240 · 505 · 418 · 258 · 43 · 165 · 27 · 519 · 413 · 375 · 184 · 124 · 303 | 240 · 505 · 416 · 258 · 43 · 165 · 27 · **501 · 408 · 351 · 238 · 126** · 303 | 240 · 505 · **417** · 258 · 43 · 165 · 27 · 519 · 413 · 375 · 184 · 124 · 303 |
+| Fins de page identiques à Word (`test_fidelite.py`) | n/a | **10 sur 13** : pages 8, 9, 10 décalées (ressemblance du texte 98 %, 94 %, 89 %) ; code de sortie 1 | **13 sur 13**, texte identique à 100 % page par page ; code de sortie 0 |
+| Polices du PDF (`pdffonts`) | Calibri, Tahoma, Tahoma-Bold, ArialMT, SymbolMT, SegoeUISymbol | Carlito-Regular, DejaVuSans, DejaVuSans-Bold, OpenSymbol | Calibri, Tahoma, Tahoma-Bold, SymbolMT, DejaVuSans |
+
+Lecture :
+
+- **B reproduit la pagination de Word** : mêmes pages, mêmes fins de page, mêmes polices Calibri, Tahoma, Tahoma-Bold et SymbolMT. L'écart de 1 mot à la page 3 (417 contre 418) est un écart de comptage du texte extrait ; le test de fidélité y trouve un texte identique à 100 % et une fin de page identique. Non expliqué plus avant.
+- **A garde le même nombre de pages mais décale du texte** : 18 mots de la page 8 passent sur les suivantes, et la page 11 en reçoit 54 de trop (238 au lieu de 184). Le nombre de pages seul ne suffit donc pas à juger la fidélité : il faut comparer les fins de page. Aucune police d'origine n'est présente dans le PDF (Calibri devient Carlito ; Tahoma, absent, devient DejaVu Sans, plus large).
+- **Arial et Segoe UI Symbol** : présents dans l'image en B, mais absents du PDF LibreOffice, comme sur le poste Windows en 1.1 (la police réellement utilisée à leur place n'a pas été identifiée ; DejaVu Sans figure dans le PDF). Sans effet sur la pagination de ce modèle ; à surveiller si un autre modèle en dépend davantage.
+- **Conséquence pour le VPS** : les polices Tahoma et Calibri doivent être présentes dans l'image pour garder la pagination de Word. Elles ne sont pas versionnées (licence, question Q2 au superviseur) : le déploiement les copie à la main dans `generateur/polices/`.
+
+Limite : un seul modèle (CP RELAXSANTE) a été testé. Les autres modèles Word (facture, avenants, CG) restent à passer au test à mesure qu'ils arrivent.
 
 ## 2. Phase 0 : socle, connexion, droits, audit
 
@@ -43,7 +62,8 @@ docker compose run --rm -v ${PWD}/essais:/essais generateur python scripts/test_
 | Tests du générateur (dont conversion avec le vrai LibreOffice) | `pytest` | 15 verts |
 | Types et lint (dont règles de couches et accès au journal) | `npm run typecheck`, `npm run lint` | sans erreur |
 | Parcours HTTP réel : redirections, 401 des routes `/api`, droits par profil, mot de passe provisoire, redirection ouverte, cookie HttpOnly, en-têtes de sécurité | script de parcours, 21 contrôles | 21 sur 21, en développement **et** sur la version de production (`npm start`) |
-| `docker compose up` : les 4 services démarrent | | **non exécuté** (Docker absent) ; syntaxe du fichier compose validée seulement |
+| `docker compose build` puis `docker compose up -d` : les 4 services démarrent | Docker 29.7.2, 06/10/2026, `.env` racine avec secrets aléatoires jetables | **vert** : postgres, redis, generateur et app « healthy » ; l'étape `outils` applique les 5 migrations puis se termine (code 0) |
+| `/api/sante` dans le conteneur | `GET http://127.0.0.1:3000/api/sante` | `{"statut":"ok","base":"ok","generateur":"ok"}` (vérifié aussi après la reconstruction de l'image du générateur) |
 | Connexion fonctionnelle derrière un proxy HTTPS | | **non exécuté** |
 
 ## 2 bis. Phase 1 : paramétrage et moteur de calcul

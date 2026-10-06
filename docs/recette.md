@@ -34,22 +34,26 @@ Image : `python:3.14-slim-trixie` + **LibreOffice 25.2.3.2** (paquet Debian `lib
 
 - **A, sans polices Microsoft** : dossier `generateur/polices/` vidé (README seul), image reconstruite. Cas le plus défavorable.
 - **B, avec polices Microsoft** : les 21 fichiers de `generateur/polices/` (dont Tahoma, Calibri, Symbol, Segoe UI Symbol, Arial).
+- **C, paquets Debian à la place du dossier `polices/`** (06/10/2026) : image sans `generateur/polices/`, avec `ttf-mscorefonts-installer` (dépôt *contrib*, licence acceptée au build par `debconf-set-selections`, polices téléchargées depuis SourceForge pendant la construction), `fonts-crosextra-carlito` et `fonts-wine`. Dockerfile d'essai hors dépôt. Polices obtenues : Arial, Times New Roman, Verdana, Georgia, Trebuchet MS, Courier New, Comic Sans MS, Impact, Webdings, Andale Mono, Arial Black ; **ni Calibri, ni Tahoma** (absentes de ttf-mscorefonts-installer). `fonts-wine` installe Tahoma, Symbol et Wingdings dans `/usr/share/wine/fonts`, **dossier que fontconfig ne lit pas** : `fc-match Tahoma` donne DejaVu Sans.
+- **C′ = C + le dossier de Wine déclaré à fontconfig** (fichier `/etc/fonts/conf.d/50-wine.conf`) : les Tahoma et Tahoma Bold de Wine deviennent visibles (`fc-match Tahoma` → `tahoma.ttf`).
 
-Mots par page comptés avec `pdftotext` (poppler) sur les trois PDF, polices lues avec `pdffonts`.
+Mots par page comptés avec `pdftotext` (poppler) sur chaque PDF, polices lues avec `pdffonts`.
 
-| | Word (référence) | A : sans polices | B : avec polices |
-| --- | --- | --- | --- |
-| Pages | 13 | 13 | 13 |
-| Mots par page (1 à 13) | 240 · 505 · 418 · 258 · 43 · 165 · 27 · 519 · 413 · 375 · 184 · 124 · 303 | 240 · 505 · 416 · 258 · 43 · 165 · 27 · **501 · 408 · 351 · 238 · 126** · 303 | 240 · 505 · **417** · 258 · 43 · 165 · 27 · 519 · 413 · 375 · 184 · 124 · 303 |
-| Fins de page identiques à Word (`test_fidelite.py`) | n/a | **10 sur 13** : pages 8, 9, 10 décalées (ressemblance du texte 98 %, 94 %, 89 %) ; code de sortie 1 | **13 sur 13**, texte identique à 100 % page par page ; code de sortie 0 |
-| Polices du PDF (`pdffonts`) | Calibri, Tahoma, Tahoma-Bold, ArialMT, SymbolMT, SegoeUISymbol | Carlito-Regular, DejaVuSans, DejaVuSans-Bold, OpenSymbol | Calibri, Tahoma, Tahoma-Bold, SymbolMT, DejaVuSans |
+| | Word (référence) | A : sans polices | B : avec polices | C : paquets Debian | C′ : C + Tahoma de Wine |
+| --- | --- | --- | --- | --- | --- |
+| Pages | 13 | 13 | 13 | 13 | 13 |
+| Mots par page (1 à 13) | 240 · 505 · 418 · 258 · 43 · 165 · 27 · 519 · 413 · 375 · 184 · 124 · 303 | 240 · 505 · 416 · 258 · 43 · 165 · 27 · **501 · 408 · 351 · 238 · 126** · 303 | 240 · 505 · **417** · 258 · 43 · 165 · 27 · 519 · 413 · 375 · 184 · 124 · 303 | 240 · 505 · **416** · 258 · 43 · 165 · 27 · **501 · 408 · 351 · 238 · 126** · 303 (comme A) | **348 · 548 · 422 · 104** · 43 · 165 · 27 · **586 · 461 · 432 · 12** · 124 · 303 |
+| Fins de page identiques à Word (`test_fidelite.py`) | n/a | **10 sur 13** : pages 8, 9, 10 décalées (ressemblance du texte 98 %, 94 %, 89 %) ; code de sortie 1 | **13 sur 13**, texte identique à 100 % page par page ; code de sortie 0 | **10 sur 13** : pages 8, 9, 10 décalées, exactement comme A ; code de sortie 1 | **8 sur 13** : pages 2, 3, 8, 9, 10 décalées ; ressemblance du texte jusqu'à 13 % (page 11) ; code de sortie 1 |
+| Polices du PDF (`pdffonts`) | Calibri, Tahoma, Tahoma-Bold, ArialMT, SymbolMT, SegoeUISymbol | Carlito-Regular, DejaVuSans, DejaVuSans-Bold, OpenSymbol | Calibri, Tahoma, Tahoma-Bold, SymbolMT, DejaVuSans | Carlito-Regular, DejaVuSans, DejaVuSans-Bold, OpenSymbol (comme A) | Carlito-Regular, WineTahoma, WineTahomaBold, Webdings, DejaVuSans |
 
 Lecture :
 
 - **B reproduit la pagination de Word** : mêmes pages, mêmes fins de page, mêmes polices Calibri, Tahoma, Tahoma-Bold et SymbolMT. L'écart de 1 mot à la page 3 (417 contre 418) est un écart de comptage du texte extrait ; le test de fidélité y trouve un texte identique à 100 % et une fin de page identique. Non expliqué plus avant.
 - **A garde le même nombre de pages mais décale du texte** : 18 mots de la page 8 passent sur les suivantes, et la page 11 en reçoit 54 de trop (238 au lieu de 184). Le nombre de pages seul ne suffit donc pas à juger la fidélité : il faut comparer les fins de page. Aucune police d'origine n'est présente dans le PDF (Calibri devient Carlito ; Tahoma, absent, devient DejaVu Sans, plus large).
 - **Arial et Segoe UI Symbol** : présents dans l'image en B, mais absents du PDF LibreOffice, comme sur le poste Windows en 1.1 (la police réellement utilisée à leur place n'a pas été identifiée ; DejaVu Sans figure dans le PDF). Sans effet sur la pagination de ce modèle ; à surveiller si un autre modèle en dépend davantage.
-- **Conséquence pour le VPS** : les polices Tahoma et Calibri doivent être présentes dans l'image pour garder la pagination de Word. Elles ne sont pas versionnées (licence, question Q2 au superviseur) : le déploiement les copie à la main dans `generateur/polices/`.
+- **C ne change rien par rapport à A** : ce modèle utilise Calibri et Tahoma, que `ttf-mscorefonts-installer` ne fournit pas ; les polices qu'il apporte (Arial, Times…) n'apparaissent pas dans le PDF. Et `fonts-wine` est sans effet tant que fontconfig ne lit pas son dossier.
+- **C′ est pire que A** : la Tahoma de Wine n'a pas les dimensions de celle de Microsoft : plus de texte tient sur chaque page, le texte remonte dès la page 1 (348 mots au lieu de 240) et 5 fins de page sont décalées. Des symboles sont en outre pris dans Webdings, police de pictogrammes : ils sont probablement faux (non vérifié à l'œil).
+- **Conséquence pour le VPS** : les polices Tahoma et Calibri doivent être présentes dans l'image pour garder la pagination de Word. Elles ne sont pas versionnées (licence, question Q2 au superviseur) : le déploiement les copie à la main dans `generateur/polices/`. Les paquets Debian (variante C) ne sont **pas** une alternative pour ces modèles : ils ne fournissent ni Calibri, ni Tahoma.
 
 Limite : un seul modèle (CP RELAXSANTE) a été testé. Les autres modèles Word (facture, avenants, CG) restent à passer au test : outils prêts (`generateur/scripts/exporter_word.ps1` et `test_fidelite_lot.py`, essayés sur ce seul modèle) et déroulement dans [plan-test-modeles.md](plan-test-modeles.md). Lot complet : non exécuté.
 

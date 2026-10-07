@@ -249,6 +249,27 @@ export async function creerAdministrateurInitial(donnees: Omit<NouvelUtilisateur
   });
 }
 
+/**
+ * Compte de TEST créé par le seed de développement (serveur/seed-dev.ts) : mêmes contrôles qu'une
+ * création ordinaire (identifiant, politique de mot de passe), mais sans changement de mot de passe
+ * imposé. Pas d'acteur connecté : le journal l'indique.
+ */
+export async function creerCompteSeedDev(donnees: NouvelUtilisateur): Promise<void> {
+  await obtenirPrisma().$transaction(async (tx) => {
+    const cree = await inserer(tx, donnees, false);
+    await journaliser(
+      {
+        acteur: null,
+        action: "UTILISATEUR_CREE",
+        objetType: "utilisateur",
+        objetId: cree.id,
+        apres: { identifiant: cree.identifiant, nom: cree.nom, profil: cree.profil, origine: "compte créé par le seed de développement" },
+      },
+      tx,
+    );
+  });
+}
+
 /** Nombre d'Admin système actifs, hors l'utilisateur donné. */
 async function autresAdminsActifs(tx: Prisma.TransactionClient, exclureId: number): Promise<number> {
   return tx.utilisateur.count({

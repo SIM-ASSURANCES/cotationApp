@@ -177,3 +177,34 @@ On écrit `curl.exe` et non `curl` : dans Windows PowerShell 5.1, `curl` est un 
 ## 9. Avec Docker (déploiement)
 
 Le déploiement sur le VPS utilise Docker Compose : voir [deploiement.md](deploiement.md). Docker n'est pas nécessaire pour développer.
+
+## 10. Seed de développement
+
+> ⚠️ **Ne jamais définir `AUTORISER_SEED_DEV` sur le VPS**, ni `SEED_MOT_DE_PASSE`. Ce seed crée des comptes au mot de passe connu de l'équipe, sans changement imposé : c'est un outil de recette sur un poste de développement, pas une installation.
+
+Il crée un compte de **test** par profil du CDC §4, pour se reconnecter vite après une remise à zéro de la base :
+
+| Identifiant | Profil |
+| --- | --- |
+| `test.commercial` | Commercial |
+| `test.production` | Gestionnaire production |
+| `test.technique` | Technique (valideur) |
+| `test.comptabilite` | Comptabilité |
+| `test.direction` | Direction Générale |
+| `test.admin` | Admin système |
+
+- **Mot de passe** : celui de la variable `SEED_MOT_DE_PASSE`, dans ton `.env` local uniquement. Il n'est jamais écrit dans le code ni affiché. Il doit respecter la politique de l'application (12 caractères au moins, pas de mot de passe courant, pas l'identifiant, 5 caractères différents) : sinon le seed s'arrête, avec le motif.
+- **Gardes** : le seed refuse de s'exécuter si `NODE_ENV=production`, et tant que `AUTORISER_SEED_DEV=oui` n'est pas défini. Les deux conditions sont exigées.
+- **Jamais automatique** : ni Compose, ni le service `outils`, ni `initialiser`, ni `postinstall` ne l'appellent.
+- **Relançable** : un compte de test qui existe déjà est ignoré, jamais dupliqué ni écrasé (même s'il a été modifié depuis). Les autres comptes ne sont jamais touchés. Chaque création est écrite au journal d'audit (« compte créé par le seed de développement »).
+
+Après `npm run initialiser` :
+
+```powershell
+# Poste de développement : SEED_MOT_DE_PASSE (et AUTORISER_SEED_DEV=oui) dans app/.env
+npm run seed:dev
+
+# Pile Docker locale : SEED_MOT_DE_PASSE dans le .env de la racine. L'image « outils » est en
+# NODE_ENV=production : on le remplace, avec l'autorisation, pour ce seul lancement.
+docker compose run --rm -e NODE_ENV=development -e AUTORISER_SEED_DEV=oui outils npm run seed:dev
+```

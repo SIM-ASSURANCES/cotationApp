@@ -171,7 +171,9 @@ describe("émission du PDF d'une cotation (T1)", () => {
     const ligne = await obtenirPrisma().documentEmis.findUniqueOrThrow({ where: { id: doc.id } });
     expect(ligne.modeleVersionId).toBe(modele.versionId);
     expect(ligne.empreinte).toBe(sha256(fichiers.get(ligne.chemin)!));
-    expect(ligne.jeton).not.toContain(String(id));
+    // Jeton aléatoire de 256 bits, sans lien avec l'identifiant ni le numéro du document.
+    expect(ligne.jeton).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect([String(id), String(doc.id), doc.numero]).not.toContain(ligne.jeton);
 
     const vue = await verifierJeton(ligne.jeton);
     expect(vue).toMatchObject({ type: "Cotation", numero: doc.numero, statut: { code: "VALIDE" }, souscripteur: "K****** A.", empreinte: ligne.empreinte });

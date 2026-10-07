@@ -62,6 +62,9 @@ services:
       GENERATEUR_SECRET: ${GENERATEUR_SECRET:?définir GENERATEUR_SECRET dans .env}
       AUTH_SECRET: ${AUTH_SECRET:?définir AUTH_SECRET dans .env}
       URL_PUBLIQUE: ${URL_PUBLIQUE:-}
+      # Seed de développement seulement (npm run seed:dev, lancé à la main) ; vide sur un serveur.
+      # AUTORISER_SEED_DEV n'est volontairement PAS transmis ici : il se donne à chaque lancement (-e).
+      SEED_MOT_DE_PASSE: ${SEED_MOT_DE_PASSE:-}
     depends_on:
       postgres:
         condition: service_healthy

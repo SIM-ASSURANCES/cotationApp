@@ -96,6 +96,7 @@ Copier les sauvegardes **hors du VPS** (elles contiennent des données de santé
 ## 8. Sécurité : points d'attention
 
 - `.env` : droits `600`, jamais commité, valeurs distinctes de celles des postes de développement.
+- **Seed de développement interdit sur le VPS** : ne jamais définir `AUTORISER_SEED_DEV` (ni `SEED_MOT_DE_PASSE`) sur un serveur, et ne jamais y lancer `npm run seed:dev`. Il crée des comptes de test au mot de passe connu (installation.md §10). L'image `outils` étant en `NODE_ENV=production`, le seed y refuse de s'exécuter, sauf si on force les deux variables à la main : ne pas le faire.
 - **Journal d'audit** (D8) : le rôle PostgreSQL de l'application est ici le propriétaire de la base, donc capable de supprimer les déclencheurs qui protègent le journal. Avant la mise en production, créer pour l'application un rôle **non propriétaire** (droits SELECT, INSERT, UPDATE, DELETE sur les tables, sauf UPDATE/DELETE sur `journal_audit`), et réserver le propriétaire aux migrations.
 - Limitation des tentatives par adresse IP : à configurer dans le proxy inverse ou avec fail2ban (l'application verrouille seulement le compte visé).
 - En-têtes HTTP de sécurité posés par l'application ; **Content-Security-Policy** à ajouter avant la mise en production.

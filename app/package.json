@@ -16,6 +16,7 @@
     "postinstall": "prisma generate",
     "initialiser": "tsx --conditions=react-server scripts/initialiser.mts",
     "creer-admin": "tsx --conditions=react-server scripts/creer-admin.mts",
+    "seed:dev": "tsx --conditions=react-server scripts/seed-dev.mts",
     "test:integration:preparer": "node scripts/preparer-base-test.mjs",
     "test:integration": "npm run test:integration:preparer && vitest run --config vitest.integration.config.mts",
     "test:e2e": "npm run test:integration:preparer && vitest run --config vitest.e2e.config.mts"

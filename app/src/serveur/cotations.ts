@@ -6,14 +6,20 @@ import { calculer, type EntreeCalcul, type ResultatCalcul } from "@/domaine/calc
 import type { DateIso } from "@/domaine/calcul/dates";
 import type { Tranche } from "@/domaine/calcul/echeancier";
 import { montant } from "@/domaine/calcul/montant";
+import { estContratDeGroupe } from "@/domaine/cotation/adherents";
 import {
   problemesAssures,
+  problemesBeneficiaires,
+  problemesContactsUrgence,
   problemesLignes,
   problemesRisque,
   problemesSouscripteur,
   type Assure,
+  type Beneficiaire,
+  type ContactUrgence,
   type Risque,
   type Souscripteur,
+  type SouscripteurComplements,
 } from "@/domaine/cotation/saisie";
 import {
   dateFinValidite,
@@ -73,7 +79,21 @@ export type SaisieCotation = {
   lignes: LigneDemande[];
   motifForcage: string | null;
   assures: Assure[];
+  /**
+   * Bénéficiaires et contacts d'urgence (session 4a). `null` : jamais fournis (brouillon d'avant la 4a),
+   * à conserver tel quel ; `[]` : saisis et laissés vides. Les formulaires envoient toujours un tableau.
+   */
+  beneficiaires: Beneficiaire[] | null;
+  contactsUrgence: ContactUrgence[] | null;
   risque: Risque;
+};
+
+/** Ce qu'on peut compléter à l'acceptation, quand on connaît enfin le souscripteur complet et ses bénéficiaires. */
+export type ComplementsContrat = {
+  /** Compléments du souscripteur (§6.3.2) : fusionnés sur le souscripteur de la cotation. */
+  souscripteur: SouscripteurComplements;
+  beneficiaires: Beneficiaire[];
+  contactsUrgence: ContactUrgence[];
 };
 
 /**
@@ -167,9 +187,11 @@ async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: Saisie
   }
 
   const problemes = [
-    ...problemesSouscripteur(souscripteur),
+    ...problemesSouscripteur(souscripteur, dateDocument),
     ...problemesLignes(saisie.lignes, version.cotation.formulesMax),
     ...problemesAssures(saisie.assures, version.formules.map((f) => f.code), dateDocument),
+    ...problemesBeneficiaires(saisie.beneficiaires ?? []),
+    ...problemesContactsUrgence(saisie.contactsUrgence ?? []),
     ...problemesRisque(saisie.risque),
   ];
   if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
@@ -243,6 +265,9 @@ async function journaliserAccessoires(tx: Tx, acteur: UtilisateurCourant, id: nu
   );
 }
 
+/** Colonne JSON facultative : « jamais fournie » s'écrit NULL en base, « saisie vide » s'écrit []. */
+const listeOuNull = (liste: unknown[] | null) => (liste === null ? Prisma.DbNull : (liste as unknown as Prisma.InputJsonValue));
+
 function donneesAEcrire(saisie: SaisieCotation, c: Calcul) {
   return {
     produitId: c.produitId,
@@ -256,6 +281,8 @@ function donneesAEcrire(saisie: SaisieCotation, c: Calcul) {
     lignes: c.lignesStockees as unknown as Prisma.InputJsonValue,
     motifForcage: c.forcages.length > 0 ? (saisie.motifForcage ?? "").trim() : null,
     assures: saisie.assures as unknown as Prisma.InputJsonValue,
+    beneficiaires: listeOuNull(saisie.beneficiaires),
+    contactsUrgence: listeOuNull(saisie.contactsUrgence),
     risque: saisie.risque as unknown as Prisma.InputJsonValue,
     donneesCalcul: c.entree as unknown as Prisma.InputJsonValue,
     resultat: serialiser(c.resultat) as unknown as Prisma.InputJsonValue,
@@ -368,6 +395,8 @@ export async function soumettre(acteur: UtilisateurCourant, id: number, adresseI
       lignes: lignes.map((l) => ({ codeFormule: l.code, effectif: l.effectif, primeForcee: l.primeForcee, accessoireValeur: l.accessoireSaisi ?? null })),
       motifForcage: cotation.motifForcage,
       assures: cotation.assures as unknown as Assure[],
+      beneficiaires: (cotation.beneficiaires as unknown as Beneficiaire[] | null) ?? null,
+      contactsUrgence: (cotation.contactsUrgence as unknown as ContactUrgence[] | null) ?? null,
       risque: cotation.risque as unknown as Risque,
     };
     const c = await calculerSaisie(tx, acteur, saisie, aujourdhui());
@@ -473,15 +502,27 @@ async function chargerEmise(tx: Tx, id: number) {
  * Le client accepte : il retient une ou plusieurs formules ; le module crée la police avec la formule retenue,
  * les assurés et l'échéancier (CDC §9.4). Impossible si la cotation est expirée (T11). Le numéro de police
  * est attribué par SIM et SAISI ici (H10, D18) : jamais généré ; unique ; format paramétré contrôlé (H31).
+ *
+ * Session 4a : le souscripteur, les assurés, les bénéficiaires, les contacts d'urgence et l'échéancier de la
+ * cotation passent dans la police sans ressaisie. `complements` permet de compléter, à ce moment (celui de la
+ * souscription), ce qui n'était pas connu à la cotation ; absent, les données de la cotation sont reprises telles quelles.
+ * Pour un contrat de groupe, la liste des assurés devient la version 1 (initiale) des adhérents.
  */
-export async function accepter(acteur: UtilisateurCourant, id: number, codesRetenus: string[], numeroSaisi: string, adresseIp: string | null): Promise<{ numeroPolice: string }> {
+export async function accepter(
+  acteur: UtilisateurCourant,
+  id: number,
+  codesRetenus: string[],
+  numeroSaisi: string,
+  adresseIp: string | null,
+  complements?: ComplementsContrat,
+): Promise<{ numeroPolice: string }> {
   await exigerAgir(acteur);
   const numeroPolice = normaliserNumeroPolice(numeroSaisi);
   const problemesNumero = problemesNumeroPolice(numeroPolice, await lireFormatNumeroPolice());
   if (problemesNumero.length > 0) throw new ErreurMetier(problemesNumero.join(" "));
   await expirerCotations();
   try {
-    return await accepterDansTransaction(acteur, id, codesRetenus, numeroPolice, adresseIp);
+    return await accepterDansTransaction(acteur, id, codesRetenus, numeroPolice, adresseIp, complements);
   } catch (erreur) {
     // Filet de sécurité de l'unicité (deux saisies simultanées du même numéro) : contrainte unique en base.
     if (erreur instanceof Prisma.PrismaClientKnownRequestError && erreur.code === "P2002") {
@@ -491,7 +532,14 @@ export async function accepter(acteur: UtilisateurCourant, id: number, codesRete
   }
 }
 
-async function accepterDansTransaction(acteur: UtilisateurCourant, id: number, codesRetenus: string[], numeroPolice: string, adresseIp: string | null): Promise<{ numeroPolice: string }> {
+async function accepterDansTransaction(
+  acteur: UtilisateurCourant,
+  id: number,
+  codesRetenus: string[],
+  numeroPolice: string,
+  adresseIp: string | null,
+  complements: ComplementsContrat | undefined,
+): Promise<{ numeroPolice: string }> {
   return obtenirPrisma().$transaction(async (tx) => {
     const { cotation, statut } = await chargerEmise(tx, id);
     if (statut === "EXPIREE") throw new ErreurMetier("Cette cotation est expirée : elle ne peut plus être acceptée ni transformée en police.");
@@ -515,14 +563,26 @@ async function accepterDansTransaction(acteur: UtilisateurCourant, id: number, c
     if (await tx.police.findUnique({ where: { numero: numeroPolice }, select: { id: true } })) {
       throw new ErreurMetier(`Le numéro de police « ${numeroPolice} » est déjà utilisé.`);
     }
-    await tx.police.create({
+
+    // Données reprises de la cotation, éventuellement complétées à la souscription.
+    const souscripteur: Souscripteur = { ...(cotation.souscripteur as unknown as Souscripteur), ...(complements?.souscripteur ?? {}) };
+    const beneficiaires = complements ? complements.beneficiaires : ((cotation.beneficiaires as unknown as Beneficiaire[] | null) ?? null);
+    const contactsUrgence = complements ? complements.contactsUrgence : ((cotation.contactsUrgence as unknown as ContactUrgence[] | null) ?? null);
+    if (complements) {
+      const problemes = [...problemesSouscripteur(souscripteur, aujourdhui()), ...problemesBeneficiaires(beneficiaires ?? []), ...problemesContactsUrgence(contactsUrgence ?? [])];
+      if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
+    }
+
+    const police = await tx.police.create({
       data: {
         numero: numeroPolice,
         typeContrat: cotation.typeContrat,
         cotationId: cotation.id,
         produitCode: cotation.produit.code,
-        souscripteur: cotation.souscripteur as Prisma.InputJsonValue,
+        souscripteur: souscripteur as unknown as Prisma.InputJsonValue,
         assures: cotation.assures as Prisma.InputJsonValue,
+        beneficiaires: listeOuNull(beneficiaires),
+        contactsUrgence: listeOuNull(contactsUrgence),
         risque: cotation.risque as Prisma.InputJsonValue,
         formulesRetenues: codesRetenus as unknown as Prisma.InputJsonValue,
         donneesCalcul: entreeRetenue as unknown as Prisma.InputJsonValue,
@@ -534,9 +594,15 @@ async function accepterDansTransaction(acteur: UtilisateurCourant, id: number, c
         creePar: acteur.identifiant,
       },
     });
+    if (estContratDeGroupe(cotation.typeContrat)) {
+      // Version 1 de la liste des adhérents : celle de la cotation acceptée, à la date d'effet de la police.
+      await tx.adherentsVersion.create({
+        data: { policeId: police.id, numero: 1, motif: "INITIALE", dateEffet: cotation.dateEffet, adherents: cotation.assures as Prisma.InputJsonValue, concernes: [], creePar: acteur.identifiant },
+      });
+    }
     await tx.cotation.update({ where: { id }, data: { statut: "ACCEPTEE", formulesRetenues: codesRetenus as unknown as Prisma.InputJsonValue, accepteeLe: new Date() } });
     await journaliser({ acteur: auteur(acteur), action: "COTATION_ACCEPTEE", objetType: "cotation", objetId: id, apres: { formules: codesRetenus, numeroPolice }, adresseIp }, tx);
-    await journaliser({ acteur: auteur(acteur), action: "POLICE_CREEE", objetType: "police", objetId: numeroPolice, apres: { cotation: cotation.numero, ttc: resultat.totaux.arrondi.ttc.toFixed() }, adresseIp }, tx);
+    await journaliser({ acteur: auteur(acteur), action: "POLICE_CREEE", objetType: "police", objetId: numeroPolice, apres: { cotation: cotation.numero, ttc: resultat.totaux.arrondi.ttc.toFixed(), complementsSaisis: complements !== undefined, beneficiaires: beneficiaires?.length ?? null, contactsUrgence: contactsUrgence?.length ?? null }, adresseIp }, tx);
     return { numeroPolice };
   });
 }
@@ -614,6 +680,9 @@ export type DetailCotation = {
   libelles: Record<string, string>;
   motifForcage: string | null;
   assures: Assure[];
+  /** null : jamais fournis (cotation d'avant la 4a). */
+  beneficiaires: Beneficiaire[] | null;
+  contactsUrgence: ContactUrgence[] | null;
   risque: Risque;
   raisonsValidation: RaisonValidation[];
   /** Recalculé à partir des paramètres figés : identique à ce qui a été émis. */
@@ -664,6 +733,8 @@ export async function lireCotation(acteur: UtilisateurCourant, id: number): Prom
     libelles: Object.fromEntries(version.formules.map((f) => [f.code, f.libelle])),
     motifForcage: c.motifForcage,
     assures: c.assures as unknown as Assure[],
+    beneficiaires: (c.beneficiaires as unknown as Beneficiaire[] | null) ?? null,
+    contactsUrgence: (c.contactsUrgence as unknown as ContactUrgence[] | null) ?? null,
     risque: c.risque as unknown as Risque,
     raisonsValidation: c.raisonsValidation as unknown as RaisonValidation[],
     resultat: calculer(c.donneesCalcul as unknown as EntreeCalcul),

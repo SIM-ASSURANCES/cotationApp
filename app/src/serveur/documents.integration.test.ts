@@ -14,6 +14,7 @@ import { annulerParAvoir, documentsDe, emettreCotation, emettreCp, rechercherDoc
 import { initialiserProfilsEtDroits } from "./droits";
 import { remplacerGenerateur, type DemandePdf } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
+import { assurerSignature } from "./societe-test";
 import { aujourdhui, creerProduit, creerTaxe, creerVersion } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { remplacerStockage } from "./stockage";
@@ -47,6 +48,20 @@ const analyse = (chemins: string[]): Analyse => ({
   textes: [],
 });
 const SOCLE = (numero: string) => [numero, "souscripteur.nom", "police.date_effet", "police.date_echeance", "prime.ttc"];
+/** Contenu obligatoire d'un modèle de CP (CDC §10.1, session 4a). */
+const CONTENU_CP = [
+  ...SOCLE("police.numero"),
+  "police.duree_libelle",
+  "prime.nette",
+  "prime.accessoires",
+  "prime.taxe",
+  "produit.cg_libelle",
+  "produit.cg_visa",
+  "societe.email_reclamation",
+  "doc.lieu_emission",
+  "doc.date_emission",
+  "signature_sim",
+];
 let prochaineAnalyse = analyse(SOCLE("doc.numero"));
 const demandes: DemandePdf[] = [];
 const fichiers = new Map<string, Uint8Array>();
@@ -105,6 +120,8 @@ async function cotationT1(produitCode: string): Promise<number> {
     lignes: [{ codeFormule: "SOLO", effectif: 3 }, { codeFormule: "FAMILLE", effectif: 60 }],
     motifForcage: null,
     assures: [],
+    beneficiaires: null,
+    contactsUrgence: null,
     risque: {},
   };
   const id = await creerBrouillon(commercial, saisie, null);
@@ -145,6 +162,8 @@ beforeAll(async () => {
     return compte(identifiant);
   };
   [technique, dg, commercial] = [await nouveau("TECHNIQUE"), await nouveau("DIRECTION_GENERALE"), await nouveau("COMMERCIAL")];
+  // Les CP utilisent {{ signature_sim }} (CDC §10.1) : la signature scannée de SIM doit être paramétrée (image inventée).
+  await assurerSignature(technique);
 });
 
 afterAll(async () => {
@@ -286,7 +305,7 @@ describe("conditions particulières : CP → CS → CG, visa contrôlé (§6.8)"
     const cgPdf = (await obtenirPrisma().modeleVersion.findUniqueOrThrow({ where: { id: cg.versionId } })).pdf!;
 
     const bon = await produit({ cgModeleCode: cg.code, cgVisa: "MFB/DGTCP/DA/N° 01498", csModeleCode: null, csVisa: null });
-    await publier("CP", bon, "modele cp", SOCLE("police.numero"));
+    await publier("CP", bon, "modele cp", CONTENU_CP);
     const id = await cotationT1(bon);
     await accepter(commercial, id, ["SOLO", "FAMILLE"], `TST-2026-000001-G${String(Date.now() % 100000).padStart(5, "0")}`, null);
     await expect(emettreCp(commercial, id, null)).rejects.toThrow(ErreurAcces); // Commercial : pas « Émettre un contrat »
@@ -298,13 +317,13 @@ describe("conditions particulières : CP → CS → CG, visa contrôlé (§6.8)"
     expect(demandes[0].donnees.police).toMatchObject({ numero: cp.numero });
 
     const faux = await produit({ cgModeleCode: cg.code, cgVisa: "MFB/DGTCP/DA/N° 01497", csModeleCode: null, csVisa: null });
-    await publier("CP", faux, "modele cp", SOCLE("police.numero"));
+    await publier("CP", faux, "modele cp", CONTENU_CP);
     const id2 = await cotationT1(faux);
     await accepter(commercial, id2, ["SOLO"], `TST-2026-000002-G${String(Date.now() % 100000).padStart(5, "0")}`, null);
     await expect(emettreCp(technique, id2, null)).rejects.toThrow(/Visa incohérent/);
 
     const sansCg = await produit();
-    await publier("CP", sansCg, "modele cp", SOCLE("police.numero"));
+    await publier("CP", sansCg, "modele cp", CONTENU_CP);
     const id3 = await cotationT1(sansCg);
     await accepter(commercial, id3, ["SOLO"], `TST-2026-000003-G${String(Date.now() % 100000).padStart(5, "0")}`, null);
     await expect(emettreCp(technique, id3, null)).rejects.toThrow(/pas de conditions générales/);

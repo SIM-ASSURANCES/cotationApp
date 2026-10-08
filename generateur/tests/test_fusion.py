@@ -161,3 +161,38 @@ def test_t7_boucle_dans_une_ligne_de_texte_non_prise_en_charge() -> None:
     modele = document("Assurés : {% for a in assures %}{{ a.nom_prenoms }}, {% endfor %}")
     with pytest.raises(ErreurFusion, match="ne peut pas être remplacée"):
         fusionner(modele, {"assures": assures(12)}, seuil_liste=10, annexes={"assures": ANNEXE_ASSURES})
+
+
+# ------------------------------------------------------------------ Session 4a : liste imposée en annexe (police de groupe, §10.2)
+
+
+def test_liste_imposee_en_annexe_meme_sous_le_seuil() -> None:
+    """Police mère : la liste des adhérents est toujours en annexe, même courte (3 adhérents, seuil 10)."""
+    resultat = fusionner(
+        CP_ASSURES,
+        {"police": {"numero": "POL-2026-000001"}, "assures": assures(3)},
+        seuil_liste=10,
+        annexes={"assures": ANNEXE_ASSURES},
+        listes_en_annexe=["assures"],
+    )
+    texte = texte_docx(resultat.corps)
+    assert "Voir annexe – Liste des assurés (3 personnes)" in texte
+    assert "ASSURE01" not in texte
+    assert [a.liste for a in resultat.annexes] == ["assures"]
+    assert all(f"ASSURE0{i} Inventé" in texte_docx(resultat.annexes[0].docx) for i in (1, 2, 3))
+
+
+def test_liste_imposee_sans_boucle_dans_le_modele_ne_produit_pas_d_annexe() -> None:
+    resultat = fusionner(document("Police {{ police.numero }}"), {"police": {"numero": "P"}, "assures": assures(3)}, seuil_liste=10, annexes={"assures": ANNEXE_ASSURES}, listes_en_annexe=["assures"])
+    assert resultat.annexes == []
+
+
+def test_liste_imposee_sans_modele_d_annexe() -> None:
+    with pytest.raises(ErreurFusion, match="renvoyée en annexe : aucun modèle d'annexe pour « assures »"):
+        fusionner(CP_ASSURES, {"police": {"numero": "P"}, "assures": assures(3)}, seuil_liste=10, listes_en_annexe=["assures"])
+
+
+def test_liste_non_imposee_reste_dans_le_corps_sous_le_seuil() -> None:
+    resultat = fusionner(CP_ASSURES, {"police": {"numero": "P"}, "assures": assures(3)}, seuil_liste=10, annexes={"assures": ANNEXE_ASSURES}, listes_en_annexe=["beneficiaires"])
+    assert "ASSURE03 Inventé" in texte_docx(resultat.corps)
+    assert resultat.annexes == []

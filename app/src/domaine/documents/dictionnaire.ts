@@ -131,7 +131,7 @@ export const CHAMPS: readonly Champ[] = [
 
   // ---------------------------------------------------------------- 6.3.3
   c("police.numero", "texte", "N° de police", "POL-2026-000001", S3),
-  c("police.reference", "texte", "Référence", "REF-EXEMPLE", S3),
+  c("police.reference", "texte", "Référence ; vide si l'application ne la connaît pas", "REF-EXEMPLE", S3, FACULTATIF),
   c("police.date_souscription", "date", "Date de souscription", "2026-09-01", S3),
   c("police.date_effet", "dateheure", "Date d'effet (heure obligatoire pour RELAXVOYAGE)", "2026-09-01T08:00", S3),
   c("police.date_echeance", "dateheure", "Date d'échéance", "2027-08-31T23:59", S3),

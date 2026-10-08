@@ -48,6 +48,12 @@ export const ACTIONS_AUDIT = [
   "DOCUMENT_ANNULE",
   // Session 4.0 : accessoires modifiés dans une cotation (H1, D18)
   "ACCESSOIRES_MODIFIES",
+  // Session 4a : liste des adhérents d'une police de groupe (CDC §10.2)
+  "ADHERENTS_INCORPORES",
+  "ADHERENTS_RETIRES",
+  // Corrections de la 4a : émission d'un contrat au-dessus du seuil du produit (CDC §4 « Oui (sous seuil) »)
+  "CONTRAT_A_VALIDER",
+  "CONTRAT_VALIDE",
 ] as const;
 
 export type ActionAudit = (typeof ACTIONS_AUDIT)[number];

@@ -40,7 +40,6 @@ export const NIVEAUX = [
   { code: "AUCUN", libelle: "–" },
   { code: "LECTURE", libelle: "Lecture" },
   { code: "DEMANDE", libelle: "Demande" },
-  { code: "PROPOSITION", libelle: "Proposition" },
   { code: "OUI_SOUS_SEUIL", libelle: "Oui (sous seuil)" },
   { code: "OUI", libelle: "Oui" },
   { code: "VALIDE", libelle: "Valide" },
@@ -50,12 +49,13 @@ export type CodeNiveau = (typeof NIVEAUX)[number]["code"];
 
 export type MatriceDroits = Record<CodeProfil, Record<CodeAction, CodeNiveau>>;
 
-const A = "AUCUN", L = "LECTURE", D = "DEMANDE", P = "PROPOSITION", S = "OUI_SOUS_SEUIL", O = "OUI", V = "VALIDE";
+const A = "AUCUN", L = "LECTURE", D = "DEMANDE", S = "OUI_SOUS_SEUIL", O = "OUI", V = "VALIDE";
 
 /**
  * Tableau du CDC §4, colonnes dans l'ordre : Commercial, Gestionnaire production,
  * Technique, Comptabilité, Direction Générale, Admin système.
  * « Publier un modèle » : Technique = « Non (auteur) » dans le CDC, soit AUCUN ici.
+ * « Paramétrer produits, taxes, arrondis » : Comptabilité = « Taxes (proposition) » dans le CDC, soit LECTURE ici (D21).
  */
 const LIGNES: Record<CodeAction, readonly CodeNiveau[]> = {
   CREER_COTATION: [O, O, O, A, L, A],
@@ -66,7 +66,9 @@ const LIGNES: Record<CodeAction, readonly CodeNiveau[]> = {
   ENREGISTRER_PAIEMENT: [A, O, A, O, A, A],
   DEPOSER_MODELE: [A, A, O, A, A, A],
   PUBLIER_MODELE: [A, A, A, A, O, A],
-  PARAMETRER_PRODUITS: [A, A, O, P, V, A],
+  // CDC §4 : « Taxes (proposition) » pour la Comptabilité. Décision de Thierry du 08/10/2026 (D21) : la valeur
+  // « Proposition » n'existe plus (aucun circuit de proposition), la Comptabilité consulte : Lecture.
+  PARAMETRER_PRODUITS: [A, A, O, L, V, A],
   GERER_UTILISATEURS: [A, A, A, A, A, O],
   CONSULTER_AUDIT: [A, A, L, A, L, L],
   // H7 (D18) : la validation des cotations est réservée au profil Technique (droit paramétrable).

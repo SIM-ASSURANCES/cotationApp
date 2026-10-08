@@ -1,5 +1,6 @@
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
-import { LignesAssures, LignesRisque } from "@/composants/LignesDynamiques";
+import { ComplementsSouscripteur } from "@/composants/ComplementsSouscripteur";
+import { LignesAssures, LignesBeneficiaires, LignesContactsUrgence, LignesRisque } from "@/composants/LignesDynamiques";
 import { montant } from "@/domaine/calcul/montant";
 import { LIBELLE_TYPE_CONTRAT, TYPES_CONTRAT } from "@/domaine/calcul/taxes";
 import type { LigneClient } from "@/serveur/clients";
@@ -60,6 +61,7 @@ export function FormulaireCotation({
         <Champ nom="souscripteur_email" libelle="E-mail" requis={false} valeur={s?.email} autoComplete="off" />
         <Champ nom="souscripteur_adresse" libelle="Adresse" requis={false} valeur={s?.adresse} autoComplete="off" />
       </div>
+      <ComplementsSouscripteur valeurs={s} />
 
       <h2 className="mb-2 text-lg font-semibold">Contrat</h2>
       <label className="mb-4 block max-w-md text-sm font-medium">
@@ -138,6 +140,13 @@ export function FormulaireCotation({
         formules={formules}
         initiales={(base?.assures ?? []).map((a) => ({ nom: a.nom_prenoms, naissance: a.date_naissance, sexe: a.sexe, lien: a.lien, formule: a.formule }))}
       />
+
+      <h2 className="mb-2 text-lg font-semibold">Bénéficiaires (SECURVIE, RELAXACCIDENT)</h2>
+      <p className="mb-2 text-sm text-zinc-700">Facultatif à ce stade : ils peuvent aussi être saisis à l'acceptation. Dès qu'il y en a, la somme des quotes-parts doit faire 100 %.</p>
+      <LignesBeneficiaires initiales={(base?.beneficiaires ?? []).map((b) => ({ nom: b.nom_prenoms, lien: b.lien, contact: b.contact, quote: b.quote_part }))} />
+
+      <h2 className="mb-2 text-lg font-semibold">Contacts d'urgence (RELAXVOYAGE)</h2>
+      <LignesContactsUrgence initiales={(base?.contactsUrgence ?? []).map((c) => ({ nom: c.nom_prenoms, contact: c.contact }))} />
 
       <h2 className="mb-2 text-lg font-semibold">Risque (champs propres au produit)</h2>
       <LignesRisque initiales={Object.entries(base?.risque ?? {}).map(([cle, valeur]) => ({ cle, valeur }))} />

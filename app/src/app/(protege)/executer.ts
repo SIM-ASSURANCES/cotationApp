@@ -11,7 +11,8 @@ import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "@/serveur/ty
  */
 export async function executerAction(
   operation: (acteur: UtilisateurCourant, adresseIp: string | null) => Promise<void | string[]>,
-  succes: string,
+  /** Message de réussite ; une fonction est appelée après l'opération, quand le message dépend de son issue. */
+  succes: string | (() => string),
   cheminARafraichir: string,
 ): Promise<EtatFormulaire> {
   const acteur = await exigerUtilisateur();
@@ -29,7 +30,7 @@ export async function executerAction(
     throw erreur;
   }
   revalidatePath(cheminARafraichir);
-  return { succes, ...(details?.length ? { details } : {}) };
+  return { succes: typeof succes === "function" ? succes() : succes, ...(details?.length ? { details } : {}) };
 }
 
 /** Variante qui renvoie la valeur de l'opération (ex. l'identifiant créé) : à utiliser avant une redirection. */

@@ -6,7 +6,10 @@ import { Prisma } from "@/generated/prisma/client";
 
 import { calculer, type EntreeCalcul } from "@/domaine/calcul/calcul";
 import type { DateIso } from "@/domaine/calcul/dates";
-import type { Assure, Risque, Souscripteur } from "@/domaine/cotation/saisie";
+import { dateAdhesion, estContratDeGroupe, type VersionAdherents } from "@/domaine/cotation/adherents";
+import { normaliserNumeroPolice, problemesNumeroPolice } from "@/domaine/cotation/police";
+import type { Assure, Beneficiaire, ContactUrgence, Risque, Souscripteur } from "@/domaine/cotation/saisie";
+import { ecartEnJours } from "@/domaine/calcul/dates";
 import { statutEffectif, type StatutCotation } from "@/domaine/cotation/statuts";
 import { donneesDocument, type FormuleSource, type SourceDocument } from "@/domaine/documents/donnees";
 import {
@@ -30,9 +33,10 @@ import { generateur, type ImagePng } from "./generateur";
 import { fichiersAssocies, lireSeuilListe, modelesAssocies, versionPublieeEnVigueur, type VersionsAssociees } from "./modeles";
 import { aujourdhui } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
-import { lireImageSociete, lireParametresSociete } from "./societe";
+import { lireFormatNumeroPolice, lireImageSociete, lireParametresSociete } from "./societe";
 import { stockage } from "./stockage";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
+import { cloreValidationContrat, controlerSeuilContrat, demanderValidationContrat, exigerAutreQueLeDemandeur } from "./validation-contrat";
 
 /**
  * Documents émis (CDC §6.8, §14) : émission (fusion, assemblage, QR code, empreinte, stockage en
@@ -54,6 +58,7 @@ const nouveauJeton = () => randomBytes(32).toString("base64url");
 const ACTION_DU_TYPE: Record<TypeDocument, CodeAction> = {
   COTATION: "CREER_COTATION",
   CP: "EMETTRE_CONTRAT",
+  CERTIFICAT: "EMETTRE_CONTRAT",
   FACTURE: "EMETTRE_FACTURE",
   AVOIR: "EMETTRE_AVOIR",
   RECU: "ENREGISTRER_PAIEMENT",
@@ -108,6 +113,7 @@ function montantsDu(entree: EntreeCalcul, contexte: ContexteProduit) {
     tauxCouverture: contexte.formules.get(l.code)?.tauxCouverture ?? null,
     effectif: l.effectif,
     primeUnitaire: String(entree.lignes[i].primeUnitaire),
+    primeParAssure: t(l.primeParUnite),
     nette: t(l.arrondi.nette),
     accessoires: t(l.arrondi.accessoires),
     taxe: t(l.arrondi.taxe),
@@ -144,6 +150,12 @@ type Production = {
   donnees: (version: number, url: string) => Record<string, unknown>;
   filigrane: string | null;
   origine: { id: number } | null;
+  /** Listes toujours renvoyées en annexe (police mère d'un contrat de groupe) ; conservées pour la réédition. */
+  listesEnAnnexe?: string[];
+  /** Certificat d'adhésion : numéro d'ordre de l'adhérent dans la police mère. */
+  adherentOrdre?: number | null;
+  /** Conditions particulières d'un contrat de groupe : version de la liste des adhérents utilisée. */
+  versionAdherents?: number | null;
 };
 
 export type DocumentLu = {
@@ -204,6 +216,7 @@ async function produire(acteur: UtilisateurCourant, p: Production, adresseIp: st
     // Ordre du contrat (CDC §6.8) : CP, annexes (ajoutées par le générateur), CS, CG.
     piecesJointes: [p.pieces.cs?.pdf, p.pieces.cg?.pdf].filter((x): x is Uint8Array => x !== undefined),
     filigrane: p.filigrane ?? undefined,
+    listesEnAnnexe: p.listesEnAnnexe,
   });
 
   const empreinte = sha256(pdf);
@@ -211,7 +224,13 @@ async function produire(acteur: UtilisateurCourant, p: Production, adresseIp: st
   const ecrit = await stockage().ecrire(chemin, pdf);
   if (ecrit.empreinte !== empreinte) throw new Error(`Stockage : empreinte différente pour ${chemin}`);
 
-  const versionsAssociees = { ...p.associes.ids, cs: p.pieces.cs?.versionId ?? null, cg: p.pieces.cg?.versionId ?? null };
+  const versionsAssociees = {
+    ...p.associes.ids,
+    cs: p.pieces.cs?.versionId ?? null,
+    cg: p.pieces.cg?.versionId ?? null,
+    listesEnAnnexe: p.listesEnAnnexe ?? [],
+    versionAdherents: p.versionAdherents ?? null,
+  };
   const cree = await prisma.$transaction(async (tx) => {
     const ligne = await tx.documentEmis.create({
       data: {
@@ -229,6 +248,7 @@ async function produire(acteur: UtilisateurCourant, p: Production, adresseIp: st
         souscripteurMasque: masquerSouscripteur(p.souscripteur),
         cotationId: p.cotationId,
         policeId: p.policeId,
+        adherentOrdre: p.adherentOrdre ?? null,
         dateEmission: versDate(p.dateEmission),
         dateValidite: p.dateValidite ? versDate(p.dateValidite) : null,
         modeleVersionId: p.modele.versionId,
@@ -279,10 +299,10 @@ function versLu(d: LigneDocument): DocumentLu {
   };
 }
 
-async function modeleEnVigueur(type: "COTATION" | "CP", produitId: number, produitCode: string, date: DateIso) {
+async function modeleEnVigueur(type: "COTATION" | "CP" | "CERTIFICAT", produitId: number, produitCode: string, date: DateIso) {
   const retenu = await versionPublieeEnVigueur({ type, produitId }, date);
   if (!retenu) {
-    throw new ErreurMetier(`Aucun modèle de ${type === "COTATION" ? "cotation" : "conditions particulières"} publié et en vigueur pour le produit ${produitCode} : déposez-le et faites-le publier (Modèles Word).`);
+    throw new ErreurMetier(`Aucun modèle de ${{ COTATION: "cotation", CP: "conditions particulières", CERTIFICAT: "certificat d'adhésion" }[type]} publié et en vigueur pour le produit ${produitCode} : déposez-le et faites-le publier (Modèles Word).`);
   }
   const v = await obtenirPrisma().modeleVersion.findUniqueOrThrow({ where: { id: retenu.version.id }, select: { id: true, fichier: true, analyse: true } });
   return { versionId: v.id, fichier: v.fichier, champs: ((v.analyse as { champs?: string[] }).champs ?? []) as string[] };
@@ -345,6 +365,10 @@ function sourceDeCotation(
     cs: pieces.cs ? { libelle: pieces.cs.libelle, visa: contexte.references.csVisa ?? pieces.cs.visa ?? "" } : null,
     souscripteur: c.souscripteur as unknown as Souscripteur,
     assures: c.assures as unknown as Assure[],
+    ordresSansPrime: [],
+    beneficiaires: (c.beneficiaires as unknown as Beneficiaire[] | null) ?? null,
+    contactsUrgence: (c.contactsUrgence as unknown as ContactUrgence[] | null) ?? null,
+    policeMere: null,
     risque: c.risque as unknown as Risque,
     dateEffet: depuisDate(c.dateEffet),
     dateEcheance: depuisDate(c.dateEcheance),
@@ -439,15 +463,35 @@ export async function apercuCotation(acteur: UtilisateurCourant, cotationId: num
 
 // ---------------------------------------------------------------- Contrat : conditions particulières
 
-/** Émission des CP d'une police (cotation acceptée) : CP → annexes → CS → CG, visas vérifiés (§6.8). */
-export async function emettreCp(acteur: UtilisateurCourant, cotationId: number, adresseIp: string | null): Promise<DocumentLu> {
-  await exigerSurType(acteur, "CP", true);
-  const c = await chargerCotation(cotationId);
-  const police = await obtenirPrisma().police.findUnique({ where: { cotationId } });
-  if (!police) throw new ErreurMetier("Pas de police : les conditions particulières s'émettent après l'acceptation de la cotation.");
-  if (await obtenirPrisma().documentEmis.findFirst({ where: { policeId: police.id, type: "CP" } })) {
-    throw new ErreurMetier("Les conditions particulières de cette police sont déjà émises : utilisez « Rééditer ».");
-  }
+type PoliceChargee = Prisma.PoliceGetPayload<{ include: { adherents: true } }>;
+type CotationChargee = Awaited<ReturnType<typeof chargerCotation>>;
+
+/** Versions de la liste des adhérents d'une police de groupe, au format du domaine. */
+export const versionsAdherentsDe = (police: PoliceChargee): VersionAdherents[] =>
+  police.adherents.map((v) => ({
+    numero: v.numero,
+    motif: v.motif as VersionAdherents["motif"],
+    dateEffet: depuisDate(v.dateEffet),
+    adherents: v.adherents as unknown as Assure[],
+    concernes: v.concernes as unknown as number[],
+  }));
+
+/** Adhérents ajoutés après la liste initiale : leur prime n'est pas dans le calcul de la police (assures[].prime reste vide). */
+const ordresIncorpores = (police: PoliceChargee): number[] => {
+  const initiale = police.adherents.find((v) => v.motif === "INITIALE");
+  if (!initiale) return [];
+  const dansLeCalcul = new Set((initiale.adherents as unknown as Assure[]).map((a) => a.ordre));
+  return (police.assures as unknown as Assure[]).filter((a) => !dansLeCalcul.has(a.ordre)).map((a) => a.ordre);
+};
+
+const derniereVersionAdherents = (police: PoliceChargee): number | null => (police.adherents.length === 0 ? null : Math.max(...police.adherents.map((v) => v.numero)));
+
+/**
+ * Production des conditions particulières d'une police : CP → annexes → CS → CG, visas vérifiés (§6.8).
+ * Contrat de groupe (§10.2) : c'est la police MÈRE ; la liste des adhérents (la liste courante) est
+ * TOUJOURS renvoyée en annexe, même courte, et la version de cette liste est conservée avec le document.
+ */
+async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<Production> {
   const date = aujourdhui();
   const contexte = await contexteProduit(c.produitId, c.versionDateEffet);
   const modele = await modeleEnVigueur("CP", c.produitId, c.produit.code, date);
@@ -455,6 +499,7 @@ export async function emettreCp(acteur: UtilisateurCourant, cotationId: number, 
   const commun = await sourceCommune(contexte, date);
   const pieces = await piecesContractuelles(contexte, date, true);
   const m = montantsDu(police.donneesCalcul as unknown as EntreeCalcul, contexte);
+  const groupe = estContratDeGroupe(police.typeContrat);
   const source = (version: number, url: string): SourceDocument => ({
     type: "CP",
     numero: police.numero,
@@ -467,6 +512,10 @@ export async function emettreCp(acteur: UtilisateurCourant, cotationId: number, 
     cs: pieces.cs ? { libelle: pieces.cs.libelle, visa: contexte.references.csVisa ?? "" } : null,
     souscripteur: police.souscripteur as unknown as Souscripteur,
     assures: police.assures as unknown as Assure[],
+    ordresSansPrime: ordresIncorpores(police),
+    beneficiaires: (police.beneficiaires as unknown as Beneficiaire[] | null) ?? null,
+    contactsUrgence: (police.contactsUrgence as unknown as ContactUrgence[] | null) ?? null,
+    policeMere: null,
     risque: police.risque as unknown as Risque,
     dateEffet: depuisDate(police.dateEffet),
     dateEcheance: depuisDate(police.dateEcheance),
@@ -483,22 +532,176 @@ export async function emettreCp(acteur: UtilisateurCourant, cotationId: number, 
     typeContrat: police.typeContrat,
     auteurNom: c.auteurNom,
   });
+  return {
+    type: "CP",
+    numero: police.numero,
+    produitCode: c.produit.code,
+    policeNumero: police.numero,
+    souscripteur: police.souscripteur as unknown as Souscripteur,
+    cotationId: c.id,
+    policeId: police.id,
+    dateEmission: date,
+    dateValidite: null,
+    parametresDate: contexte.versionDateEffet,
+    modele,
+    associes,
+    pieces: { cs: pieces.cs ? { versionId: pieces.cs.versionId, pdf: pieces.cs.pdf } : null, cg: pieces.cg ? { versionId: pieces.cg.versionId, pdf: pieces.cg.pdf } : null },
+    donnees: (version, url) => donneesDocument(source(version, url)),
+    filigrane: null,
+    origine: null,
+    listesEnAnnexe: groupe ? ["assures"] : [],
+    versionAdherents: groupe ? derniereVersionAdherents(police) : null,
+  };
+}
+
+/** Vérifications communes à la demande et à l'émission des CP d'une police : droit, police, pas déjà émises, seuil. */
+async function preparerCp(acteur: UtilisateurCourant, cotationId: number) {
+  await exigerSurType(acteur, "CP", true);
+  const c = await chargerCotation(cotationId);
+  const police = await obtenirPrisma().police.findUnique({ where: { cotationId }, include: { adherents: true } });
+  if (!police) throw new ErreurMetier("Pas de police : les conditions particulières s'émettent après l'acceptation de la cotation.");
+  if (await obtenirPrisma().documentEmis.findFirst({ where: { policeId: police.id, type: "CP" } })) {
+    throw new ErreurMetier("Les conditions particulières de cette police sont déjà émises : utilisez « Rééditer ».");
+  }
+  return { c, police, seuil: await controlerSeuilContrat(acteur, police, c) };
+}
+
+const messageSeuil = (ttc: string, seuil: string | null) =>
+  `Le TTC du contrat (${ttc} F) dépasse le seuil de validation du produit (${seuil ?? "?"} F) : le contrat doit être validé, puis émis, par un profil habilité (CDC §4.1).`;
+
+/**
+ * Émission des CP d'une police (cotation acceptée) : CP → annexes → CS → CG, visas vérifiés (§6.8).
+ * Un profil « Oui (sous seuil) » ne peut pas émettre au-dessus du seuil du produit : il passe par `soumettreCp`, qui
+ * met le contrat en validation. Un profil « Oui » qui émet clôt la demande de validation qui existerait (D22).
+ */
+export async function emettreCp(acteur: UtilisateurCourant, cotationId: number, adresseIp: string | null): Promise<DocumentLu> {
+  const { c, police, seuil } = await preparerCp(acteur, cotationId);
+  if (seuil.requise) throw new ErreurMetier(messageSeuil(seuil.ttc, seuil.seuil));
+  await exigerAutreQueLeDemandeur(acteur, police.id);
+  const document = await produire(acteur, await productionCp(c, police), adresseIp);
+  await cloreValidationContrat(acteur, police.id, police.numero, adresseIp);
+  return document;
+}
+
+/** Résultat de la demande d'émission des CP : émises, ou passées en validation (au-dessus du seuil du produit). */
+export type ResultatCp = { statut: "EMISE"; document: DocumentLu } | { statut: "A_VALIDER"; ttc: string; seuil: string | null; demandeePar: string };
+
+/**
+ * Point d'entrée des écrans : émet les CP, ou, pour un profil « Oui (sous seuil) » dont le contrat dépasse le seuil du
+ * produit, enregistre la demande de validation (« À valider ») sans rien émettre. CDC §4 et §4.1, D22.
+ */
+export async function soumettreCp(acteur: UtilisateurCourant, cotationId: number, adresseIp: string | null): Promise<ResultatCp> {
+  const { police, seuil } = await preparerCp(acteur, cotationId);
+  if (!seuil.requise) return { statut: "EMISE", document: await emettreCp(acteur, cotationId, adresseIp) };
+  const demande = await demanderValidationContrat(acteur, police.id, police.numero, seuil, adresseIp);
+  return { statut: "A_VALIDER", ttc: seuil.ttc, seuil: seuil.seuil, demandeePar: demande.demandeePar };
+}
+
+/**
+ * Contrat de groupe : après une incorporation ou un retrait d'adhérents, nouvelle VERSION des conditions
+ * particulières (même numéro, version + 1), dont l'annexe reprend la liste à jour (§10.2). Refusée tant
+ * que les CP n'ont pas été émises, ou si la liste n'a pas changé depuis la dernière édition.
+ */
+export async function mettreAJourCp(acteur: UtilisateurCourant, policeId: number, adresseIp: string | null): Promise<DocumentLu> {
+  await exigerSurType(acteur, "CP", true);
+  const police = await obtenirPrisma().police.findUnique({ where: { id: policeId }, include: { adherents: true } });
+  if (!police) throw new ErreurMetier("Police introuvable.");
+  if (!estContratDeGroupe(police.typeContrat)) throw new ErreurMetier("Seul un contrat de groupe a une liste d'adhérents qui évolue.");
+  const derniere = await obtenirPrisma().documentEmis.findFirst({ where: { policeId, type: "CP" }, orderBy: { version: "desc" } });
+  if (!derniere) throw new ErreurMetier("Les conditions particulières de cette police ne sont pas encore émises : émettez-les d'abord.");
+  const editee = (derniere.versionsAssociees as { versionAdherents?: number | null }).versionAdherents ?? null;
+  if (editee !== null && editee === derniereVersionAdherents(police)) {
+    throw new ErreurMetier("La liste des adhérents n'a pas changé depuis la dernière édition des conditions particulières.");
+  }
+  return produire(acteur, await productionCp(await chargerCotation(police.cotationId), police), adresseIp);
+}
+
+// ---------------------------------------------------------------- Contrat de groupe : certificat d'adhésion (§10.2)
+
+/**
+ * Certificat d'adhésion UNITAIRE d'un adhérent de la police mère : son propre numéro (SAISI, unique, au format
+ * des polices : H37), son propre QR code, et `police.police_mere`. Un certificat par adhérent ; une réédition
+ * garde le même numéro (version + 1). Pas de prime (H36). La génération en masse reste en phase 5.
+ */
+export async function emettreCertificat(acteur: UtilisateurCourant, policeId: number, adherentOrdre: number, numeroSaisi: string, adresseIp: string | null): Promise<DocumentLu> {
+  await exigerSurType(acteur, "CERTIFICAT", true);
+  const police = await obtenirPrisma().police.findUnique({ where: { id: policeId }, include: { adherents: true } });
+  if (!police) throw new ErreurMetier("Police introuvable.");
+  if (!estContratDeGroupe(police.typeContrat)) throw new ErreurMetier("Un certificat d'adhésion n'existe que pour un contrat de groupe.");
+  const adherent = (police.assures as unknown as Assure[]).find((a) => a.ordre === adherentOrdre);
+  if (!adherent) throw new ErreurMetier(`L'adhérent n° ${adherentOrdre} ne fait pas partie de la liste courante de la police ${police.numero}.`);
+  if (await obtenirPrisma().documentEmis.findFirst({ where: { policeId, type: "CERTIFICAT", adherentOrdre } })) {
+    throw new ErreurMetier(`Le certificat de l'adhérent n° ${adherentOrdre} est déjà émis : utilisez « Rééditer ».`);
+  }
+  const numero = normaliserNumeroPolice(numeroSaisi);
+  const problemes = problemesNumeroPolice(numero, await lireFormatNumeroPolice());
+  if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
+  if ((await obtenirPrisma().police.findUnique({ where: { numero }, select: { id: true } })) || (await obtenirPrisma().documentEmis.findFirst({ where: { numero }, select: { id: true } }))) {
+    throw new ErreurMetier(`Le numéro « ${numero} » est déjà utilisé par une police ou un document.`);
+  }
+
+  const c = await chargerCotation(police.cotationId);
+  const date = aujourdhui();
+  const contexte = await contexteProduit(c.produitId, c.versionDateEffet);
+  const modele = await modeleEnVigueur("CERTIFICAT", c.produitId, c.produit.code, date);
+  const associes = await modelesAssocies(c.produitId, date, false);
+  const commun = await sourceCommune(contexte, date);
+  const citees = await citationsCotation(contexte, date);
+  const adhesion = dateAdhesion(versionsAdherentsDe(police), adherentOrdre, depuisDate(police.dateEffet)) ?? depuisDate(police.dateEffet);
+  const formule = contexte.formules.get(adherent.formule);
+  // Les montants du certificat ne sont pas fournis (H36) : ces zéros ne sont jamais lus (donnees.ts).
+  const zero = { nette: "0", accessoires: "0", taxe: "0", ttc: "0" };
+  const source = (version: number, url: string): SourceDocument => ({
+    type: "CERTIFICAT",
+    numero,
+    version,
+    dateEmission: date,
+    dateValidite: null,
+    policeNumero: numero,
+    produit: commun.produit,
+    cg: citees.cg ? { libelle: citees.cg.libelle, visa: contexte.references.cgVisa ?? citees.cg.visa ?? "", date: citees.cg.date } : null,
+    cs: citees.cs ? { libelle: citees.cs.libelle, visa: contexte.references.csVisa ?? citees.cs.visa ?? "" } : null,
+    souscripteur: police.souscripteur as unknown as Souscripteur,
+    assures: [adherent],
+    ordresSansPrime: [],
+    beneficiaires: null,
+    contactsUrgence: null,
+    policeMere: police.numero,
+    risque: police.risque as unknown as Risque,
+    dateEffet: adhesion,
+    dateEcheance: depuisDate(police.dateEcheance),
+    joursCouverts: ecartEnJours(adhesion, depuisDate(police.dateEcheance)) + 1,
+    formules: formule ? [{ code: adherent.formule, libelle: formule.libelle, tauxCouverture: formule.tauxCouverture, effectif: 1, primeUnitaire: "0", primeParAssure: "0", ...zero }] : [],
+    totaux: zero,
+    taxe: { tauxPourcent: "0", assiette: "NETTE" },
+    echeances: [],
+    forcee: false,
+    motifForcage: null,
+    societe: commun.societe,
+    mentions: commun.document,
+    urlVerification: url,
+    typeContrat: police.typeContrat,
+    auteurNom: c.auteurNom,
+  });
   return produire(
     acteur,
     {
-      type: "CP",
-      numero: police.numero,
+      type: "CERTIFICAT",
+      numero,
       produitCode: c.produit.code,
+      // Le numéro de la police mère : retrouver les certificats d'une police par son numéro (recherche des documents).
       policeNumero: police.numero,
-      souscripteur: police.souscripteur as unknown as Souscripteur,
+      // La page publique de vérification n'affiche que l'adhérent, masqué.
+      souscripteur: { type: "PHYSIQUE", nom: adherent.nom_prenoms, prenoms: "", raison_sociale: "", telephone: "", email: "", adresse: "" },
       cotationId: c.id,
       policeId: police.id,
+      adherentOrdre,
       dateEmission: date,
       dateValidite: null,
       parametresDate: contexte.versionDateEffet,
       modele,
       associes,
-      pieces: { cs: pieces.cs ? { versionId: pieces.cs.versionId, pdf: pieces.cs.pdf } : null, cg: pieces.cg ? { versionId: pieces.cg.versionId, pdf: pieces.cg.pdf } : null },
+      pieces: { cs: null, cg: null },
       donnees: (version, url) => donneesDocument(source(version, url)),
       filigrane: null,
       origine: null,
@@ -521,7 +724,7 @@ export async function reediter(acteur: UtilisateurCourant, documentId: number, a
   if (!d || !estTypeDocument(d.type)) throw new ErreurMetier("Document introuvable.");
   await exigerSurType(acteur, d.type, true);
   const origine = d.origineId ? await prisma.documentEmis.findUniqueOrThrow({ where: { id: d.origineId } }) : d;
-  const ids = origine.versionsAssociees as unknown as VersionsAssociees & { cs: number | null; cg: number | null };
+  const ids = origine.versionsAssociees as unknown as VersionsAssociees & { cs: number | null; cg: number | null; listesEnAnnexe?: string[]; versionAdherents?: number | null };
   const modele = await prisma.modeleVersion.findUniqueOrThrow({ where: { id: origine.modeleVersionId }, select: { id: true, fichier: true, analyse: true } });
   const associes = { ...(await fichiersAssocies(ids)), ids: { annexes: ids.annexes, sousModeles: ids.sousModeles } };
   const piece = async (id: number | null) => {
@@ -548,9 +751,15 @@ export async function reediter(acteur: UtilisateurCourant, documentId: number, a
       numero: d.numero,
       produitCode: origine.produitCode,
       policeNumero: origine.policeNumero,
-      souscripteur: (donneesOrigine.souscripteur ?? { type: "PHYSIQUE", nom: origine.souscripteurNom }) as Souscripteur,
+      // Certificat : la personne visée par le document est l'adhérent (page publique de vérification), pas le souscripteur de la police mère.
+      souscripteur: (d.type === "CERTIFICAT"
+        ? { type: "PHYSIQUE", nom: (donneesOrigine.assures as { nom_prenoms: string }[] | undefined)?.[0]?.nom_prenoms ?? origine.souscripteurNom, prenoms: "" }
+        : (donneesOrigine.souscripteur ?? { type: "PHYSIQUE", nom: origine.souscripteurNom })) as Souscripteur,
       cotationId: origine.cotationId,
       policeId: origine.policeId,
+      adherentOrdre: origine.adherentOrdre,
+      listesEnAnnexe: ids.listesEnAnnexe ?? [],
+      versionAdherents: ids.versionAdherents ?? null,
       dateEmission: depuisDate(origine.dateEmission),
       dateValidite: origine.dateValidite ? depuisDate(origine.dateValidite) : null,
       parametresDate: depuisDate(origine.parametresDate),

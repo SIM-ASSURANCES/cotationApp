@@ -31,12 +31,19 @@ def generer_pdf(
     qr_largeur_mm: float = 25,
     pieces_jointes: list[bytes] | None = None,
     filigrane: str | None = None,
+    listes_en_annexe: tuple[str, ...] = (),
 ) -> bytes:
     images = dict(images or {})
     if qr_url:
         images["qr_code"] = Image(qr_png(qr_url), qr_largeur_mm)
     resultat = fusionner(
-        modele, donnees, seuil_liste=seuil_liste, annexes=annexes, sous_modeles=sous_modeles, images=images
+        modele,
+        donnees,
+        seuil_liste=seuil_liste,
+        annexes=annexes,
+        sous_modeles=sous_modeles,
+        images=images,
+        listes_en_annexe=listes_en_annexe,
     )
     travail = parametres.dossier_sortie / "travail"
     travail.mkdir(parents=True, exist_ok=True)

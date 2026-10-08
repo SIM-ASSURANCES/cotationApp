@@ -27,6 +27,8 @@ export type DemandePdf = {
   piecesJointes?: Uint8Array[];
   /** Texte en diagonale sur chaque page (« EXPIRÉE », « APERÇU »). */
   filigrane?: string;
+  /** Listes toujours renvoyées en annexe, même sous le seuil (police de groupe : « assures », CDC §10.2). */
+  listesEnAnnexe?: string[];
 };
 
 export type ClientGenerateur = {
@@ -107,6 +109,7 @@ const clientHttp: ClientGenerateur = {
         qr: d.qr ? { url: d.qr.url, largeur_mm: d.qr.largeurMm ?? 25 } : null,
         pieces_jointes: (d.piecesJointes ?? []).map(base64),
         filigrane: d.filigrane ?? null,
+        listes_en_annexe: d.listesEnAnnexe ?? [],
       },
       DELAI_PDF_MS,
     );

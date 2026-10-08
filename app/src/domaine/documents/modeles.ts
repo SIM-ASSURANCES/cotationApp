@@ -13,7 +13,7 @@ import { dateValide, type DateIso } from "../calcul/dates";
  * publiée plus récente est entrée en vigueur. Le calcul suit la date, sans tâche planifiée.
  */
 
-export const TYPES_MODELE = ["CP", "COTATION", "FACTURE", "AVOIR", "RECU", "AVIS_ECHEANCE", "RELANCE", "ANNEXE", "SOUS_MODELE", "CG", "CS"] as const;
+export const TYPES_MODELE = ["CP", "CERTIFICAT", "COTATION", "FACTURE", "AVOIR", "RECU", "AVIS_ECHEANCE", "RELANCE", "ANNEXE", "SOUS_MODELE", "CG", "CS"] as const;
 export type TypeModele = (typeof TYPES_MODELE)[number];
 
 export const LISTES_ANNEXE = ["assures", "beneficiaires", "formules", "echeances"] as const;
@@ -38,8 +38,36 @@ const SOUSCRIPTEUR = ["souscripteur.nom", "souscripteur.raison_sociale"] as cons
 /** Socle commun des CP, cotations et reçus (décision du 06/10/2026, correction de H15). */
 const SOCLE = (numero: string) => [numero, SOUSCRIPTEUR, "police.date_effet", "police.date_echeance", "prime.ttc"] as const;
 
+/**
+ * Contenu obligatoire des conditions particulières (CDC §10.1, session 4a) : le socle, plus la durée en toutes
+ * lettres, le bloc des primes COMPLET, la clause citant les CG et leur visa, la clause de réclamation, le lieu,
+ * la date d'émission et la signature scannée de SIM. Assurés, bénéficiaires, contacts d'urgence, intermédiaires et
+ * garanties (bloc()) dépendent du produit : ils ne sont pas exigés de tout modèle (H35).
+ */
+const CONTENU_CP = [
+  ...SOCLE("police.numero"),
+  "police.duree_libelle",
+  "prime.nette",
+  "prime.accessoires",
+  "prime.taxe",
+  "produit.cg_libelle",
+  "produit.cg_visa",
+  "societe.email_reclamation",
+  "doc.lieu_emission",
+  "doc.date_emission",
+  "signature_sim",
+] as const;
+
 export const REGLES: Record<TypeModele, RegleType> = {
-  CP: { libelle: "Conditions particulières", genere: true, fixe: false, produit: "obligatoire", obligatoires: SOCLE("police.numero") },
+  CP: { libelle: "Conditions particulières", genere: true, fixe: false, produit: "obligatoire", obligatoires: CONTENU_CP },
+  // Certificat d'adhésion unitaire (CDC §10.2) : son numéro, la police mère, l'adhérent, la date d'effet de l'adhésion. Pas de prime (H36).
+  CERTIFICAT: {
+    libelle: "Certificat d'adhésion",
+    genere: true,
+    fixe: false,
+    produit: "obligatoire",
+    obligatoires: ["police.numero", "police.police_mere", SOUSCRIPTEUR, "police.date_effet", "doc.date_emission"],
+  },
   // Une cotation n'a pas encore de numéro de police : son numéro est celui du document (COT-…), H18.
   COTATION: { libelle: "Cotation", genere: true, fixe: false, produit: "obligatoire", obligatoires: SOCLE("doc.numero") },
   FACTURE: { libelle: "Facture", genere: true, fixe: false, produit: "facultatif", obligatoires: ["doc.numero", "prime.ttc", "societe.rccm"] },

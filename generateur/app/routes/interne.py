@@ -81,6 +81,9 @@ class DemandeDocument(BaseModel):
     qr: "QrDemande | None" = Field(default=None, description="QR code de vérification, produit ici (image qr_code)")
     pieces_jointes: list[str] = Field(default=[], description="PDF (base64) ajoutés à la fin, dans l'ordre : CS, puis CG")
     filigrane: str | None = Field(default=None, max_length=40, description="Texte en diagonale sur chaque page (« EXPIRÉE »)")
+    listes_en_annexe: list[str] = Field(
+        default=[], description="Listes toujours renvoyées en annexe, même sous le seuil (police de groupe : adhérents)"
+    )
 
 
 class QrDemande(BaseModel):
@@ -98,7 +101,7 @@ DemandeDocument.model_rebuild()
     responses={200: {"content": {"application/pdf": {}}}, 422: {"description": "fusion impossible"}},
 )
 def document_pdf(demande: DemandeDocument, parametres: Annotated[Parametres, Depends(obtenir_parametres)]) -> Response:
-    inconnues = sorted(set(demande.annexes) - set(LISTES_LONGUES))
+    inconnues = sorted((set(demande.annexes) | set(demande.listes_en_annexe)) - set(LISTES_LONGUES))
     if inconnues:
         raise HTTPException(status_code=422, detail=f"liste sans annexe possible : {', '.join(inconnues)}")
     try:
@@ -117,6 +120,7 @@ def document_pdf(demande: DemandeDocument, parametres: Annotated[Parametres, Dep
             qr_largeur_mm=demande.qr.largeur_mm if demande.qr else 25,
             pieces_jointes=[_decoder(p, "pièce jointe") for p in demande.pieces_jointes],
             filigrane=demande.filigrane,
+            listes_en_annexe=tuple(demande.listes_en_annexe),
         )
     except ErreurFusion as erreur:
         raise HTTPException(status_code=422, detail=str(erreur)) from None

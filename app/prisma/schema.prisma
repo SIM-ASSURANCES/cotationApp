@@ -46,7 +46,7 @@ model ProfilDroit {
   profilId Int    @map("profil_id")
   /// Code d'action (CREER_COTATION...), voir src/domaine/droits.ts.
   action   String
-  /// Code de niveau (AUCUN, LECTURE, DEMANDE, PROPOSITION, OUI_SOUS_SEUIL, OUI, VALIDE).
+  /// Code de niveau (AUCUN, LECTURE, DEMANDE, OUI_SOUS_SEUIL, OUI, VALIDE).
   niveau   String
   profil   Profil @relation(fields: [profilId], references: [id], onDelete: Cascade)
 
@@ -212,18 +212,33 @@ model Formule {
 
 /// Client enregistré (souscripteur connu). Un prospect, lui, se saisit librement sur la cotation (CDC §9.1).
 model Client {
-  id            Int        @id @default(autoincrement())
+  id                    Int        @id @default(autoincrement())
   /// PHYSIQUE ou MORALE (dictionnaire souscripteur.type).
-  type          String
-  nom           String
-  prenoms       String     @default("")
-  raisonSociale String     @default("") @map("raison_sociale")
-  telephone     String     @default("")
-  email         String     @default("")
-  adresse       String     @default("")
-  creeLe        DateTime   @default(now()) @map("cree_le")
-  creePar       String     @map("cree_par")
-  cotations     Cotation[]
+  type                  String
+  nom                   String
+  prenoms               String     @default("")
+  raisonSociale         String     @default("") @map("raison_sociale")
+  telephone             String     @default("")
+  email                 String     @default("")
+  adresse               String     @default("")
+  /// Compléments du souscripteur (dictionnaire §6.3.2, session 4a) : copiés dans la cotation avec le reste.
+  numIdentification     String     @default("") @map("num_identification")
+  dateNaissance         DateTime?  @map("date_naissance") @db.Date
+  lieuNaissance         String     @default("") @map("lieu_naissance")
+  profession            String     @default("")
+  activite              String     @default("")
+  employeur             String     @default("")
+  bp                    String     @default("")
+  localite              String     @default("")
+  sousPrefecture        String     @default("") @map("sous_prefecture")
+  whatsapp              String     @default("")
+  mobileMoney           String     @default("") @map("mobile_money")
+  situationMatrimoniale String     @default("") @map("situation_matrimoniale")
+  nbEnfants             Int?       @map("nb_enfants")
+  groupeSanguin         String     @default("") @map("groupe_sanguin")
+  creeLe                DateTime   @default(now()) @map("cree_le")
+  creePar               String     @map("cree_par")
+  cotations             Cotation[]
 
   @@map("clients")
 }
@@ -268,6 +283,10 @@ model Cotation {
   lignes            Json
   motifForcage      String?   @map("motif_forcage")
   assures           Json      @default("[]")
+  /// Bénéficiaires et contacts d'urgence (dictionnaire §6.3.2, session 4a). Null : cotation d'avant la 4a,
+  /// où ces données n'étaient pas saisies (« jamais fournies », D19) ; [] : saisies et laissées vides.
+  beneficiaires     Json?
+  contactsUrgence   Json?     @map("contacts_urgence")
   risque            Json      @default("{}")
   /// INDIVIDUEL, FAMILLE, GROUPE ou GROUPE_OUVERT (police.type_contrat) : choisit le taux de taxe (D18).
   /// Null pour une cotation créée avant la session 4.0.
@@ -308,27 +327,80 @@ model Cotation {
 /// Police créée à l'acceptation d'une cotation (CDC §9.4). Le numéro est attribué par SIM et SAISI
 /// (H10, D18) : jamais généré par le module ; unique ; format contrôlé par un paramètre (H31).
 model Police {
-  id               Int      @id @default(autoincrement())
-  numero           String   @unique
+  id               Int                @id @default(autoincrement())
+  numero           String             @unique
   /// INDIVIDUEL, FAMILLE, GROUPE ou GROUPE_OUVERT (police.type_contrat). Null avant la session 4.0.
-  typeContrat      String?  @map("type_contrat")
-  cotationId       Int      @unique @map("cotation_id")
-  produitCode      String   @map("produit_code")
+  typeContrat      String?            @map("type_contrat")
+  cotationId       Int                @unique @map("cotation_id")
+  produitCode      String             @map("produit_code")
   souscripteur     Json
   assures          Json
+  /// Voir Cotation.beneficiaires : null = jamais fournis (police d'avant la 4a).
+  beneficiaires    Json?
+  contactsUrgence  Json?              @map("contacts_urgence")
   risque           Json
-  formulesRetenues Json     @map("formules_retenues")
-  donneesCalcul    Json     @map("donnees_calcul")
+  formulesRetenues Json               @map("formules_retenues")
+  donneesCalcul    Json               @map("donnees_calcul")
   resultat         Json
-  ttcTotal         Decimal  @map("ttc_total") @db.Decimal(18, 2)
+  ttcTotal         Decimal            @map("ttc_total") @db.Decimal(18, 2)
   echeancier       Json
-  dateEffet        DateTime @map("date_effet") @db.Date
-  dateEcheance     DateTime @map("date_echeance") @db.Date
-  creeLe           DateTime @default(now()) @map("cree_le")
-  creePar          String   @map("cree_par")
-  cotation         Cotation @relation(fields: [cotationId], references: [id], onDelete: Restrict)
+  dateEffet        DateTime           @map("date_effet") @db.Date
+  dateEcheance     DateTime           @map("date_echeance") @db.Date
+  creeLe           DateTime           @default(now()) @map("cree_le")
+  creePar          String             @map("cree_par")
+  cotation         Cotation           @relation(fields: [cotationId], references: [id], onDelete: Restrict)
+  /// Police de groupe : historique des listes d'adhérents (incorporations, retraits).
+  adherents        AdherentsVersion[]
+  /// Demandes de validation de l'émission du contrat (TTC au-dessus du seuil du produit, CDC §4.1).
+  validations      ValidationContrat[]
 
   @@map("polices")
+}
+
+/// Liste des adhérents d'une police de groupe (CDC §10.2, D22), par VERSIONS en ajout seul : la liste
+/// courante est celle de la dernière version. La version 1 est la liste de la cotation acceptée.
+model AdherentsVersion {
+  id        Int      @id @default(autoincrement())
+  policeId  Int      @map("police_id")
+  numero    Int
+  /// INITIALE, INCORPORATION ou RETRAIT.
+  motif     String
+  /// Date à laquelle le changement prend effet.
+  dateEffet DateTime @map("date_effet") @db.Date
+  /// Liste COMPLÈTE après le changement ([{ ordre, nom_prenoms, … }], noms du dictionnaire).
+  adherents Json
+  /// Ordres des adhérents ajoutés ou retirés par ce changement.
+  concernes Json
+  creeLe    DateTime @default(now()) @map("cree_le")
+  creePar   String   @map("cree_par")
+  police    Police   @relation(fields: [policeId], references: [id], onDelete: Restrict)
+
+  @@unique([policeId, numero])
+  @@map("adherents_versions")
+}
+
+/// Validation de l'émission des conditions particulières (CDC §4 « Oui (sous seuil) », §4.1, D22). Un profil dont le
+/// droit « Émettre un contrat » est « Oui (sous seuil) » ne peut pas émettre un contrat dont le TTC dépasse le seuil du
+/// produit : sa demande est enregistrée ici (A_VALIDER) ; un profil « Oui » qui n'est pas le demandeur l'émet, et la
+/// demande passe à VALIDEE. Une seule demande ouverte par police (index partiel, voir la migration).
+model ValidationContrat {
+  id                    Int       @id @default(autoincrement())
+  policeId              Int       @map("police_id")
+  /// TTC du contrat et seuil du produit au moment de la demande.
+  ttc                   Decimal   @db.Decimal(18, 2)
+  seuil                 Decimal   @db.Decimal(18, 6)
+  /// A_VALIDER, puis VALIDEE.
+  statut                String
+  demandeParId          Int       @map("demande_par_id")
+  demandeParIdentifiant String    @map("demande_par_identifiant")
+  demandeLe             DateTime  @default(now()) @map("demande_le")
+  valideParId           Int?      @map("valide_par_id")
+  valideParIdentifiant  String?   @map("valide_par_identifiant")
+  valideLe              DateTime? @map("valide_le")
+  police                Police    @relation(fields: [policeId], references: [id], onDelete: Restrict)
+
+  @@index([policeId])
+  @@map("validations_contrat")
 }
 
 /// Modèle Word de la bibliothèque (CDC §6.1). Le type et le code ne changent jamais ; le contenu,
@@ -429,6 +501,8 @@ model DocumentEmis {
   souscripteurMasque String        @map("souscripteur_masque")
   cotationId         Int?          @map("cotation_id")
   policeId           Int?          @map("police_id")
+  /// Certificat d'adhésion : numéro d'ordre de l'adhérent dans la police mère.
+  adherentOrdre      Int?          @map("adherent_ordre")
   dateEmission       DateTime      @map("date_emission") @db.Date
   /// Cotation : fin de validité (statut « Expirée » sur la page de vérification).
   dateValidite       DateTime?     @map("date_validite") @db.Date

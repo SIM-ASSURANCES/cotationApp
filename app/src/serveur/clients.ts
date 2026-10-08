@@ -5,6 +5,7 @@ import { problemesSouscripteur, type Souscripteur } from "@/domaine/cotation/sai
 
 import { journaliser } from "./audit";
 import { niveauDuProfil } from "./droits";
+import { aujourdhui } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 
@@ -12,9 +13,19 @@ const auteur = (u: UtilisateurCourant) => ({ id: u.id, identifiant: u.identifian
 
 export type LigneClient = { id: number; souscripteur: Souscripteur };
 
-export function versSouscripteur(c: {
+/** Colonnes d'un client utiles au souscripteur (les compléments sont ceux du dictionnaire §6.3.2, session 4a). */
+type ColonnesClient = {
   type: string; nom: string; prenoms: string; raisonSociale: string; telephone: string; email: string; adresse: string;
-}): Souscripteur {
+  numIdentification: string; dateNaissance: Date | null; lieuNaissance: string; profession: string; activite: string; employeur: string;
+  bp: string; localite: string; sousPrefecture: string; whatsapp: string; mobileMoney: string; situationMatrimoniale: string;
+  nbEnfants: number | null; groupeSanguin: string;
+};
+
+/**
+ * Un client enregistré est un souscripteur dont les compléments ont été SAISIS (vides s'il n'y avait rien
+ * à saisir) : ils sont donc toujours présents ici, contrairement à une cotation d'avant la 4a (D19, D22).
+ */
+export function versSouscripteur(c: ColonnesClient): Souscripteur {
   return {
     type: c.type === "MORALE" ? "MORALE" : "PHYSIQUE",
     nom: c.nom,
@@ -23,6 +34,20 @@ export function versSouscripteur(c: {
     telephone: c.telephone,
     email: c.email,
     adresse: c.adresse,
+    num_identification: c.numIdentification,
+    date_naissance: c.dateNaissance ? c.dateNaissance.toISOString().slice(0, 10) : "",
+    lieu_naissance: c.lieuNaissance,
+    profession: c.profession,
+    activite: c.activite,
+    employeur: c.employeur,
+    bp: c.bp,
+    localite: c.localite,
+    sous_prefecture: c.sousPrefecture,
+    whatsapp: c.whatsapp,
+    mobile_money: c.mobileMoney,
+    situation_matrimoniale: c.situationMatrimoniale,
+    nb_enfants: c.nbEnfants,
+    groupe_sanguin: c.groupeSanguin,
   };
 }
 
@@ -38,7 +63,7 @@ export async function creerClient(acteur: UtilisateurCourant, s: Souscripteur, a
   if (!peutAgir(await niveauDuProfil(acteur.profil, "CREER_COTATION"))) {
     throw new ErreurAcces("Droit insuffisant : création de client.");
   }
-  const problemes = problemesSouscripteur(s);
+  const problemes = problemesSouscripteur(s, aujourdhui());
   if (problemes.length > 0) {
     throw new ErreurMetier(problemes.join(" "));
   }
@@ -52,6 +77,20 @@ export async function creerClient(acteur: UtilisateurCourant, s: Souscripteur, a
         telephone: s.telephone.trim(),
         email: s.email.trim(),
         adresse: s.adresse.trim(),
+        numIdentification: (s.num_identification ?? "").trim(),
+        dateNaissance: s.date_naissance ? new Date(`${s.date_naissance}T00:00:00.000Z`) : null,
+        lieuNaissance: (s.lieu_naissance ?? "").trim(),
+        profession: (s.profession ?? "").trim(),
+        activite: (s.activite ?? "").trim(),
+        employeur: (s.employeur ?? "").trim(),
+        bp: (s.bp ?? "").trim(),
+        localite: (s.localite ?? "").trim(),
+        sousPrefecture: (s.sous_prefecture ?? "").trim(),
+        whatsapp: (s.whatsapp ?? "").trim(),
+        mobileMoney: (s.mobile_money ?? "").trim(),
+        situationMatrimoniale: (s.situation_matrimoniale ?? "").trim(),
+        nbEnfants: s.nb_enfants ?? null,
+        groupeSanguin: (s.groupe_sanguin ?? "").trim(),
         creePar: acteur.identifiant,
       },
     });

@@ -1,0 +1,138 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+
+import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
+import { LignesAssures } from "@/composants/LignesDynamiques";
+import { LIBELLE_MOTIF_ADHERENTS } from "@/domaine/cotation/adherents";
+import { peutAgir, peutLire } from "@/domaine/droits";
+import { lireAdherents, policeDeCotation } from "@/serveur/adherents";
+import { niveauDuProfil } from "@/serveur/droits";
+import { exigerDroit } from "@/serveur/session";
+
+import { emettreLeCertificat, incorporerLesAdherents, mettreAJourLesCp, retirerLesAdherents } from "./actions";
+
+const entree = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2";
+
+export default async function PageAdherents(props: PageProps<"/cotations/[id]/adherents">) {
+  const { id } = await props.params;
+  const utilisateur = await exigerDroit("EMETTRE_CONTRAT", peutLire);
+  const cotationId = Number(id);
+  const policeId = Number.isInteger(cotationId) ? await policeDeCotation(utilisateur, cotationId) : null;
+  const vue = policeId === null ? null : await lireAdherents(utilisateur, policeId);
+  if (!vue || policeId === null) notFound();
+  const agit = peutAgir(await niveauDuProfil(utilisateur.profil, "EMETTRE_CONTRAT"));
+  const derniere = vue.versions[vue.versions.length - 1];
+  const cpAJour = vue.cp !== null && vue.cp.versionAdherents === derniere?.numero;
+
+  return (
+    <main>
+      <p className="mb-2 text-sm">
+        <Link href={`/cotations/${cotationId}`} className="text-sim-bleu underline">← Cotation</Link>
+      </p>
+      <h1 className="mb-1 text-2xl font-semibold text-sim-bleu">Adhérents de la police mère {vue.police.numero}</h1>
+      <p className="mb-6 text-sm text-zinc-700">
+        Période de la police : du {vue.police.dateEffet} au {vue.police.dateEcheance}. La liste évolue par versions : chaque incorporation ou retrait crée une nouvelle version,
+        l'historique reste consultable. Les conditions particulières de la police mère reprennent la liste courante en annexe.
+      </p>
+
+      <section className="mb-8">
+        <h2 className="mb-2 text-lg font-semibold">Liste courante ({vue.courants.length} adhérents, version {derniere?.numero ?? "—"})</h2>
+        <FormulaireAction action={retirerLesAdherents} libelleBouton="Retirer les adhérents cochés" discret>
+          <input type="hidden" name="cotationId" value={cotationId} />
+          <input type="hidden" name="policeId" value={policeId} />
+          <div className="mb-3 overflow-x-auto">
+            <table className="w-full min-w-[56rem] border-collapse text-sm">
+              <thead>
+                <tr className="bg-sim-bleu text-left text-white">
+                  {agit ? <th className="p-2">Retrait</th> : null}
+                  <th className="p-2">N°</th><th className="p-2">Nom et prénoms</th><th className="p-2">Naissance</th><th className="p-2">Sexe</th><th className="p-2">Lien</th><th className="p-2">Formule</th><th className="p-2">Certificat</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vue.courants.map((a) => {
+                  const certificat = vue.certificats[a.ordre];
+                  return (
+                    <tr key={a.ordre} className="border-b border-bordure">
+                      {agit ? <td className="p-2"><input type="checkbox" name="retrait" value={a.ordre} aria-label={`Retirer l'adhérent ${a.ordre}`} /></td> : null}
+                      <td className="p-2">{a.ordre}</td><td className="p-2">{a.nom_prenoms}</td><td className="p-2">{a.date_naissance || "—"}</td><td className="p-2">{a.sexe || "—"}</td><td className="p-2">{a.lien || "—"}</td><td className="p-2">{a.formule || "—"}</td>
+                      <td className="p-2">{certificat ? <a href={`/api/documents/${certificat.id}`} className="text-sim-bleu underline">{certificat.numero} (v{certificat.version})</a> : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {agit ? <Champ nom="dateEffet" libelle="Date d'effet du retrait (AAAA-MM-JJ)" autoComplete="off" valeur={derniere?.dateEffet} /> : null}
+        </FormulaireAction>
+      </section>
+
+      {agit ? (
+        <section className="mb-8 max-w-5xl rounded border border-bordure p-4">
+          <h2 className="mb-2 text-lg font-semibold">Incorporer des adhérents</h2>
+          <FormulaireAction action={incorporerLesAdherents} libelleBouton="Incorporer">
+            <input type="hidden" name="cotationId" value={cotationId} />
+            <input type="hidden" name="policeId" value={policeId} />
+            <LignesAssures initiales={[{ nom: "", naissance: "", sexe: "", lien: "", formule: "" }]} formules={vue.formules.map((code) => ({ code, libelle: code }))} />
+            <div className="max-w-xs">
+              <Champ nom="dateEffet" libelle="Date d'effet de l'incorporation (AAAA-MM-JJ)" autoComplete="off" valeur={derniere?.dateEffet} />
+            </div>
+          </FormulaireAction>
+        </section>
+      ) : null}
+
+      <section className="mb-8 max-w-3xl rounded border border-bordure p-4">
+        <h2 className="mb-2 text-lg font-semibold">Conditions particulières de la police mère</h2>
+        {vue.cp === null ? (
+          <p className="text-sm text-zinc-700">Pas encore émises : depuis la fiche de la cotation, émettez-les ; la liste courante sera en annexe.</p>
+        ) : (
+          <>
+            <p className="mb-2 text-sm">
+              Dernière édition : version {vue.cp.version}, avec la version {vue.cp.versionAdherents ?? "?"} de la liste. {cpAJour ? "Elle est à jour." : "La liste a changé depuis : une nouvelle version est nécessaire."}
+            </p>
+            {!cpAJour && agit ? (
+              <FormulaireAction action={mettreAJourLesCp} libelleBouton="Émettre une nouvelle version des CP (annexe à jour)">
+                <input type="hidden" name="cotationId" value={cotationId} />
+                <input type="hidden" name="policeId" value={policeId} />
+              </FormulaireAction>
+            ) : null}
+          </>
+        )}
+      </section>
+
+      {agit ? (
+        <section className="mb-8 max-w-3xl rounded border border-bordure p-4">
+          <h2 className="mb-2 text-lg font-semibold">Certificat d'adhésion (unitaire)</h2>
+          <p className="mb-3 text-sm text-zinc-700">Un certificat par adhérent, avec son propre numéro, attribué par SIM et saisi ici (le module ne le génère pas), et son propre QR code. La génération en masse viendra en phase 5.</p>
+          <FormulaireAction action={emettreLeCertificat} libelleBouton="Émettre le certificat" discret>
+            <input type="hidden" name="cotationId" value={cotationId} />
+            <input type="hidden" name="policeId" value={policeId} />
+            <label className="mb-3 block text-sm font-medium">
+              Adhérent
+              <select name="ordre" required defaultValue="" className={entree}>
+                <option value="" disabled>— Choisir —</option>
+                {vue.courants.filter((a) => !vue.certificats[a.ordre]).map((a) => (<option key={a.ordre} value={a.ordre}>{a.ordre} — {a.nom_prenoms}</option>))}
+              </select>
+            </label>
+            <Champ nom="numero" libelle="Numéro du certificat (même format que les polices)" autoComplete="off" />
+          </FormulaireAction>
+        </section>
+      ) : null}
+
+      <section className="max-w-3xl">
+        <h2 className="mb-2 text-lg font-semibold">Historique des versions</h2>
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="text-left text-zinc-600"><th className="p-1">Version</th><th className="p-1">Changement</th><th className="p-1">Prend effet le</th><th className="p-1">Adhérents concernés</th><th className="p-1">Total</th><th className="p-1">Par</th></tr>
+          </thead>
+          <tbody>
+            {[...vue.versions].reverse().map((v) => (
+              <tr key={v.numero} className="border-t border-bordure">
+                <td className="p-1">{v.numero}</td><td className="p-1">{LIBELLE_MOTIF_ADHERENTS[v.motif]}</td><td className="p-1">{v.dateEffet}</td><td className="p-1">{v.concernes.length > 0 ? v.concernes.join(", ") : "—"}</td><td className="p-1">{v.adherents.length}</td><td className="p-1">{v.creePar}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+    </main>
+  );
+}

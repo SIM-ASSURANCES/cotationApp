@@ -72,7 +72,24 @@ function analyse(chemins: string[], surcharge: Partial<Analyse> = {}): Analyse {
   };
 }
 
-const SOCLE_CP = ["police.numero", "souscripteur.nom", "police.date_effet", "police.date_echeance", "prime.ttc"];
+/** Contenu obligatoire d'un modèle de CP (CDC §10.1, session 4a). */
+const SOCLE_CP = [
+  "police.numero",
+  "souscripteur.nom",
+  "police.date_effet",
+  "police.date_echeance",
+  "prime.ttc",
+  "police.duree_libelle",
+  "prime.nette",
+  "prime.accessoires",
+  "prime.taxe",
+  "produit.cg_libelle",
+  "produit.cg_visa",
+  "societe.email_reclamation",
+  "doc.lieu_emission",
+  "doc.date_emission",
+  "signature_sim",
+];
 let prochaineAnalyse: Analyse = analyse(SOCLE_CP);
 const demandesPdf: DemandePdf[] = [];
 

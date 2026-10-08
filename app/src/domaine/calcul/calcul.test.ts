@@ -221,6 +221,51 @@ describe("réponses de la Technique du 08/10/2026 (D18) : prorata plafonné, TTC
   });
 });
 
+describe("prime de l'unité (assures[].prime) : prime de la formule, au prorata, selon l'arrondi du produit", () => {
+  const ligne = (code: string, primeUnitaire: string, effectif: number) => ({ code, primeUnitaire, effectif, accessoire: { mode: "AUCUN" as const, valeur: "0" } });
+  const par = (entree: Partial<EntreeCalcul> & Pick<EntreeCalcul, "lignes">) => calculer({ ...AN_2026, parametres: parametres(), ...entree });
+
+  it("T1, année pleine : la prime de la formule au franc près (Solo 93 581, Famille 252 658)", () => {
+    const [solo, famille] = par({ lignes: [ligne("SOLO", "93581.33", 3), ligne("FAMILLE", "252657.63", 60)] }).lignes;
+
+    expect(texte(solo.primeParUnite)).toBe("93581");
+    expect(texte(famille.primeParUnite)).toBe("252658");
+  });
+
+  it("prorata : 100 000 sur 163 jours pour 2 assurés, soit 44 657,53 exactement, 44 658 au franc", () => {
+    const r = par({ dateEffet: "2026-07-22", dateEcheance: "2026-12-31", lignes: [ligne("F", "100000", 2)] });
+
+    expect(texte(r.lignes[0].primeParUnite)).toBe("44658");
+    expect(texte(r.lignes[0].exact.nette.div(2).toDecimalPlaces(2))).toBe("44657.53");
+  });
+
+  it("l'arrondi est celui du produit (précision et sens), pas un arrondi au franc fixe", () => {
+    const base = { dateEffet: "2026-07-22", dateEcheance: "2026-12-31", lignes: [ligne("F", "100000", 2)] };
+    const arrondi = (precision: 1 | 10 | 100 | 1000, sens: "PROCHE" | "SUPERIEUR" | "INFERIEUR") =>
+      texte(par({ ...base, parametres: parametres({ arrondi: { ...AU_FRANC, precision, sens } }) }).lignes[0].primeParUnite);
+
+    expect(arrondi(100, "PROCHE")).toBe("44700");
+    expect(arrondi(100, "INFERIEUR")).toBe("44600");
+    expect(arrondi(1000, "SUPERIEUR")).toBe("45000");
+    expect(arrondi(10, "PROCHE")).toBe("44660");
+  });
+
+  it("la prime minimale de la ligne est répartie sur l'effectif ; sans prorata, c'est la prime annuelle", () => {
+    const minimale = par({ dateEffet: "2026-12-01", dateEcheance: "2026-12-31", parametres: parametres({ prorata: { actif: true, primeMinimale: "5000" } }), lignes: [ligne("F", "20000", 2)] });
+    const sansProrata = par({ dateEffet: "2026-12-01", dateEcheance: "2026-12-31", parametres: parametres({ prorata: { actif: false, primeMinimale: null } }), lignes: [ligne("F", "20000", 2)] });
+
+    expect(texte(minimale.lignes[0].primeParUnite)).toBe("2500");
+    expect(texte(sansProrata.lignes[0].primeParUnite)).toBe("20000");
+  });
+
+  it("une année de 366 jours ne dépasse jamais la prime annuelle (prorata plafonné, H3)", () => {
+    const r = par({ dateEffet: "2028-01-01", dateEcheance: "2028-12-31", lignes: [ligne("F", "93581.33", 1)] });
+
+    expect(r.joursCouverts).toBe(366);
+    expect(texte(r.lignes[0].primeParUnite)).toBe("93581");
+  });
+});
+
 describe("refus des entrées invalides", () => {
   const base = { ...AN_2026, parametres: parametres(), lignes: [{ code: "F", primeUnitaire: "100", effectif: 1, accessoire: { mode: "AUCUN" as const, valeur: "0" } }] };
 

@@ -4,6 +4,7 @@ import type { EtatFormulaire } from "@/composants/types";
 import { creerClient } from "@/serveur/clients";
 
 import { champ, executerAction } from "../executer";
+import { lireComplementsSouscripteur } from "../lire-complements";
 
 export async function creerUnClient(_etat: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
   return executerAction(
@@ -18,6 +19,7 @@ export async function creerUnClient(_etat: EtatFormulaire, d: FormData): Promise
           telephone: champ(d, "souscripteur_telephone"),
           email: champ(d, "souscripteur_email"),
           adresse: champ(d, "souscripteur_adresse"),
+          ...lireComplementsSouscripteur(d),
         },
         ip,
       )),

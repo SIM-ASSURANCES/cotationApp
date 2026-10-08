@@ -1,6 +1,6 @@
 # Compte rendu de la session 4a : contrats complets et contrats de groupe
 
-Écrit le 09/10/2026, branche `phase-4a` (créée à partir de `phase-4.0`, non fusionnée dans `main`). Décisions : [decisions.md](decisions.md) (D22, hypothèses H34 à H43).
+Écrit le 08/10/2026 (corrections du même jour ajoutées en bas), branche `phase-4a` (créée à partir de `phase-4.0`, non fusionnée dans `main`). Décisions : [decisions.md](decisions.md) (D22, hypothèses H34 à H46).
 
 ## Ce qui est fait
 
@@ -24,8 +24,8 @@
 
 ## Tests (lancés dans le conteneur, avec le vrai générateur et LibreOffice)
 
-- vitest : **211 unitaires**, **116 d'intégration**, **8 de bout en bout** (dont 3 nouveaux : T5, refus de l'IARD, T6), tous verts. `typecheck`, `lint` et `next build` verts.
-- pytest : **162 verts** (136 avant la 4a). Nouveau : `test_contrats_4a.py` (T5, T6, annexe imposée, certificat, route, rendu PDF), 4 tests de fusion, fixtures de la 4a.
+- vitest (après les corrections ci-dessous) : **240 unitaires**, **129 d'intégration**, **8 de bout en bout** (dont 3 de la 4a : T5, refus de l'IARD, T6), tous verts. `typecheck`, `lint` et `next build` verts.
+- pytest : **162 verts** (136 avant la 4a, inchangé par les corrections). Nouveau : `test_contrats_4a.py` (T5, T6, annexe imposée, certificat, route, rendu PDF), 4 tests de fusion, fixtures de la 4a.
 - Les contrôles de texte des PDF de bout en bout utilisent `pdftotext` ; ils sont ignorés s'il est absent (sur un poste Windows par exemple).
 - **Non fait** : les nouveaux écrans (compléments, adhérents) n'ont pas été essayés dans un navigateur : types, lint et build seulement ; ouverture des PDF dans un vrai lecteur ; rendu sous Windows (polices Calibri et Tahoma absentes du conteneur, `/sante` répond « dégradé », sans effet sur les tests).
 
@@ -34,10 +34,26 @@
 - **Modèle de test T9** : il est maintenant un CP complet dont seule la balise `{{ client.nom }}` est fausse. Sans cela, le nouveau contenu obligatoire du §10.1 aurait ajouté d'autres refus à celui que le test attend.
 - **Modèles existants** : tout CP déposé avant la 4a doit contenir le contenu du §10.1 pour être redéposé ; un modèle publié reste utilisable tel quel.
 - **Certificat sans prime** (H36) : choix de prudence, pas une règle de la Technique.
-- **Question en attente de Thierry** : numéro du certificat, « Saisi » (mis en œuvre), « Dérivé de la police mère » ou « Celui de la mère » (H37).
-- **Champs toujours non fournis** (bloquants s'ils sont dans un modèle) : `assures[].prime`, `police.reference`.
+- **Numéro du certificat** (H37) : Thierry garde « Saisi » (08/10/2026).
+- **Champs** : `assures[].prime` est maintenant fourni par le moteur (H45), `police.reference` est facultatif (H46).
 - Le trop-perçu reste réservé à **H33** (session 4b) ; rien n'a été commencé de la 4b.
 
 ## Hypothèses ouvertes
 
-H34 à H43 (D22). À trancher en priorité : **H37** (numéro du certificat) et **H39** (la durée s'écrit « 365 jours » ; mois ou années ?). Restent ouvertes de la 4.0 : H2, H8, H28 à H32 et la date d'entrée en vigueur des taux.
+H34 à H46 (D22). H37 et H39 sont tranchées par Thierry. À faire confirmer en priorité : **H44** (validation du contrat, la DG ne valide pas) et **H45** (prime par assuré : nette ou TTC ?). Restent ouvertes de la 4.0 : H2, H8, H28 à H32, la question de H31 (les 5 chiffres sont-ils le numéro de l'adhérent ?) et la date d'entrée en vigueur des taux.
+
+## Corrections du 08/10/2026 (avant la 4b)
+
+| Point | Fait |
+| --- | --- |
+| 1. Droits par défaut = CDC §4 | **Non reproduit** : le code donne « Oui » au Commercial pour « Créer une cotation » depuis la phase 0 (`droits.ts`, jamais modifié), et un test le vérifiait déjà. Ajouté : comparaison de **chaque cellule** du tableau du CDC (lu dans `docs/cdc.md`) avec les droits par défaut du code, avec les droits écrits en base par `npm run initialiser`, et de l'ordre des colonnes. Si le Commercial n'a pas « Oui » chez vous, c'est une ligne déjà en base modifiée (l'initialisation n'écrase jamais) : à regarder dans « Droits par profil » |
+| 2. « Oui (sous seuil) » à l'émission d'un contrat | au-dessus du seuil du produit, la demande du Gestionnaire passe « À valider » ; la Technique, autre que le demandeur, émet ce qui vaut validation (H44, H21 fermée pour les contrats). Table `validations_contrat` en ajout protégé, journal `CONTRAT_A_VALIDER` / `CONTRAT_VALIDE`, fiche de cotation adaptée |
+| 3. « Proposition » retiré | valeur supprimée ; Comptabilité en « Lecture » ; migration qui convertit les lignes existantes et les journalise ; trace et écart avec le CDC dans D21 |
+| 4. Validation de la cotation | dépend du seul droit « Valider une cotation » (déjà le cas, lu dans `cotations.ts`) ; deux nouveaux tests : la DG (« Forcer : Valide ») ne valide ni ne renvoie en brouillon, la Technique valide même sans droit sur le forçage |
+| 5. `assures[].prime` | calculée par le moteur (`primeParUnite`), recalculée depuis l'entrée figée donc valable pour les polices déjà émises ; le générateur ne calcule rien (H45) |
+| 6. `police.reference` | facultatif ; question ajoutée pour la Technique (H46) |
+| 7. Durée (H39) | « 1 an », « 6 mois », « 163 jours » selon la règle de Thierry ; 17 tests dans `duree.test.ts` et vérifications dans les données du CP et du certificat |
+| 8. H37, H31 | « Saisi » conservé ; question « les 5 chiffres sont-ils le numéro de l'adhérent ? » ajoutée à H31 et au tableau des décisions en attente |
+| 9. Date | 08/10/2026 dans ce compte rendu, D22 et la recette ; la migration `20261009090000_contrats_4a` n'est pas renommée. La nouvelle migration `20261009100000_validation_contrat_et_droits` passe après elle |
+
+Tests de ces corrections : voir les chiffres plus haut. Rien de la 4b n'est commencé.

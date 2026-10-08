@@ -64,6 +64,8 @@ const versDate = (iso: DateIso) => new Date(`${iso}T00:00:00.000Z`);
 const depuisDate = (d: Date): DateIso => d.toISOString().slice(0, 10);
 const auteur = (u: UtilisateurCourant): ActeurAudit => ({ id: u.id, identifiant: u.identifiant });
 const json = (v: unknown) => v as Prisma.InputJsonValue;
+/** Émissions simultanées : elles passent une à une sur la ligne du compteur ; on attend son tour plutôt que d'échouer. */
+const ATTENTE = { maxWait: 20_000, timeout: 20_000 };
 
 // ---------------------------------------------------------------- Droits (CDC §4)
 
@@ -272,6 +274,9 @@ export async function creerFactureRenouvellement(acteur: UtilisateurCourant, pol
     const police = await chargerPolice(tx, policeId);
     if (!police) throw new ErreurMetier("Police introuvable.");
     const precedente = await dernierePeriode(tx, policeId);
+    if (precedente?.type === "RENOUVELLEMENT" && precedente.statut !== "EMISE") {
+      throw new ErreurMetier("Un renouvellement de cette police est déjà en cours (brouillon ou à valider) : émettez-le avant de préparer le suivant.");
+    }
     if (!precedente || precedente.statut !== "EMISE") throw new ErreurMetier("Le renouvellement suit une facture émise (affaire nouvelle ou renouvellement précédent) : émettez-la d'abord.");
     const calcul = await calculRenouvellement(tx, police, precedente, saisie);
     const contenu = await contenuCalcule(police, calcul.produitId, calcul.versionDateEffet, calcul.entree, {
@@ -534,7 +539,7 @@ export async function emettreFacture(acteur: UtilisateurCourant, factureId: numb
       tx,
     );
     return { numero, idProduction };
-  });
+  }, ATTENTE);
   return { statut: "EMISE", numero: resultat.numero, productions: [await produire(acteur, resultat.idProduction, adresseIp)] };
 }
 
@@ -610,7 +615,7 @@ export async function emettreAvoir(acteur: UtilisateurCourant, factureId: number
     await journaliser({ acteur: auteur(acteur), action: "AVOIR_EMIS", objetType: "facture", objetId: avoir.id, apres: { numero, factureOrigine: f.numero, ttc: contenu.totaux.ttc, motif: motif.trim() }, adresseIp }, tx);
     await journaliser({ acteur: auteur(acteur), action: "FACTURE_ANNULEE", objetType: "facture", objetId: f.id, avant: { statut: "EMISE" }, apres: { numero: f.numero, avoir: numero }, adresseIp }, tx);
     return { numero, avoirId: avoir.id, idProduction };
-  });
+  }, ATTENTE);
   return { numero: resultat.numero, avoirId: resultat.avoirId, productions: [await produire(acteur, resultat.idProduction, adresseIp)] };
 }
 
@@ -627,6 +632,7 @@ export async function enregistrerPaiement(acteur: UtilisateurCourant, factureId:
   const lue = await prisma.facture.findUnique({ where: { id: factureId } });
   if (!lue) throw new ErreurMetier("Facture introuvable.");
   const date = aujourdhui();
+  const modeleRecu = await modeleRetenu("RECU", lue.produitId, date).catch((e: unknown) => (e instanceof Error ? e : new Error(String(e))));
   const commun = await lireParametresSociete(date);
   const resultat = await prisma.$transaction(async (tx) => {
     const f = await verrouiller(tx, factureId);
@@ -636,8 +642,8 @@ export async function enregistrerPaiement(acteur: UtilisateurCourant, factureId:
     const controle = controlerPaiement(saisie, { statut: f.statut as StatutFacture, type: f.type as TypeFacture, numero: f.numero, restantDu: etatAvant.restantDu }, date);
     if (controle.problemes.length > 0 || !controle.montant) throw new ErreurMetier(controle.problemes.join(" "));
     if (!f.numero) throw new ErreurMetier("Facture sans numéro.");
-    // Modèle du reçu choisi après les contrôles du paiement, mais AVANT le numéro REC : sans modèle, rien n'est consommé.
-    const modeleRecu = await modeleRetenu("RECU", f.produitId, date);
+    // Sans modèle de reçu, refus APRÈS les contrôles du paiement et AVANT le numéro REC : rien n'est consommé.
+    if (modeleRecu instanceof Error) throw modeleRecu;
     const v1 = await tx.documentAProduire.findUnique({ where: { numero_version: { numero: f.numero, version: 1 } } });
     if (!v1) throw new ErreurMetier(`Version 1 de la facture ${f.numero} introuvable.`);
     const police = (await chargerPolice(tx, f.policeId))!;
@@ -691,7 +697,7 @@ export async function enregistrerPaiement(acteur: UtilisateurCourant, factureId:
       tx,
     );
     return { numeroRecu, restantDu: etat.restantDu, ids: [idRecu, idFacture] };
-  });
+  }, ATTENTE);
   const productions: IssueProduction[] = [];
   for (const id of resultat.ids) productions.push(await produire(acteur, id, adresseIp));
   return { numeroRecu: resultat.numeroRecu, restantDu: resultat.restantDu, productions };

@@ -6,6 +6,7 @@ import { FormulaireAction } from "@/composants/FormulaireAction";
 import { LignesBeneficiaires, LignesContactsUrgence } from "@/composants/LignesDynamiques";
 import { formaterMontant, montant, type Montant } from "@/domaine/calcul/montant";
 import { LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
+import { estContratDeGroupe } from "@/domaine/cotation/adherents";
 import { FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
 import { LIBELLE_STATUT, peutAccepter, peutEtreValidee, peutModifier } from "@/domaine/cotation/statuts";
 import { LIBELLE_RAISON } from "@/domaine/cotation/validation";
@@ -79,6 +80,9 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         <p><strong>Paramétrage du produit du :</strong> {formatDate(c.versionDateEffet)}</p>
         <p><strong>Auteur :</strong> {c.auteurIdentifiant}</p>
         {c.numeroPolice ? <p><strong>Police créée :</strong> {c.numeroPolice}</p> : null}
+        {c.numeroPolice && estContratDeGroupe(c.typeContrat) ? (
+          <p><Link href={`/cotations/${c.id}/adherents`} className="text-sim-bleu underline">Adhérents, certificats d'adhésion et annexe des CP</Link></p>
+        ) : null}
         {c.statut === "REFUSEE" ? <p><strong>Refus :</strong> {c.motifRefusCode}{c.refusCommentaire ? ` — ${c.refusCommentaire}` : ""}</p> : null}
       </section>
 

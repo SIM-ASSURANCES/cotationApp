@@ -14,7 +14,7 @@ import { annulerParAvoir, documentsDe, emettreCotation, emettreCp, rechercherDoc
 import { initialiserProfilsEtDroits } from "./droits";
 import { remplacerGenerateur, type DemandePdf } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
-import { enregistrerImageSociete } from "./societe";
+import { assurerSignature } from "./societe-test";
 import { aujourdhui, creerProduit, creerTaxe, creerVersion } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { remplacerStockage } from "./stockage";
@@ -163,7 +163,7 @@ beforeAll(async () => {
   };
   [technique, dg, commercial] = [await nouveau("TECHNIQUE"), await nouveau("DIRECTION_GENERALE"), await nouveau("COMMERCIAL")];
   // Les CP utilisent {{ signature_sim }} (CDC §10.1) : la signature scannée de SIM doit être paramétrée (image inventée).
-  await enregistrerImageSociete(technique, "signature_sim", new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), aujourdhui(), null);
+  await assurerSignature(technique);
 });
 
 afterAll(async () => {

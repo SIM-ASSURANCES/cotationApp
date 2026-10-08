@@ -7,7 +7,8 @@
  *   - l'aide intégrée (page « Aide à la rédaction des modèles ») ;
  *   - l'aperçu d'un modèle avec des données fictives (`donneesExemple`).
  *
- * Normatif : uniquement les noms du CDC, plus `assures[].sexe` (D12) et `doc.auteur_nom` (D20).
+ * Normatif : uniquement les noms du CDC, plus `assures[].sexe` (D12), `doc.auteur_nom` (D20) et, pour les factures et
+ * les reçus (D23), `envoye_a.*`, `formules[].base_taxe` et `paiements[].payeur`.
  * `risque.*` est ouvert : chaque produit y met ses propres champs (CDC §6.3, « extensible »).
  * Les champs des éléments de `societe.rib[]`, `societe.mobile_money[]` et `societe.recours[]` ne
  * sont pas nommés par le CDC : les noms retenus ici sont des hypothèses (decisions.md, D14).
@@ -127,6 +128,9 @@ export const CHAMPS: readonly Champ[] = [
   c("contacts_urgence", "liste", "Contacts d'urgence (RELAXVOYAGE)", undefined, S2),
   c("contacts_urgence[].nom_prenoms", "texte", "Nom et prénoms", "KOUADIO Paul Inventé", S2),
   c("contacts_urgence[].contact", "texte", "Contact", "0700000001", S2),
+  c("envoye_a", "objet", "« Envoyé à » d'une facture (extension D23) : vide s'il n'est pas saisi ou s'il est identique à « Facturé à » (bloc à masquer)", undefined, S2),
+  c("envoye_a.nom", "texte", "Destinataire de la facture", "SERVICE COMPTABLE EXEMPLE", S2),
+  c("envoye_a.adresse", "texte", "Adresse du destinataire", "Plateau, rue inventée", S2),
   c("risque", "objet", "Champs propres au produit : risque.marque, risque.statut… (tout nom en minuscules)", undefined, S2),
 
   // ---------------------------------------------------------------- 6.3.3
@@ -152,6 +156,7 @@ export const CHAMPS: readonly Champ[] = [
   c("formules[].accessoires", "montant", "Accessoires", "3000", S3),
   c("formules[].taxe", "montant", "Taxe", "4256", S3),
   c("formules[].ttc", "montant", "Prime TTC", "288000", S3),
+  c("formules[].base_taxe", "montant", "Montant HT de la ligne : assiette de la taxe (extension D23)", "283744", S3),
   c("prime.nette", "montant", "Prime nette totale", "15440202", S3),
   c("prime.accessoires", "montant", "Accessoires", "213000", S3),
   c("prime.base_taxe", "montant", "Assiette de la taxe", "15653202", S3),
@@ -172,6 +177,7 @@ export const CHAMPS: readonly Champ[] = [
   c("paiements[].reference", "texte", "Référence du paiement", "VIR-EXEMPLE", S3),
   c("paiements[].canal", "texte", "Canal", "Virement", S3),
   c("paiements[].restant_du", "montant", "Restant dû après ce paiement", "15847000", S3),
+  c("paiements[].payeur", "texte", "Payeur (extension D23)", "ENTREPRISE INVENTÉE", S3),
   c("solde.total_paye", "montant", "Total payé", "41000", S3),
   c("solde.restant_du", "montant", "Restant dû", "15847000", S3),
 

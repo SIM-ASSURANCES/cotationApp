@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formaterNumero, cleCompteur } from "./numerotation";
+import { cleCompteur, formaterNumero, formaterSelon, FORMATS_NUMERO_DEFAUT, problemesFormatNumero } from "./numerotation";
 import { FORMAT_NUMERO_POLICE_DEFAUT, normaliserNumeroPolice, problemesFormatNumeroPolice, problemesNumeroPolice } from "./police";
 import { problemesAssures, problemesLignes, problemesRisque, problemesSouscripteur, type Assure, type Souscripteur } from "./saisie";
 import {
@@ -180,5 +180,27 @@ describe("saisie : souscripteur, assurés, risque, formules", () => {
     expect(problemesLignes([1, 2, 3, 4].map((n) => ({ codeFormule: `F${n}`, effectif: 1 })), 3)).toHaveLength(1);
     expect(problemesLignes([{ codeFormule: "A", effectif: 1 }, { codeFormule: "A", effectif: 1 }], 3)).toHaveLength(1);
     expect(problemesLignes([{ codeFormule: "A", effectif: 0 }], 3)).toHaveLength(1);
+  });
+});
+
+describe("format de numéro paramétrable (session 4b, CDC §11.4)", () => {
+  it("applique les repères {AAAA}, {MM} et le compteur sur la largeur voulue, sans jamais le tronquer", () => {
+    expect(formaterSelon("FAC-{AAAA}-{MM}-{NNNN}", "2026-09-16", 3)).toBe("FAC-2026-09-0003");
+    expect(formaterSelon("FAC/{AAAA}/{NNNNNN}", "2026-09-16", 42)).toBe("FAC/2026/000042");
+    expect(formaterSelon("REC-{MM}{AAAA}-{NNN}", "2026-01-02", 12345)).toBe("REC-012026-12345");
+  });
+
+  it("refuse un format sans année, sans compteur, ou avec des caractères qui ne sont pas permis", () => {
+    expect(problemesFormatNumero("FAC-{AAAA}-{MM}-{NNNN}")).toEqual([]);
+    expect(problemesFormatNumero("FAC-{MM}-{NNNN}")).not.toEqual([]);
+    expect(problemesFormatNumero("FAC-{AAAA}")).not.toEqual([]);
+    expect(problemesFormatNumero("FAC-{AAAA}-{NN}")).not.toEqual([]);
+    expect(problemesFormatNumero("fac {AAAA} {NNNN}")).not.toEqual([]);
+    expect(problemesFormatNumero("FAC-{AAAA}-{NNNN}-{NNNN}")).not.toEqual([]);
+    expect(() => formaterSelon("FAC-{NNNN}", "2026-01-01", 1)).toThrow();
+  });
+
+  it("le format par défaut de chaque type est celui du CDC", () => {
+    for (const prefixe of ["COT", "FAC", "AV", "REC"] as const) expect(formaterSelon(FORMATS_NUMERO_DEFAUT[prefixe], "2026-09-16", 3)).toBe(`${prefixe}-2026-09-0003`);
   });
 });

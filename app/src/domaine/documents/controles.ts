@@ -10,7 +10,7 @@ import { BALISES_FIXES, REGLES, type TypeModele } from "./modeles";
  *   2. balise hors dictionnaire (T9), avec son emplacement ;
  *   3. blocs if/for mal fermés, balise mal écrite, coupée par Word, filtre inconnu, calcul… ;
  *   4. champ Word (Ctrl+F9) qui imite une balise ; modèle généré sans aucune balise ;
- *      CG/CS avec d'autres balises que leur visa ; champ obligatoire absent (facture).
+ *      CG/CS avec d'autres balises que leur visa ; champ, filtre ou mention obligatoire absent (CP, facture…).
  * Avertissement (le dépôt est accepté) : police absente du générateur, marqueur hérité.
  */
 
@@ -99,6 +99,13 @@ export function controlerDepot(type: TypeModele, analyse: Analyse): ResultatCont
       const attendu = unDe.map((chemin) => `{{ ${chemin} }}`).join(" ou ");
       rejets.push(constat(`Champ obligatoire pour un modèle de ${regle.libelle.toLowerCase()} absent : ${attendu}.`, null));
     }
+  }
+
+  for (const filtre of regle.filtres ?? []) {
+    if (!analyse.filtres.includes(filtre)) rejets.push(constat(`Filtre obligatoire pour un modèle de ${regle.libelle.toLowerCase()} absent : « ${filtre} » (par exemple {{ prime.ttc | ${filtre} }}).`, null));
+  }
+  for (const { motif, libelle } of regle.textes ?? []) {
+    if (!analyse.textes.some((t) => motif.test(t.texte))) rejets.push(constat(`Mention obligatoire pour un modèle de ${regle.libelle.toLowerCase()} absente : ${libelle}.`, null));
   }
 
   if (analyse.polices_absentes === null) {

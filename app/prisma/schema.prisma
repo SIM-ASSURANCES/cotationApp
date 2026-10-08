@@ -154,6 +154,7 @@ model Produit {
   versions       ProduitVersion[]
   cotations      Cotation[]
   modeles        Modele[]
+  factures       Facture[]
 
   @@map("produits")
 }
@@ -327,32 +328,34 @@ model Cotation {
 /// Police créée à l'acceptation d'une cotation (CDC §9.4). Le numéro est attribué par SIM et SAISI
 /// (H10, D18) : jamais généré par le module ; unique ; format contrôlé par un paramètre (H31).
 model Police {
-  id               Int                @id @default(autoincrement())
-  numero           String             @unique
+  id               Int                 @id @default(autoincrement())
+  numero           String              @unique
   /// INDIVIDUEL, FAMILLE, GROUPE ou GROUPE_OUVERT (police.type_contrat). Null avant la session 4.0.
-  typeContrat      String?            @map("type_contrat")
-  cotationId       Int                @unique @map("cotation_id")
-  produitCode      String             @map("produit_code")
+  typeContrat      String?             @map("type_contrat")
+  cotationId       Int                 @unique @map("cotation_id")
+  produitCode      String              @map("produit_code")
   souscripteur     Json
   assures          Json
   /// Voir Cotation.beneficiaires : null = jamais fournis (police d'avant la 4a).
   beneficiaires    Json?
-  contactsUrgence  Json?              @map("contacts_urgence")
+  contactsUrgence  Json?               @map("contacts_urgence")
   risque           Json
-  formulesRetenues Json               @map("formules_retenues")
-  donneesCalcul    Json               @map("donnees_calcul")
+  formulesRetenues Json                @map("formules_retenues")
+  donneesCalcul    Json                @map("donnees_calcul")
   resultat         Json
-  ttcTotal         Decimal            @map("ttc_total") @db.Decimal(18, 2)
+  ttcTotal         Decimal             @map("ttc_total") @db.Decimal(18, 2)
   echeancier       Json
-  dateEffet        DateTime           @map("date_effet") @db.Date
-  dateEcheance     DateTime           @map("date_echeance") @db.Date
-  creeLe           DateTime           @default(now()) @map("cree_le")
-  creePar          String             @map("cree_par")
-  cotation         Cotation           @relation(fields: [cotationId], references: [id], onDelete: Restrict)
+  dateEffet        DateTime            @map("date_effet") @db.Date
+  dateEcheance     DateTime            @map("date_echeance") @db.Date
+  creeLe           DateTime            @default(now()) @map("cree_le")
+  creePar          String              @map("cree_par")
+  cotation         Cotation            @relation(fields: [cotationId], references: [id], onDelete: Restrict)
   /// Police de groupe : historique des listes d'adhérents (incorporations, retraits).
   adherents        AdherentsVersion[]
   /// Demandes de validation de l'émission du contrat (TTC au-dessus du seuil du produit, CDC §4.1).
   validations      ValidationContrat[]
+  /// Factures et avoirs de la police (CDC §11, session 4b).
+  factures         Facture[]
 
   @@map("polices")
 }
@@ -434,40 +437,41 @@ model Modele {
 /// publiée ne change plus du tout (déclencheur PostgreSQL) : un document émis se régénère avec la
 /// version de son époque (T10).
 model ModeleVersion {
-  id                  Int            @id @default(autoincrement())
-  modeleId            Int            @map("modele_id")
+  id                  Int                 @id @default(autoincrement())
+  modeleId            Int                 @map("modele_id")
   /// 1, 2, 3… attribué au dépôt.
   numero              Int
   /// BROUILLON, SOUMIS ou PUBLIE (« archivé » se déduit des dates, voir domaine/documents/modeles.ts).
   statut              String
   /// Le .docx déposé, tel quel.
   fichier             Bytes
-  nomFichier          String         @map("nom_fichier")
+  nomFichier          String              @map("nom_fichier")
   taille              Int
   /// SHA-256 du fichier, en hexadécimal.
   empreinte           String
   commentaire         String
   /// Utilisée pour les nouvelles générations à partir de cette date (fixée à la publication).
-  dateEffet           DateTime       @map("date_effet") @db.Date
+  dateEffet           DateTime            @map("date_effet") @db.Date
   /// Résultat des contrôles au dépôt : avertissements, polices, données lues.
   analyse             Json
-  auteurId            Int            @map("auteur_id")
-  auteurIdentifiant   String         @map("auteur_identifiant")
-  deposeLe            DateTime       @default(now()) @map("depose_le")
-  soumisLe            DateTime?      @map("soumis_le")
+  auteurId            Int                 @map("auteur_id")
+  auteurIdentifiant   String              @map("auteur_identifiant")
+  deposeLe            DateTime            @default(now()) @map("depose_le")
+  soumisLe            DateTime?           @map("soumis_le")
   /// Renvoi en brouillon par le valideur : motif.
-  motifRenvoi         String?        @map("motif_renvoi")
-  valideurId          Int?           @map("valideur_id")
-  valideurIdentifiant String?        @map("valideur_identifiant")
-  publieLe            DateTime?      @map("publie_le")
+  motifRenvoi         String?             @map("motif_renvoi")
+  valideurId          Int?                @map("valideur_id")
+  valideurIdentifiant String?             @map("valideur_identifiant")
+  publieLe            DateTime?           @map("publie_le")
   /// CG et CS : visa et date du document (produit.cg_visa, produit.cg_date…).
   visa                String?
-  dateDocument        DateTime?      @map("date_document") @db.Date
+  dateDocument        DateTime?           @map("date_document") @db.Date
   /// CG et CS : PDF produit UNE fois, à la publication, et jamais reconverti.
   pdf                 Bytes?
-  pdfEmpreinte        String?        @map("pdf_empreinte")
-  modele              Modele         @relation(fields: [modeleId], references: [id], onDelete: Restrict)
+  pdfEmpreinte        String?             @map("pdf_empreinte")
+  modele              Modele              @relation(fields: [modeleId], references: [id], onDelete: Restrict)
   documents           DocumentEmis[]
+  aProduire           DocumentAProduire[]
 
   @@unique([modeleId, numero])
   @@index([statut])
@@ -478,7 +482,7 @@ model ModeleVersion {
 /// réédition est une nouvelle ligne (version + 1) liée à la première, avec son propre fichier et son
 /// propre jeton. Seule l'annulation par un avoir peut être ajoutée ensuite (déclencheur PostgreSQL).
 model DocumentEmis {
-  id                 Int           @id @default(autoincrement())
+  id                 Int                @id @default(autoincrement())
   /// COTATION, CP, FACTURE, AVOIR, RECU… (types de modèles, domaine/documents/modeles.ts).
   type               String
   /// Numéro du document (COT-2026-10-0001, POL-2026-000001…), commun à toutes ses versions.
@@ -486,39 +490,41 @@ model DocumentEmis {
   /// 1 = émission ; 2, 3… = rééditions.
   version            Int
   /// Première émission du document (null pour elle-même).
-  origineId          Int?          @map("origine_id")
+  origineId          Int?               @map("origine_id")
   /// Jeton du QR code (256 bits aléatoires, base64url) : jamais l'identifiant ni le numéro.
-  jeton              String        @unique
+  jeton              String             @unique
   /// Chemin relatif dans le stockage (volume persistant).
-  chemin             String        @unique
+  chemin             String             @unique
   /// SHA-256 du PDF final.
   empreinte          String
   taille             Int
-  produitCode        String        @map("produit_code")
-  policeNumero       String?       @map("police_numero")
+  produitCode        String             @map("produit_code")
+  policeNumero       String?            @map("police_numero")
   /// Pour la recherche (écran « Documents émis ») ; le public ne voit que la version masquée.
-  souscripteurNom    String        @map("souscripteur_nom")
-  souscripteurMasque String        @map("souscripteur_masque")
-  cotationId         Int?          @map("cotation_id")
-  policeId           Int?          @map("police_id")
+  souscripteurNom    String             @map("souscripteur_nom")
+  souscripteurMasque String             @map("souscripteur_masque")
+  cotationId         Int?               @map("cotation_id")
+  policeId           Int?               @map("police_id")
   /// Certificat d'adhésion : numéro d'ordre de l'adhérent dans la police mère.
-  adherentOrdre      Int?          @map("adherent_ordre")
-  dateEmission       DateTime      @map("date_emission") @db.Date
+  adherentOrdre      Int?               @map("adherent_ordre")
+  dateEmission       DateTime           @map("date_emission") @db.Date
   /// Cotation : fin de validité (statut « Expirée » sur la page de vérification).
-  dateValidite       DateTime?     @map("date_validite") @db.Date
+  dateValidite       DateTime?          @map("date_validite") @db.Date
   /// Régénération à l'identique (T10) : version exacte du modèle, versions des annexes, sous-modèles,
   /// CS et CG, date des paramètres du produit, et données fusionnées.
-  modeleVersionId    Int           @map("modele_version_id")
-  versionsAssociees  Json          @map("versions_associees")
-  parametresDate     DateTime      @map("parametres_date") @db.Date
+  modeleVersionId    Int                @map("modele_version_id")
+  versionsAssociees  Json               @map("versions_associees")
+  parametresDate     DateTime           @map("parametres_date") @db.Date
   donnees            Json
   filigrane          String?
-  emisLe             DateTime      @default(now()) @map("emis_le")
-  emisPar            String        @map("emis_par")
+  emisLe             DateTime           @default(now()) @map("emis_le")
+  emisPar            String             @map("emis_par")
   /// Annulation par un avoir (T12) : renseignée une seule fois, jamais effacée.
-  annuleParNumero    String?       @map("annule_par_numero")
-  annuleLe           DateTime?     @map("annule_le")
-  modeleVersion      ModeleVersion @relation(fields: [modeleVersionId], references: [id], onDelete: Restrict)
+  annuleParNumero    String?            @map("annule_par_numero")
+  annuleLe           DateTime?          @map("annule_le")
+  modeleVersion      ModeleVersion      @relation(fields: [modeleVersionId], references: [id], onDelete: Restrict)
+  /// Facture, avoir ou reçu : la production en attente dont il est issu.
+  production         DocumentAProduire?
 
   @@unique([numero, version])
   @@index([type])
@@ -526,4 +532,126 @@ model DocumentEmis {
   @@index([souscripteurNom])
   @@index([dateEmission])
   @@map("documents_emis")
+}
+
+/// Facture ou avoir (CDC §11, session 4b, D23). Un brouillon n'a pas de numéro ; le numéro (FAC-… ou AV-…) est attribué
+/// à l'émission, dans la transaction qui l'enregistre (compteur verrouillé, sans trou). Une facture émise ne se modifie
+/// ni ne se supprime (déclencheur PostgreSQL) : seule son annulation par un avoir s'ajoute, une fois.
+model Facture {
+  id               Int                 @id @default(autoincrement())
+  /// AFFAIRE_NOUVELLE, RENOUVELLEMENT, AVENANT ou AVOIR (CDC §11.3).
+  type             String
+  /// BROUILLON, A_VALIDER, EMISE ou ANNULEE.
+  statut           String
+  numero           String?             @unique
+  policeId         Int                 @map("police_id")
+  produitId        Int                 @map("produit_id")
+  /// Version du produit dont vient le tarif (et le seuil de validation).
+  versionDateEffet DateTime            @map("version_date_effet") @db.Date
+  /// Avoir : la facture qu'il annule (doc.facture_origine).
+  factureOrigineId Int?                @map("facture_origine_id")
+  /// Nouvelle facture qui remplace une facture annulée par un avoir (T4).
+  remplaceId       Int?                @map("remplace_id")
+  /// Avenant d'incorporation : numéro de la version de la liste des adhérents facturée.
+  adherentsVersion Int?                @map("adherents_version")
+  dateEffet        DateTime            @map("date_effet") @db.Date
+  dateEcheance     DateTime            @map("date_echeance") @db.Date
+  /// Contenu figé (montants du moteur en texte, souscripteur, assurés, échéancier, « Envoyé à »), voir domaine/facturation.
+  contenu          Json
+  /// TTC de la facture ; négatif pour un avoir.
+  ttc              Decimal             @db.Decimal(18, 2)
+  /// Avoir : motif obligatoire.
+  motif            String?
+  creeParId        Int                 @map("cree_par_id")
+  creePar          String              @map("cree_par")
+  creeLe           DateTime            @default(now()) @map("cree_le")
+  /// « Oui (sous seuil) » au-dessus du seuil du produit : demande de validation (CDC §4.1).
+  demandeParId     Int?                @map("demande_par_id")
+  demandePar       String?             @map("demande_par")
+  demandeLe        DateTime?           @map("demande_le")
+  emiseParId       Int?                @map("emise_par_id")
+  emisePar         String?             @map("emise_par")
+  emiseLe          DateTime?           @map("emise_le")
+  dateEmission     DateTime?           @map("date_emission") @db.Date
+  /// Annulation par un avoir : renseignée une seule fois.
+  annuleeParId     Int?                @map("annulee_par_id")
+  annuleeLe        DateTime?           @map("annulee_le")
+  police           Police              @relation(fields: [policeId], references: [id], onDelete: Restrict)
+  produit          Produit             @relation(fields: [produitId], references: [id], onDelete: Restrict)
+  factureOrigine   Facture?            @relation("Avoir", fields: [factureOrigineId], references: [id], onDelete: Restrict)
+  avoirs           Facture[]           @relation("Avoir")
+  remplace         Facture?            @relation("Remplacement", fields: [remplaceId], references: [id], onDelete: Restrict)
+  remplacantes     Facture[]           @relation("Remplacement")
+  annuleePar       Facture?            @relation("Annulation", fields: [annuleeParId], references: [id], onDelete: Restrict)
+  annulees         Facture[]           @relation("Annulation")
+  paiements        Paiement[]
+  aProduire        DocumentAProduire[]
+
+  @@index([policeId])
+  @@index([statut])
+  @@map("factures")
+}
+
+/// Paiement d'une facture (CDC §12) : ajout seul. Chaque paiement a son reçu (REC-…, numéro attribué dans la même
+/// transaction) et entraîne une réédition de la facture (même numéro, version + 1, restant dû à jour).
+model Paiement {
+  id         Int                 @id @default(autoincrement())
+  factureId  Int                 @map("facture_id")
+  numeroRecu String              @unique @map("numero_recu")
+  date       DateTime            @db.Date
+  montant    Decimal             @db.Decimal(18, 2)
+  /// ESPECES, CHEQUE, VIREMENT ou MOBILE_MONEY.
+  canal      String
+  reference  String
+  payeur     String
+  creeParId  Int                 @map("cree_par_id")
+  creePar    String              @map("cree_par")
+  creeLe     DateTime            @default(now()) @map("cree_le")
+  facture    Facture             @relation(fields: [factureId], references: [id], onDelete: Restrict)
+  aProduire  DocumentAProduire[]
+
+  @@index([factureId])
+  @@map("paiements")
+}
+
+/// Document à produire (session 4b, CDC §11.4) : facture, avoir ou reçu dont le numéro est déjà attribué. Tout est figé
+/// dans la transaction de l'émission (données, jeton du QR code, versions des modèles) ; le PDF est produit APRÈS la
+/// validation de la transaction. S'il échoue, la ligne reste « EN_ATTENTE » et la production se relance à l'identique.
+/// Une fois produit, le document émis (documents_emis) porte le même numéro, la même version et le même jeton.
+model DocumentAProduire {
+  id                 Int           @id @default(autoincrement())
+  type               String
+  numero             String
+  version            Int
+  jeton              String        @unique
+  factureId          Int?          @map("facture_id")
+  paiementId         Int?          @map("paiement_id")
+  produitCode        String        @map("produit_code")
+  policeNumero       String?       @map("police_numero")
+  policeId           Int?          @map("police_id")
+  cotationId         Int?          @map("cotation_id")
+  souscripteurNom    String        @map("souscripteur_nom")
+  souscripteurMasque String        @map("souscripteur_masque")
+  dateEmission       DateTime      @map("date_emission") @db.Date
+  parametresDate     DateTime      @map("parametres_date") @db.Date
+  modeleVersionId    Int           @map("modele_version_id")
+  versionsAssociees  Json          @map("versions_associees")
+  donnees            Json
+  emisPar            String        @map("emis_par")
+  creeLe             DateTime      @default(now()) @map("cree_le")
+  /// EN_ATTENTE (« PDF en attente ») ou PRODUIT.
+  statut             String        @default("EN_ATTENTE")
+  tentatives         Int           @default(0)
+  derniereErreur     String?       @map("derniere_erreur")
+  documentId         Int?          @unique @map("document_id")
+  produitLe          DateTime?     @map("produit_le")
+  facture            Facture?      @relation(fields: [factureId], references: [id], onDelete: Restrict)
+  paiement           Paiement?     @relation(fields: [paiementId], references: [id], onDelete: Restrict)
+  modeleVersion      ModeleVersion @relation(fields: [modeleVersionId], references: [id], onDelete: Restrict)
+  document           DocumentEmis? @relation(fields: [documentId], references: [id], onDelete: Restrict)
+
+  @@unique([numero, version])
+  @@index([statut])
+  @@index([factureId])
+  @@map("documents_a_produire")
 }

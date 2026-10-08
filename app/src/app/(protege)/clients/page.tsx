@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { ComplementsSouscripteur } from "@/composants/ComplementsSouscripteur";
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { listerClients } from "@/serveur/clients";
@@ -22,7 +23,7 @@ export default async function PageClients() {
         Clients enregistrés, que l'on peut choisir à la cotation. Un prospect, lui, se saisit librement sur la cotation (CDC §9.1).
       </p>
       {peutAgir(niveau) ? (
-        <section className="mb-8 max-w-xl rounded border border-bordure bg-surface p-5">
+        <section className="mb-8 max-w-4xl rounded border border-bordure bg-surface p-5">
           <h2 className="mb-3 text-lg font-semibold">Ajouter un client</h2>
           <FormulaireAction action={creerUnClient} libelleBouton="Ajouter">
             <label className="mb-4 block text-sm font-medium">
@@ -38,6 +39,7 @@ export default async function PageClients() {
             <Champ nom="souscripteur_telephone" libelle="Téléphone" requis={false} autoComplete="off" />
             <Champ nom="souscripteur_email" libelle="E-mail" requis={false} autoComplete="off" />
             <Champ nom="souscripteur_adresse" libelle="Adresse" requis={false} autoComplete="off" />
+            <ComplementsSouscripteur />
           </FormulaireAction>
         </section>
       ) : null}

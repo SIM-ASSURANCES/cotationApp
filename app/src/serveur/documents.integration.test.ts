@@ -105,6 +105,8 @@ async function cotationT1(produitCode: string): Promise<number> {
     lignes: [{ codeFormule: "SOLO", effectif: 3 }, { codeFormule: "FAMILLE", effectif: 60 }],
     motifForcage: null,
     assures: [],
+    beneficiaires: null,
+    contactsUrgence: null,
     risque: {},
   };
   const id = await creerBrouillon(commercial, saisie, null);

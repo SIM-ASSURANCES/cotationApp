@@ -8,6 +8,7 @@ import { emettreCotation, emettreCp, reediter } from "@/serveur/documents";
 import { ErreurMetier, type UtilisateurCourant } from "@/serveur/types";
 
 import { avecMessage, champ, executerAction } from "../executer";
+import { lireBeneficiaires, lireComplementsSouscripteur, lireContactsUrgence } from "../lire-complements";
 import { lireCotation } from "./lire-cotation";
 
 /** Crée ou modifie un brouillon, puis ouvre sa fiche. */
@@ -89,7 +90,9 @@ export async function renvoyerCotation(_e: EtatFormulaire, d: FormData): Promise
 export async function accepterCotation(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
   const id = idDe(d);
   const retenues = d.getAll("retenue").map(String);
-  return executerAction(async (acteur, ip) => void (await accepter(acteur, id, retenues, champ(d, "numeroPolice"), ip)), "Cotation acceptée : la police est créée.", `/cotations/${id}`);
+  // Compléments saisis à la souscription (souscripteur, bénéficiaires, contacts d'urgence), repris de la cotation.
+  const complements = { souscripteur: lireComplementsSouscripteur(d), beneficiaires: lireBeneficiaires(d), contactsUrgence: lireContactsUrgence(d) };
+  return executerAction(async (acteur, ip) => void (await accepter(acteur, id, retenues, champ(d, "numeroPolice"), ip, complements)), "Cotation acceptée : la police est créée.", `/cotations/${id}`);
 }
 
 export async function refuserCotation(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {

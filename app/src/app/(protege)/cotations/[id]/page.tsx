@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ComplementsSouscripteur } from "@/composants/ComplementsSouscripteur";
 import { FormulaireAction } from "@/composants/FormulaireAction";
+import { LignesBeneficiaires, LignesContactsUrgence } from "@/composants/LignesDynamiques";
 import { formaterMontant, montant, type Montant } from "@/domaine/calcul/montant";
 import { LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
 import { FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
@@ -174,6 +176,28 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           </table>
         </div>
       ) : null}
+      {c.beneficiaires && c.beneficiaires.length > 0 ? (
+        <div className="mt-6">
+          <h2 className="mb-2 text-lg font-semibold">Bénéficiaires</h2>
+          <table className="w-full max-w-3xl border-collapse text-sm">
+            <thead>
+              <tr className="text-left text-zinc-600"><th className="p-1">N°</th><th className="p-1">Nom et prénoms</th><th className="p-1">Lien</th><th className="p-1">Contact</th><th className="p-1 text-right">Quote-part</th></tr>
+            </thead>
+            <tbody>
+              {c.beneficiaires.map((b) => (
+                <tr key={b.ordre} className="border-t border-bordure">
+                  <td className="p-1">{b.ordre}</td><td className="p-1">{b.nom_prenoms}</td><td className="p-1">{b.lien || "—"}</td><td className="p-1">{b.contact || "—"}</td><td className="p-1 text-right">{b.quote_part} %</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {c.contactsUrgence && c.contactsUrgence.length > 0 ? (
+        <p className="mt-4 text-sm">
+          <strong>Contacts d'urgence :</strong> {c.contactsUrgence.map((u) => `${u.nom_prenoms} (${u.contact})`).join(" ; ")}
+        </p>
+      ) : null}
       {Object.keys(c.risque).length > 0 ? (
         <p className="mt-4 text-sm">
           <strong>Risque :</strong> {Object.entries(c.risque).map(([k, v]) => `risque.${k} = ${v}`).join(" ; ")}
@@ -271,7 +295,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
 
         {peutAccepter(c.statutEffectif) && agit ? (
           <div className="grid gap-6 rounded border border-bordure p-4 sm:grid-cols-2">
-            <FormulaireAction action={accepterCotation} libelleBouton="Accepter et créer la police">
+            <FormulaireAction action={accepterCotation} libelleBouton="Accepter et créer la police" className="sm:col-span-2">
               <input type="hidden" name="id" value={c.id} />
               <h2 className="mb-2 font-semibold">Le client accepte</h2>
               <p className="mb-2 text-sm text-zinc-700">Formule(s) retenue(s) :</p>
@@ -288,6 +312,12 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
                   {formatPolice === FORMAT_NUMERO_POLICE_DEFAUT ? " (par défaut)" : ""}. Le module ne génère jamais ce numéro.
                 </span>
               </label>
+              <p className="mb-2 mt-4 text-sm font-semibold">À compléter à la souscription (repris de la cotation, modifiable)</p>
+              <ComplementsSouscripteur valeurs={c.souscripteur} />
+              <p className="mb-1 text-sm font-medium">Bénéficiaires (la somme des quotes-parts fait 100 %)</p>
+              <LignesBeneficiaires initiales={(c.beneficiaires ?? []).map((b) => ({ nom: b.nom_prenoms, lien: b.lien, contact: b.contact, quote: b.quote_part }))} />
+              <p className="mb-1 text-sm font-medium">Contacts d'urgence</p>
+              <LignesContactsUrgence initiales={(c.contactsUrgence ?? []).map((u) => ({ nom: u.nom_prenoms, contact: u.contact }))} />
             </FormulaireAction>
             <FormulaireAction action={refuserCotation} libelleBouton="Enregistrer le refus" discret>
               <input type="hidden" name="id" value={c.id} />

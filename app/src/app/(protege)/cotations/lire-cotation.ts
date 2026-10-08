@@ -1,5 +1,7 @@
 import { normaliserMontantSaisi } from "@/domaine/calcul/montant";
-import type { Assure, Risque, Souscripteur } from "@/domaine/cotation/saisie";
+import type { Assure, Beneficiaire, ContactUrgence, Risque, Souscripteur } from "@/domaine/cotation/saisie";
+
+import { lireBeneficiaires, lireComplementsSouscripteur, lireContactsUrgence } from "../lire-complements";
 
 /** Forme de la saisie lue dans le formulaire (le service la valide et la calcule). */
 export type SaisieFormulaire = {
@@ -15,6 +17,8 @@ export type SaisieFormulaire = {
   lignes: { codeFormule: string; effectif: number; primeForcee: string | null; accessoireValeur: string | null }[];
   motifForcage: string | null;
   assures: Assure[];
+  beneficiaires: Beneficiaire[];
+  contactsUrgence: ContactUrgence[];
   risque: Risque;
 };
 
@@ -72,6 +76,7 @@ export function lireCotation(d: FormData): SaisieFormulaire {
       telephone: champ(d, "souscripteur_telephone"),
       email: champ(d, "souscripteur_email"),
       adresse: champ(d, "souscripteur_adresse"),
+      ...lireComplementsSouscripteur(d),
     },
     dateEffet: champ(d, "dateEffet"),
     dateEcheance: champ(d, "dateEcheance"),
@@ -79,6 +84,8 @@ export function lireCotation(d: FormData): SaisieFormulaire {
     lignes,
     motifForcage: champ(d, "motifForcage") || null,
     assures,
+    beneficiaires: lireBeneficiaires(d),
+    contactsUrgence: lireContactsUrgence(d),
     risque,
   };
 }

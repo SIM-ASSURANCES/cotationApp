@@ -99,6 +99,8 @@ describe("cotation T1 de bout en bout", () => {
         lignes: [{ codeFormule: "SOLO", effectif: 3 }, { codeFormule: "FAMILLE", effectif: 60 }],
         motifForcage: null,
         assures: [],
+        beneficiaires: null,
+        contactsUrgence: null,
         risque: {},
       },
       null,

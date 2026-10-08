@@ -80,6 +80,8 @@ const saisie = (surcharge: Partial<SaisieCotation> = {}): SaisieCotation => ({
   lignes: [{ codeFormule: "SOLO", effectif: 3 }, { codeFormule: "FAMILLE", effectif: 60 }],
   motifForcage: null,
   assures: [],
+  beneficiaires: null,
+  contactsUrgence: null,
   risque: {},
   ...surcharge,
 });

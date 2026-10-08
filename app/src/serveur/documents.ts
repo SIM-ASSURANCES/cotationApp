@@ -50,7 +50,7 @@ const auteur = (u: UtilisateurCourant): ActeurAudit => ({ id: u.id, identifiant:
 const sha256 = (octets: Uint8Array) => createHash("sha256").update(octets).digest("hex");
 
 /** Jeton du QR code : 256 bits aléatoires (CDC §14.1 : non devinable, jamais un identifiant). */
-const nouveauJeton = () => randomBytes(32).toString("base64url");
+export const nouveauJeton = () => randomBytes(32).toString("base64url");
 
 // ---------------------------------------------------------------- Droits (CDC §4)
 
@@ -83,14 +83,14 @@ async function exigerSurType(acteur: UtilisateurCourant, type: TypeDocument, ecr
 
 // ---------------------------------------------------------------- Sources : cotation et police
 
-type ContexteProduit = {
+export type ContexteProduit = {
   produit: { id: number; code: string; libelle: string; gamme: string; branche: string };
   versionDateEffet: DateIso;
   formules: Map<string, { libelle: string; tauxCouverture: string | null }>;
   references: { cgModeleCode: string | null; cgVisa: string | null; csModeleCode: string | null; csVisa: string | null };
 };
 
-async function contexteProduit(produitId: number, versionDateEffet: Date): Promise<ContexteProduit> {
+export async function contexteProduit(produitId: number, versionDateEffet: Date): Promise<ContexteProduit> {
   const version = await obtenirPrisma().produitVersion.findUniqueOrThrow({
     where: { produitId_dateEffet: { produitId, dateEffet: versionDateEffet } },
     include: { formules: true, produit: true },
@@ -104,7 +104,7 @@ async function contexteProduit(produitId: number, versionDateEffet: Date): Promi
 }
 
 /** Montants du moteur (recalculés à l'identique depuis l'entrée figée), formule par formule. */
-function montantsDu(entree: EntreeCalcul, contexte: ContexteProduit) {
+export function montantsDu(entree: EntreeCalcul, contexte: ContexteProduit) {
   const resultat = calculer(entree);
   const t = (m: { toFixed(): string }) => m.toFixed();
   const formules: FormuleSource[] = resultat.lignes.map((l, i) => ({
@@ -178,7 +178,7 @@ export type DocumentLu = {
   urlVerification: string | null;
 };
 
-function urlPublique(): string {
+export function urlPublique(): string {
   const url = obtenirConfig().URL_PUBLIQUE;
   if (!url) {
     throw new ErreurMetier("Adresse publique de l'application non configurée (variable URL_PUBLIQUE) : les QR codes de vérification ne peuvent pas être produits. Prévenez l'administrateur.");
@@ -186,7 +186,7 @@ function urlPublique(): string {
   return url.replace(/\/+$/, "");
 }
 
-async function images(champs: string[]): Promise<Record<string, ImagePng>> {
+export async function images(champs: string[]): Promise<Record<string, ImagePng>> {
   const resultat: Record<string, ImagePng> = {};
   for (const nom of IMAGES_SOCIETE) {
     if (!champs.includes(nom)) continue;
@@ -278,7 +278,7 @@ async function produire(acteur: UtilisateurCourant, p: Production, adresseIp: st
 
 type LigneDocument = Prisma.DocumentEmisGetPayload<object>;
 
-function versLu(d: LigneDocument): DocumentLu {
+export function versLu(d: LigneDocument): DocumentLu {
   const type = d.type as TypeDocument;
   return {
     id: d.id,
@@ -336,7 +336,7 @@ async function sourceCommune(contexte: ContexteProduit, date: DateIso) {
 
 // ---------------------------------------------------------------- Cotation (CDC §9)
 
-async function chargerCotation(id: number) {
+export async function chargerCotation(id: number) {
   const c = await obtenirPrisma().cotation.findUnique({ where: { id }, include: { produit: true } });
   if (!c) throw new ErreurMetier("Cotation introuvable.");
   // doc.auteur_nom (D20) : nom de l'utilisateur qui a créé la cotation.
@@ -724,6 +724,11 @@ export async function reediter(acteur: UtilisateurCourant, documentId: number, a
   const d = await prisma.documentEmis.findUnique({ where: { id: documentId } });
   if (!d || !estTypeDocument(d.type)) throw new ErreurMetier("Document introuvable.");
   await exigerSurType(acteur, d.type, true);
+  // Session 4b (H55) : une facture se réédite à chaque paiement (version + 1, restant dû à jour) ; un avoir et un reçu ne
+  // changent pas. Leur PDF en attente se relance depuis la fiche de la facture, à l'identique.
+  if (d.type === "FACTURE" || d.type === "AVOIR" || d.type === "RECU") {
+    throw new ErreurMetier("Une facture, un avoir ou un reçu ne se réédite pas ici : la facture est rééditée à chaque paiement, et un PDF en attente se relance depuis la fiche de la facture.");
+  }
   const origine = d.origineId ? await prisma.documentEmis.findUniqueOrThrow({ where: { id: d.origineId } }) : d;
   const ids = origine.versionsAssociees as unknown as VersionsAssociees & { cs: number | null; cg: number | null; listesEnAnnexe?: string[]; versionAdherents?: number | null };
   const modele = await prisma.modeleVersion.findUniqueOrThrow({ where: { id: origine.modeleVersionId }, select: { id: true, fichier: true, analyse: true } });

@@ -59,7 +59,7 @@ describe("cotation T1 de bout en bout", () => {
   it("émission : PDF stocké (empreinte vérifiée), page de vérification, réédition en v2", async () => {
     const produit = CODE("BENI");
     const branche = `SANTE_${produit}`;
-    await creerTaxe(technique, { branche, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
+    await creerTaxe(technique, { branche, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
     await creerProduit(technique, { code: produit, libelle: "Santé BENI (bout en bout)", gamme: "RELAX", branche }, null);
     await creerVersion(
       technique,
@@ -89,6 +89,7 @@ describe("cotation T1 de bout en bout", () => {
       {
         codeProduit: produit,
         clientId: null,
+        typeContrat: "GROUPE",
         souscripteur: { type: "PHYSIQUE", nom: "KOUADIO", prenoms: "Awa Inventée", raison_sociale: "", telephone: "", email: "", adresse: "" },
         dateEffet: "2026-01-01",
         dateEcheance: "2026-12-31",

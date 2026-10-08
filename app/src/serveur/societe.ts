@@ -4,6 +4,7 @@ import { Prisma } from "@/generated/prisma/client";
 
 import type { DateIso } from "@/domaine/calcul/dates";
 import { peutAgir, peutLire } from "@/domaine/droits";
+import { CLE_FORMAT_NUMERO_POLICE, FORMAT_NUMERO_POLICE_DEFAUT, problemesFormatNumeroPolice } from "@/domaine/cotation/police";
 import { CLE_SOCIETE, cleImage, lireSociete, problemesSociete, type ImageSociete, type ParametresSociete } from "@/domaine/documents/societe";
 
 import { journaliser } from "./audit";
@@ -79,4 +80,29 @@ export async function enregistrerImageSociete(acteur: UtilisateurCourant, nom: I
     throw new ErreurMetier("Image PNG de 2 Mo au plus attendue.");
   }
   await ajouter(acteur, cleImage(nom), Buffer.from(png).toString("base64"), dateEffet, { image: nom, octets: png.byteLength, dateEffet }, adresseIp);
+}
+
+// ---------------------------------------------------------------- Format du numéro de police (H10, H31)
+
+/** Expression régulière en vigueur pour contrôler les numéros de police saisis (défaut : D18). */
+export async function lireFormatNumeroPolice(date: DateIso = aujourdhui()): Promise<string> {
+  return (await valeurEnVigueur(CLE_FORMAT_NUMERO_POLICE, date)) ?? FORMAT_NUMERO_POLICE_DEFAUT;
+}
+
+/** Consultation du format (écran Société) : valeur en vigueur et historique des modifications. */
+export async function consulterFormatNumeroPolice(acteur: UtilisateurCourant): Promise<{ enVigueur: string; historique: { valeur: string; dateEffet: DateIso; creePar: string; creeLe: Date }[] }> {
+  await exigerParametrage(acteur, false);
+  const lignes = await obtenirPrisma().parametre.findMany({ where: { cle: CLE_FORMAT_NUMERO_POLICE }, orderBy: { dateEffet: "desc" } });
+  return {
+    enVigueur: await lireFormatNumeroPolice(),
+    historique: lignes.map((l) => ({ valeur: l.valeur, dateEffet: l.dateEffet.toISOString().slice(0, 10), creePar: l.creePar, creeLe: l.creeLe })),
+  };
+}
+
+/** Nouveau format, à une date d'effet (jamais rétroactive) : historisé et journalisé. */
+export async function enregistrerFormatNumeroPolice(acteur: UtilisateurCourant, format: string, dateEffet: DateIso, adresseIp: string | null): Promise<void> {
+  await exigerParametrage(acteur, true);
+  const problemes = problemesFormatNumeroPolice(format.trim());
+  if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
+  await ajouter(acteur, CLE_FORMAT_NUMERO_POLICE, format.trim(), dateEffet, { formatNumeroPolice: format.trim(), avant: await lireFormatNumeroPolice(dateEffet), dateEffet }, adresseIp);
 }

@@ -1,0 +1,11 @@
+{
+  "source": "Taux communiqués par la Direction Technique le 08/10/2026 (fixés par la loi), docs/decisions.md D18.",
+  "dateEffet": "Date d'effet de démarrage retenue par défaut : à confirmer (voir le compte rendu de la session 4.0).",
+  "lignes": [
+    { "branche": "IA", "typeContrat": null, "tauxPourcent": "7.25", "tauxMixte": false, "commentaire": "Individuelle accident", "dateEffet": "2026-01-01", "dateFin": null },
+    { "branche": "DECES", "typeContrat": null, "tauxPourcent": "0", "tauxMixte": false, "commentaire": "Décès", "dateEffet": "2026-01-01", "dateFin": null },
+    { "branche": "SANTE", "typeContrat": "INDIVIDUEL", "tauxPourcent": "4", "tauxMixte": false, "commentaire": "Santé individuelle", "dateEffet": "2026-01-01", "dateFin": null },
+    { "branche": "SANTE", "typeContrat": "GROUPE", "tauxPourcent": "1.5", "tauxMixte": false, "commentaire": "Santé groupe", "dateEffet": "2026-01-01", "dateFin": null },
+    { "branche": "IARD", "typeContrat": null, "tauxPourcent": null, "tauxMixte": true, "commentaire": "Incendie et dommages aux biens : 12,5 % pour l'incendie ; 7,25 % pour le reste. Règle de ventilation non confirmée : calcul refusé.", "dateEffet": "2026-01-01", "dateFin": null }
+  ]
+}

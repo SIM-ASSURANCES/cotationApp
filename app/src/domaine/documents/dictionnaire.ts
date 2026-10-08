@@ -7,7 +7,7 @@
  *   - l'aide intégrée (page « Aide à la rédaction des modèles ») ;
  *   - l'aperçu d'un modèle avec des données fictives (`donneesExemple`).
  *
- * Normatif : uniquement les noms du CDC, plus `assures[].sexe` (décision du 05/10/2026, D12).
+ * Normatif : uniquement les noms du CDC, plus `assures[].sexe` (D12) et `doc.auteur_nom` (D20).
  * `risque.*` est ouvert : chaque produit y met ses propres champs (CDC §6.3, « extensible »).
  * Les champs des éléments de `societe.rib[]`, `societe.mobile_money[]` et `societe.recours[]` ne
  * sont pas nommés par le CDC : les noms retenus ici sont des hypothèses (decisions.md, D14).
@@ -27,6 +27,12 @@ export type Champ = {
   /** Valeur d'exemple (aperçu avec des données fictives) ; absente pour les listes, objets et images. */
   exemple?: string | number | boolean | null;
   section: Section;
+  /**
+   * Facultatif (D19, option b de H19) : quand l'application ne le fournit pas, il est présent et VIDE.
+   * Un champ non facultatif que l'application ne fournit pas est ABSENT : un modèle qui l'utilise ne se
+   * génère pas, avec le nom du champ.
+   */
+  facultatif?: true;
 };
 
 const S1: Section = "Société, produit, intermédiaires";
@@ -34,13 +40,16 @@ const S2: Section = "Souscripteur, assurés, bénéficiaires, risque";
 const S3: Section = "Police, formules, primes, échéances, paiements";
 const S4: Section = "Document";
 
-const c = (chemin: string, type: TypeChamp, description: string, exemple: Champ["exemple"], section: Section): Champ => ({
+const c = (chemin: string, type: TypeChamp, description: string, exemple: Champ["exemple"], section: Section, facultatif?: true): Champ => ({
   chemin,
   type,
   description,
   exemple,
   section,
+  ...(facultatif ? { facultatif } : {}),
 });
+/** Marque un champ facultatif (D19). */
+const FACULTATIF = true as const;
 
 export const CHAMPS: readonly Champ[] = [
   // ---------------------------------------------------------------- 6.3.1
@@ -74,7 +83,7 @@ export const CHAMPS: readonly Champ[] = [
   c("produit.cg_date", "date", "Date des conditions générales", "2025-06-19", S1),
   c("produit.cs_libelle", "texte", "Libellé des conventions spéciales", "Conventions spéciales (exemple)", S1),
   c("produit.cs_visa", "texte", "Visa des conventions spéciales", "MFB/DGTCP/DA/N° 00001", S1),
-  c("intermediaires", "liste", "Intermédiaires (0 à 2)", undefined, S1),
+  c("intermediaires", "liste", "Intermédiaires (0 à 2) ; liste vide si l'application ne les connaît pas", undefined, S1, FACULTATIF),
   c("intermediaires[].nom", "texte", "Nom de l'intermédiaire", "COURTIER EXEMPLE", S1),
   c("intermediaires[].code", "texte", "Code de l'intermédiaire", "INT-001", S1),
   c("intermediaires[].role", "texte", "Rôle (apporteur, gestionnaire…)", "Apporteur", S1),
@@ -129,8 +138,8 @@ export const CHAMPS: readonly Champ[] = [
   c("police.duree_jours", "entier", "Durée en jours", 365, S3),
   c("police.duree_libelle", "texte", "Durée en toutes lettres", "un an", S3),
   c("police.type_contrat", "texte", "INDIVIDUEL, FAMILLE, GROUPE ou GROUPE_OUVERT", "FAMILLE", S3),
-  c("police.police_mere", "texte", "Police mère (certificat d'adhésion)", "", S3),
-  c("police.nantissement", "objet", "Nantissement (SECURSTOCK) ; vide s'il n'y en a pas", undefined, S3),
+  c("police.police_mere", "texte", "Police mère (certificat d'adhésion) ; vide pour un autre document", "", S3, FACULTATIF),
+  c("police.nantissement", "objet", "Nantissement (SECURSTOCK) ; vide s'il n'y en a pas", undefined, S3, FACULTATIF),
   c("police.nantissement.beneficiaire", "texte", "Bénéficiaire du nantissement", "BANQUE EXEMPLE", S3),
   c("police.nantissement.montant", "montant", "Montant nanti", "5000000", S3),
   c("formules", "liste", "Une ligne par formule (Solo, Famille…)", undefined, S3),
@@ -179,7 +188,8 @@ export const CHAMPS: readonly Champ[] = [
   c("cachet_sim", "image", "Cachet de SIM", undefined, S4),
   c("qr_code", "image", "QR code de vérification", undefined, S4),
   c("doc.url_verification", "texte", "Adresse de vérification", "https://exemple.ci/verif/exemple", S4),
-  c("doc.empreinte", "texte", "Empreinte SHA-256 du document", "0000000000000000000000000000000000000000000000000000000000000000", S4),
+  c("doc.empreinte", "texte", "Empreinte SHA-256 du document ; toujours vide dans le document lui-même (H20)", "0000000000000000000000000000000000000000000000000000000000000000", S4, FACULTATIF),
+  c("doc.auteur_nom", "texte", "Nom de l'auteur de la cotation (extension D20)", "AUTEUR Inventé", S4),
   c("doc.facture_origine", "texte", "Facture d'origine : facture annulée (avoir), facture réglée (reçu)", "FAC-2026-09-0003", S4),
 ];
 
@@ -206,6 +216,41 @@ export const champDuDictionnaire = (chemin: string): Champ | undefined => PAR_CH
 
 /** Racines du dictionnaire (« souscripteur », « police », « qr_code »…). */
 export const RACINES: ReadonlySet<string> = new Set(CHAMPS.map((champ) => champ.chemin.split(/[.[]/)[0]));
+
+/** Le champ est-il déclaré facultatif (D19) ? */
+export const estFacultatif = (chemin: string): boolean => PAR_CHEMIN.get(chemin)?.facultatif === true;
+
+/**
+ * Marqueur d'une donnée que l'application NE FOURNIT PAS (profession non saisie, bénéficiaires non gérés…).
+ * Distinct de null, qui veut dire « connue et vide ».
+ */
+export const NON_FOURNI: unique symbol = Symbol("non fourni");
+export type NonFourni = typeof NON_FOURNI;
+
+/**
+ * Option b de H19 (D19) : remplace chaque donnée NON_FOURNI par une valeur vide (null, ou [] pour une
+ * liste) si le champ est facultatif, et la RETIRE sinon : un modèle qui l'utilise ne se génère pas.
+ * Renvoie aussi la liste des champs retirés (pour l'information de l'utilisateur et les tests).
+ */
+export function appliquerFacultatifs(donnees: Donnees): { donnees: Donnees; absents: string[] } {
+  const absents = new Set<string>();
+  const traiter = (valeur: unknown, chemin: string): unknown => {
+    if (Array.isArray(valeur)) return valeur.map((v) => traiter(v, `${chemin}[]`));
+    if (valeur === null || typeof valeur !== "object") return valeur;
+    const sortie: Donnees = {};
+    for (const [cle, v] of Object.entries(valeur)) {
+      const enfant = chemin ? `${chemin}.${cle}` : cle;
+      if (v === NON_FOURNI) {
+        if (estFacultatif(enfant)) sortie[cle] = PAR_CHEMIN.get(enfant)?.type === "liste" ? [] : null;
+        else absents.add(enfant);
+        continue;
+      }
+      sortie[cle] = traiter(v, enfant);
+    }
+    return sortie;
+  };
+  return { donnees: traiter(donnees, "") as Donnees, absents: [...absents].sort() };
+}
 
 // ------------------------------------------------------------------ Données fictives (aperçu)
 

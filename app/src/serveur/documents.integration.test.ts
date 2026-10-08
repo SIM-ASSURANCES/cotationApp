@@ -84,7 +84,7 @@ const versionBeni = (references?: VersionSaisie["references"]): VersionSaisie =>
 async function produit(references?: VersionSaisie["references"]): Promise<string> {
   const code = CODE("BENI");
   const branche = `SANTE_${code}`;
-  await creerTaxe(technique, { branche, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
+  await creerTaxe(technique, { branche, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
   await creerProduit(technique, { code, libelle: "Santé BENI (test)", gamme: "RELAX", branche }, null);
   await creerVersion(technique, code, versionBeni(references), null);
   return code;
@@ -95,6 +95,7 @@ async function cotationT1(produitCode: string): Promise<number> {
   const saisie: SaisieCotation = {
     codeProduit: produitCode,
     clientId: null,
+    typeContrat: "GROUPE",
     souscripteur: { type: "PHYSIQUE", nom: "KOUADIO", prenoms: "Awa Inventée", raison_sociale: "", telephone: "0700000000", email: "", adresse: "" },
     dateEffet: "2026-01-01",
     dateEcheance: "2026-12-31",
@@ -285,7 +286,7 @@ describe("conditions particulières : CP → CS → CG, visa contrôlé (§6.8)"
     const bon = await produit({ cgModeleCode: cg.code, cgVisa: "MFB/DGTCP/DA/N° 01498", csModeleCode: null, csVisa: null });
     await publier("CP", bon, "modele cp", SOCLE("police.numero"));
     const id = await cotationT1(bon);
-    await accepter(commercial, id, ["SOLO", "FAMILLE"], null);
+    await accepter(commercial, id, ["SOLO", "FAMILLE"], `TST-2026-000001-G${String(Date.now() % 100000).padStart(5, "0")}`, null);
     await expect(emettreCp(commercial, id, null)).rejects.toThrow(ErreurAcces); // Commercial : pas « Émettre un contrat »
     demandes.length = 0;
     const cp = await emettreCp(technique, id, null);
@@ -297,13 +298,13 @@ describe("conditions particulières : CP → CS → CG, visa contrôlé (§6.8)"
     const faux = await produit({ cgModeleCode: cg.code, cgVisa: "MFB/DGTCP/DA/N° 01497", csModeleCode: null, csVisa: null });
     await publier("CP", faux, "modele cp", SOCLE("police.numero"));
     const id2 = await cotationT1(faux);
-    await accepter(commercial, id2, ["SOLO"], null);
+    await accepter(commercial, id2, ["SOLO"], `TST-2026-000002-G${String(Date.now() % 100000).padStart(5, "0")}`, null);
     await expect(emettreCp(technique, id2, null)).rejects.toThrow(/Visa incohérent/);
 
     const sansCg = await produit();
     await publier("CP", sansCg, "modele cp", SOCLE("police.numero"));
     const id3 = await cotationT1(sansCg);
-    await accepter(commercial, id3, ["SOLO"], null);
+    await accepter(commercial, id3, ["SOLO"], `TST-2026-000003-G${String(Date.now() % 100000).padStart(5, "0")}`, null);
     await expect(emettreCp(technique, id3, null)).rejects.toThrow(/pas de conditions générales/);
   });
 });

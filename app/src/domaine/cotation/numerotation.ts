@@ -24,11 +24,4 @@ export function formaterNumero(prefixe: PrefixeNumero, date: DateIso, compteur: 
   return `${prefixe}-${annee}-${mois}-${String(compteur).padStart(4, "0")}`;
 }
 
-/**
- * Numéro de police. Le format réel est décidé par la Direction Technique (question en attente) :
- * POL-AAAA-NNNNNN est un format PROVISOIRE, produit par le seul code ci-dessous pour être facile à changer.
- */
-export function formaterNumeroPolice(date: DateIso, compteur: number): string {
-  if (!Number.isInteger(compteur) || compteur < 1) throw new Error("Le compteur doit être un entier positif.");
-  return `POL-${composantes(date).annee}-${String(compteur).padStart(6, "0")}`;
-}
+// Le numéro de police n'est plus généré ici : il est saisi (H10, D18), voir police.ts.

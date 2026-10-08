@@ -6,11 +6,13 @@ export type SaisieFormulaire = {
   id: number | null;
   codeProduit: string;
   clientId: number | null;
+  /** Texte saisi ; contrôlé par le service (INDIVIDUEL, FAMILLE, GROUPE, GROUPE_OUVERT). */
+  typeContrat: string;
   souscripteur: Souscripteur;
   dateEffet: string;
   dateEcheance: string;
   nombreTranches: number;
-  lignes: { codeFormule: string; effectif: number; primeForcee: string | null }[];
+  lignes: { codeFormule: string; effectif: number; primeForcee: string | null; accessoireValeur: string | null }[];
   motifForcage: string | null;
   assures: Assure[];
   risque: Risque;
@@ -33,6 +35,8 @@ export function lireCotation(d: FormData): SaisieFormulaire {
       codeFormule: l.code,
       effectif: /^\d+$/.test(l.texte) ? Number(l.texte) : Number.NaN,
       primeForcee: champ(d, `forcee_${l.code}`) ? normaliserMontantSaisi(champ(d, `forcee_${l.code}`)) : null,
+      // Accessoires (H1) : vide = valeur du paramétrage.
+      accessoireValeur: champ(d, `acc_${l.code}`) ? normaliserMontantSaisi(champ(d, `acc_${l.code}`)) : null,
     }));
 
   const [noms, naissances, sexes, liens, formules] = ["assure_nom", "assure_naissance", "assure_sexe", "assure_lien", "assure_formule"].map((n) => colonne(d, n));
@@ -59,6 +63,7 @@ export function lireCotation(d: FormData): SaisieFormulaire {
     id: idTexte ? Number(idTexte) : null,
     codeProduit: champ(d, "codeProduit"),
     clientId: clientTexte ? Number(clientTexte) : null,
+    typeContrat: champ(d, "typeContrat"),
     souscripteur: {
       type: champ(d, "souscripteur_type") === "MORALE" ? "MORALE" : "PHYSIQUE",
       nom: champ(d, "souscripteur_nom"),

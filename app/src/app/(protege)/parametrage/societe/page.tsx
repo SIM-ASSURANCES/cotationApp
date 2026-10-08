@@ -5,10 +5,10 @@ import { peutAgir } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
 import { aujourdhui } from "@/serveur/parametrage";
 import { exigerUtilisateur } from "@/serveur/session";
-import { consulterSociete } from "@/serveur/societe";
+import { consulterFormatNumeroPolice, consulterSociete } from "@/serveur/societe";
 import { ErreurAcces } from "@/serveur/types";
 
-import { enregistrerLaSociete, enregistrerUneImage } from "./actions";
+import { enregistrerLaSociete, enregistrerLeFormatPolice, enregistrerUneImage } from "./actions";
 
 const zone = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2 font-mono text-sm";
 const lignes = (liste: Record<string, string>[], cles: [string, string]) => liste.map((x) => `${x[cles[0]]} ; ${x[cles[1]]}`).join("\n");
@@ -18,7 +18,7 @@ export default async function PageSociete() {
   const utilisateur = await exigerUtilisateur();
   let lu;
   try {
-    lu = await consulterSociete(utilisateur);
+    lu = { ...(await consulterSociete(utilisateur)), formatPolice: await consulterFormatNumeroPolice(utilisateur) };
   } catch (erreur) {
     if (erreur instanceof ErreurAcces) redirect("/acces-refuse");
     throw erreur;
@@ -89,6 +89,46 @@ export default async function PageSociete() {
           </div>
         </FormulaireAction>
       ) : null}
+
+      <h2 className="mb-2 mt-8 text-lg font-semibold">Format du numéro de police</h2>
+      <p className="mb-3 text-sm text-zinc-700">
+        Le numéro de police est attribué par SIM et saisi à l&apos;acceptation de la cotation : le module ne le génère jamais. Il est contrôlé par cette
+        expression régulière (en vigueur : <code>{lu.formatPolice.enVigueur}</code>). Signification des 5 chiffres après G ou I : à confirmer (H31).
+      </p>
+      {ecriture ? (
+        <FormulaireAction action={enregistrerLeFormatPolice} libelleBouton="Enregistrer le format">
+          <div className="grid gap-x-6 sm:grid-cols-3">
+            <div className="sm:col-span-2">
+              <Champ nom="format" libelle="Expression régulière (commence par ^, finit par $)" valeur={lu.formatPolice.enVigueur} autoComplete="off" />
+            </div>
+            <Champ nom="dateEffet" libelle="À partir du (AAAA-MM-JJ)" valeur={aujourdhui()} autoComplete="off" />
+          </div>
+        </FormulaireAction>
+      ) : null}
+      {lu.formatPolice.historique.length > 0 ? (
+        <table className="mt-3 w-full border-collapse text-sm">
+          <thead>
+            <tr className="text-left text-zinc-600">
+              <th className="p-1">À partir du</th>
+              <th className="p-1">Format</th>
+              <th className="p-1">Saisi par</th>
+              <th className="p-1">Saisi le</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lu.formatPolice.historique.map((h) => (
+              <tr key={`${h.dateEffet}-${h.valeur}`} className="border-t border-bordure">
+                <td className="p-1">{h.dateEffet}</td>
+                <td className="p-1 font-mono text-xs">{h.valeur}</td>
+                <td className="p-1">{h.creePar}</td>
+                <td className="p-1">{h.creeLe.toISOString().slice(0, 16).replace("T", " ")}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="text-sm text-zinc-600">Format par défaut, jamais modifié.</p>
+      )}
     </main>
   );
 }

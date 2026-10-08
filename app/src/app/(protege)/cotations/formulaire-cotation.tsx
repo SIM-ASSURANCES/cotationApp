@@ -1,12 +1,14 @@
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { LignesAssures, LignesRisque } from "@/composants/LignesDynamiques";
 import { montant } from "@/domaine/calcul/montant";
+import { LIBELLE_TYPE_CONTRAT, TYPES_CONTRAT } from "@/domaine/calcul/taxes";
 import type { LigneClient } from "@/serveur/clients";
 import type { DetailCotation } from "@/serveur/cotations";
 
 import { enregistrerCotation } from "./actions";
 
 const entree = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2";
+const LIBELLE_MODE_ACCESSOIRE: Record<string, string> = { AUCUN: "aucun", FIXE: "F par contrat", PAR_TETE: "F par tête", PAR_FAMILLE: "F par famille", POURCENT: "% de la nette" };
 
 /** Formulaire de cotation, pour une création ou la modification d'un brouillon (valeurs par défaut dans `base`). */
 export function FormulaireCotation({
@@ -18,7 +20,7 @@ export function FormulaireCotation({
   base,
 }: {
   produit: { code: string; libelle: string };
-  formules: { code: string; libelle: string; primeUnitaire: string }[];
+  formules: { code: string; libelle: string; primeUnitaire: string; accessoireMode: string; accessoireValeur: string }[];
   clients: LigneClient[];
   tranchesMax: number;
   formulesMax: number;
@@ -59,6 +61,21 @@ export function FormulaireCotation({
         <Champ nom="souscripteur_adresse" libelle="Adresse" requis={false} valeur={s?.adresse} autoComplete="off" />
       </div>
 
+      <h2 className="mb-2 text-lg font-semibold">Contrat</h2>
+      <label className="mb-4 block max-w-md text-sm font-medium">
+        Type de contrat (obligatoire : il détermine le taux de taxe)
+        <select name="typeContrat" defaultValue={base?.typeContrat ?? ""} required className={entree}>
+          <option value="" disabled>
+            — Choisir —
+          </option>
+          {TYPES_CONTRAT.map((t) => (
+            <option key={t} value={t}>
+              {LIBELLE_TYPE_CONTRAT[t]}
+            </option>
+          ))}
+        </select>
+      </label>
+
       <h2 className="mb-2 text-lg font-semibold">Période et fractionnement</h2>
       <div className="mb-4 grid max-w-4xl gap-x-6 sm:grid-cols-3">
         <Champ nom="dateEffet" libelle="Date d'effet (AAAA-MM-JJ)" valeur={base?.dateEffet} autoComplete="off" />
@@ -69,7 +86,8 @@ export function FormulaireCotation({
       <h2 className="mb-1 text-lg font-semibold">Formules</h2>
       <p className="mb-2 text-sm text-zinc-700">
         Saisissez l'effectif des formules à chiffrer (de 1 à {formulesMax}) ; laissez vide pour exclure une formule. La prime forcée est
-        facultative : elle remplace le tarif, exige un motif et passe la cotation « À valider ».
+        facultative : elle remplace le tarif, exige un motif et passe la cotation « À valider ». Les accessoires reprennent la valeur du
+        paramétrage ; vous pouvez la modifier (la modification est journalisée, les seuils de validation s'appliquent au TTC obtenu).
       </p>
       <div className="mb-4 overflow-x-auto">
         <table className="w-full min-w-[40rem] border-collapse text-sm">
@@ -79,6 +97,7 @@ export function FormulaireCotation({
               <th className="p-2">Prime unitaire (tarif)</th>
               <th className="p-2">Effectif</th>
               <th className="p-2">Prime unitaire forcée</th>
+              <th className="p-2">Accessoires (valeur)</th>
             </tr>
           </thead>
           <tbody>
@@ -95,6 +114,16 @@ export function FormulaireCotation({
                   </td>
                   <td className="p-1">
                     <input name={`forcee_${f.code}`} defaultValue={forcee ? montant(forcee).toString() : ""} inputMode="decimal" aria-label={`Prime forcée ${f.code}`} className="w-40 rounded border border-bordure px-2 py-1" />
+                  </td>
+                  <td className="p-1">
+                    <input
+                      name={`acc_${f.code}`}
+                      defaultValue={montant(ligneDe(f.code)?.accessoireSaisi ?? f.accessoireValeur).toString().replace(".", ",")}
+                      inputMode="decimal"
+                      aria-label={`Accessoires ${f.code}`}
+                      className="w-32 rounded border border-bordure px-2 py-1"
+                    />
+                    <span className="ml-1 text-xs text-zinc-600">{LIBELLE_MODE_ACCESSOIRE[f.accessoireMode] ?? f.accessoireMode}</span>
                   </td>
                 </tr>
               );

@@ -1,4 +1,7 @@
 // Tests d'intégration : vraie base PostgreSQL de test (npm run test:integration).
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
@@ -10,7 +13,9 @@ import {
   creerProduit,
   creerTaxe,
   creerVersion,
+  initialiserTaxes,
   listerTaxes,
+  type TaxeDemarrage,
 } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
@@ -70,14 +75,15 @@ describe("T1 et T3 de bout en bout, avec les paramètres lus en base", () => {
   const branche = `SANTE_${code}`;
 
   beforeAll(async () => {
-    await creerTaxe(technique, { branche, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
+    // Taux santé GROUPE de la loi (1,5 %, D18) : T1 et T2 sont des contrats groupe.
+    await creerTaxe(technique, { branche, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
     await creerProduit(technique, { code, libelle: "Santé BENI (test)", gamme: "RELAX", branche }, null);
     await creerVersion(technique, code, versionBeni(), null);
   });
 
   it("T1 : Solo 288 000, Famille 15 600 000, total 15 888 000", async () => {
     const r = await calculerPourProduit(technique, {
-      codeProduit: code,
+      codeProduit: code, typeContrat: "GROUPE",
       ...ANNEE,
       lignes: [{ codeFormule: "SOLO", effectif: 3 }, { codeFormule: "FAMILLE", effectif: 60 }],
     });
@@ -96,7 +102,7 @@ describe("T1 et T3 de bout en bout, avec les paramètres lus en base", () => {
 
   it("T1 : l'échéancier en 4 tranches fait exactement 15 888 000", async () => {
     const r = await calculerPourProduit(technique, {
-      codeProduit: code,
+      codeProduit: code, typeContrat: "GROUPE",
       ...ANNEE,
       lignes: [{ codeFormule: "SOLO", effectif: 3 }, { codeFormule: "FAMILLE", effectif: 60 }],
       nombreTranches: 4,
@@ -119,8 +125,10 @@ describe("T1 et T3 de bout en bout, avec les paramètres lus en base", () => {
       null,
     );
 
+    // H30 : le CDC décrit T3 comme une police individuelle mais lui applique 1,5 %, le taux santé GROUPE.
+    // En attendant la réponse de la Technique, on garde les données du CDC et on déclare le contrat GROUPE.
     const r = await calculerPourProduit(technique, {
-      codeProduit: codeT3,
+      codeProduit: codeT3, typeContrat: "GROUPE",
       dateEffet: "2026-07-22",
       dateEcheance: "2026-12-31",
       lignes: [{ codeFormule: "IND", effectif: 1 }],
@@ -141,16 +149,16 @@ describe("historisation par date d'effet (CDC §7)", () => {
   const lignes = [{ codeFormule: "SOLO", effectif: 1 }];
 
   beforeAll(async () => {
-    await creerTaxe(technique, { branche, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-    await creerTaxe(technique, { branche, tauxPourcent: "1.9", assiette: "NETTE_ACCESSOIRES", dateEffet: "2026-09-01", dateFin: null }, null);
+    await creerTaxe(technique, { branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
+    await creerTaxe(technique, { branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "1.9", assiette: "NETTE_ACCESSOIRES", dateEffet: "2026-09-01", dateFin: null }, null);
     await creerProduit(technique, { code, libelle: "Historique (test)", gamme: "RELAX", branche }, null);
     await creerVersion(technique, code, versionBeni({ dateEffet: "2026-01-01", formules: [{ code: "SOLO", libelle: "Solo", tauxCouverture: null, primeUnitaire: "100000", accessoireMode: "AUCUN", accessoireValeur: "0" }] }), null);
     await creerVersion(technique, code, versionBeni({ dateEffet: "2026-09-01", formules: [{ code: "SOLO", libelle: "Solo", tauxCouverture: null, primeUnitaire: "120000", accessoireMode: "AUCUN", accessoireValeur: "0" }] }), null);
   });
 
   it("utilise la version du produit en vigueur à la date du document", async () => {
-    const ancien = await calculerPourProduit(technique, { codeProduit: code, ...ANNEE, dateDocument: "2026-08-15", lignes });
-    const recent = await calculerPourProduit(technique, { codeProduit: code, ...ANNEE, dateDocument: "2026-10-05", lignes });
+    const ancien = await calculerPourProduit(technique, { codeProduit: code, typeContrat: "GROUPE", ...ANNEE, dateDocument: "2026-08-15", lignes });
+    const recent = await calculerPourProduit(technique, { codeProduit: code, typeContrat: "GROUPE", ...ANNEE, dateDocument: "2026-10-05", lignes });
 
     expect(ancien.resultat.lignes[0].arrondi.nette.toString()).toBe("100000");
     expect(ancien.versionDu).toBe("2026-01-01");
@@ -159,16 +167,16 @@ describe("historisation par date d'effet (CDC §7)", () => {
   });
 
   it("utilise le taux de taxe en vigueur à la date d'effet de la police", async () => {
-    const avant = await calculerPourProduit(technique, { codeProduit: code, dateEffet: "2026-07-22", dateEcheance: "2026-12-31", dateDocument: "2026-10-05", lignes });
-    const apres = await calculerPourProduit(technique, { codeProduit: code, dateEffet: "2026-10-01", dateEcheance: "2026-12-31", dateDocument: "2026-10-05", lignes });
+    const avant = await calculerPourProduit(technique, { codeProduit: code, typeContrat: "GROUPE", dateEffet: "2026-07-22", dateEcheance: "2026-12-31", dateDocument: "2026-10-05", lignes });
+    const apres = await calculerPourProduit(technique, { codeProduit: code, typeContrat: "GROUPE", dateEffet: "2026-10-01", dateEcheance: "2026-12-31", dateDocument: "2026-10-05", lignes });
 
     expect(avant.taxe.tauxPourcent).toBe("1.5");
     expect(apres.taxe.tauxPourcent).toBe("1.9");
   });
 
   it("refuse un document daté avant la première version, et une date sans taxe", async () => {
-    await expect(calculerPourProduit(technique, { codeProduit: code, ...ANNEE, dateDocument: "2025-06-01", lignes })).rejects.toThrow(/Aucun paramétrage/);
-    await expect(calculerPourProduit(technique, { codeProduit: code, dateEffet: "2019-01-01", dateEcheance: "2019-12-31", lignes })).rejects.toThrow(/Aucune taxe/);
+    await expect(calculerPourProduit(technique, { codeProduit: code, typeContrat: "GROUPE", ...ANNEE, dateDocument: "2025-06-01", lignes })).rejects.toThrow(/Aucun paramétrage/);
+    await expect(calculerPourProduit(technique, { codeProduit: code, typeContrat: "GROUPE", dateEffet: "2019-01-01", dateEcheance: "2019-12-31", lignes })).rejects.toThrow(/Aucune taxe/);
   });
 
   it("refuse de modifier ou supprimer une ligne en vigueur, même en SQL direct", async () => {
@@ -189,9 +197,9 @@ describe("historisation par date d'effet (CDC §7)", () => {
     await expect(prisma.$executeRawUnsafe(`DELETE FROM produit_versions WHERE date_effet = '2999-01-01'`)).resolves.toBe(1);
   });
 
-  it("refuse deux versions ou deux taxes à la même date d'effet", async () => {
+  it("refuse deux versions à la même date d'effet, et deux taux dont les périodes se chevauchent", async () => {
     await expect(creerVersion(technique, code, versionBeni({ dateEffet: "2026-09-01" }), null)).rejects.toThrow(/existe déjà/);
-    await expect(creerTaxe(technique, { branche, tauxPourcent: "2", assiette: "NETTE", dateEffet: "2026-09-01", dateFin: null }, null)).rejects.toThrow(/existe déjà/);
+    await expect(creerTaxe(technique, { branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "2", assiette: "NETTE", dateEffet: "2026-09-01", dateFin: null }, null)).rejects.toThrow(/Période refusée/);
   });
 });
 
@@ -200,7 +208,7 @@ describe("règles de gestion", () => {
   const branche = `REG_${code}`;
 
   beforeAll(async () => {
-    await creerTaxe(technique, { branche, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
+    await creerTaxe(technique, { branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
     await creerProduit(technique, { code, libelle: "Règles (test)", gamme: "RELAX", branche }, null);
     await creerVersion(
       technique,
@@ -214,7 +222,7 @@ describe("règles de gestion", () => {
   });
 
   it("réserve l'écriture aux profils « Oui » ou « Valide » : ni commercial, ni comptabilité (simple proposition)", async () => {
-    const taxe = { branche: "AUTRE", tauxPourcent: "1", assiette: "NETTE" as const, dateEffet: "2026-01-01", dateFin: null };
+    const taxe = { branche: "AUTRE", typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "1", assiette: "NETTE" as const, dateEffet: "2026-01-01", dateFin: null };
 
     await expect(creerTaxe(commercial, taxe, null)).rejects.toBeInstanceOf(ErreurAcces);
     await expect(creerTaxe(comptabilite, taxe, null)).rejects.toBeInstanceOf(ErreurAcces);
@@ -223,7 +231,7 @@ describe("règles de gestion", () => {
   });
 
   it("laisse consulter et calculer au commercial et à la comptabilité, pas à l'Admin système", async () => {
-    const demande = { codeProduit: code, ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 1 }] };
+    const demande = { codeProduit: code, typeContrat: "GROUPE" as const, ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 1 }] };
 
     await expect(calculerPourProduit(commercial, demande)).resolves.toBeDefined();
     await expect(listerTaxes(comptabilite)).resolves.toBeDefined();
@@ -231,15 +239,15 @@ describe("règles de gestion", () => {
   });
 
   it("signale la double validation au-dessus du seuil de TTC du produit", async () => {
-    const petit = await calculerPourProduit(technique, { codeProduit: code, ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 1 }] });
-    const grand = await calculerPourProduit(technique, { codeProduit: code, ...ANNEE, lignes: [{ codeFormule: "FAMILLE", effectif: 10 }] });
+    const petit = await calculerPourProduit(technique, { codeProduit: code, typeContrat: "GROUPE", ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 1 }] });
+    const grand = await calculerPourProduit(technique, { codeProduit: code, typeContrat: "GROUPE", ...ANNEE, lignes: [{ codeFormule: "FAMILLE", effectif: 10 }] });
 
     expect(petit.doubleValidationRequise).toBe(false);
     expect(grand.doubleValidationRequise).toBe(true);
   });
 
   it("applique la répartition 40/30/30 et les frais de fractionnement (taxés), et limite le nombre de tranches", async () => {
-    const r = await calculerPourProduit(technique, { codeProduit: code, ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 3 }], nombreTranches: 3 });
+    const r = await calculerPourProduit(technique, { codeProduit: code, typeContrat: "GROUPE", ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 3 }], nombreTranches: 3 });
 
     expect(r.resultat.fraisFractionnement?.arrondi.accessoires.toString()).toBe("5000");
     // 288 000 (3 Solo) + frais de fractionnement 5 000 + taxe de 1,5 % sur ces frais (75)
@@ -248,13 +256,13 @@ describe("règles de gestion", () => {
     const somme = r.echeancier!.reduce((s, x) => s.plus(x.montant), r.resultat.totaux.arrondi.ttc.minus(r.resultat.totaux.arrondi.ttc));
     expect(somme.toString()).toBe("293075");
     await expect(
-      calculerPourProduit(technique, { codeProduit: code, ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 1 }], nombreTranches: 5 }),
+      calculerPourProduit(technique, { codeProduit: code, typeContrat: "GROUPE", ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 1 }], nombreTranches: 5 }),
     ).rejects.toThrow(/de 1 à 4 tranche/);
   });
 
   it("refuse une formule inconnue, un produit inconnu et une version invalide", async () => {
-    await expect(calculerPourProduit(technique, { codeProduit: code, ...ANNEE, lignes: [{ codeFormule: "NOPE", effectif: 1 }] })).rejects.toThrow(/inconnue/);
-    await expect(calculerPourProduit(technique, { codeProduit: "INCONNU", ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 1 }] })).rejects.toBeInstanceOf(ErreurMetier);
+    await expect(calculerPourProduit(technique, { codeProduit: code, typeContrat: "GROUPE", ...ANNEE, lignes: [{ codeFormule: "NOPE", effectif: 1 }] })).rejects.toThrow(/inconnue/);
+    await expect(calculerPourProduit(technique, { codeProduit: "INCONNU", typeContrat: "GROUPE", ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 1 }] })).rejects.toBeInstanceOf(ErreurMetier);
     await expect(
       creerVersion(technique, code, versionBeni({ dateEffet: "2027-01-01", fractionnement: { tranchesMax: 4, repartitionPourcent: ["50", "40"], decalagesMois: null, frais: "0" } }), null),
     ).rejects.toThrow(/100/);
@@ -266,5 +274,84 @@ describe("règles de gestion", () => {
     expect(lignes.some((l) => l.objet?.startsWith("produit_version"))).toBe(true);
     expect(lignes.some((l) => l.objet?.startsWith("taxe"))).toBe(true);
     expect(lignes.some((l) => l.utilisateur === technique.identifiant)).toBe(true);
+  });
+});
+
+describe("taxes par branche et type de contrat (D18)", () => {
+  const taxe = (branche: string, surcharge: Record<string, unknown> = {}) => ({
+    branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "1", assiette: "NETTE_ACCESSOIRES" as const, dateEffet: "2026-01-01", dateFin: null, ...surcharge,
+  });
+
+  it("un nouveau taux clôture le taux ouvert à la veille ; les autres chevauchements sont refusés avec un message clair", async () => {
+    const branche = unique("PER").toUpperCase().replace(/-/g, "_");
+    await creerTaxe(technique, taxe(branche, { tauxPourcent: "1.5", dateEffet: "2020-01-01" }), null);
+    await creerTaxe(technique, taxe(branche, { tauxPourcent: "2", dateEffet: "2027-01-01" }), null);
+
+    const lignes = (await listerTaxes(technique)).filter((t) => t.branche === branche);
+    expect(lignes.map((t) => [t.dateEffet, t.dateFin, t.tauxPourcent])).toEqual([["2027-01-01", null, "2"], ["2020-01-01", "2026-12-31", "1.5"]]);
+    expect(lignes[0].creePar).toBe(technique.identifiant);
+    const journal = (await lireJournal({ action: "PARAMETRE_MODIFIE" })).lignes.find((l) => l.objet === `taxe ${lignes[1].id}` && l.avant !== null)!;
+    expect(journal.avant).toEqual({ dateFin: null });
+    expect(journal.apres).toMatchObject({ dateFin: "2026-12-31" });
+
+    await expect(creerTaxe(technique, taxe(branche, { dateEffet: "2026-06-01", dateFin: "2026-06-30" }), null)).rejects.toThrow(/Période refusée.*chevauche/);
+    await expect(creerTaxe(technique, taxe(branche, { dateEffet: "2027-01-01" }), null)).rejects.toThrow(/Période refusée/);
+    // Un autre type de contrat est une autre clé : pas de chevauchement.
+    await expect(creerTaxe(technique, taxe(branche, { typeContrat: "GROUPE", dateEffet: "2026-06-01" }), null)).resolves.toBeUndefined();
+  });
+
+  it("la base refuse elle-même deux périodes qui se chevauchent et toute modification autre que la clôture", async () => {
+    const branche = unique("SQL").toUpperCase().replace(/-/g, "_");
+    await creerTaxe(technique, taxe(branche, { dateEffet: "2020-01-01" }), null);
+    const prisma = obtenirPrisma();
+
+    await expect(
+      prisma.$executeRawUnsafe(`INSERT INTO taxes (branche, taux_pourcent, assiette, date_effet, cree_par) VALUES ('${branche}', 3, 'NETTE', '2025-01-01', 'sql')`),
+    ).rejects.toThrow(/taxes_sans_chevauchement/);
+    await expect(prisma.$executeRawUnsafe(`UPDATE taxes SET taux_pourcent = 9, date_fin = '2026-12-31' WHERE branche = '${branche}'`)).rejects.toThrow(/paramétrage historisé/);
+    await expect(prisma.$executeRawUnsafe(`UPDATE taxes SET date_fin = '2026-12-31' WHERE branche = '${branche}'`)).resolves.toBe(1);
+    await expect(prisma.$executeRawUnsafe(`UPDATE taxes SET date_fin = '2027-12-31' WHERE branche = '${branche}'`)).rejects.toThrow(/paramétrage historisé/);
+  });
+
+  it("le calcul prend la ligne la plus précise, applique H29 et refuse un taux mixte", async () => {
+    const branche = unique("PREC").toUpperCase().replace(/-/g, "_");
+    await creerTaxe(technique, taxe(branche, { tauxPourcent: "7.25", dateEffet: "2020-01-01" }), null);
+    await creerTaxe(technique, taxe(branche, { typeContrat: "INDIVIDUEL", tauxPourcent: "4", dateEffet: "2020-01-01" }), null);
+    const code = unique("PREC").toUpperCase().replace(/-/g, "_");
+    await creerProduit(technique, { code, libelle: "Précision (test)", gamme: "RELAX", branche }, null);
+    await creerVersion(technique, code, versionBeni({ dateEffet: "2020-01-01" }), null);
+    const demande = (typeContrat: "INDIVIDUEL" | "FAMILLE" | "GROUPE") => calculerPourProduit(technique, { codeProduit: code, typeContrat, ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 1 }] });
+
+    expect((await demande("INDIVIDUEL")).taxe).toMatchObject({ tauxPourcent: "4", typeContrat: "INDIVIDUEL" });
+    expect((await demande("FAMILLE")).taxe.tauxPourcent).toBe("4"); // H29
+    expect((await demande("GROUPE")).taxe).toMatchObject({ tauxPourcent: "7.25", typeContrat: null });
+    await expect(demande("" as "GROUPE")).rejects.toBeInstanceOf(ErreurMetier); // type absent (formulaire vide)
+
+    const mixte = unique("MIX").toUpperCase().replace(/-/g, "_");
+    await creerTaxe(technique, taxe(mixte, { tauxPourcent: null, tauxMixte: true, commentaire: "12,5 % incendie ; 7,25 % reste", dateEffet: "2020-01-01" }), null);
+    const codeMixte = `${code}_M`;
+    await creerProduit(technique, { code: codeMixte, libelle: "Mixte (test)", gamme: "RELAX", branche: mixte }, null);
+    await creerVersion(technique, codeMixte, versionBeni({ dateEffet: "2020-01-01" }), null);
+    await expect(calculerPourProduit(technique, { codeProduit: codeMixte, typeContrat: "INDIVIDUEL", ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 1 }] })).rejects.toThrow(
+      "taux mixte non pris en charge : à paramétrer",
+    );
+    await expect(creerTaxe(technique, taxe(unique("X").toUpperCase().replace(/-/g, "_"), { tauxPourcent: "3", tauxMixte: true }), null)).rejects.toBeInstanceOf(ErreurMetier);
+  });
+
+  it("charge les taux de la loi depuis les données de démarrage, une seule fois, sans écraser un taux existant", async () => {
+    const fichier = JSON.parse(readFileSync(fileURLToPath(new URL("../../prisma/donnees/taxes-loi.json", import.meta.url)), "utf8")) as { lignes: TaxeDemarrage[] };
+
+    await initialiserTaxes(fichier.lignes);
+    expect(await initialiserTaxes(fichier.lignes)).toBe(0);
+    const taux = (await listerTaxes(technique)).filter((t) => ["IA", "DECES", "SANTE", "IARD"].includes(t.branche));
+    expect(taux.map((t) => [t.branche, t.typeContrat, t.tauxPourcent, t.tauxMixte])).toEqual(
+      expect.arrayContaining([
+        ["IA", null, "7.25", false],
+        ["DECES", null, "0", false],
+        ["SANTE", "INDIVIDUEL", "4", false],
+        ["SANTE", "GROUPE", "1.5", false],
+        ["IARD", null, null, true],
+      ]),
+    );
   });
 });

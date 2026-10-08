@@ -18,8 +18,8 @@ export default async function PageModifierCotation(props: PageProps<"/cotations/
   if (!cotation) {
     notFound();
   }
-  // Seul l'auteur modifie, et seulement un brouillon : sinon retour à la fiche.
-  if (cotation.auteurId !== utilisateur.id || !peutModifier(cotation.statut)) {
+  // Tout utilisateur qui peut créer une cotation modifie un brouillon (H9, D18), et seulement un brouillon.
+  if (!peutModifier(cotation.statut)) {
     redirect(`/cotations/${cotation.id}`);
   }
   const donnees = await listerVersions(utilisateur, cotation.produit.code);

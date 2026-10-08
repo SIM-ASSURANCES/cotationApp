@@ -318,7 +318,9 @@ async function sourceCommune(contexte: ContexteProduit, date: DateIso) {
 async function chargerCotation(id: number) {
   const c = await obtenirPrisma().cotation.findUnique({ where: { id }, include: { produit: true } });
   if (!c) throw new ErreurMetier("Cotation introuvable.");
-  return c;
+  // doc.auteur_nom (D20) : nom de l'utilisateur qui a créé la cotation.
+  const auteur = await obtenirPrisma().utilisateur.findUnique({ where: { id: c.auteurId }, select: { nom: true } });
+  return { ...c, auteurNom: auteur?.nom ?? c.auteurIdentifiant };
 }
 
 function sourceDeCotation(
@@ -356,6 +358,8 @@ function sourceDeCotation(
     societe: commun.societe,
     mentions: commun.document,
     urlVerification: url,
+    typeContrat: c.typeContrat,
+    auteurNom: c.auteurNom,
   };
 }
 
@@ -476,6 +480,8 @@ export async function emettreCp(acteur: UtilisateurCourant, cotationId: number, 
     societe: commun.societe,
     mentions: commun.document,
     urlVerification: url,
+    typeContrat: police.typeContrat,
+    auteurNom: c.auteurNom,
   });
   return produire(
     acteur,

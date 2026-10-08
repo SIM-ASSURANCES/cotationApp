@@ -99,12 +99,19 @@ model JournalAudit {
   @@map("journal_audit")
 }
 
-/// Taux de taxe par branche (CDC §8.3), historisé : une ligne par période, jamais modifiée.
+/// Taux de taxe (CDC §8.3, D18), historisé : clé (branche, type de contrat, date d'effet). Une ligne en
+/// vigueur ne se modifie pas, sauf sa clôture (date de fin posée une fois). Pour une même clé, deux
+/// périodes ne se chevauchent jamais : contrainte d'exclusion PostgreSQL (voir la migration).
 model Taxe {
   id           Int       @id @default(autoincrement())
   branche      String
-  /// En pourcentage : 1.5 pour 1,5 %.
-  tauxPourcent Decimal   @map("taux_pourcent") @db.Decimal(9, 6)
+  /// INDIVIDUEL, FAMILLE, GROUPE, GROUPE_OUVERT, ou null : tous types de contrat.
+  typeContrat  String?   @map("type_contrat")
+  /// En pourcentage : 1.5 pour 1,5 %. Null seulement pour une ligne à taux mixte.
+  tauxPourcent Decimal?  @map("taux_pourcent") @db.Decimal(9, 6)
+  /// Plusieurs taux dans un même contrat (incendie / dommages aux biens) : calcul refusé.
+  tauxMixte    Boolean   @default(false) @map("taux_mixte")
+  commentaire  String?
   /// NETTE_ACCESSOIRES (défaut du CDC) ou NETTE.
   assiette     String    @default("NETTE_ACCESSOIRES")
   dateEffet    DateTime  @map("date_effet") @db.Date
@@ -112,7 +119,7 @@ model Taxe {
   creeLe       DateTime  @default(now()) @map("cree_le")
   creePar      String    @map("cree_par")
 
-  @@unique([branche, dateEffet])
+  @@index([branche])
   @@map("taxes")
 }
 
@@ -245,6 +252,9 @@ model Cotation {
   motifForcage      String?   @map("motif_forcage")
   assures           Json      @default("[]")
   risque            Json      @default("{}")
+  /// INDIVIDUEL, FAMILLE, GROUPE ou GROUPE_OUVERT (police.type_contrat) : choisit le taux de taxe (D18).
+  /// Null pour une cotation créée avant la session 4.0.
+  typeContrat       String?   @map("type_contrat")
   /// Entrée complète du moteur de calcul (montants en texte) : permet de recalculer à l'identique.
   donneesCalcul     Json?     @map("donnees_calcul")
   /// Montants arrondis par formule et en total (texte).
@@ -255,6 +265,8 @@ model Cotation {
   raisonsValidation Json      @default("[]") @map("raisons_validation")
   auteurId          Int       @map("auteur_id")
   auteurIdentifiant String    @map("auteur_identifiant")
+  /// Utilisateurs qui ont créé ou modifié le brouillon (H9) : aucun d'eux ne peut valider la cotation.
+  contributeurs     Int[]     @default([])
   valideParId       Int?      @map("valide_par_id")
   valideLe          DateTime? @map("valide_le")
   dateEtablissement DateTime? @map("date_etablissement") @db.Date
@@ -276,10 +288,13 @@ model Cotation {
   @@map("cotations")
 }
 
-/// Police créée à l'acceptation d'une cotation (CDC §9.4). Le numéro vient d'un format provisoire.
+/// Police créée à l'acceptation d'une cotation (CDC §9.4). Le numéro est attribué par SIM et SAISI
+/// (H10, D18) : jamais généré par le module ; unique ; format contrôlé par un paramètre (H31).
 model Police {
   id               Int      @id @default(autoincrement())
   numero           String   @unique
+  /// INDIVIDUEL, FAMILLE, GROUPE ou GROUPE_OUVERT (police.type_contrat). Null avant la session 4.0.
+  typeContrat      String?  @map("type_contrat")
   cotationId       Int      @unique @map("cotation_id")
   produitCode      String   @map("produit_code")
   souscripteur     Json

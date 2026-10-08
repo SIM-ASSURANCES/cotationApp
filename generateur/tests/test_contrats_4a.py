@@ -140,7 +140,8 @@ def donnees_t6(**risque: str) -> dict[str, Any]:
     """Montants d'une fixture (document seul) : pas de calcul IARD tant que H32 n'est pas tranchée."""
     d = donnees_cp()
     d["produit"] = {"libelle": "Vol", "cg_libelle": "VOL – Conditions générales", "cg_visa": "01234", "cg_date": "2024-03-15"}
-    d["prime"] = {"nette": "80000", "accessoires": "5000", "taux_taxe": "14.5", "taxe": "12325", "ttc": "97325"}
+    # Taux de fixture (10 %), sans valeur fiscale : le vrai taux de l'IARD n'est pas tranché.
+    d["prime"] = {"nette": "80000", "accessoires": "5000", "taux_taxe": "10", "taxe": "8500", "ttc": "93500"}
     d["risque"] = {"capital_vol_caisse": "100000", "gardiennage": "NUIT", "statut": "LOCATAIRE", **risque}
     return d
 
@@ -177,7 +178,7 @@ def test_t6_la_date_d_emission_est_dynamique() -> None:
 
 def test_t6_montants_de_la_fixture_tels_quels() -> None:
     texte = "\n".join(cp_t6(donnees_t6()))
-    assert f"nette 80{NB}000 ; accessoires 5{NB}000 ; taxe (14,5{NB}%) 12{NB}325 ; TOTAL TTC 97{NB}325 F CFA" in texte
+    assert f"nette 80{NB}000 ; accessoires 5{NB}000 ; taxe (10{NB}%) 8{NB}500 ; TOTAL TTC 93{NB}500 F CFA" in texte
 
 
 # ------------------------------------------------------------------ Police de groupe : liste des adhérents toujours en annexe (§10.2)

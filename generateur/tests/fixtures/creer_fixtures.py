@@ -57,9 +57,9 @@ FIXTURES: dict[str, bytes] = {
     ),
     # T9 : balise hors dictionnaire, dans une cellule de tableau (le reste est correct, socle obligatoire compris).
     "t9_balise_inconnue.docx": document(
-        "CONDITIONS PARTICULIÈRES – police n° {{ police.numero }}",
+        *IDENTIFICATION_CP,
         [["Nom du client", "Téléphone"], ["{{ client.nom }}", "{{ souscripteur.telephone }}"]],
-        "Souscripteur : {{ souscripteur.nom }} ; du {{ police.date_effet | date }} au {{ police.date_echeance | date }} ; prime TTC {{ prime.ttc | montant }}",
+        *CLAUSES_FINALES_CP,
     ),
     # Piège réel du 02/10 : une « balise » saisie comme champ Word (Ctrl+F9).
     "champ_word.docx": avec_champ_word("Souscripteur : ", " souscripteur.nom "),

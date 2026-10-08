@@ -13,12 +13,32 @@ from tests.fabrique import avec_champ_word, document
 
 ICI = Path(__file__).resolve().parent
 
+# Contenu obligatoire des CP (CDC §10.1) hors identification, assurés et garanties : bloc des primes COMPLET,
+# clause citant les CG et leur visa, clause de réclamation, lieu et date d'émission (date dynamique), signatures.
+CLAUSES_FINALES_CP: list[str] = [
+    "Primes : nette {{ prime.nette | montant }} ; accessoires {{ prime.accessoires | montant }} ; taxe ({{ prime.taux_taxe | pct }}) {{ prime.taxe | montant }} ; TOTAL TTC {{ prime.ttc | montant }} F CFA, soit {{ prime.ttc | lettres }}.",
+    "Composition du contrat : les présentes conditions particulières et les conditions générales {{ produit.cg_libelle }}, visa {{ produit.cg_visa }}, forment le contrat.",
+    "Réclamation : toute réclamation s'adresse à {{ societe.email_reclamation }}, puis, à défaut de réponse, aux voies de recours prévues par la loi.",
+    "Fait à {{ doc.lieu_emission }}, le {{ doc.date_emission | date }}. {{ societe.raison_sociale }}, RCCM {{ societe.rccm }}.",
+    "Pour SIM Assurances : {{ signature_sim }}   Le souscripteur (signature manuscrite précédée de « lu et approuvé ») :",
+    "Vérification : {{ doc.url_verification }}   {{ qr_code }}",
+]
+
+IDENTIFICATION_CP: list[str] = [
+    "CONDITIONS PARTICULIÈRES – {{ produit.libelle }} – police n° {{ police.numero }}",
+    "Souscripteur : {% if souscripteur.type == 'MORALE' %}{{ souscripteur.raison_sociale }}{% else %}{{ souscripteur.nom }} {{ souscripteur.prenoms }}{% endif %}",
+    "Effet : {{ police.date_effet | date }} ; échéance : {{ police.date_echeance | date }} ; durée : {{ police.duree_libelle }}",
+    "{%p for i in intermediaires %}",
+    "Intermédiaire : {{ i.nom }} ({{ i.code }})",
+    "{%p endfor %}",
+]
+
 FIXTURES: dict[str, bytes] = {
-    # CP correct : valeurs, chaque filtre, condition, boucle de tableau sur les assurés, sous-modèle.
+    # CP correct : valeurs, chaque filtre, condition, boucle de tableau sur les assurés, sous-modèle, et le contenu
+    # obligatoire du §10.1 (durée, bloc des primes complet, clause CG, réclamation, lieu, date, signature).
     "cp_test.docx": document(
-        "CONDITIONS PARTICULIÈRES – {{ produit.libelle }} – police n° {{ police.numero }}",
-        "Souscripteur : {{ souscripteur.nom }} {{ souscripteur.prenoms }}, né(e) le {{ souscripteur.date_naissance | date }}",
-        "Effet : {{ police.date_effet | dateheure }} ; échéance : {{ police.date_echeance | date }}",
+        *IDENTIFICATION_CP,
+        "Né(e) le {{ souscripteur.date_naissance | date }}",
         [
             ["N°", "Nom et prénoms", "Naissance", "Sexe"],
             ["{%tr for a in assures %}", "", "", ""],
@@ -30,11 +50,9 @@ FIXTURES: dict[str, bytes] = {
         "Formule {{ f.libelle }} ({{ f.taux_couverture | pct }}) : {{ f.ttc | montant }} F CFA",
         '{{ bloc("garanties", f.code) }}',
         "{%p endfor %}",
-        "Prime TTC : {{ prime.ttc | montant }} F CFA, soit {{ prime.ttc | lettres }}.",
         "{% if police.nantissement %}Clause de nantissement au profit de {{ police.nantissement.beneficiaire }}.{% endif %}",
         '{{ (risque.statut == "PROPRIETAIRE") | case }} Propriétaire   {{ (risque.statut == "LOCATAIRE") | case }} Locataire',
-        "Conditions générales {{ produit.cg_libelle }}, visa {{ produit.cg_visa }}.",
-        "Fait à {{ doc.lieu_emission }}, le {{ doc.date_emission | date }}. {{ societe.raison_sociale }}, RCCM {{ societe.rccm }}.",
+        *CLAUSES_FINALES_CP,
         police="Calibri",
     ),
     # T9 : balise hors dictionnaire, dans une cellule de tableau (le reste est correct, socle obligatoire compris).
@@ -79,6 +97,67 @@ FIXTURES: dict[str, bytes] = {
         "{{ societe.raison_sociale }}",
         "{{ qr_code }}",
         "Vérification : {{ doc.url_verification }}",
+        police="Calibri",
+    ),
+    # T5 : CP SECURVIE (branche décès) : tableau répété des bénéficiaires (quotes-parts), contacts d'urgence,
+    # garanties issues du sous-modèle de la formule, clause citant les CG et leur visa.
+    "cp_securvie_test.docx": document(
+        *IDENTIFICATION_CP,
+        "Bénéficiaires du capital décès :",
+        [
+            ["N°", "Nom et prénoms", "Lien", "Contact", "Quote-part"],
+            ["{%tr for b in beneficiaires %}", "", "", "", ""],
+            ["{{ b.ordre }}", "{{ b.nom_prenoms }}", "{{ b.lien }}", "{{ b.contact }}", "{{ b.quote_part | pct }}"],
+            ["{%tr endfor %}", "", "", "", ""],
+        ],
+        "{%p for u in contacts_urgence %}",
+        "Personne à prévenir : {{ u.nom_prenoms }} ({{ u.contact }})",
+        "{%p endfor %}",
+        "{%p for f in formules %}",
+        "Formule {{ f.libelle }}",
+        '{{ bloc("garanties", f.code) }}',
+        "{%p endfor %}",
+        *CLAUSES_FINALES_CP,
+        police="Calibri",
+    ),
+    # Sous-modèle bloc("garanties", "STANDARD") du produit SECURVIE : tableau fixe inventé.
+    "garanties_securvie_standard.docx": document(
+        "Garanties de la formule Standard (tableau inventé)",
+        [["Garantie", "Capital"], ["Décès toutes causes", "5 000 000"], ["Invalidité permanente totale", "5 000 000"], ["Frais funéraires", "500 000"]],
+        police="Calibri",
+    ),
+    # T6 : CP VOL (branche IARD) : cases à cocher selon le risque saisi, date d'émission dynamique.
+    "cp_vol_test.docx": document(
+        *IDENTIFICATION_CP,
+        'Vol caisse, capital garanti : {{ (risque.capital_vol_caisse == "100000") | case }} 100 000 F   {{ (risque.capital_vol_caisse == "250000") | case }} 250 000 F   {{ (risque.capital_vol_caisse == "500000") | case }} 500 000 F',
+        'Gardiennage : {{ (risque.gardiennage == "JOUR") | case }} Jour   {{ (risque.gardiennage == "NUIT") | case }} Nuit   {{ (risque.gardiennage == "JOUR_NUIT") | case }} Jour et nuit',
+        'Statut de l\'assuré : {{ (risque.statut == "PROPRIETAIRE") | case }} Propriétaire   {{ (risque.statut == "LOCATAIRE") | case }} Locataire',
+        *CLAUSES_FINALES_CP,
+        police="Calibri",
+    ),
+    # Police mère d'un contrat de groupe : la liste des adhérents est TOUJOURS en annexe (§10.2).
+    "cp_groupe_test.docx": document(
+        *IDENTIFICATION_CP,
+        "Adhérents de la police mère :",
+        [
+            ["N°", "Nom et prénoms", "Formule"],
+            ["{%tr for a in assures %}", "", ""],
+            ["{{ a.ordre }}", "{{ a.nom_prenoms }}", "{{ a.formule }}"],
+            ["{%tr endfor %}", "", ""],
+        ],
+        *CLAUSES_FINALES_CP,
+        police="Calibri",
+    ),
+    # Certificat d'adhésion unitaire : son numéro, la police mère, l'adhérent, la date d'adhésion, son propre QR code. Pas de prime.
+    "certificat_test.docx": document(
+        "CERTIFICAT D'ADHÉSION n° {{ police.numero }}",
+        "Police mère n° {{ police.police_mere }} – souscripteur : {{ souscripteur.raison_sociale }}",
+        "{%p for a in assures %}",
+        "Adhérent n° {{ a.ordre }} : {{ a.nom_prenoms }}, né(e) le {{ a.date_naissance | date }}, formule {{ a.formule }}",
+        "{%p endfor %}",
+        "Date d'adhésion : {{ police.date_effet | date }} ; fin de la période de la police : {{ police.date_echeance | date }}",
+        "Délivré à {{ doc.lieu_emission }}, le {{ doc.date_emission | date }}. {{ societe.raison_sociale }}",
+        "Vérification : {{ doc.url_verification }}   {{ qr_code }}",
         police="Calibri",
     ),
     # Conditions générales : texte fixe et le seul visa.

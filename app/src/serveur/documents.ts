@@ -113,7 +113,8 @@ function montantsDu(entree: EntreeCalcul, contexte: ContexteProduit) {
     tauxCouverture: contexte.formules.get(l.code)?.tauxCouverture ?? null,
     effectif: l.effectif,
     primeUnitaire: String(entree.lignes[i].primeUnitaire),
-    primeParAssure: t(l.primeParUnite),
+    // H45 (décision de Thierry du 08/10/2026) : TTC d'une unité de la formule, comme le « TTC/personne » de T1.
+    primeParAssure: t(l.ttcParUnite),
     nette: t(l.arrondi.nette),
     accessoires: t(l.arrondi.accessoires),
     taxe: t(l.arrondi.taxe),

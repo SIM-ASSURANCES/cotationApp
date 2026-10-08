@@ -23,7 +23,10 @@ export type FormuleSource = {
   tauxCouverture: string | null;
   effectif: number;
   primeUnitaire: string;
-  /** Prime d'un assuré de cette formule (d'une famille pour une formule « Famille »), calculée par le moteur : `primeParUnite`. */
+  /**
+   * Prime d'un assuré de cette formule (d'une famille pour une formule « Famille »), calculée par le moteur : TTC d'une unité
+   * (`ttcParUnite`, H45 : 96 000 pour le Solo de T1, 260 000 pour la Famille).
+   */
   primeParAssure: string;
   nette: string;
   accessoires: string;

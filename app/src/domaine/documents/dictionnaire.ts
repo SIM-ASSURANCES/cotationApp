@@ -117,7 +117,7 @@ export const CHAMPS: readonly Champ[] = [
   c("assures[].sexe", "texte", "Sexe : M, F, ou vide si inconnu (décision du 05/10/2026)", "F", S2),
   c("assures[].lien", "texte", "Lien avec le souscripteur", "Souscripteur", S2),
   c("assures[].formule", "texte", "Formule de l'assuré", "SOLO", S2),
-  c("assures[].prime", "montant", "Prime de l'assuré", "96000", S2),
+  c("assures[].prime", "montant", "Prime TTC de l'assuré : TTC d'une unité de sa formule (H45)", "96000", S2),
   c("beneficiaires", "liste", "Bénéficiaires (SECURVIE, RELAXACCIDENT)", undefined, S2),
   c("beneficiaires[].ordre", "entier", "N° d'ordre", 1, S2),
   c("beneficiaires[].nom_prenoms", "texte", "Nom et prénoms", "KOUADIO Paul Inventé", S2),

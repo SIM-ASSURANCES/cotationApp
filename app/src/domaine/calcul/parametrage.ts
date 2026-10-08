@@ -64,8 +64,9 @@ function montantPositifOuNul(texte: string | null, nom: string, problemes: strin
     if (m.isNegative() || (plafond !== undefined && m.greaterThan(plafond))) {
       problemes.push(`${nom} doit être compris entre 0 et ${plafond ?? "l'infini"}.`);
     }
-  } catch {
-    problemes.push(`${nom} n'est pas un nombre valide.`);
+  } catch (erreur) {
+    // Message de l'analyseur unique : il dit pourquoi (« point et virgule mélangés »…).
+    problemes.push(`${nom} n'est pas un nombre valide : ${erreur instanceof Error ? erreur.message : ""}`);
   }
 }
 

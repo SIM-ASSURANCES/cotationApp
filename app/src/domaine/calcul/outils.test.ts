@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ajouterMois, dateValide, ecartEnJours } from "./dates";
-import { ErreurCalcul, arrondir, formaterMontant, montant } from "./montant";
+import { ErreurCalcul, analyserMontant, arrondir, formaterMontant, montant, normaliserMontantSaisi } from "./montant";
 import { exigeDoubleValidation, valideurAutorise } from "./validation";
 
 describe("arrondir (CDC §8.5)", () => {
@@ -17,6 +17,45 @@ describe("arrondir (CDC §8.5)", () => {
     ["12345", 10, "PROCHE", "12350"],
   ] as const)("%s à %i (%s) = %s", (valeur, precision, sens, attendu) => {
     expect(arrondir(montant(valeur), precision, sens).toString()).toBe(attendu);
+  });
+});
+
+describe("analyseur unique des montants saisis (recette 2.3a)", () => {
+  it.each([
+    ["93581.33", "93581.33"],
+    ["93581,33", "93581.33"],
+    ["93 581,33", "93581.33"],
+    ["93\u00A0581,33", "93581.33"], // espace insécable
+    ["93\u202F581,33", "93581.33"], // espace fine insécable
+    ["  1 234 567  ", "1234567"],
+    ["0,5", "0.5"],
+    ["15888000", "15888000"],
+  ])("accepte « %s » → %s", (saisi, attendu) => {
+    expect(analyserMontant(saisi)).toBe(attendu);
+  });
+
+  it.each([
+    ["1.234,5", "point et virgule mélangés"],
+    ["1,234.5", "point et virgule mélangés"],
+    ["1,234,5", "un seul séparateur décimal"],
+    ["1.234.567", "un seul séparateur décimal"],
+    ["93 58 1", "groupes de trois chiffres"],
+    ["12abc", "caractères non numériques"],
+    ["", "aucun chiffre"],
+    ["-5", "négatif"],
+    ["1,", "partie décimale invalide"],
+  ])("refuse « %s » avec un message en français", (saisi, extrait) => {
+    expect(() => analyserMontant(saisi)).toThrow(ErreurCalcul);
+    expect(() => analyserMontant(saisi)).toThrow(extrait);
+  });
+
+  it("un négatif n'est accepté que sur demande (montants internes, avoirs)", () => {
+    expect(analyserMontant("-1 500,5", { negatif: true })).toBe("-1500.5");
+  });
+
+  it("normaliserMontantSaisi : écriture canonique, ou texte inchangé pour que la validation le refuse", () => {
+    expect(normaliserMontantSaisi(" 93 581,33 ")).toBe("93581.33");
+    expect(normaliserMontantSaisi("1.234,5")).toBe("1.234,5");
   });
 });
 

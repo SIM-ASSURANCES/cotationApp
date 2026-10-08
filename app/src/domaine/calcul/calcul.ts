@@ -35,7 +35,7 @@ export type RegleArrondi = {
   sens: SensArrondi;
   /** LIGNE : chaque formule est arrondie, le total est leur somme. TOTAL : seul le total est arrondi. */
   niveau: NiveauArrondi;
-  /** Composante qui absorbe l'écart quand le TTC arrondi ne tombe pas juste (CDC §8.5). */
+  /** Composante qui absorbait l'écart quand le TTC était arrondi à part (CDC §8.5). Sans effet depuis la version 2 du moteur (H4, D18). */
   composanteAbsorbante: Composante;
 };
 
@@ -57,7 +57,18 @@ export type ParametresCalcul = {
   fraisFractionnement?: EntreeMontant;
 };
 
+/**
+ * Version des règles du moteur. 1 : règles d'origine (D9). 2 : réponses de la Technique du 08/10/2026
+ * (D18) : prorata plafonné à 1 (H3) et TTC = somme des trois montants arrondis (H4). Une entrée sans
+ * version est un calcul enregistré avant la session 4.0 : il se refait avec les règles 1, à l'identique
+ * de ce qui a été émis (T10). Tout nouveau calcul porte la version courante.
+ */
+export const VERSION_MOTEUR = 2;
+export type VersionMoteur = 1 | 2;
+
 export type EntreeCalcul = {
+  /** Absente : version 1 (calcul enregistré avant la session 4.0). */
+  moteur?: VersionMoteur;
   dateEffet: DateIso;
   dateEcheance: DateIso;
   lignes: LigneEntree[];
@@ -79,7 +90,7 @@ export type ResultatLigne = {
 
 export type ResultatCalcul = {
   joursCouverts: number;
-  /** Jours couverts / 365 si le prorata est actif, sinon 1. */
+  /** Jours couverts / 365 si le prorata est actif (plafonné à 1 depuis la version 2), sinon 1. */
   coefProrata: Montant;
   lignes: ResultatLigne[];
   /** Ligne des frais de fractionnement, s'il y en a. */
@@ -118,11 +129,17 @@ export function verifierCoherence(c: Composants): void {
 }
 
 /**
- * Arrondit les trois composantes et le TTC, puis fait absorber l'écart éventuel par la composante
- * choisie : le TTC arrondi reste donc toujours égal à la somme des composantes arrondies.
+ * Arrondit selon la règle du produit. Version 2 (H4, D18) : la nette, les accessoires et la taxe sont
+ * arrondis, et le TTC est LEUR SOMME, jamais un arrondi indépendant. Version 1 (calculs antérieurs) :
+ * le TTC était arrondi à part et l'écart absorbé par la composante choisie.
  */
-export function arrondirComposants(exact: Composants, regle: RegleArrondi): Composants {
+export function arrondirComposants(exact: Composants, regle: RegleArrondi, moteur: VersionMoteur = VERSION_MOTEUR): Composants {
   const { precision, sens } = regle;
+  if (moteur === 2) {
+    const resultat = composants(arrondir(exact.nette, precision, sens), arrondir(exact.accessoires, precision, sens), arrondir(exact.taxe, precision, sens));
+    verifierCoherence(resultat);
+    return resultat;
+  }
   const ttc = arrondir(exact.ttc, precision, sens);
   const partiel = {
     NETTE: arrondir(exact.nette, precision, sens),
@@ -185,24 +202,31 @@ function accessoiresDe(ligne: LigneEntree, nette: Montant): Montant {
   }
 }
 
-function resultatLigne(code: string, effectif: number, exact: Composants, regle: RegleArrondi): ResultatLigne {
-  const arrondi = arrondirComposants(exact, regle);
+function resultatLigne(code: string, effectif: number, exact: Composants, regle: RegleArrondi, moteur: VersionMoteur): ResultatLigne {
+  const arrondi = arrondirComposants(exact, regle, moteur);
   return { code, effectif, exact, arrondi, ttcParUnite: arrondir(arrondi.ttc.div(effectif), 1, "PROCHE") };
 }
 
 /**
  * Chaîne de calcul complète (CDC §8.1) pour toutes les formules d'une cotation :
- *   nette = prime unitaire × effectif × coef_prorata  (au moins la prime minimale)
+ *   nette = prime unitaire × effectif × coef_prorata  (au moins la prime minimale ; coef ≤ 1, H3)
  *   accessoires = fixe | par tête × effectif | par famille × effectif | % × nette
  *   taxe = (nette + accessoires) × taux
- *   TTC = nette + accessoires + taxe, puis arrondis du produit.
+ *   arrondis du produit sur la nette, les accessoires et la taxe ; TTC = leur somme (H4).
  */
 export function calculer(entree: EntreeCalcul): ResultatCalcul {
   const { taux, primeMinimale, frais } = verifierEntree(entree);
   const { arrondi: regle, prorata, taxe } = entree.parametres;
 
+  const moteur: VersionMoteur = entree.moteur ?? 1;
+  if (moteur !== 1 && moteur !== 2) {
+    throw new ErreurCalcul(`Version du moteur inconnue : ${String(moteur)}.`);
+  }
+
   const jours = joursCouverts(entree.dateEffet, entree.dateEcheance);
-  const coef = prorata.actif ? new DecimalMontant(jours).div(JOURS_PAR_AN) : new DecimalMontant(1);
+  // H3 (version 2) : une année complète de 366 jours (année bissextile) vaut 1, jamais plus.
+  const brut = new DecimalMontant(jours).div(JOURS_PAR_AN);
+  const coef = !prorata.actif ? new DecimalMontant(1) : moteur === 2 ? DecimalMontant.min(1, brut) : brut;
 
   const lignes = entree.lignes.map((ligne) => {
     const proratisee = montant(ligne.primeUnitaire).mul(ligne.effectif).mul(coef);
@@ -213,17 +237,18 @@ export function calculer(entree: EntreeCalcul): ResultatCalcul {
       ligne.effectif,
       composants(nette, accessoires, taxer(nette, accessoires, taux, taxe.assiette)),
       regle,
+      moteur,
     );
   });
 
   const fraisLigne = frais.isZero()
     ? null
-    : resultatLigne("FRAIS_FRACTIONNEMENT", 1, composants(ZERO, frais, taxer(ZERO, frais, taux, taxe.assiette)), regle);
+    : resultatLigne("FRAIS_FRACTIONNEMENT", 1, composants(ZERO, frais, taxer(ZERO, frais, taux, taxe.assiette)), regle, moteur);
 
   const toutes = fraisLigne ? [...lignes, fraisLigne] : lignes;
   const exact = somme(toutes.map((l) => l.exact));
   // LIGNE : le total est la somme des lignes arrondies. TOTAL : on arrondit seulement la somme exacte.
-  const arrondi = regle.niveau === "LIGNE" ? somme(toutes.map((l) => l.arrondi)) : arrondirComposants(exact, regle);
+  const arrondi = regle.niveau === "LIGNE" ? somme(toutes.map((l) => l.arrondi)) : arrondirComposants(exact, regle, moteur);
   verifierCoherence(arrondi);
 
   return { joursCouverts: jours, coefProrata: coef, lignes, fraisFractionnement: fraisLigne, totaux: { exact, arrondi } };

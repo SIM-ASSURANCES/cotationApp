@@ -35,7 +35,7 @@ describe("lireCotation : formulaire -> saisie", () => {
     const s = lireCotation(formulaire([...base.filter(([k]) => !["eff_FAMILLE", "forcee_SOLO"].includes(k)), ["eff_FAMILLE", ""], ["forcee_SOLO", "80000,5"]]));
 
     expect(s.lignes).toHaveLength(1);
-    expect(s.lignes[0].primeForcee).toBe("80000,5");
+    expect(s.lignes[0].primeForcee).toBe("80000.5"); // écriture canonique (analyseur unique)
     expect(typeof s.lignes[0].primeForcee).toBe("string");
   });
 

@@ -1,3 +1,4 @@
+import { normaliserMontantSaisi } from "@/domaine/calcul/montant";
 import type { Assure, Risque, Souscripteur } from "@/domaine/cotation/saisie";
 
 /** Forme de la saisie lue dans le formulaire (le service la valide et la calcule). */
@@ -31,7 +32,7 @@ export function lireCotation(d: FormData): SaisieFormulaire {
     .map((l) => ({
       codeFormule: l.code,
       effectif: /^\d+$/.test(l.texte) ? Number(l.texte) : Number.NaN,
-      primeForcee: champ(d, `forcee_${l.code}`) || null,
+      primeForcee: champ(d, `forcee_${l.code}`) ? normaliserMontantSaisi(champ(d, `forcee_${l.code}`)) : null,
     }));
 
   const [noms, naissances, sexes, liens, formules] = ["assure_nom", "assure_naissance", "assure_sexe", "assure_lien", "assure_formule"].map((n) => colonne(d, n));

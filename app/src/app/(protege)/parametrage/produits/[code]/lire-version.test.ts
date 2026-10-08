@@ -34,7 +34,7 @@ describe("lireVersion : formulaire -> version saisie", () => {
     expect(v.seuilValidationTtc).toBe("20000000");
     expect(v.formules.map((f) => [f.code, f.primeUnitaire, f.accessoireMode, f.accessoireValeur])).toEqual([
       ["SOLO", "93581.33", "FIXE", "3000"], // code mis en majuscules
-      ["FAMILLE", "252657,63", "FIXE", "210000"],
+      ["FAMILLE", "252657.63", "FIXE", "210000"], // virgule décimale mise en écriture canonique par l'analyseur unique
     ]);
     expect(typeof v.formules[0].primeUnitaire).toBe("string");
   });

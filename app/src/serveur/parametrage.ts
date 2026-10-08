@@ -3,10 +3,10 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 
 import { peutAgir, peutLire, type CodeAction } from "@/domaine/droits";
-import { calculer, type EntreeCalcul, type AssietteTaxe, type ModeAccessoire, type ResultatCalcul, type RegleArrondi } from "@/domaine/calcul/calcul";
+import { calculer, VERSION_MOTEUR, type EntreeCalcul, type AssietteTaxe, type ModeAccessoire, type ResultatCalcul, type RegleArrondi } from "@/domaine/calcul/calcul";
 import { dateValide, type DateIso } from "@/domaine/calcul/dates";
 import { genererEcheancier, type Tranche } from "@/domaine/calcul/echeancier";
-import { ErreurCalcul, type Precision } from "@/domaine/calcul/montant";
+import { ErreurCalcul, montant, type Precision } from "@/domaine/calcul/montant";
 import {
   codeValide,
   enVigueur,
@@ -28,6 +28,13 @@ const ACTION_PARAMETRAGE: CodeAction = "PARAMETRER_PRODUITS";
 /** Date (jour) en texte ISO, pour les colonnes `date` de PostgreSQL. */
 const versDate = (iso: DateIso) => new Date(`${iso}T00:00:00.000Z`);
 const depuisDate = (d: Date): DateIso => d.toISOString().slice(0, 10);
+
+/**
+ * Montant déjà validé, en écriture canonique pour la base (« 93 581,33 » → « 93581.33 ») : la base ne
+ * reçoit jamais le texte saisi tel quel (recette 2.3a : erreur 500 de Prisma).
+ */
+const canonique = (t: string): string => montant(t).toFixed();
+const canoniqueOuNull = (t: string | null): string | null => (t === null ? null : canonique(t));
 
 /** Décimal Prisma en texte exact (jamais de notation exponentielle). */
 const texte = (d: { toFixed(): string }) => d.toFixed();
@@ -86,7 +93,7 @@ export async function creerTaxe(acteur: UtilisateurCourant, saisie: TaxeSaisie, 
     const cree = await tx.taxe.create({
       data: {
         branche: saisie.branche,
-        tauxPourcent: saisie.tauxPourcent,
+        tauxPourcent: canonique(saisie.tauxPourcent),
         assiette: saisie.assiette,
         dateEffet: versDate(saisie.dateEffet),
         dateFin: saisie.dateFin ? versDate(saisie.dateFin) : null,
@@ -252,14 +259,14 @@ export async function creerVersion(acteur: UtilisateurCourant, codeProduit: stri
         arrondiNiveau: saisie.arrondi.niveau,
         arrondiComposante: saisie.arrondi.composanteAbsorbante,
         prorataActif: saisie.prorata.actif,
-        primeMinimale: saisie.prorata.primeMinimale,
+        primeMinimale: canoniqueOuNull(saisie.prorata.primeMinimale),
         fractionnementTranchesMax: saisie.fractionnement.tranchesMax,
-        fractionnementRepartition: saisie.fractionnement.repartitionPourcent ?? undefined,
+        fractionnementRepartition: saisie.fractionnement.repartitionPourcent?.map(canonique) ?? undefined,
         fractionnementDecalagesMois: saisie.fractionnement.decalagesMois ?? undefined,
-        fraisFractionnement: saisie.fractionnement.frais,
+        fraisFractionnement: canonique(saisie.fractionnement.frais),
         validiteMois: saisie.cotation.validiteMois,
         formulesMax: saisie.cotation.formulesMax,
-        seuilValidationTtc: saisie.seuilValidationTtc,
+        seuilValidationTtc: canoniqueOuNull(saisie.seuilValidationTtc),
         cgModeleCode: saisie.references?.cgModeleCode ?? null,
         cgVisa: saisie.references?.cgVisa?.trim() ?? null,
         csModeleCode: saisie.references?.csModeleCode ?? null,
@@ -269,10 +276,10 @@ export async function creerVersion(acteur: UtilisateurCourant, codeProduit: stri
           create: saisie.formules.map((f) => ({
             code: f.code,
             libelle: f.libelle.trim(),
-            tauxCouverture: f.tauxCouverture,
-            primeUnitaire: f.primeUnitaire,
+            tauxCouverture: canoniqueOuNull(f.tauxCouverture),
+            primeUnitaire: canonique(f.primeUnitaire),
             accessoireMode: f.accessoireMode,
-            accessoireValeur: f.accessoireValeur,
+            accessoireValeur: canonique(f.accessoireValeur),
           })),
         },
       },
@@ -386,6 +393,7 @@ export function construireEntree(
   return {
     primesTarif,
     entree: {
+      moteur: VERSION_MOTEUR,
       dateEffet: demande.dateEffet,
       dateEcheance: demande.dateEcheance,
       lignes,

@@ -2,6 +2,7 @@
 
 import { ASSIETTES_TAXE, type AssietteTaxe } from "@/domaine/calcul/calcul";
 import type { EtatFormulaire } from "@/composants/types";
+import { normaliserMontantSaisi } from "@/domaine/calcul/montant";
 import { creerTaxe } from "@/serveur/parametrage";
 
 import { champ, champOuNull, executerAction } from "../../executer";
@@ -14,7 +15,7 @@ export async function creerUneTaxe(_etat: EtatFormulaire, donnees: FormData): Pr
         acteur,
         {
           branche: champ(donnees, "branche").toUpperCase(),
-          tauxPourcent: champ(donnees, "tauxPourcent"),
+          tauxPourcent: normaliserMontantSaisi(champ(donnees, "tauxPourcent")),
           assiette: (ASSIETTES_TAXE as readonly string[]).includes(assiette) ? (assiette as AssietteTaxe) : "NETTE_ACCESSOIRES",
           dateEffet: champ(donnees, "dateEffet"),
           dateFin: champOuNull(donnees, "dateFin"),

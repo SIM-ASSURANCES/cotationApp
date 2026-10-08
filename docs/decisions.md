@@ -233,11 +233,22 @@ Conséquences retenues pour le code (session 4.0) :
 
 - **Date** : 08/10/2026, choix de Thierry (option b), remplace H19.
 - **Décision** : un champ du dictionnaire que l'application ne fournit pas est **absent** des données, et la génération d'un modèle qui l'utilise **échoue** en nommant le champ, **sauf** s'il est déclaré facultatif dans le dictionnaire : il est alors présent, vide. Une valeur connue mais vide (e-mail non saisi, pas encore de paiement) reste une valeur : elle s'écrit vide.
-- **Liste des champs facultatifs** : à fixer avec la Technique. Au départ, seul `doc.empreinte` (H20 : un document ne peut pas contenir sa propre empreinte) est déclaré facultatif.
+- **Liste des champs facultatifs** (session 4.0, à faire valider par la Technique) : `doc.empreinte` (H20 : un document ne peut pas contenir sa propre empreinte), `intermediaires`, `police.police_mere`, `police.nantissement`. Ces quatre champs sont rendus vides.
+- **Champs non fournis, donc bloquants s'ils sont dans un modèle** : les champs du souscripteur que la saisie ne demande pas (profession, date et lieu de naissance, BP, localité…), `assures[].prime`, `beneficiaires`, `contacts_urgence`, `police.reference`, et `police.type_contrat` d'une cotation antérieure à la session 4.0. Pour en rendre un facultatif : le marquer dans `src/domaine/documents/dictionnaire.ts`.
 
 ## D20 — Champ `doc.auteur_nom` (extension du dictionnaire)
 
 - **Date** : 08/10/2026 (réponse H7). Comme `assures[].sexe` (D12), c'est une **extension** du dictionnaire du CDC §6.3.4 : nom de l'utilisateur qui a créé la cotation, affichable sur le document.
+
+## D21 — Choix de mise en œuvre de la session 4.0 (à valider par Thierry)
+
+- **Date** : 08/10/2026. Choix techniques faits pendant la session 4.0, sans règle métier nouvelle ; chacun se change facilement.
+- **Date d'effet des taux de démarrage** : 01/01/2026 (`prisma/donnees/taxes-loi.json`). La date réelle d'entrée en vigueur des taux de la loi n'a pas été donnée.
+- **Codes de branche** : `IA`, `DECES`, `SANTE`, `IARD`. Un produit doit porter l'un de ces codes pour trouver son taux.
+- **Droit « modifier une cotation » (H9)** : c'est le droit existant « Créer une cotation » (pas de nouvelle ligne dans la matrice). Celui qui modifie le brouillon d'un autre peut aussi le soumettre ; soumettre ne compte pas comme une modification.
+- **Validation (H7)** : nouveau droit paramétrable « Valider une cotation » (`VALIDER_COTATION`), « Valide » pour la Technique seule. La Direction Générale, qui validait jusqu'ici (CDC §4.1), ne valide plus par défaut ; l'administrateur peut lui redonner ce droit.
+- **Format du numéro de police (H10, H31)** : paramètre historisé de l'écran « Société », modifiable avec le droit « Paramétrer produits ». Le numéro saisi est mis en majuscules ; il est unique en base.
+- **Accessoires (H1)** : une valeur saisie vide reprend la valeur de la formule ; en mode pourcentage, la valeur saisie est un pourcentage (0 à 100).
 
 ## Décisions en attente
 
@@ -252,5 +263,6 @@ Conséquences retenues pour le code (session 4.0) :
 | Durée de validité d'une cotation : confirmer « 3 mois » (D10) | Direction Technique | avant la recette |
 | H2 (garanties à prime fixe et à prime calculée), H8 (options au choix), H11, H28 (voir D18) | Direction Technique | avant la recette |
 | H29 à H31 (type de contrat et taux, conflit T3, numéro de police : voir D18) ; liste des champs facultatifs (D19) | Direction Technique | avant la recette |
+| Choix de mise en œuvre de la session 4.0 : date des taux de démarrage, codes de branche, DG sans droit de validation (D21) | Thierry | avant la session 4a |
 
 Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir), Q3 (plus de dossier partagé : D11), Q4 (`assures[].sexe` ajouté : D12), Q5 (Thierry balise d'abord, puis la Technique : D12), H6 (validité en mois : D10).

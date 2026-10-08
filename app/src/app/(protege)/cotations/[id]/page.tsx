@@ -86,6 +86,9 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         {c.numeroPolice && estContratDeGroupe(c.typeContrat) ? (
           <p><Link href={`/cotations/${c.id}/adherents`} className="text-sim-bleu underline">Adhérents, certificats d'adhésion et annexe des CP</Link></p>
         ) : null}
+        {c.numeroPolice ? (
+          <p><Link href={`/cotations/${c.id}/factures`} className="text-sim-bleu underline">Factures, avoirs et paiements de la police</Link></p>
+        ) : null}
         {c.statut === "REFUSEE" ? <p><strong>Refus :</strong> {c.motifRefusCode}{c.refusCommentaire ? ` — ${c.refusCommentaire}` : ""}</p> : null}
       </section>
 

@@ -5,10 +5,10 @@ import { peutAgir } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
 import { aujourdhui } from "@/serveur/parametrage";
 import { exigerUtilisateur } from "@/serveur/session";
-import { consulterFormatNumeroPolice, consulterSociete } from "@/serveur/societe";
+import { consulterFormatNumeroPolice, consulterFormatsNumero, consulterSociete } from "@/serveur/societe";
 import { ErreurAcces } from "@/serveur/types";
 
-import { enregistrerLaSociete, enregistrerLeFormatPolice, enregistrerUneImage } from "./actions";
+import { enregistrerLaSociete, enregistrerLeFormatNumero, enregistrerLeFormatPolice, enregistrerUneImage } from "./actions";
 
 const zone = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2 font-mono text-sm";
 const lignes = (liste: Record<string, string>[], cles: [string, string]) => liste.map((x) => `${x[cles[0]]} ; ${x[cles[1]]}`).join("\n");
@@ -18,7 +18,7 @@ export default async function PageSociete() {
   const utilisateur = await exigerUtilisateur();
   let lu;
   try {
-    lu = { ...(await consulterSociete(utilisateur)), formatPolice: await consulterFormatNumeroPolice(utilisateur) };
+    lu = { ...(await consulterSociete(utilisateur)), formatPolice: await consulterFormatNumeroPolice(utilisateur), formats: await consulterFormatsNumero(utilisateur) };
   } catch (erreur) {
     if (erreur instanceof ErreurAcces) redirect("/acces-refuse");
     throw erreur;
@@ -129,6 +129,42 @@ export default async function PageSociete() {
       ) : (
         <p className="text-sm text-zinc-600">Format par défaut, jamais modifié.</p>
       )}
+
+      <h2 className="mb-2 mt-8 text-lg font-semibold">Numéros des documents (cotation, facture, avoir, reçu)</h2>
+      <p className="mb-3 text-sm text-zinc-700">
+        Attribués par le module à l&apos;émission, sans trou. Repères : <code>{"{AAAA}"}</code> l&apos;année (obligatoire), <code>{"{MM}"}</code> le mois
+        d&apos;émission (facultatif), <code>{"{NNNN}"}</code> le compteur sur 3 à 8 chiffres (obligatoire). Le compteur est annuel et ne change pas avec le format.
+      </p>
+      <table className="mb-3 w-full border-collapse text-sm">
+        <thead>
+          <tr className="text-left text-zinc-600"><th className="p-1">Document</th><th className="p-1">Format en vigueur</th><th className="p-1">Exemple</th><th className="p-1">Historique</th></tr>
+        </thead>
+        <tbody>
+          {lu.formats.map((x) => (
+            <tr key={x.prefixe} className="border-t border-bordure">
+              <td className="p-1">{x.libelle}</td>
+              <td className="p-1 font-mono text-xs">{x.enVigueur}</td>
+              <td className="p-1 font-mono text-xs">{x.exemple}</td>
+              <td className="p-1 text-xs">{x.historique.length === 0 ? "défaut" : x.historique.map((h) => `${h.dateEffet} : ${h.valeur} (${h.creePar})`).join(" ; ")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {ecriture ? (
+        <FormulaireAction action={enregistrerLeFormatNumero} libelleBouton="Enregistrer le format">
+          <div className="grid gap-x-6 sm:grid-cols-3">
+            <label className="mb-4 block text-sm font-medium">
+              Document
+              <select name="prefixe" required defaultValue="" className="mt-1 block w-full rounded border border-bordure bg-white px-3 py-2">
+                <option value="" disabled>— Choisir —</option>
+                {lu.formats.map((x) => <option key={x.prefixe} value={x.prefixe}>{x.libelle}</option>)}
+              </select>
+            </label>
+            <Champ nom="format" libelle="Format (ex. FAC-{AAAA}-{MM}-{NNNN})" autoComplete="off" />
+            <Champ nom="dateEffet" libelle="À partir du (AAAA-MM-JJ)" valeur={aujourdhui()} autoComplete="off" />
+          </div>
+        </FormulaireAction>
+      ) : null}
     </main>
   );
 }

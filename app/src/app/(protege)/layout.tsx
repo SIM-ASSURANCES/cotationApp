@@ -29,6 +29,10 @@ export default async function LayoutProtege({ children }: LayoutProps<"/">) {
         niveauDuProfil(utilisateur.profil, action),
       ),
     );
+    // Factures : un des trois droits de facturation (CDC §4) ; même règle que le service (serveur/factures.ts).
+    if (lectureDocuments.slice(2).some(peutLire)) {
+      liens.push({ href: "/factures", libelle: "Factures" });
+    }
     if (lectureDocuments.some(peutLire)) {
       liens.push({ href: "/documents", libelle: "Documents émis" });
     }

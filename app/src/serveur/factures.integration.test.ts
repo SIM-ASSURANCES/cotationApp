@@ -13,6 +13,7 @@ import type { Analyse } from "@/domaine/documents/analyse";
 import type { Assure } from "@/domaine/cotation/saisie";
 
 import { incorporerAdherents } from "./adherents";
+import { lireJournal } from "./audit";
 import { assurerBranche } from "./branches-test";
 import { accepter, creerBrouillon, soumettre, valider, type SaisieCotation } from "./cotations";
 import { emettreCp, verifierJeton } from "./documents";
@@ -494,7 +495,7 @@ describe("« Oui (sous seuil) » à l'émission d'une facture (H21 fermée, comm
     await expect(emettreFacture(dg, id, null)).rejects.toThrow(ErreurAcces); // DG : Lecture, ne valide pas (H44)
     const e = await emettreFacture(comptable, id, null);
     expect(e.statut).toBe("EMISE");
-    const journal = await obtenirPrisma().journalAudit.findFirstOrThrow({ where: { action: "FACTURE_EMISE", objetId: String(id) } });
+    const journal = (await lireJournal({ action: "FACTURE_EMISE" })).lignes.find((l) => l.objet === `facture ${id}`)!;
     expect(journal.apres).toMatchObject({ validationDemandeePar: gestionnaire.identifiant });
   });
 
@@ -541,7 +542,7 @@ describe("PDF en attente : la facture reste émise, son numéro n'est pas perdu,
     expect(emis.jeton).toBe(fige.jeton);
     expect(emis.chemin).toMatch(/_essai2\.pdf$/);
     expect((await lireFacture(technique, id))!.pdfEnAttente).toBe(0);
-    expect(await obtenirPrisma().journalAudit.count({ where: { action: "PDF_EN_ATTENTE", objetId: `${r.numero} v1` } })).toBe(1);
+    expect((await lireJournal({ action: "PDF_EN_ATTENTE" })).lignes.filter((l) => l.objet === `document ${r.numero} v1`)).toHaveLength(1);
   });
 
   it("un paiement enregistré pendant que la v1 est en attente produit d'abord la v1, puis le reçu et la v2", async () => {
@@ -616,7 +617,7 @@ describe("formats des numéros (paramétrables, historisés, journalisés)", () 
     const rec = formats.find((f) => f.prefixe === "REC")!;
     expect(rec.historique.some((h) => h.valeur === "RC/{AAAA}/{NNNNNN}" && h.dateEffet === date)).toBe(true);
     expect(formats.find((f) => f.prefixe === "FAC")!.exemple).toMatch(/^FAC-\d{4}-\d{2}-0001$/);
-    const j = await obtenirPrisma().journalAudit.findFirstOrThrow({ where: { action: "PARAMETRE_MODIFIE", objetId: "numerotation.format.REC" }, orderBy: { id: "desc" } });
+    const j = (await lireJournal({ action: "PARAMETRE_MODIFIE" })).lignes.find((l) => l.objet === "parametre numerotation.format.REC")!;
     // « avant » : le format en vigueur à cette date (le défaut, ou celui d'une exécution précédente sur la même base de test).
     expect(j.apres).toMatchObject({ formatNumero: "REC", avant: expect.stringMatching(/\{AAAA\}/), apres: "RC/{AAAA}/{NNNNNN}", dateEffet: date });
   });

@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
+import type { BrancheSaisie } from "@/domaine/calcul/taxes";
 
+import { assurerBranche } from "./branches-test";
 import { lireJournal } from "./audit";
 import { initialiserProfilsEtDroits } from "./droits";
 import {
@@ -13,8 +15,12 @@ import {
   creerProduit,
   creerTaxe,
   creerVersion,
+  creerBranche,
+  initialiserBranches,
   initialiserTaxes,
+  listerBranches,
   listerTaxes,
+  modifierBranche,
   type TaxeDemarrage,
 } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
@@ -76,6 +82,7 @@ describe("T1 et T3 de bout en bout, avec les paramètres lus en base", () => {
 
   beforeAll(async () => {
     // Taux santé GROUPE de la loi (1,5 %, D18) : T1 et T2 sont des contrats groupe.
+    await assurerBranche(branche);
     await creerTaxe(technique, { branche, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
     await creerProduit(technique, { code, libelle: "Santé BENI (test)", gamme: "RELAX", branche }, null);
     await creerVersion(technique, code, versionBeni(), null);
@@ -149,6 +156,7 @@ describe("historisation par date d'effet (CDC §7)", () => {
   const lignes = [{ codeFormule: "SOLO", effectif: 1 }];
 
   beforeAll(async () => {
+    await assurerBranche(branche);
     await creerTaxe(technique, { branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
     await creerTaxe(technique, { branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "1.9", assiette: "NETTE_ACCESSOIRES", dateEffet: "2026-09-01", dateFin: null }, null);
     await creerProduit(technique, { code, libelle: "Historique (test)", gamme: "RELAX", branche }, null);
@@ -208,6 +216,7 @@ describe("règles de gestion", () => {
   const branche = `REG_${code}`;
 
   beforeAll(async () => {
+    await assurerBranche(branche);
     await creerTaxe(technique, { branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
     await creerProduit(technique, { code, libelle: "Règles (test)", gamme: "RELAX", branche }, null);
     await creerVersion(
@@ -284,6 +293,7 @@ describe("taxes par branche et type de contrat (D18)", () => {
 
   it("un nouveau taux clôture le taux ouvert à la veille ; les autres chevauchements sont refusés avec un message clair", async () => {
     const branche = unique("PER").toUpperCase().replace(/-/g, "_");
+    await assurerBranche(branche);
     await creerTaxe(technique, taxe(branche, { tauxPourcent: "1.5", dateEffet: "2020-01-01" }), null);
     await creerTaxe(technique, taxe(branche, { tauxPourcent: "2", dateEffet: "2027-01-01" }), null);
 
@@ -302,6 +312,7 @@ describe("taxes par branche et type de contrat (D18)", () => {
 
   it("la base refuse elle-même deux périodes qui se chevauchent et toute modification autre que la clôture", async () => {
     const branche = unique("SQL").toUpperCase().replace(/-/g, "_");
+    await assurerBranche(branche);
     await creerTaxe(technique, taxe(branche, { dateEffet: "2020-01-01" }), null);
     const prisma = obtenirPrisma();
 
@@ -315,6 +326,7 @@ describe("taxes par branche et type de contrat (D18)", () => {
 
   it("le calcul prend la ligne la plus précise, applique H29 et refuse un taux mixte", async () => {
     const branche = unique("PREC").toUpperCase().replace(/-/g, "_");
+    await assurerBranche(branche);
     await creerTaxe(technique, taxe(branche, { tauxPourcent: "7.25", dateEffet: "2020-01-01" }), null);
     await creerTaxe(technique, taxe(branche, { typeContrat: "INDIVIDUEL", tauxPourcent: "4", dateEffet: "2020-01-01" }), null);
     const code = unique("PREC").toUpperCase().replace(/-/g, "_");
@@ -328,6 +340,7 @@ describe("taxes par branche et type de contrat (D18)", () => {
     await expect(demande("" as "GROUPE")).rejects.toBeInstanceOf(ErreurMetier); // type absent (formulaire vide)
 
     const mixte = unique("MIX").toUpperCase().replace(/-/g, "_");
+    await assurerBranche(mixte);
     await creerTaxe(technique, taxe(mixte, { tauxPourcent: null, tauxMixte: true, commentaire: "12,5 % incendie ; 7,25 % reste", dateEffet: "2020-01-01" }), null);
     const codeMixte = `${code}_M`;
     await creerProduit(technique, { code: codeMixte, libelle: "Mixte (test)", gamme: "RELAX", branche: mixte }, null);
@@ -341,6 +354,9 @@ describe("taxes par branche et type de contrat (D18)", () => {
   it("charge les taux de la loi depuis les données de démarrage, une seule fois, sans écraser un taux existant", async () => {
     const fichier = JSON.parse(readFileSync(fileURLToPath(new URL("../../prisma/donnees/taxes-loi.json", import.meta.url)), "utf8")) as { lignes: TaxeDemarrage[] };
 
+    const branches = JSON.parse(readFileSync(fileURLToPath(new URL("../../prisma/donnees/branches.json", import.meta.url)), "utf8")) as { lignes: BrancheSaisie[] };
+    await initialiserBranches(branches.lignes);
+    expect(await initialiserBranches(branches.lignes)).toBe(0);
     await initialiserTaxes(fichier.lignes);
     expect(await initialiserTaxes(fichier.lignes)).toBe(0);
     const taux = (await listerTaxes(technique)).filter((t) => ["IA", "DECES", "SANTE", "IARD"].includes(t.branche));
@@ -353,5 +369,48 @@ describe("taxes par branche et type de contrat (D18)", () => {
         ["IARD", null, null, true],
       ]),
     );
+  });
+});
+
+describe("branches fiscales paramétrables (D21)", () => {
+  const code = () => unique("BR").toUpperCase().replace(/-/g, "_");
+  const taxe = (branche: string) => ({ branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "2", assiette: "NETTE_ACCESSOIRES" as const, dateEffet: "2026-01-01", dateFin: null });
+
+  it("réserve l'écriture à la Technique, refuse un doublon et un code invalide, journalise la création", async () => {
+    const c = code();
+
+    await expect(creerBranche(commercial, { code: c, libelle: "Test" }, null)).rejects.toBeInstanceOf(ErreurAcces);
+    await expect(creerBranche(technique, { code: "mauvais code", libelle: "Test" }, null)).rejects.toBeInstanceOf(ErreurMetier);
+    await expect(creerBranche(technique, { code: c, libelle: " " }, null)).rejects.toThrow(/libellé/);
+    await creerBranche(technique, { code: c, libelle: "Moto" }, null);
+    await expect(creerBranche(technique, { code: c, libelle: "Moto" }, null)).rejects.toThrow(/existe déjà/);
+    expect((await listerBranches(comptabilite)).find((b) => b.code === c)).toMatchObject({ libelle: "Moto", actif: true });
+    expect((await lireJournal({ action: "PARAMETRE_MODIFIE" })).lignes.some((l) => l.objet === `branche ${c}` && l.utilisateur === technique.identifiant)).toBe(true);
+  });
+
+  it("refuse un taux ou un produit sur une branche inconnue ; la désactivation bloque les nouveaux, pas les anciens", async () => {
+    const c = code();
+
+    await expect(creerTaxe(technique, taxe(c), null)).rejects.toThrow(/pas dans la liste des branches/);
+    await expect(creerProduit(technique, { code: c, libelle: "P", gamme: "G", branche: c }, null)).rejects.toThrow(/pas dans la liste des branches/);
+    await creerBranche(technique, { code: c, libelle: "Récolte" }, null);
+    await creerTaxe(technique, taxe(c), null);
+    await modifierBranche(technique, c, { libelle: "Récolte (agricole)", actif: false }, null);
+    await expect(creerTaxe(technique, { ...taxe(c), dateEffet: "2027-01-01" }, null)).rejects.toThrow(/désactivée/);
+    await expect(creerProduit(technique, { code: c, libelle: "P", gamme: "G", branche: c }, null)).rejects.toThrow(/désactivée/);
+    expect((await listerTaxes(technique)).some((t) => t.branche === c)).toBe(true); // les taux existants restent
+    const modif = (await lireJournal({ action: "PARAMETRE_MODIFIE" })).lignes.find((l) => l.objet === `branche ${c}` && l.avant !== null)!;
+    expect(modif.avant).toEqual({ libelle: "Récolte", actif: true });
+    expect(modif.apres).toEqual({ libelle: "Récolte (agricole)", actif: false });
+  });
+
+  it("la base empêche de supprimer une branche, de changer son code, ou de la supprimer alors qu'un taux l'utilise", async () => {
+    const c = code();
+    await creerBranche(technique, { code: c, libelle: "Voyage" }, null);
+    const prisma = obtenirPrisma();
+
+    await expect(prisma.$executeRawUnsafe(`UPDATE branches SET code = '${c}X' WHERE code = '${c}'`)).rejects.toThrow(/seuls le libellé/);
+    await expect(prisma.$executeRawUnsafe(`DELETE FROM branches WHERE code = '${c}'`)).rejects.toThrow(/suppression interdite/);
+    await expect(prisma.$executeRawUnsafe(`INSERT INTO taxes (branche, taux_pourcent, assiette, date_effet, cree_par) VALUES ('INCONNUE_${c}', 1, 'NETTE', '2026-01-01', 'sql')`)).rejects.toThrow(/taxes_branche_fkey/);
   });
 });

@@ -6,6 +6,7 @@ import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 import { FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
 import type { Souscripteur } from "@/domaine/cotation/saisie";
 
+import { assurerBranche } from "./branches-test";
 import { lireJournal } from "./audit";
 import { creerClient, initialiserMotifsRefus } from "./clients";
 import {
@@ -111,6 +112,7 @@ beforeAll(async () => {
     await nouveauCompte("DIRECTION_GENERALE"),
     await nouveauCompte("COMPTABILITE"),
   ];
+  await assurerBranche(BRANCHE);
   await creerTaxe(technique, { branche: BRANCHE, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
   await creerProduit(technique, { code: CODE, libelle: "Santé BENI (test)", gamme: "RELAX", branche: BRANCHE }, null);
   await creerVersion(technique, CODE, versionBeni(), null);

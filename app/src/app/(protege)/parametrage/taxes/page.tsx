@@ -3,7 +3,7 @@ import { ASSIETTES_TAXE } from "@/domaine/calcul/calcul";
 import { montant } from "@/domaine/calcul/montant";
 import { LIBELLE_TYPE_CONTRAT, RATTACHEMENT_TYPE_CONTRAT, TYPES_CONTRAT, enVigueurLe, type TypeContrat } from "@/domaine/calcul/taxes";
 import { peutAgir, peutLire } from "@/domaine/droits";
-import { aujourdhui, listerTaxes, type LigneTaxe } from "@/serveur/parametrage";
+import { aujourdhui, listerBranches, listerTaxes, type LigneTaxe } from "@/serveur/parametrage";
 import { niveauDuProfil } from "@/serveur/droits";
 import { exigerDroit } from "@/serveur/session";
 
@@ -16,7 +16,7 @@ const taux = (t: LigneTaxe) => (t.tauxMixte || t.tauxPourcent === null ? "Taux m
 
 export default async function PageTaxes() {
   const utilisateur = await exigerDroit("PARAMETRER_PRODUITS", peutLire);
-  const [taxes, niveau] = await Promise.all([listerTaxes(utilisateur), niveauDuProfil(utilisateur.profil, "PARAMETRER_PRODUITS")]);
+  const [taxes, branches, niveau] = await Promise.all([listerTaxes(utilisateur), listerBranches(utilisateur), niveauDuProfil(utilisateur.profil, "PARAMETRER_PRODUITS")]);
   const jour = aujourdhui();
 
   // Historique par clé (branche, type de contrat) : toutes les versions, la plus récente en premier.
@@ -47,7 +47,19 @@ export default async function PageTaxes() {
         <section className="mb-8 max-w-md rounded border border-bordure bg-surface p-5">
           <h2 className="mb-3 text-lg font-semibold">Ajouter une version de taux</h2>
           <FormulaireAction action={creerUneTaxe} libelleBouton="Ajouter">
-            <Champ nom="branche" libelle="Branche (ex. SANTE, IA, DECES, IARD)" autoComplete="off" />
+            <label className="mb-4 block text-sm font-medium">
+              Branche
+              <select name="branche" defaultValue="" required className={entree}>
+                <option value="" disabled>
+                  Choisir une branche
+                </option>
+                {branches.filter((b) => b.actif).map((b) => (
+                  <option key={b.code} value={b.code}>
+                    {b.code} · {b.libelle}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="mb-4 block text-sm font-medium">
               Type de contrat
               <select name="typeContrat" defaultValue="" className={entree}>

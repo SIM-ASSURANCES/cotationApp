@@ -2,6 +2,7 @@
 // Seules la session, l'adresse IP et le rafraîchissement de page de Next.js sont simulés.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { assurerBranche } from "@/serveur/branches-test";
 import { initialiserProfilsEtDroits } from "@/serveur/droits";
 import { creerProduit } from "@/serveur/parametrage";
 import { obtenirPrisma } from "@/serveur/prisma";
@@ -27,7 +28,7 @@ async function compte(identifiant: string): Promise<UtilisateurCourant> {
 function formulaire(dateEffet: string, prime: string): FormData {
   const d = new FormData();
   const champs: Record<string, string> = {
-    codeProduit: CODE, dateEffet, precision: "1", sens: "PROCHE", niveau: "LIGNE", composante: "TAXE",
+    codeProduit: CODE, dateEffet, precision: "1", sens: "PROCHE", niveau: "LIGNE", 
     prorataActif: "on", primeMinimale: "", tranchesMax: "4", repartition: "", decalages: "", frais: "0",
     validiteMois: "3", formulesMax: "3", seuil: "20 000 000",
   };
@@ -48,6 +49,7 @@ beforeAll(async () => {
   const technique = unique("technique");
   await creerUtilisateur(await compte(admin), { identifiant: technique, nom: "Technique", profil: "TECHNIQUE", motDePasse: MDP }, null);
   acteurConnecte = await compte(technique);
+  await assurerBranche("SANTE");
   await creerProduit(acteurConnecte, { code: CODE, libelle: "Montants saisis (test)", gamme: "RELAX", branche: "SANTE" }, null);
 });
 

@@ -16,7 +16,7 @@ import {
   type TaxeSaisie,
   type VersionSaisie,
 } from "@/domaine/calcul/parametrage";
-import { choisirTaux, estTypeContrat, periodesSeChevauchent, type TypeContrat } from "@/domaine/calcul/taxes";
+import { choisirTaux, estTypeContrat, periodesSeChevauchent, problemesBranche, type BrancheSaisie, type TypeContrat } from "@/domaine/calcul/taxes";
 import { exigeDoubleValidation } from "@/domaine/calcul/validation";
 
 import { journaliser } from "./audit";
@@ -67,6 +67,81 @@ function refuserSiProblemes(problemes: string[]): void {
   }
 }
 
+// ---------------------------------------------------------------- Branches fiscales
+
+/** Branche fiscale (D21) : liste paramétrable, clé des taxes et des produits. Le code ne change jamais. */
+export type LigneBranche = BrancheSaisie & { actif: boolean; creePar: string; creeLe: Date };
+
+export async function listerBranches(acteur: UtilisateurCourant): Promise<LigneBranche[]> {
+  await exigerConsultation(acteur);
+  const branches = await obtenirPrisma().branche.findMany({ orderBy: { code: "asc" } });
+  return branches.map((b) => ({ code: b.code, libelle: b.libelle, actif: b.actif, creePar: b.creePar, creeLe: b.creeLe }));
+}
+
+/** Ajoute une branche à la liste (journalisé). */
+export async function creerBranche(acteur: UtilisateurCourant, saisie: BrancheSaisie, adresseIp: string | null): Promise<void> {
+  await exigerEcriture(acteur);
+  refuserSiProblemes(problemesBranche(saisie));
+  await obtenirPrisma().$transaction(async (tx) => {
+    if (await tx.branche.findUnique({ where: { code: saisie.code } })) throw new ErreurMetier(`La branche « ${saisie.code} » existe déjà.`);
+    await tx.branche.create({ data: { code: saisie.code, libelle: saisie.libelle.trim(), creePar: acteur.identifiant } });
+    await journaliser(
+      { acteur: { id: acteur.id, identifiant: acteur.identifiant }, action: "PARAMETRE_MODIFIE", objetType: "branche", objetId: saisie.code, apres: { code: saisie.code, libelle: saisie.libelle.trim(), actif: true }, adresseIp },
+      tx,
+    );
+  });
+}
+
+/**
+ * Modifie le libellé et/ou l'état actif d'une branche (journalisé, avant/après). Une branche ne se
+ * supprime pas : désactivée, elle garde ses taux et ses produits mais n'en reçoit plus de nouveaux.
+ */
+export async function modifierBranche(acteur: UtilisateurCourant, code: string, modif: { libelle: string; actif: boolean }, adresseIp: string | null): Promise<void> {
+  await exigerEcriture(acteur);
+  refuserSiProblemes(problemesBranche({ code, libelle: modif.libelle }));
+  await obtenirPrisma().$transaction(async (tx) => {
+    const avant = await tx.branche.findUnique({ where: { code } });
+    if (!avant) throw new ErreurMetier(`Branche « ${code} » introuvable.`);
+    const libelle = modif.libelle.trim();
+    if (avant.libelle === libelle && avant.actif === modif.actif) return;
+    await tx.branche.update({ where: { code }, data: { libelle, actif: modif.actif } });
+    await journaliser(
+      {
+        acteur: { id: acteur.id, identifiant: acteur.identifiant },
+        action: "PARAMETRE_MODIFIE",
+        objetType: "branche",
+        objetId: code,
+        avant: { libelle: avant.libelle, actif: avant.actif },
+        apres: { libelle, actif: modif.actif },
+        adresseIp,
+      },
+      tx,
+    );
+  });
+}
+
+/** Branche à utiliser pour un taux ou un produit : elle doit exister et être active. */
+async function exigerBrancheActive(tx: Prisma.TransactionClient, code: string): Promise<void> {
+  const b = await tx.branche.findUnique({ where: { code } });
+  if (!b) throw new ErreurMetier(`La branche « ${code} » n'est pas dans la liste des branches : ajoutez-la d'abord (écran « Branches »).`);
+  if (!b.actif) throw new ErreurMetier(`La branche « ${code} » est désactivée : réactivez-la avant d'y ajouter un taux ou un produit.`);
+}
+
+/** Branches de démarrage (prisma/donnees/branches.json), idempotent : une branche existante n'est jamais modifiée. */
+export async function initialiserBranches(lignes: BrancheSaisie[], auteur = "initialisation"): Promise<number> {
+  let crees = 0;
+  for (const l of lignes) {
+    refuserSiProblemes(problemesBranche(l));
+    await obtenirPrisma().$transaction(async (tx) => {
+      if (await tx.branche.findUnique({ where: { code: l.code } })) return;
+      await tx.branche.create({ data: { code: l.code, libelle: l.libelle.trim(), creePar: auteur } });
+      await journaliser({ acteur: null, action: "PARAMETRE_MODIFIE", objetType: "branche", objetId: l.code, apres: { ...l, actif: true, source: "données de démarrage" }, adresseIp: null }, tx);
+      crees += 1;
+    });
+  }
+  return crees;
+}
+
 // ---------------------------------------------------------------- Taxes
 
 /** Une version d'un taux : sa période, sa valeur, son auteur et sa date de saisie (historique, D18). */
@@ -109,6 +184,7 @@ export async function creerTaxe(acteur: UtilisateurCourant, saisie: TaxeSaisie, 
   const auteurAudit = { id: acteur.id, identifiant: acteur.identifiant };
   try {
     await obtenirPrisma().$transaction(async (tx) => {
+      await exigerBrancheActive(tx, saisie.branche);
       const memeCle = (await tx.taxe.findMany({ where: { branche: saisie.branche, typeContrat: saisie.typeContrat } })).map(versLigneTaxe);
       const chevauchees = memeCle.filter((t) => periodesSeChevauchent(t, saisie));
       const aCloturer = chevauchees.length === 1 && chevauchees[0].dateFin === null && chevauchees[0].dateEffet < saisie.dateEffet ? chevauchees[0] : null;
@@ -231,7 +307,7 @@ export async function creerProduit(
   await exigerEcriture(acteur);
   const problemes: string[] = [];
   if (!codeValide(saisie.code)) problemes.push("Code produit invalide (majuscules, chiffres et _, 30 caractères au plus).");
-  if (!codeValide(saisie.branche)) problemes.push("Branche invalide (majuscules, chiffres et _).");
+  if (!codeValide(saisie.branche)) problemes.push("Branche invalide (choisissez-la dans la liste des branches).");
   if (saisie.libelle.trim() === "" || saisie.gamme.trim() === "") problemes.push("Libellé et gamme obligatoires.");
   refuserSiProblemes(problemes);
 
@@ -239,6 +315,7 @@ export async function creerProduit(
     if (await tx.produit.findUnique({ where: { code: saisie.code } })) {
       throw new ErreurMetier("Ce code produit existe déjà.");
     }
+    await exigerBrancheActive(tx, saisie.branche);
     const cree = await tx.produit.create({
       data: { code: saisie.code, libelle: saisie.libelle.trim(), gamme: saisie.gamme.trim(), branche: saisie.branche, creePar: acteur.identifiant },
     });

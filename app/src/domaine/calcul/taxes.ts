@@ -83,3 +83,21 @@ export function choisirTaux<T extends LigneTaux>(lignes: T[], branche: string, t
   }
   throw new ErreurCalcul(`Aucune taxe en vigueur pour la branche « ${branche} » (contrat ${typeContrat}) au ${date}.`);
 }
+
+/**
+ * Branche fiscale (D21, réponse de Thierry du 08/10/2026) : liste paramétrable, clé des taux de taxe et
+ * des produits. Le code ne change jamais (il est référencé) ; le libellé et l'état actif se modifient.
+ */
+export type BrancheSaisie = { code: string; libelle: string };
+
+export const LONGUEUR_MAX_LIBELLE_BRANCHE = 100;
+const CODE_BRANCHE = /^[A-Z0-9][A-Z0-9_]{0,29}$/; // même règle que les codes de produit
+
+export function problemesBranche(b: BrancheSaisie): string[] {
+  const problemes: string[] = [];
+  if (!CODE_BRANCHE.test(b.code)) problemes.push("Code de branche invalide (majuscules, chiffres et _, 30 caractères au plus).");
+  const libelle = b.libelle.trim();
+  if (libelle === "") problemes.push("Le libellé de la branche est obligatoire.");
+  else if (libelle.length > LONGUEUR_MAX_LIBELLE_BRANCHE) problemes.push(`Libellé de la branche trop long (${LONGUEUR_MAX_LIBELLE_BRANCHE} caractères au plus).`);
+  return problemes;
+}

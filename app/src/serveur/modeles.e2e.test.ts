@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { assurerBranche } from "./branches-test";
 import { obtenirConfig } from "./config";
 import { initialiserProfilsEtDroits } from "./droits";
 import { remplacerGenerateur } from "./generateur";
@@ -55,6 +56,7 @@ beforeAll(async () => {
   };
   [technique, dg] = [await nouveau("TECHNIQUE"), await nouveau("DIRECTION_GENERALE")];
   produit = CODE("PRD");
+  await assurerBranche("SANTE");
   await creerProduit(technique, { code: produit, libelle: "Produit de bout en bout", gamme: "RELAX", branche: "SANTE" }, null);
 });
 

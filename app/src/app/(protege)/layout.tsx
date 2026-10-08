@@ -33,7 +33,7 @@ export default async function LayoutProtege({ children }: LayoutProps<"/">) {
       liens.push({ href: "/documents", libelle: "Documents émis" });
     }
     if (peutLire(parametrage)) {
-      liens.push({ href: "/parametrage/produits", libelle: "Produits" }, { href: "/parametrage/taxes", libelle: "Taxes" }, { href: "/parametrage/societe", libelle: "Société" });
+      liens.push({ href: "/parametrage/produits", libelle: "Produits" }, { href: "/parametrage/branches", libelle: "Branches" }, { href: "/parametrage/taxes", libelle: "Taxes" }, { href: "/parametrage/societe", libelle: "Société" });
     }
     if (peutLire(parametrage) || peutLire(cotation)) {
       liens.push({ href: "/calcul", libelle: "Calcul" });

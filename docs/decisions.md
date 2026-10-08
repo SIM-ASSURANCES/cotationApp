@@ -201,7 +201,7 @@ Question : les accessoires (frais de gestion de police) sont-ils un montant fixe
 | H8 | Total = somme des formules (confirmé). Nouveau : des options au choix modifient la prime | total = somme des formules | **conforme** pour le total ; options : **en attente** de précisions, rien n'est codé |
 | H9 | Un collègue ou un responsable peut aussi modifier un brouillon | seul l'auteur modifie et soumet son brouillon | **à corriger** : tout utilisateur qui a le droit de modifier une cotation ; chaque modification tracée ; qui a créé **ou** modifié ne valide pas |
 | H10 | SIM attribue le numéro de police ; format `SCD-2026-000088-G00000` ; import d'une liste de numéros à discuter | numéro provisoire POL-AAAA-NNNNNN généré par le module | **à corriger** : numéro **saisi**, jamais généré ; unique ; format contrôlé par une expression régulière paramétrable. Import : **phase 5** |
-| H11 | Pas de réponse | — | **inchangée, en attente** |
+| H11 | Pas de réponse | Aperçu et émission du PDF (H11 de la phase 2) | **réglée** le 08/10/2026 par Thierry : traitée par D17 / H23 (PDF émis automatiquement après l'émission, bouton « Émettre le PDF » en cas d'échec) |
 | H12 | Refus : le valideur renvoie la cotation en brouillon, motif obligatoire | renvoi en brouillon par un valideur, raison obligatoire, journalisé ; statut « Refusée » réservé au refus du client | **conforme** ; le droit du valideur suit H7 ; test automatisé dédié ajouté |
 | H28 | Pas de réponse | accessoires non proratisés | **inchangée, en attente** |
 
@@ -234,6 +234,7 @@ Conséquences retenues pour le code (session 4.0) :
 - **Date** : 08/10/2026, choix de Thierry (option b), remplace H19.
 - **Décision** : un champ du dictionnaire que l'application ne fournit pas est **absent** des données, et la génération d'un modèle qui l'utilise **échoue** en nommant le champ, **sauf** s'il est déclaré facultatif dans le dictionnaire : il est alors présent, vide. Une valeur connue mais vide (e-mail non saisi, pas encore de paiement) reste une valeur : elle s'écrit vide.
 - **Liste des champs facultatifs** (session 4.0, à faire valider par la Technique) : `doc.empreinte` (H20 : un document ne peut pas contenir sa propre empreinte), `intermediaires`, `police.police_mere`, `police.nantissement`. Ces quatre champs sont rendus vides.
+- **Décision de Thierry du 08/10/2026** : cette liste est retenue. `beneficiaires[]` et `contacts_urgence[]` **ne sont pas facultatifs** : la session 4a devra permettre leur saisie.
 - **Champs non fournis, donc bloquants s'ils sont dans un modèle** : les champs du souscripteur que la saisie ne demande pas (profession, date et lieu de naissance, BP, localité…), `assures[].prime`, `beneficiaires`, `contacts_urgence`, `police.reference`, et `police.type_contrat` d'une cotation antérieure à la session 4.0. Pour en rendre un facultatif : le marquer dans `src/domaine/documents/dictionnaire.ts`.
 
 ## D20 — Champ `doc.auteur_nom` (extension du dictionnaire)
@@ -243,10 +244,13 @@ Conséquences retenues pour le code (session 4.0) :
 ## D21 — Choix de mise en œuvre de la session 4.0 (à valider par Thierry)
 
 - **Date** : 08/10/2026. Choix techniques faits pendant la session 4.0, sans règle métier nouvelle ; chacun se change facilement.
-- **Date d'effet des taux de démarrage** : 01/01/2026 (`prisma/donnees/taxes-loi.json`). La date réelle d'entrée en vigueur des taux de la loi n'a pas été donnée.
-- **Codes de branche** : `IA`, `DECES`, `SANTE`, `IARD`. Un produit doit porter l'un de ces codes pour trouver son taux.
+- **Date d'effet des taux de démarrage** : 01/01/2026 (`prisma/donnees/taxes-loi.json`), **validée par Thierry le 08/10/2026 à titre provisoire**. La date réelle d'entrée en vigueur n'a pas été donnée : à confirmer par la Technique (ligne « en attente »).
+- **Branches fiscales** : liste **paramétrable** (écran « Branches », table `branches`), et non plus figée. Chaque ajout ou modification (libellé, état actif) est journalisé. Le code ne change jamais et ne se supprime pas ; une branche désactivée garde ses taux et ses produits mais n'en reçoit plus. Taux et produits ne se rattachent qu'à une branche active de la liste. Branches de démarrage (`prisma/donnees/branches.json`) : `IA`, `DECES`, `SANTE`, `IARD`. Produits hors tableau : H32 ci-dessous.
 - **Droit « modifier une cotation » (H9)** : c'est le droit existant « Créer une cotation » (pas de nouvelle ligne dans la matrice). Celui qui modifie le brouillon d'un autre peut aussi le soumettre ; soumettre ne compte pas comme une modification.
-- **Validation (H7)** : nouveau droit paramétrable « Valider une cotation » (`VALIDER_COTATION`), « Valide » pour la Technique seule. La Direction Générale, qui validait jusqu'ici (CDC §4.1), ne valide plus par défaut ; l'administrateur peut lui redonner ce droit.
+- **Validation (H7)** : nouveau droit paramétrable « Valider une cotation » (`VALIDER_COTATION`), « Valide » pour la Technique seule. La Direction Générale, qui validait jusqu'ici, ne valide plus par défaut ; l'administrateur peut lui redonner ce droit. **Validé par Thierry le 08/10/2026.** **Écart avec le CDC §4.1** (« Technique ou DG ») : **à présenter au superviseur**.
+- **Composante absorbante** : retirée de l'écran de version de produit (sans effet depuis le moteur v2, H4). La colonne reste en base avec la valeur fixe `TAXE`, pour les versions déjà enregistrées.
+- **H32 (nouveau)** : branche fiscale et taux pour SECURMOTO, RELAXVOYAGE, SECURECOLTE et les autres produits hors tableau de la loi communiqué par la Technique. Tant qu'elle n'a pas répondu, ces produits n'ont pas de taux et leur calcul est refusé (« Aucune taxe en vigueur »).
+- **Numérotation** : H32 est pris par la ligne ci-dessus ; le point « trop-perçu » prévu dans le fichier d'instructions de la phase 4 devient **H33** (à consigner par la session 4b).
 - **Format du numéro de police (H10, H31)** : paramètre historisé de l'écran « Société », modifiable avec le droit « Paramétrer produits ». Le numéro saisi est mis en majuscules ; il est unique en base.
 - **Accessoires (H1)** : une valeur saisie vide reprend la valeur de la formule ; en mode pourcentage, la valeur saisie est un pourcentage (0 à 100).
 
@@ -261,8 +265,10 @@ Conséquences retenues pour le code (session 4.0) :
 | Police de remplacement de Tahoma (test D) ; puis Dockerfile et polices exigées par `/sante` (D16) | Thierry | avant la mise en production |
 | H18 à H27 (émission des documents, voir D17) | Direction Technique | avant la recette |
 | Durée de validité d'une cotation : confirmer « 3 mois » (D10) | Direction Technique | avant la recette |
-| H2 (garanties à prime fixe et à prime calculée), H8 (options au choix), H11, H28 (voir D18) | Direction Technique | avant la recette |
+| H2 (garanties à prime fixe et à prime calculée), H8 (options au choix), H28 (voir D18) | Direction Technique | avant la recette |
 | H29 à H31 (type de contrat et taux, conflit T3, numéro de police : voir D18) ; liste des champs facultatifs (D19) | Direction Technique | avant la recette |
-| Choix de mise en œuvre de la session 4.0 : date des taux de démarrage, codes de branche, DG sans droit de validation (D21) | Thierry | avant la session 4a |
+| Date d'entrée en vigueur des taux, à confirmer par la Technique (date provisoire du 01/01/2026, D21) | Direction Technique | avant la recette |
+| H32 : branche fiscale et taux pour SECURMOTO, RELAXVOYAGE, SECURECOLTE et les autres produits hors tableau | Direction Technique | avant la recette |
+| Écart avec le CDC §4.1 : validation par la Technique seule (D21) | Superviseur (à lui présenter) | avant la recette |
 
 Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir), Q3 (plus de dossier partagé : D11), Q4 (`assures[].sexe` ajouté : D12), Q5 (Thierry balise d'abord, puis la Technique : D12), H6 (validité en mois : D10).

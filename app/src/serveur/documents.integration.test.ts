@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Analyse } from "@/domaine/documents/analyse";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 
+import { assurerBranche } from "./branches-test";
 import { creerBrouillon, accepter, soumettre, type SaisieCotation } from "./cotations";
 import { annulerParAvoir, documentsDe, emettreCotation, emettreCp, rechercherDocuments, reediter, telechargerDocument, verifierJeton, zipDocuments } from "./documents";
 import { initialiserProfilsEtDroits } from "./droits";
@@ -84,6 +85,7 @@ const versionBeni = (references?: VersionSaisie["references"]): VersionSaisie =>
 async function produit(references?: VersionSaisie["references"]): Promise<string> {
   const code = CODE("BENI");
   const branche = `SANTE_${code}`;
+  await assurerBranche(branche);
   await creerTaxe(technique, { branche, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
   await creerProduit(technique, { code, libelle: "Santé BENI (test)", gamme: "RELAX", branche }, null);
   await creerVersion(technique, code, versionBeni(references), null);

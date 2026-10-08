@@ -8,7 +8,7 @@ import { lireVersion } from "./lire-version";
 function formulaireBeni(surcharge: Record<string, string> = {}): FormData {
   const d = new FormData();
   const champs: Record<string, string> = {
-    dateEffet: "2026-01-01", precision: "1", sens: "PROCHE", niveau: "LIGNE", composante: "TAXE",
+    dateEffet: "2026-01-01", precision: "1", sens: "PROCHE", niveau: "LIGNE",
     prorataActif: "on", primeMinimale: "", tranchesMax: "4", repartition: "", decalages: "", frais: "0",
     validiteMois: "3", formulesMax: "3", seuil: "20000000", ...surcharge,
   };

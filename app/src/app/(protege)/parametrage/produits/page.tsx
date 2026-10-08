@@ -3,14 +3,14 @@ import Link from "next/link";
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
-import { listerProduits } from "@/serveur/parametrage";
+import { listerBranches, listerProduits } from "@/serveur/parametrage";
 import { exigerDroit } from "@/serveur/session";
 
 import { creerUnProduit } from "./actions";
 
 export default async function PageProduits() {
   const utilisateur = await exigerDroit("PARAMETRER_PRODUITS", peutLire);
-  const [produits, niveau] = await Promise.all([listerProduits(utilisateur), niveauDuProfil(utilisateur.profil, "PARAMETRER_PRODUITS")]);
+  const [produits, branches, niveau] = await Promise.all([listerProduits(utilisateur), listerBranches(utilisateur), niveauDuProfil(utilisateur.profil, "PARAMETRER_PRODUITS")]);
 
   return (
     <main>
@@ -27,7 +27,19 @@ export default async function PageProduits() {
             <Champ nom="code" libelle="Code (ex. RELAXSANTE)" autoComplete="off" />
             <Champ nom="libelle" libelle="Libellé" autoComplete="off" />
             <Champ nom="gamme" libelle="Gamme (ex. RELAX)" autoComplete="off" />
-            <Champ nom="branche" libelle="Branche fiscale (clé de la table des taxes)" autoComplete="off" />
+            <label className="mb-4 block text-sm font-medium">
+              Branche
+              <select name="branche" defaultValue="" required className="mt-1 block w-full rounded border border-bordure bg-white px-3 py-2">
+                <option value="" disabled>
+                  Choisir une branche
+                </option>
+                {branches.filter((b) => b.actif).map((b) => (
+                  <option key={b.code} value={b.code}>
+                    {b.code} · {b.libelle}
+                  </option>
+                ))}
+              </select>
+            </label>
           </FormulaireAction>
         </section>
       ) : null}

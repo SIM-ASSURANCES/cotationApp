@@ -1,4 +1,4 @@
-import { COMPOSANTES, NIVEAUX_ARRONDI, type Composante, type ModeAccessoire, type NiveauArrondi } from "@/domaine/calcul/calcul";
+import { NIVEAUX_ARRONDI, type ModeAccessoire, type NiveauArrondi } from "@/domaine/calcul/calcul";
 import { SENS_ARRONDI, normaliserMontantSaisi, type Precision, type SensArrondi } from "@/domaine/calcul/montant";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 
@@ -30,7 +30,8 @@ export function lireVersion(donnees: FormData): VersionSaisie {
       precision: Number(champ(donnees, "precision")) as Precision, // contrôlé par la validation (1, 10, 100 ou 1 000)
       sens: parmi<SensArrondi>(champ(donnees, "sens"), SENS_ARRONDI),
       niveau: parmi<NiveauArrondi>(champ(donnees, "niveau"), NIVEAUX_ARRONDI),
-      composanteAbsorbante: parmi<Composante>(champ(donnees, "composante"), COMPOSANTES),
+      // Réglage sans effet depuis le moteur v2 (TTC = somme des arrondis, D18/H4) : plus saisi, valeur fixe.
+      composanteAbsorbante: "TAXE",
     },
     prorata: { actif: donnees.get("prorataActif") === "on", primeMinimale: mOuNull(champOuNull(donnees, "primeMinimale")) },
     fractionnement: {

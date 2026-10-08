@@ -182,7 +182,9 @@ Journal des décisions du projet, avec leur date. Une décision n'est jamais eff
 | H25 | Statut « Expiré » de la page de vérification | selon la fin de validité enregistrée à l'émission |
 | H26 | Plusieurs modèles de CP pour un même produit (H16 les permet) | l'émission prend le plus ancien qui a une version en vigueur : un critère de choix (individuel, famille, groupe…) reste à définir |
 | H27 | Limite de la page de vérification | 30 requêtes par minute et par adresse IP, en mémoire du serveur (une seule instance) |
-
+H28 – Accessoires et prorata
+Retenu : quand un contrat dure moins d'un an, la prime nette est proratisée (par exemple × 163/365), mais les accessoires restent entiers. Exemple, formule Solo du 22/07 au 31/12/2026 : prime nette de 280 744 ramenée à 125 373, accessoires maintenus à 3 000.
+Question : les accessoires (frais de gestion de police) sont-ils un montant fixe par contrat, ou doivent-ils eux aussi être proratisés à la durée ?
 ## Décisions en attente
 
 | Sujet | Qui décide | Échéance |

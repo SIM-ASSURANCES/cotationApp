@@ -254,6 +254,30 @@ Conséquences retenues pour le code (session 4.0) :
 - **Format du numéro de police (H10, H31)** : paramètre historisé de l'écran « Société », modifiable avec le droit « Paramétrer produits ». Le numéro saisi est mis en majuscules ; il est unique en base.
 - **Accessoires (H1)** : une valeur saisie vide reprend la valeur de la formule ; en mode pourcentage, la valeur saisie est un pourcentage (0 à 100).
 
+## D22 — Contrats complets et contrats de groupe (session 4a)
+
+- **Date** : 09/10/2026. Choix de mise en œuvre de la session 4a, branche `phase-4a` (non fusionnée). Aucune règle métier de la Technique n'est inventée : chaque choix qui en tient lieu est une hypothèse numérotée ci-dessous, à confirmer. Les décisions de Thierry sur D19 sont appliquées telles quelles.
+- **Option b de D19 (rappel)** : un champ saisi puis laissé vide s'écrit vide ; seul un champ **jamais fourni** bloque la génération d'un modèle qui l'utilise. `null` = jamais fourni, `[]` = saisi et laissé vide, de la saisie jusqu'aux données du document. Facultatifs inchangés : `intermediaires`, `police.police_mere`, `police.nantissement`, `doc.empreinte`. `beneficiaires[]` et `contacts_urgence[]` ne sont pas facultatifs : la 4a en permet la saisie.
+- **Saisies ajoutées** : les 14 champs du souscripteur absents jusque-là (`num_identification`, `date_naissance`, `lieu_naissance`, `profession`, `activite`, `employeur`, `bp`, `localite`, `sous_prefecture`, `whatsapp`, `mobile_money`, `situation_matrimoniale`, `nb_enfants`, `groupe_sanguin`), les bénéficiaires et les contacts d'urgence. Une cotation ou un client d'avant la 4a garde ses champs « jamais fournis » : il reste valide, mais un modèle qui en utilise un ne se génère pas tant qu'ils ne sont pas complétés.
+- **Contrat de groupe (CDC §10.2)** : la police mère (types `GROUPE` et `GROUPE_OUVERT`) porte la liste de ses adhérents, **toujours en annexe**, même sous le seuil (le générateur reçoit `listes_en_annexe`). Un adhérent a un numéro d'ordre qui ne change jamais et n'est jamais réutilisé. La liste évolue par **versions en ajout seul** (table `adherents_versions`, protégée par la base) : liste initiale, incorporation, retrait. Chaque changement produit une **nouvelle version des conditions particulières** (même numéro, version + 1) ; la réédition d'un ancien document reprend la liste de sa version (T10). La facture d'avenant reste en 4b.
+- **Certificat d'adhésion unitaire** : un document par adhérent, avec `police.police_mere` et son propre QR code. La génération en masse reste en phase 5 (T8).
+- **Branches fiscales** : T5 (SECURVIE) utilise la branche `DECES` (0 %, données de démarrage). T6 (VOL, IARD) ne teste que le document, avec des montants de fixture, car l'IARD reste refusé tant que H32 n'est pas tranchée.
+
+### Hypothèses de la session 4a, à faire confirmer
+
+| # | Point | Hypothèse retenue (à faire confirmer) |
+| --- | --- | --- |
+| H34 | Où saisir les compléments du souscripteur, les bénéficiaires et les contacts d'urgence | dans le **brouillon de cotation** (ils sont figés avec elle), puis **complétables à l'acceptation** de la cotation, au moment où la police est créée. Pas d'écran de modification d'une police. Un client enregistré porte ses compléments, repris dans ses cotations |
+| H35 | Contenu obligatoire des CP (CDC §10.1) | appliqué **au dépôt** du modèle (refus avec le champ manquant) : durée, bloc des primes complet (nette, accessoires, taxe, TTC), clause citant `produit.cg_libelle` et `produit.cg_visa`, clause de réclamation (`societe.email_reclamation`), lieu et date d'émission, `signature_sim`. Assurés, bénéficiaires, contacts d'urgence, intermédiaires et garanties (`bloc()`) dépendent du produit : on ne les exige pas de tout modèle |
+| H36 | Prime sur le certificat d'adhésion | **aucune** : l'accessoire fixe d'une formule est dû par contrat, le répartir par adhérent reviendrait à inventer une règle. Les champs de prime ne sont pas fournis au certificat, donc un modèle de certificat qui les utilise ne se génère pas |
+| H37 | Numéro d'un certificat d'adhésion | **saisi** à l'émission, au format des polices (H31), unique parmi les polices et les documents. Autres options possibles : dérivé du numéro de la police mère, ou numéro de la mère. Question posée à Thierry, sans réponse à ce jour ; « Saisi » est mis en œuvre |
+| H38 | Date d'adhésion et dates de changement | la date d'adhésion d'un adhérent est la date d'effet de la police pour la liste initiale, sinon celle de la version d'incorporation ; une date de changement reste dans la période de la police et ne précède pas le changement précédent. Incorporation et retrait ne produisent ni prime ni facture (avenant : 4b) |
+| H39 | `police.duree_libelle` | écrit « N jours » (nombre de jours couverts). Un libellé en mois ou en années est à confirmer |
+| H40 | Retrait d'adhérents | refusé s'il vide la liste : la police garde au moins un adhérent ; les numéros d'ordre retirés ne sont jamais réattribués |
+| H41 | Quotes-parts des bénéficiaires | chaque quote-part est un pourcentage supérieur à 0 et au plus 100, la somme vaut **exactement 100 %** (calcul décimal exact) ; une liste vide est admise (champ saisi vide, D19) |
+| H42 | Quels contrats ont une police mère | `GROUPE` et `GROUPE_OUVERT` seulement ; `INDIVIDUEL` et `FAMILLE` n'ont ni annexe imposée ni certificat |
+| H43 | T6 : montants | montants de fixture avec un taux de 10 % inventé, **sans valeur fiscale** ; à remplacer par un vrai calcul quand H32 (taux mixte de l'IARD) sera tranchée |
+
 ## Décisions en attente
 
 | Sujet | Qui décide | Échéance |
@@ -270,5 +294,6 @@ Conséquences retenues pour le code (session 4.0) :
 | Date d'entrée en vigueur des taux, à confirmer par la Technique (date provisoire du 01/01/2026, D21) | Direction Technique | avant la recette |
 | H32 : branche fiscale et taux pour SECURMOTO, RELAXVOYAGE, SECURECOLTE et les autres produits hors tableau | Direction Technique | avant la recette |
 | Écart avec le CDC §4.1 : validation par la Technique seule (D21) | Superviseur (à lui présenter) | avant la recette |
+| H34 à H43 (contrats complets et groupes : voir D22), en particulier H37 (numéro du certificat) et H39 (libellé de la durée) | Direction Technique | avant la recette |
 
 Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir), Q3 (plus de dossier partagé : D11), Q4 (`assures[].sexe` ajouté : D12), Q5 (Thierry balise d'abord, puis la Technique : D12), H6 (validité en mois : D10).

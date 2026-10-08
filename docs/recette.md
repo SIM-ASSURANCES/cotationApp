@@ -127,6 +127,16 @@ Limite : un seul modèle (CP RELAXSANTE) a été testé. Les autres modèles Wor
 | **Recette T1 sur la pile Docker** (app, générateur, base ; écrans) : modèle de cotation déposé (Technique) et publié (DG), cotation soumise par le Commercial → émise → **PDF émis aussitôt**, téléchargé, recherche dans « Documents émis », réédition | parcours HTTP + `pdftotext`, `zbarimg` (conteneur jetable) | **montants identiques à T1** (Solo 280 744 / 4 256 / 288 000 ; Famille 15 159 458 / 230 542 / 15 600 000 ; total 15 888 000, en lettres) ; **QR code lisible** : il donne `http://127.0.0.1:3000/verif/<jeton>` ; **page /verif** : « Valide », Cotation COT-2026-10-0001, produit, souscripteur « K****** A. » (nom en clair absent), **empreinte affichée = SHA-256 du PDF téléchargé** ; jeton inconnu : page neutre ; 35 requêtes d'une même adresse : 30 acceptées puis 429 |
 | Non vérifié | | ouverture des PDF dans un vrai navigateur ; émission des CP **par les écrans** (testée par la base et le service) ; écrans « Société » et références contractuelles du produit (types et lint seulement) ; les messages affichés après la soumission d'une cotation disparaissent avec son formulaire (le nouveau statut et la liste des PDF en tiennent lieu) |
 
+## 2 sexies. Phase 4a : contrats complets et groupes (09/10/2026)
+
+| Vérification | Comment | Résultat |
+| --- | --- | --- |
+| Compléments du souscripteur, bénéficiaires (somme 100 % en décimal exact), contacts d'urgence, incorporation, retrait, date d'adhésion | `npm test` (`saisie-4a.test.ts`) | verts (211 au total) |
+| Saisies de bout en bout dans la base : compléments recopiés dans la police, « jamais fournis » (`null`) distinct de « saisis vides » (`[]`), cotation figée protégée par la base ; groupe : annexe imposée, nouvelles versions de la liste et des CP, numéros jamais réutilisés, réédition à l'identique, certificat d'adhésion | `npm run test:integration` (`contrats-4a`, `groupes`) | 18 tests verts (116 au total) |
+| CP SECURVIE (T5), CP VOL (T6), police mère en annexe, certificat, `listes_en_annexe` inconnue refusée (422), rendu PDF | `pytest` (`test_contrats_4a.py`, `test_fusion.py`) | verts (162 au total) |
+| **Bout en bout** : vraie base, vrai générateur, vrai stockage ; T5 émis et relu, refus de l'IARD, T6 rendu avec deux dates d'émission | `npm run test:e2e` (générateur lancé) | 8 verts au total |
+| Non vérifié | | écrans de saisie des compléments et des adhérents dans un navigateur ; ouverture des PDF dans un vrai lecteur ; rendu sous Windows |
+
 ## 3. Cas de test du CDC (§16.1)
 
 | N° | Cas | État |
@@ -135,8 +145,8 @@ Limite : un seul modèle (CP RELAXSANTE) a été testé. Les autres modèles Wor
 | T2 | Facture groupe CGE-SN | non commencé (phase 4) |
 | T3 | Facture individuelle YAO (prorata) | **calcul VERT (phase 1)** : 163 jours, coefficient 0,44658, taxe de 1,5 % sur 120 633 = **1 809,495** exactement (1 809,50 à deux décimales, 1 809 au franc), jamais 2 292. Reste : paiement 41 000, restant dû et reçu REC (phase 4). |
 | T4 | Correction de facture (avoir) | non commencé (phase 4) |
-| T5 | SECURVIE avec 3 bénéficiaires | non commencé (phase 4) |
-| T6 | CP VOL, cases à cocher | non commencé (phase 4) |
+| T5 | SECURVIE avec 3 bénéficiaires | **VERT (phase 4a)** : 3 bénéficiaires (50/30/20 %) dans un tableau répété ; garanties issues du sous-modèle de la formule ; visa `MFB/DGTCP/DA/N° 01497` identique dans le CP et dans les CG jointes (l'émission est refusée si les visas diffèrent) ; branche `DECES` : taxe 0 %, TTC 105 000. Testé au niveau du .docx et du PDF (`test_contrats_4a.py`) et de bout en bout, PDF stocké relu par `pdftotext` (`contrats-4a.e2e.test.ts`). |
+| T6 | CP VOL, cases à cocher | **VERT pour le document (phase 4a)** : capital vol caisse 100 000, gardiennage de nuit, locataire → une seule case cochée par ligne, les autres vides ; une valeur hors liste ne coche rien ; la date d'émission suit le jour d'émission. **Document seul, montants de fixture** (taux de 10 % inventé) : l'IARD est refusé par le moteur de calcul tant que H32 n'est pas tranchée, ce que le test de bout en bout vérifie aussi (H43). |
 | T7 | Liste de plus de 10 assurés | **VERT (phase 3a)** : 25 assurés, seuil 10 → le corps affiche « Voir annexe – Liste des assurés (25 personnes) » et l'annexe complète est à la fin du PDF. Testé au niveau du .docx (`test_fusion.py`), du PDF dans le conteneur (`test_generation.py`), de bout en bout (`npm run test:e2e`) et par les écrans (aperçu à 25 assurés). Seuil paramétrable (historisé). Reste avec l'émission : les autres listes (bénéficiaires…) sur un vrai document. |
 | T8 | Génération en masse | non commencé (phase 5) |
 | T9 | Modèle avec balise inconnue | **VERT (phase 3a)** : le dépôt d'un .docx contenant `{{ client.nom }}` est refusé avec « Balise inconnue « client.nom » … — corps, tableau 1, ligne 2, colonne 1 : « {{ client.nom }} » » ; rien n'est enregistré, le refus est journalisé. Testé dans l'analyse (`pytest`), la décision (`npm test`), la base (`test:integration`), de bout en bout (`test:e2e`) et par l'écran. |

@@ -17,6 +17,7 @@ import { documentsDe } from "@/serveur/documents";
 import { niveauDuProfil } from "@/serveur/droits";
 import { lireFormatNumeroPolice } from "@/serveur/societe";
 import { exigerDroit } from "@/serveur/session";
+import { lireValidationContrat } from "@/serveur/validation-contrat";
 
 import { accepterCotation, emettreCpDeCotation, emettrePdfDeCotation, reediterDocument, refuserCotation, renvoyerCotation, soumettreCotation, validerCotation } from "../actions";
 
@@ -40,6 +41,8 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
     documentsDe(utilisateur, { cotationId: c.id }),
     lireFormatNumeroPolice(),
   ]);
+  // Contrat au-dessus du seuil du produit : demande de validation en cours, ou validation exigée de ce profil (CDC §4.1).
+  const etatContrat = c.numeroPolice && peutLire(niveauContrat) ? await lireValidationContrat(utilisateur, c.id) : null;
   const pdfCotation = documents.filter((d) => d.type === "COTATION");
   const pdfCp = documents.filter((d) => d.type === "CP");
   const emise = c.numero !== null && c.statut !== "BROUILLON" && c.statut !== "A_VALIDER";
@@ -220,12 +223,28 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
                 <input type="hidden" name="id" value={c.id} />
               </FormulaireAction>
             ) : null}
-            {c.numeroPolice && pdfCp.length === 0 && peutAgir(niveauContrat) ? (
-              <FormulaireAction action={emettreCpDeCotation} libelleBouton={`Émettre les conditions particulières (police ${c.numeroPolice})`} discret>
+            {c.numeroPolice && pdfCp.length === 0 && peutAgir(niveauContrat) && !(etatContrat?.requise && etatContrat.validation?.statut === "A_VALIDER") ? (
+              <FormulaireAction
+                action={emettreCpDeCotation}
+                libelleBouton={
+                  etatContrat?.requise
+                    ? `Demander la validation du contrat (police ${c.numeroPolice})`
+                    : etatContrat?.validation?.statut === "A_VALIDER"
+                      ? `Valider et émettre les conditions particulières (police ${c.numeroPolice})`
+                      : `Émettre les conditions particulières (police ${c.numeroPolice})`
+                }
+                discret
+              >
                 <input type="hidden" name="id" value={c.id} />
               </FormulaireAction>
             ) : null}
           </div>
+          {pdfCp.length === 0 && etatContrat?.validation?.statut === "A_VALIDER" ? (
+            <p role="status" className="mb-3 rounded border border-amber-600 bg-amber-50 p-2 text-sm">
+              <strong>Contrat à valider.</strong> Son TTC ({formaterMontant(montant(etatContrat.ttc))} F) dépasse le seuil du produit ({formaterMontant(montant(etatContrat.validation.seuil))} F) ; demandé par {etatContrat.validation.demandeePar} le{" "}
+              {new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }).format(etatContrat.validation.demandeeLe)}. Un profil habilité qui n'est pas le demandeur doit l'émettre.
+            </p>
+          ) : null}
           {documents.length > 0 ? (
             <table className="w-full border-collapse text-sm">
               <tbody>

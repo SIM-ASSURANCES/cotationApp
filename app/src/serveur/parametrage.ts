@@ -43,8 +43,7 @@ const texte = (d: { toFixed(): string }) => d.toFixed();
 export const aujourdhui = (): DateIso => new Date().toISOString().slice(0, 10);
 
 async function exigerEcriture(acteur: UtilisateurCourant): Promise<void> {
-  // « Oui » (Technique) ou « Valide » (DG). La « Proposition » de la Comptabilité demandera un
-  // circuit de validation, qui n'existe pas encore : elle ne peut pas écrire.
+  // « Oui » (Technique) ou « Valide » (DG). La Comptabilité est en « Lecture » (D21) : elle ne peut pas écrire.
   if (!peutAgir(await niveauDuProfil(acteur.profil, ACTION_PARAMETRAGE))) {
     throw new ErreurAcces("Droit insuffisant : paramétrage des produits et des taxes.");
   }

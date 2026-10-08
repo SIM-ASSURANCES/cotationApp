@@ -1,4 +1,5 @@
 import { exigeDoubleValidation } from "../calcul/validation";
+import type { CodeNiveau } from "../droits";
 import type { EntreeMontant, Montant } from "../calcul/montant";
 import { montant } from "../calcul/montant";
 
@@ -49,3 +50,12 @@ export function raisonsDeValidation(options: { forcages: Forcage[]; ttc: EntreeM
 }
 
 export { valideurAutorise } from "../calcul/validation";
+
+/**
+ * CDC §4 « Oui (sous seuil) » appliqué à l'émission d'un contrat (D22) : un profil limité par le seuil ne peut pas
+ * émettre un contrat dont le TTC dépasse le seuil du produit ; la demande passe en validation (CDC §4.1). Un profil
+ * « Oui » n'est pas limité. Sans seuil paramétré sur le produit, personne n'est limité.
+ */
+export function validationContratRequise(niveau: CodeNiveau, ttc: EntreeMontant, seuil: EntreeMontant | null): boolean {
+  return niveau === "OUI_SOUS_SEUIL" && exigeDoubleValidation(ttc, seuil);
+}

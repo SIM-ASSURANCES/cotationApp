@@ -2,6 +2,7 @@ import type { DateIso } from "../calcul/dates";
 import { montant } from "../calcul/montant";
 import type { Assure, Beneficiaire, ContactUrgence, Risque, Souscripteur } from "../cotation/saisie";
 import { appliquerFacultatifs, champsInconnus, NON_FOURNI, type NonFourni } from "./dictionnaire";
+import { libelleDuree } from "./duree";
 import type { TypeDocument } from "./emission";
 import type { MentionsDocument, Societe } from "./societe";
 
@@ -22,6 +23,8 @@ export type FormuleSource = {
   tauxCouverture: string | null;
   effectif: number;
   primeUnitaire: string;
+  /** Prime d'un assuré de cette formule (d'une famille pour une formule « Famille »), calculée par le moteur : `primeParUnite`. */
+  primeParAssure: string;
   nette: string;
   accessoires: string;
   taxe: string;
@@ -40,6 +43,8 @@ export type SourceDocument = {
   cs: { libelle: string; visa: string } | null;
   souscripteur: Souscripteur;
   assures: Assure[];
+  /** Ordres des assurés dont la prime n'est pas dans le calcul de la police (adhérents incorporés après la liste initiale) : prime vide. */
+  ordresSansPrime: number[];
   /** null : jamais fournis (cotation ou police d'avant la 4a) ; [] : saisis et laissés vides. */
   beneficiaires: Beneficiaire[] | null;
   contactsUrgence: ContactUrgence[] | null;
@@ -63,6 +68,15 @@ export type SourceDocument = {
   /** doc.auteur_nom (D20) : nom de l'utilisateur qui a créé la cotation. */
   auteurNom: string;
 };
+
+/**
+ * Prime d'un assuré (`assures[].prime`) : celle que le moteur a calculée pour SA formule. Aucun calcul ici. Vide (null) quand
+ * l'assuré n'a pas de formule, que sa formule n'est pas dans le calcul, ou qu'il a été incorporé après la liste initiale.
+ */
+export function primeDeLAssure(a: Pick<Assure, "ordre" | "formule">, formules: readonly Pick<FormuleSource, "code" | "primeParAssure">[], ordresSansPrime: readonly number[]): string | null {
+  if (ordresSansPrime.includes(a.ordre)) return null;
+  return formules.find((f) => f.code === a.formule)?.primeParAssure ?? null;
+}
 
 const ou = <T,>(v: T | undefined | null): T | null => (v === undefined || v === "" ? null : v) as T | null;
 /** Champ du souscripteur : non fourni s'il n'existe pas dans la saisie, vide s'il est saisi vide. */
@@ -115,7 +129,7 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
       sexe: ou(a.sexe),
       lien: ou(a.lien),
       formule: ou(a.formule),
-      prime: NON_FOURNI, // le moteur calcule par formule, pas par assuré
+      prime: certificat ? NON_FOURNI : primeDeLAssure(a, s.formules, s.ordresSansPrime), // H36 : pas de prime sur le certificat
     })),
     // null : jamais fournis (d'avant la 4a) → absents ; [] : saisis et laissés vides → liste vide (D19).
     beneficiaires:
@@ -131,7 +145,7 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
       date_effet: s.dateEffet,
       date_echeance: s.dateEcheance,
       duree_jours: s.joursCouverts,
-      duree_libelle: `${s.joursCouverts} jours`,
+      duree_libelle: libelleDuree(s.dateEffet, s.dateEcheance),
       type_contrat: s.typeContrat ?? NON_FOURNI,
       police_mere: s.policeMere ?? NON_FOURNI,
       nantissement: NON_FOURNI,

@@ -180,7 +180,9 @@ describe("police mère : CP de groupe avec la liste des adhérents en annexe", (
     expect(nombreAssures(derniereDemande())).toBe(3);
     expect(derniereDemande().donnees.beneficiaires).toEqual(benef);
     expect(derniereDemande().donnees.contacts_urgence).toEqual([]);
-    expect(derniereDemande().donnees.police).toMatchObject({ type_contrat: "GROUPE", police_mere: null, duree_libelle: "365 jours" });
+    expect(derniereDemande().donnees.police).toMatchObject({ type_contrat: "GROUPE", police_mere: null, duree_libelle: "1 an" });
+    // assures[].prime vient du moteur : Solo 93 581,33 sur l'année pleine, au franc près.
+    expect((derniereDemande().donnees.assures as { ordre: number; prime: string | null }[]).map((a) => [a.ordre, a.prime])).toEqual([[1, "93581"], [2, "93581"], [3, "93581"]]);
   });
 
   it("un contrat individuel n'impose aucune annexe", async () => {
@@ -228,6 +230,8 @@ describe("incorporation et retrait : nouvelles versions de la liste, nouvelle ve
     expect(v2).toMatchObject({ numero, version: 2 });
     expect(nombreAssures(derniereDemande())).toBe(5);
     expect(derniereDemande().listesEnAnnexe).toEqual(["assures"]);
+    // Les adhérents incorporés après la liste initiale ne sont pas dans le calcul de la police : leur prime reste vide.
+    expect((derniereDemande().donnees.assures as { ordre: number; prime: string | null }[]).map((a) => [a.ordre, a.prime])).toEqual([[1, "93581"], [2, "93581"], [3, "93581"], [4, null], [5, null]]);
     await expect(mettreAJourCp(technique, policeId, null)).rejects.toThrow(/n'a pas changé/);
 
     // Retrait de l'adhérent 2, puis incorporation : le numéro 2 (et 6 ensuite) n'est jamais réutilisé.
@@ -319,6 +323,8 @@ describe("certificat d'adhésion unitaire", () => {
     await incorporerAdherents(technique, policeId, "2026-06-15", [adherent(4)], null);
     await emettreCertificat(technique, policeId, 4, numeroPolice("G"), null);
 
-    expect(derniereDemande().donnees.police).toMatchObject({ date_effet: "2026-06-15", date_echeance: "2026-12-31", duree_jours: 200 });
+    expect(derniereDemande().donnees.police).toMatchObject({ date_effet: "2026-06-15", date_echeance: "2026-12-31", duree_jours: 200, duree_libelle: "200 jours" });
+    // Un certificat n'a pas de prime (H36) : la clé n'existe pas dans ses données.
+    expect("prime" in (derniereDemande().donnees.assures as object[])[0]).toBe(false);
   });
 });

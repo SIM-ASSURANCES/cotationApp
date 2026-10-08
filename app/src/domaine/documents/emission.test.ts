@@ -70,6 +70,7 @@ describe("données d'une cotation T1 (dictionnaire, montants du moteur)", () => 
     cs: null,
     souscripteur: { type: "MORALE", nom: "", prenoms: "", raison_sociale: "ENTREPRISE INVENTÉE", telephone: "", email: "", adresse: "" },
     assures: [],
+    ordresSansPrime: [],
     beneficiaires: null,
     contactsUrgence: null,
     policeMere: null,
@@ -77,7 +78,7 @@ describe("données d'une cotation T1 (dictionnaire, montants du moteur)", () => 
     dateEffet: entreeT1.dateEffet,
     dateEcheance: entreeT1.dateEcheance,
     joursCouverts: r.joursCouverts,
-    formules: r.lignes.map((l, i) => ({ code: l.code, libelle: l.code, tauxCouverture: null, effectif: l.effectif, primeUnitaire: String(entreeT1.lignes[i].primeUnitaire), nette: t(l.arrondi.nette), accessoires: t(l.arrondi.accessoires), taxe: t(l.arrondi.taxe), ttc: t(l.arrondi.ttc) })),
+    formules: r.lignes.map((l, i) => ({ code: l.code, libelle: l.code, tauxCouverture: null, effectif: l.effectif, primeUnitaire: String(entreeT1.lignes[i].primeUnitaire), primeParAssure: t(l.primeParUnite), nette: t(l.arrondi.nette), accessoires: t(l.arrondi.accessoires), taxe: t(l.arrondi.taxe), ttc: t(l.arrondi.ttc) })),
     totaux: { nette: t(r.totaux.arrondi.nette), accessoires: t(r.totaux.arrondi.accessoires), taxe: t(r.totaux.arrondi.taxe), ttc: t(r.totaux.arrondi.ttc) },
     taxe: { tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES" },
     echeances: [],
@@ -109,13 +110,46 @@ describe("données d'une cotation T1 (dictionnaire, montants du moteur)", () => 
     // Non fourni et non facultatif : ABSENT (un modèle qui l'utilise ne se génère pas).
     expect("profession" in d.souscripteur).toBe(false);
     expect("beneficiaires" in d).toBe(false);
-    expect("reference" in d.police).toBe(false);
     // Non fourni mais facultatif : présent et vide.
     expect(d.intermediaires).toEqual([]);
+    expect(d.police.reference).toBeNull(); // facultatif depuis les corrections de la 4a
     expect(d.police.nantissement).toBeNull();
     expect(d.police.police_mere).toBeNull();
     expect(d.doc.empreinte).toBeNull();
     // Fourni depuis la session 4.0.
     expect(d.police.type_contrat).toBe("GROUPE");
+  });
+
+  const assure = (ordre: number, formule: string) => ({ ordre, nom_prenoms: `ASSURÉ ${ordre}`, date_naissance: "" as const, sexe: "" as const, lien: "", formule });
+  type Assures = { assures: { ordre: number; formule: string | null; prime?: string | null }[] };
+
+  it("assures[].prime : la prime de la formule de l'assuré, calculée par le moteur (T1 : Solo 93 581, Famille 252 658)", () => {
+    const d = donneesDocument({ ...source, assures: [assure(1, "SOLO"), assure(2, "FAMILLE"), assure(3, "SOLO")] }) as unknown as Assures;
+
+    expect(d.assures.map((a) => [a.ordre, a.formule, a.prime])).toEqual([
+      [1, "SOLO", "93581"],
+      [2, "FAMILLE", "252658"],
+      [3, "SOLO", "93581"],
+    ]);
+  });
+
+  it("assures[].prime : vide (null) sans formule, pour une formule hors calcul et pour un adhérent incorporé après la liste initiale", () => {
+    const d = donneesDocument({ ...source, assures: [assure(1, "SOLO"), assure(2, ""), assure(3, "INCONNUE"), assure(4, "SOLO")], ordresSansPrime: [4] }) as unknown as Assures;
+
+    expect(d.assures.map((a) => a.prime)).toEqual(["93581", null, null, null]);
+  });
+
+  it("assures[].prime : pas de prime sur un certificat d'adhésion (H36) ; un modèle qui l'utilise ne se génère pas", () => {
+    const d = donneesDocument({ ...source, type: "CERTIFICAT", assures: [assure(1, "SOLO")] }) as unknown as Assures;
+
+    expect("prime" in d.assures[0]).toBe(false);
+  });
+
+  it("police.duree_libelle (H39) : « 1 an » pour une année civile, les jours pour une durée inexacte", () => {
+    const duree = (dateEffet: string, dateEcheance: string) => (donneesDocument({ ...source, dateEffet, dateEcheance }) as { police: { duree_libelle: string; duree_jours: number } }).police;
+
+    expect(duree("2026-01-01", "2026-12-31")).toMatchObject({ duree_libelle: "1 an", duree_jours: r.joursCouverts });
+    expect(duree("2026-07-22", "2027-01-21").duree_libelle).toBe("6 mois");
+    expect(duree("2026-07-22", "2026-12-31").duree_libelle).toBe("163 jours");
   });
 });

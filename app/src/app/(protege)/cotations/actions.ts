@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 
 import type { EtatFormulaire } from "@/composants/types";
 import { accepter, creerBrouillon, modifierBrouillon, refuser, renvoyerEnBrouillon, soumettre, valider } from "@/serveur/cotations";
-import { emettreCotation, emettreCp, reediter } from "@/serveur/documents";
+import { emettreCotation, reediter, soumettreCp } from "@/serveur/documents";
 import { ErreurMetier, type UtilisateurCourant } from "@/serveur/types";
 
 import { avecMessage, champ, executerAction } from "../executer";
@@ -71,9 +71,20 @@ export async function emettrePdfDeCotation(_e: EtatFormulaire, d: FormData): Pro
   return executerAction(async (acteur, ip) => void (await emettreCotation(acteur, id, ip)), "PDF de la cotation émis.", `/cotations/${id}`);
 }
 
+/**
+ * Émission des conditions particulières. Au-dessus du seuil du produit, un profil « Oui (sous seuil) » ne peut pas
+ * émettre : le contrat passe en validation (CDC §4 et §4.1) et un profil « Oui » l'émettra.
+ */
 export async function emettreCpDeCotation(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
   const id = idDe(d);
-  return executerAction(async (acteur, ip) => void (await emettreCp(acteur, id, ip)), "Conditions particulières émises.", `/cotations/${id}`);
+  let enValidation = false;
+  return executerAction(
+    async (acteur, ip) => {
+      enValidation = (await soumettreCp(acteur, id, ip)).statut === "A_VALIDER";
+    },
+    () => (enValidation ? "Le TTC dépasse le seuil du produit : le contrat est en attente de validation." : "Conditions particulières émises."),
+    `/cotations/${id}`,
+  );
 }
 
 export async function reediterDocument(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {

@@ -36,6 +36,7 @@ import { obtenirPrisma } from "./prisma";
 import { lireFormatNumeroPolice, lireImageSociete, lireParametresSociete } from "./societe";
 import { stockage } from "./stockage";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
+import { cloreValidationContrat, controlerSeuilContrat, demanderValidationContrat, exigerAutreQueLeDemandeur } from "./validation-contrat";
 
 /**
  * Documents émis (CDC §6.8, §14) : émission (fusion, assemblage, QR code, empreinte, stockage en
@@ -112,6 +113,7 @@ function montantsDu(entree: EntreeCalcul, contexte: ContexteProduit) {
     tauxCouverture: contexte.formules.get(l.code)?.tauxCouverture ?? null,
     effectif: l.effectif,
     primeUnitaire: String(entree.lignes[i].primeUnitaire),
+    primeParAssure: t(l.primeParUnite),
     nette: t(l.arrondi.nette),
     accessoires: t(l.arrondi.accessoires),
     taxe: t(l.arrondi.taxe),
@@ -363,6 +365,7 @@ function sourceDeCotation(
     cs: pieces.cs ? { libelle: pieces.cs.libelle, visa: contexte.references.csVisa ?? pieces.cs.visa ?? "" } : null,
     souscripteur: c.souscripteur as unknown as Souscripteur,
     assures: c.assures as unknown as Assure[],
+    ordresSansPrime: [],
     beneficiaires: (c.beneficiaires as unknown as Beneficiaire[] | null) ?? null,
     contactsUrgence: (c.contactsUrgence as unknown as ContactUrgence[] | null) ?? null,
     policeMere: null,
@@ -473,6 +476,14 @@ export const versionsAdherentsDe = (police: PoliceChargee): VersionAdherents[] =
     concernes: v.concernes as unknown as number[],
   }));
 
+/** Adhérents ajoutés après la liste initiale : leur prime n'est pas dans le calcul de la police (assures[].prime reste vide). */
+const ordresIncorpores = (police: PoliceChargee): number[] => {
+  const initiale = police.adherents.find((v) => v.motif === "INITIALE");
+  if (!initiale) return [];
+  const dansLeCalcul = new Set((initiale.adherents as unknown as Assure[]).map((a) => a.ordre));
+  return (police.assures as unknown as Assure[]).filter((a) => !dansLeCalcul.has(a.ordre)).map((a) => a.ordre);
+};
+
 const derniereVersionAdherents = (police: PoliceChargee): number | null => (police.adherents.length === 0 ? null : Math.max(...police.adherents.map((v) => v.numero)));
 
 /**
@@ -501,6 +512,7 @@ async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<
     cs: pieces.cs ? { libelle: pieces.cs.libelle, visa: contexte.references.csVisa ?? "" } : null,
     souscripteur: police.souscripteur as unknown as Souscripteur,
     assures: police.assures as unknown as Assure[],
+    ordresSansPrime: ordresIncorpores(police),
     beneficiaires: (police.beneficiaires as unknown as Beneficiaire[] | null) ?? null,
     contactsUrgence: (police.contactsUrgence as unknown as ContactUrgence[] | null) ?? null,
     policeMere: null,
@@ -542,8 +554,8 @@ async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<
   };
 }
 
-/** Émission des CP d'une police (cotation acceptée) : CP → annexes → CS → CG, visas vérifiés (§6.8). */
-export async function emettreCp(acteur: UtilisateurCourant, cotationId: number, adresseIp: string | null): Promise<DocumentLu> {
+/** Vérifications communes à la demande et à l'émission des CP d'une police : droit, police, pas déjà émises, seuil. */
+async function preparerCp(acteur: UtilisateurCourant, cotationId: number) {
   await exigerSurType(acteur, "CP", true);
   const c = await chargerCotation(cotationId);
   const police = await obtenirPrisma().police.findUnique({ where: { cotationId }, include: { adherents: true } });
@@ -551,7 +563,38 @@ export async function emettreCp(acteur: UtilisateurCourant, cotationId: number, 
   if (await obtenirPrisma().documentEmis.findFirst({ where: { policeId: police.id, type: "CP" } })) {
     throw new ErreurMetier("Les conditions particulières de cette police sont déjà émises : utilisez « Rééditer ».");
   }
-  return produire(acteur, await productionCp(c, police), adresseIp);
+  return { c, police, seuil: await controlerSeuilContrat(acteur, police, c) };
+}
+
+const messageSeuil = (ttc: string, seuil: string | null) =>
+  `Le TTC du contrat (${ttc} F) dépasse le seuil de validation du produit (${seuil ?? "?"} F) : le contrat doit être validé, puis émis, par un profil habilité (CDC §4.1).`;
+
+/**
+ * Émission des CP d'une police (cotation acceptée) : CP → annexes → CS → CG, visas vérifiés (§6.8).
+ * Un profil « Oui (sous seuil) » ne peut pas émettre au-dessus du seuil du produit : il passe par `soumettreCp`, qui
+ * met le contrat en validation. Un profil « Oui » qui émet clôt la demande de validation qui existerait (D22).
+ */
+export async function emettreCp(acteur: UtilisateurCourant, cotationId: number, adresseIp: string | null): Promise<DocumentLu> {
+  const { c, police, seuil } = await preparerCp(acteur, cotationId);
+  if (seuil.requise) throw new ErreurMetier(messageSeuil(seuil.ttc, seuil.seuil));
+  await exigerAutreQueLeDemandeur(acteur, police.id);
+  const document = await produire(acteur, await productionCp(c, police), adresseIp);
+  await cloreValidationContrat(acteur, police.id, police.numero, adresseIp);
+  return document;
+}
+
+/** Résultat de la demande d'émission des CP : émises, ou passées en validation (au-dessus du seuil du produit). */
+export type ResultatCp = { statut: "EMISE"; document: DocumentLu } | { statut: "A_VALIDER"; ttc: string; seuil: string | null; demandeePar: string };
+
+/**
+ * Point d'entrée des écrans : émet les CP, ou, pour un profil « Oui (sous seuil) » dont le contrat dépasse le seuil du
+ * produit, enregistre la demande de validation (« À valider ») sans rien émettre. CDC §4 et §4.1, D22.
+ */
+export async function soumettreCp(acteur: UtilisateurCourant, cotationId: number, adresseIp: string | null): Promise<ResultatCp> {
+  const { police, seuil } = await preparerCp(acteur, cotationId);
+  if (!seuil.requise) return { statut: "EMISE", document: await emettreCp(acteur, cotationId, adresseIp) };
+  const demande = await demanderValidationContrat(acteur, police.id, police.numero, seuil, adresseIp);
+  return { statut: "A_VALIDER", ttc: seuil.ttc, seuil: seuil.seuil, demandeePar: demande.demandeePar };
 }
 
 /**
@@ -620,6 +663,7 @@ export async function emettreCertificat(acteur: UtilisateurCourant, policeId: nu
     cs: citees.cs ? { libelle: citees.cs.libelle, visa: contexte.references.csVisa ?? citees.cs.visa ?? "" } : null,
     souscripteur: police.souscripteur as unknown as Souscripteur,
     assures: [adherent],
+    ordresSansPrime: [],
     beneficiaires: null,
     contactsUrgence: null,
     policeMere: police.numero,
@@ -627,7 +671,7 @@ export async function emettreCertificat(acteur: UtilisateurCourant, policeId: nu
     dateEffet: adhesion,
     dateEcheance: depuisDate(police.dateEcheance),
     joursCouverts: ecartEnJours(adhesion, depuisDate(police.dateEcheance)) + 1,
-    formules: formule ? [{ code: adherent.formule, libelle: formule.libelle, tauxCouverture: formule.tauxCouverture, effectif: 1, primeUnitaire: "0", ...zero }] : [],
+    formules: formule ? [{ code: adherent.formule, libelle: formule.libelle, tauxCouverture: formule.tauxCouverture, effectif: 1, primeUnitaire: "0", primeParAssure: "0", ...zero }] : [],
     totaux: zero,
     taxe: { tauxPourcent: "0", assiette: "NETTE" },
     echeances: [],

@@ -299,6 +299,27 @@ describe("T13 : forçage de prime et double validation", () => {
     }
   });
 
+  it("valider une cotation ne dépend que du droit « Valider une cotation », jamais de « Forcer une prime »", async () => {
+    // La DG a « Forcer une prime : Valide » mais pas « Valider une cotation » : elle ne peut pas valider (test précédent).
+    // Dans l'autre sens, la Technique garde la validation même sans aucun droit sur le forçage.
+    const id = await creerBrouillon(gestionnaire, grosse(), null);
+    await soumettre(gestionnaire, id, null);
+    try {
+      await enregistrerDroit(admin, { profil: "TECHNIQUE", action: "FORCER_PRIME", niveau: "AUCUN" }, null);
+      await expect(valider(technique, id, null)).resolves.toMatch(/^COT-/);
+    } finally {
+      await enregistrerDroit(admin, { profil: "TECHNIQUE", action: "FORCER_PRIME", niveau: "VALIDE" }, null);
+    }
+  });
+
+  it("le renvoi en brouillon par un valideur suit le même droit : « Forcer une prime : Valide » ne suffit pas", async () => {
+    const id = await creerBrouillon(gestionnaire, grosse(), null);
+    await soumettre(gestionnaire, id, null);
+
+    await expect(renvoyerEnBrouillon(dg, id, "Refus de la Direction", null)).rejects.toBeInstanceOf(ErreurAcces);
+    await expect(renvoyerEnBrouillon(technique, id, "Seuil à revoir avec le client", null)).resolves.toBeUndefined();
+  });
+
   it("H9 (T13 adapté) : B modifie le brouillon de A, B ne peut pas valider ; un troisième valideur le peut", async () => {
     const id = await creerBrouillon(commercial, forcee(), null);
     await modifierBrouillon(technique, id, forcee(), null); // B = technique modifie le brouillon de A = commercial

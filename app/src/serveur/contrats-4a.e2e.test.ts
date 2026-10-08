@@ -214,6 +214,7 @@ describe("T6 : VOL (IARD), cases à cocher et date d'émission dynamique — doc
       cs: null,
       souscripteur: { type: "PHYSIQUE", nom: "KOUADIO", prenoms: "Awa", raison_sociale: "", telephone: "", email: "", adresse: "" },
       assures: [],
+      ordresSansPrime: [],
       beneficiaires: [],
       contactsUrgence: [],
       policeMere: null,
@@ -222,7 +223,7 @@ describe("T6 : VOL (IARD), cases à cocher et date d'émission dynamique — doc
       dateEcheance: "2026-12-31",
       joursCouverts: 365,
       // Montants de FIXTURE (taux de 10 % inventé, sans valeur fiscale) : le moteur ne calcule pas l'IARD.
-      formules: [{ code: "STANDARD", libelle: "Standard", tauxCouverture: null, effectif: 1, primeUnitaire: "80000", nette: "80000", accessoires: "5000", taxe: "8500", ttc: "93500" }],
+      formules: [{ code: "STANDARD", libelle: "Standard", tauxCouverture: null, effectif: 1, primeUnitaire: "80000", primeParAssure: "80000", nette: "80000", accessoires: "5000", taxe: "8500", ttc: "93500" }],
       totaux: { nette: "80000", accessoires: "5000", taxe: "8500", ttc: "93500" },
       taxe: { tauxPourcent: "10", assiette: "NETTE_ACCESSOIRES" },
       echeances: [],

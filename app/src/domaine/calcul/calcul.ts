@@ -86,6 +86,12 @@ export type ResultatLigne = {
   arrondi: Composants;
   /** TTC arrondi divisé par l'effectif, au franc : TTC par personne ou par famille. */
   ttcParUnite: Montant;
+  /**
+   * Prime de l'unité (une personne, ou une famille) : la prime nette exacte de la ligne, prorata et prime minimale
+   * compris, divisée par l'effectif, puis arrondie selon la règle du produit. C'est la valeur de `assures[].prime`
+   * des documents : le générateur ne calcule rien.
+   */
+  primeParUnite: Montant;
 };
 
 export type ResultatCalcul = {
@@ -204,7 +210,14 @@ function accessoiresDe(ligne: LigneEntree, nette: Montant): Montant {
 
 function resultatLigne(code: string, effectif: number, exact: Composants, regle: RegleArrondi, moteur: VersionMoteur): ResultatLigne {
   const arrondi = arrondirComposants(exact, regle, moteur);
-  return { code, effectif, exact, arrondi, ttcParUnite: arrondir(arrondi.ttc.div(effectif), 1, "PROCHE") };
+  return {
+    code,
+    effectif,
+    exact,
+    arrondi,
+    ttcParUnite: arrondir(arrondi.ttc.div(effectif), 1, "PROCHE"),
+    primeParUnite: arrondir(exact.nette.div(effectif), regle.precision, regle.sens),
+  };
 }
 
 /**

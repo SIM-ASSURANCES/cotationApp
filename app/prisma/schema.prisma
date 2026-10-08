@@ -46,7 +46,7 @@ model ProfilDroit {
   profilId Int    @map("profil_id")
   /// Code d'action (CREER_COTATION...), voir src/domaine/droits.ts.
   action   String
-  /// Code de niveau (AUCUN, LECTURE, DEMANDE, PROPOSITION, OUI_SOUS_SEUIL, OUI, VALIDE).
+  /// Code de niveau (AUCUN, LECTURE, DEMANDE, OUI_SOUS_SEUIL, OUI, VALIDE).
   niveau   String
   profil   Profil @relation(fields: [profilId], references: [id], onDelete: Cascade)
 
@@ -351,6 +351,8 @@ model Police {
   cotation         Cotation           @relation(fields: [cotationId], references: [id], onDelete: Restrict)
   /// Police de groupe : historique des listes d'adhérents (incorporations, retraits).
   adherents        AdherentsVersion[]
+  /// Demandes de validation de l'émission du contrat (TTC au-dessus du seuil du produit, CDC §4.1).
+  validations      ValidationContrat[]
 
   @@map("polices")
 }
@@ -375,6 +377,30 @@ model AdherentsVersion {
 
   @@unique([policeId, numero])
   @@map("adherents_versions")
+}
+
+/// Validation de l'émission des conditions particulières (CDC §4 « Oui (sous seuil) », §4.1, D22). Un profil dont le
+/// droit « Émettre un contrat » est « Oui (sous seuil) » ne peut pas émettre un contrat dont le TTC dépasse le seuil du
+/// produit : sa demande est enregistrée ici (A_VALIDER) ; un profil « Oui » qui n'est pas le demandeur l'émet, et la
+/// demande passe à VALIDEE. Une seule demande ouverte par police (index partiel, voir la migration).
+model ValidationContrat {
+  id                    Int       @id @default(autoincrement())
+  policeId              Int       @map("police_id")
+  /// TTC du contrat et seuil du produit au moment de la demande.
+  ttc                   Decimal   @db.Decimal(18, 2)
+  seuil                 Decimal   @db.Decimal(18, 6)
+  /// A_VALIDER, puis VALIDEE.
+  statut                String
+  demandeParId          Int       @map("demande_par_id")
+  demandeParIdentifiant String    @map("demande_par_identifiant")
+  demandeLe             DateTime  @default(now()) @map("demande_le")
+  valideParId           Int?      @map("valide_par_id")
+  valideParIdentifiant  String?   @map("valide_par_identifiant")
+  valideLe              DateTime? @map("valide_le")
+  police                Police    @relation(fields: [policeId], references: [id], onDelete: Restrict)
+
+  @@index([policeId])
+  @@map("validations_contrat")
 }
 
 /// Modèle Word de la bibliothèque (CDC §6.1). Le type et le code ne changent jamais ; le contenu,

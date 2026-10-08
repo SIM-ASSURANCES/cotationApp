@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { dateValide } from "@/domaine/calcul/dates";
 import { formaterMontant, type Montant } from "@/domaine/calcul/montant";
+import { LIBELLE_TYPE_CONTRAT, TYPES_CONTRAT, estTypeContrat } from "@/domaine/calcul/taxes";
 import { peutLire } from "@/domaine/droits";
 import { calculerPourProduit, aujourdhui, listerVersions, listerProduits, type ReponseCalcul } from "@/serveur/parametrage";
 import { niveauDuProfil } from "@/serveur/droits";
@@ -19,7 +20,7 @@ function Resultats({ r }: { r: ReponseCalcul }) {
     <section className="mt-8">
       <h2 className="mb-1 text-lg font-semibold">Résultat</h2>
       <p className="mb-3 text-sm text-zinc-700">
-        Paramétrage du produit en vigueur le {r.versionDu} · taxe {r.taxe.branche} {r.taxe.tauxPourcent.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "").replace(".", ",")} % (en vigueur le {r.taxe.dateEffet}) ·{" "}
+        Paramétrage du produit en vigueur le {r.versionDu} · taxe {r.taxe.branche} ({r.taxe.typeContrat ? LIBELLE_TYPE_CONTRAT[r.taxe.typeContrat].toLowerCase() : "tous types"}) {r.taxe.tauxPourcent.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "").replace(".", ",")} % (en vigueur le {r.taxe.dateEffet}) ·{" "}
         {x.joursCouverts} jour(s) couverts, coefficient de prorata {x.coefProrata.toDecimalPlaces(5).toString().replace(".", ",")}
       </p>
       {r.doubleValidationRequise ? (
@@ -159,6 +160,7 @@ export default async function PageCalcul(props: PageProps<"/calcul">) {
   const dateEcheance = premier(q.dateEcheance);
   const dateDocument = premier(q.dateDocument) || aujourdhui();
   const tranches = premier(q.tranches) || "1";
+  const typeContrat = premier(q.typeContrat);
   const formules = donnees?.versions[0]?.formules ?? [];
 
   let resultat: ReponseCalcul | null = null;
@@ -173,6 +175,8 @@ export default async function PageCalcul(props: PageProps<"/calcul">) {
       erreur = "Dates invalides : utilisez le format AAAA-MM-JJ.";
     } else if (lignes.length === 0) {
       erreur = "Saisissez l'effectif d'au moins une formule.";
+    } else if (!estTypeContrat(typeContrat)) {
+      erreur = "Choisissez le type de contrat : il détermine le taux de taxe.";
     } else {
       try {
         resultat = await calculerPourProduit(utilisateur, {
@@ -180,6 +184,7 @@ export default async function PageCalcul(props: PageProps<"/calcul">) {
           dateEffet,
           dateEcheance,
           dateDocument,
+          typeContrat,
           lignes: lignes.map((l) => ({ codeFormule: l.codeFormule, effectif: Number(l.texte) })),
           nombreTranches: Number(tranches),
         });
@@ -216,6 +221,17 @@ export default async function PageCalcul(props: PageProps<"/calcul">) {
             <label className="mb-4 block text-sm font-medium">
               Date du document (paramètres en vigueur à cette date)
               <input name="dateDocument" defaultValue={dateDocument} className={entree} />
+            </label>
+            <label className="mb-4 block text-sm font-medium">
+              Type de contrat (choisit le taux de taxe)
+              <select name="typeContrat" defaultValue={typeContrat} required className={entree}>
+                <option value="">— Choisir —</option>
+                {TYPES_CONTRAT.map((t) => (
+                  <option key={t} value={t}>
+                    {LIBELLE_TYPE_CONTRAT[t]}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="mb-4 block text-sm font-medium">
               Nombre de tranches

@@ -3,7 +3,7 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 
 import type { DateIso } from "@/domaine/calcul/dates";
-import { cleCompteur, formaterNumero, formaterNumeroPolice, type PrefixeNumero } from "@/domaine/cotation/numerotation";
+import { cleCompteur, formaterNumero, type PrefixeNumero } from "@/domaine/cotation/numerotation";
 
 /**
  * Numérotation continue et SANS TROU (CDC §11.4). Le compteur est une ligne de la table `sequences` :
@@ -23,8 +23,4 @@ async function incrementer(tx: Prisma.TransactionClient, cle: string): Promise<n
 
 export async function allouerNumero(tx: Prisma.TransactionClient, prefixe: PrefixeNumero, date: DateIso): Promise<string> {
   return formaterNumero(prefixe, date, await incrementer(tx, cleCompteur(prefixe, date)));
-}
-
-export async function allouerNumeroPolice(tx: Prisma.TransactionClient, date: DateIso): Promise<string> {
-  return formaterNumeroPolice(date, await incrementer(tx, cleCompteur("POL", date)));
 }

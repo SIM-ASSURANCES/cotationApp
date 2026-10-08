@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
-import { Montserrat } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-// Montserrat : police institutionnelle de la charte. Téléchargée à la construction
-// (`next build`), puis servie par l'application elle-même : aucun appel à Google à l'exécution.
-const montserrat = Montserrat({ subsets: ["latin"], variable: "--font-montserrat" });
+// Montserrat : police institutionnelle de la charte, hébergée dans le dépôt (polices/, licence SIL OFL 1.1
+// dans polices/OFL.txt). Aucun téléchargement, ni à la construction ni à l'exécution.
+const montserrat = localFont({
+  src: [
+    { path: "./polices/Montserrat-wght.ttf", weight: "100 900", style: "normal" },
+    { path: "./polices/Montserrat-Italic-wght.ttf", weight: "100 900", style: "italic" },
+  ],
+  variable: "--font-montserrat",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "SIM Documents",

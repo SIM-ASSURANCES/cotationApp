@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 
 import { FormulaireAction } from "@/composants/FormulaireAction";
 import { formaterMontant, montant, type Montant } from "@/domaine/calcul/montant";
+import { LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
+import { FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
 import { LIBELLE_STATUT, peutAccepter, peutEtreValidee, peutModifier } from "@/domaine/cotation/statuts";
 import { LIBELLE_RAISON } from "@/domaine/cotation/validation";
 import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
@@ -10,6 +12,7 @@ import { listerMotifsRefus } from "@/serveur/clients";
 import { lireCotation } from "@/serveur/cotations";
 import { documentsDe } from "@/serveur/documents";
 import { niveauDuProfil } from "@/serveur/droits";
+import { lireFormatNumeroPolice } from "@/serveur/societe";
 import { exigerDroit } from "@/serveur/session";
 
 import { accepterCotation, emettreCpDeCotation, emettrePdfDeCotation, reediterDocument, refuserCotation, renvoyerCotation, soumettreCotation, validerCotation } from "../actions";
@@ -26,21 +29,25 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
     notFound();
   }
 
-  const [niveauCotation, niveauForcage, niveauContrat, motifs, documents] = await Promise.all([
+  const [niveauCotation, niveauValidation, niveauContrat, motifs, documents, formatPolice] = await Promise.all([
     niveauDuProfil(utilisateur.profil, "CREER_COTATION"),
-    niveauDuProfil(utilisateur.profil, "FORCER_PRIME"),
+    niveauDuProfil(utilisateur.profil, "VALIDER_COTATION"),
     niveauDuProfil(utilisateur.profil, "EMETTRE_CONTRAT"),
     listerMotifsRefus(),
     documentsDe(utilisateur, { cotationId: c.id }),
+    lireFormatNumeroPolice(),
   ]);
   const pdfCotation = documents.filter((d) => d.type === "COTATION");
   const pdfCp = documents.filter((d) => d.type === "CP");
   const emise = c.numero !== null && c.statut !== "BROUILLON" && c.statut !== "A_VALIDER";
   const derniere = (numero: string) => Math.max(...documents.filter((x) => x.numero === numero).map((x) => x.version));
   const estAuteur = c.auteurId === utilisateur.id;
+  // H9 : qui a créé ou modifié la cotation ne la valide pas.
+  const estContributeur = estAuteur || c.contributeurs.includes(utilisateur.id);
   const agit = peutAgir(niveauCotation);
   const x = c.resultat;
   const forcees = c.lignes.filter((l) => l.primeForcee !== null);
+  const accessoiresSaisis = c.lignes.filter((l) => l.accessoireSaisi != null);
   const nom = c.souscripteur.type === "MORALE" ? c.souscripteur.raison_sociale : `${c.souscripteur.nom} ${c.souscripteur.prenoms}`.trim();
 
   return (
@@ -62,6 +69,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
 
       <section className="mb-6 grid max-w-4xl gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
         <p><strong>Produit :</strong> {c.produit.code} — {c.produit.libelle}</p>
+        <p><strong>Type de contrat :</strong> {c.typeContrat ? LIBELLE_TYPE_CONTRAT[c.typeContrat] : "non renseigné (cotation antérieure)"}</p>
         <p><strong>Souscripteur :</strong> {nom} ({c.souscripteur.type === "MORALE" ? "personne morale" : "personne physique"})</p>
         <p><strong>Période :</strong> du {formatDate(c.dateEffet)} au {formatDate(c.dateEcheance)} ({x.joursCouverts} jours)</p>
         <p><strong>Établie le :</strong> {formatDate(c.dateEtablissement)}</p>
@@ -120,6 +128,12 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         <p className="mt-3 rounded border border-bordure bg-surface p-3 text-sm">
           <strong>Prime forcée (information interne, non affichée au client) :</strong>{" "}
           {forcees.map((l) => `${l.code} : tarif ${montant(l.primeTarif).toString()} → forcée ${montant(l.primeForcee!).toString()}`).join(" ; ")}. Motif : {c.motifForcage}.
+        </p>
+      ) : null}
+      {accessoiresSaisis.length > 0 ? (
+        <p className="mt-3 rounded border border-bordure bg-surface p-3 text-sm">
+          <strong>Accessoires modifiés dans la cotation :</strong>{" "}
+          {accessoiresSaisis.map((l) => `${l.code} : paramétrage ${montant(l.accessoireTarif ?? "0").toString()} → ${montant(l.accessoireSaisi!).toString()}`).join(" ; ")} (journalisé).
         </p>
       ) : null}
       {c.echeancier ? (
@@ -218,7 +232,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           )}
         </div>
 
-        {peutModifier(c.statut) && estAuteur && agit ? (
+        {peutModifier(c.statut) && agit ? (
           <div className="flex flex-wrap items-start gap-4 rounded border border-bordure p-4">
             <Link href={`/cotations/${c.id}/modifier`} className="rounded border border-sim-bleu px-4 py-2 font-semibold text-sim-bleu hover:bg-surface">Modifier le brouillon</Link>
             <FormulaireAction action={soumettreCotation} libelleBouton="Soumettre (émettre)">
@@ -231,19 +245,21 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         {peutEtreValidee(c.statut) ? (
           <div className="rounded border border-bordure p-4">
             <h2 className="mb-2 font-semibold">Cotation à valider</h2>
-            {estAuteur ? (
-              <p className="mb-3 text-sm">Vous êtes l'auteur : un autre valideur (Technique ou Direction Générale) doit valider. Vous pouvez la renvoyer en brouillon pour la modifier.</p>
+            {estContributeur ? (
+              <p className="mb-3 text-sm">
+                Vous avez {estAuteur ? "créé" : "modifié"} cette cotation : un autre valideur (profil Technique) doit la valider.{estAuteur ? " Vous pouvez la renvoyer en brouillon pour la modifier." : ""}
+              </p>
             ) : null}
-            {peutValider(niveauForcage) && !estAuteur ? (
+            {peutValider(niveauValidation) && !estContributeur ? (
               <FormulaireAction action={validerCotation} libelleBouton="Valider et émettre" className="mb-4">
                 <input type="hidden" name="id" value={c.id} />
               </FormulaireAction>
             ) : null}
-            {estAuteur || peutValider(niveauForcage) ? (
+            {estAuteur || peutValider(niveauValidation) ? (
               <FormulaireAction action={renvoyerCotation} libelleBouton="Renvoyer en brouillon" discret>
                 <input type="hidden" name="id" value={c.id} />
                 <label className="mb-3 block text-sm font-medium">
-                  {estAuteur ? "Commentaire (facultatif)" : "Raison du renvoi (obligatoire)"}
+                  {estAuteur ? "Commentaire (facultatif)" : "Motif du renvoi (obligatoire)"}
                   <input name="commentaire" className={entree} autoComplete="off" />
                 </label>
               </FormulaireAction>
@@ -264,7 +280,14 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
                   <input type="checkbox" name="retenue" value={l.code} defaultChecked /> {c.libelles[l.code] ?? l.code}
                 </label>
               ))}
-              <div className="mb-3" />
+              <label className="mb-3 mt-3 block text-sm font-medium">
+                Numéro de police attribué par SIM (obligatoire)
+                <input name="numeroPolice" required className={entree} autoComplete="off" placeholder="SCD-2026-000088-G00000" />
+                <span className="mt-1 block text-xs font-normal text-zinc-600">
+                  Format contrôlé : <code>{formatPolice}</code>
+                  {formatPolice === FORMAT_NUMERO_POLICE_DEFAUT ? " (par défaut)" : ""}. Le module ne génère jamais ce numéro.
+                </span>
+              </label>
             </FormulaireAction>
             <FormulaireAction action={refuserCotation} libelleBouton="Enregistrer le refus" discret>
               <input type="hidden" name="id" value={c.id} />

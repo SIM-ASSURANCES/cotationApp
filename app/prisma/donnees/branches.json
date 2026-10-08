@@ -1,0 +1,9 @@
+{
+  "source": "Branches citées par la Direction Technique le 08/10/2026 (D18). La liste est paramétrable depuis l'écran « Branches » ; les produits hors tableau (SECURMOTO, RELAXVOYAGE, SECURECOLTE…) sont l'hypothèse H32.",
+  "lignes": [
+    { "code": "IA", "libelle": "Individuelle accident" },
+    { "code": "DECES", "libelle": "Décès" },
+    { "code": "SANTE", "libelle": "Santé" },
+    { "code": "IARD", "libelle": "Incendie, accidents et risques divers (IARD)" }
+  ]
+}

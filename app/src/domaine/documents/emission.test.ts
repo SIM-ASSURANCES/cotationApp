@@ -83,6 +83,8 @@ describe("données d'une cotation T1 (dictionnaire, montants du moteur)", () => 
     societe: SOCIETE_DEFAUT.societe,
     mentions: SOCIETE_DEFAUT.document,
     urlVerification: "https://exemple.ci/verif/jeton",
+    typeContrat: "GROUPE",
+    auteurNom: "AUTEUR Inventé",
   };
 
   it("montants identiques à T1, dans les noms du dictionnaire", () => {
@@ -93,7 +95,24 @@ describe("données d'une cotation T1 (dictionnaire, montants du moteur)", () => 
     ]);
     expect(d.prime).toMatchObject({ ttc: "15888000", taux_taxe: "1.5" });
     expect(d.prime.base_taxe).toBe(String(Number(d.prime.nette) + Number(d.prime.accessoires)));
-    expect(d.doc).toMatchObject({ type: "COTATION", numero: "COT-2026-10-0001", version: "v1", date_validite: "2027-01-06", url_verification: "https://exemple.ci/verif/jeton", empreinte: null });
-    expect(d.souscripteur).toMatchObject({ type: "MORALE", raison_sociale: "ENTREPRISE INVENTÉE", nom: null, profession: null });
+    expect(d.doc).toMatchObject({ type: "COTATION", numero: "COT-2026-10-0001", version: "v1", date_validite: "2027-01-06", url_verification: "https://exemple.ci/verif/jeton", empreinte: null, auteur_nom: "AUTEUR Inventé" });
+    expect(d.souscripteur).toMatchObject({ type: "MORALE", raison_sociale: "ENTREPRISE INVENTÉE", nom: null });
+  });
+
+  it("option b de H19 (D19) : un champ non fourni est absent, sauf s'il est facultatif (rendu vide)", () => {
+    const d = donneesDocument(source) as Record<string, Record<string, unknown>>;
+    // Connu mais vide : présent, null.
+    expect(d.souscripteur.nom).toBeNull();
+    // Non fourni et non facultatif : ABSENT (un modèle qui l'utilise ne se génère pas).
+    expect("profession" in d.souscripteur).toBe(false);
+    expect("beneficiaires" in d).toBe(false);
+    expect("reference" in d.police).toBe(false);
+    // Non fourni mais facultatif : présent et vide.
+    expect(d.intermediaires).toEqual([]);
+    expect(d.police.nantissement).toBeNull();
+    expect(d.police.police_mere).toBeNull();
+    expect(d.doc.empreinte).toBeNull();
+    // Fourni depuis la session 4.0.
+    expect(d.police.type_contrat).toBe("GROUPE");
   });
 });

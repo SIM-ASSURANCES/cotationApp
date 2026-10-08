@@ -6,6 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { Analyse } from "@/domaine/documents/analyse";
 
+import { assurerBranche } from "./branches-test";
 import { lireJournal } from "./audit";
 import { initialiserProfilsEtDroits } from "./droits";
 import { remplacerGenerateur, type DemandePdf } from "./generateur";
@@ -112,6 +113,7 @@ beforeAll(async () => {
   admin = await compte(id);
   [technique, technique2, dg, commercial] = [await nouveauCompte("TECHNIQUE"), await nouveauCompte("TECHNIQUE"), await nouveauCompte("DIRECTION_GENERALE"), await nouveauCompte("COMMERCIAL")];
   produit = CODE("PRD");
+  await assurerBranche("SANTE");
   await creerProduit(technique, { code: produit, libelle: "Produit de test", gamme: "RELAX", branche: "SANTE" }, null);
 });
 

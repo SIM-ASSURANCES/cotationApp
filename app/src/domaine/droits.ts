@@ -26,7 +26,12 @@ export const ACTIONS = [
   { code: "PARAMETRER_PRODUITS", libelle: "Paramétrer produits, taxes, arrondis" },
   { code: "GERER_UTILISATEURS", libelle: "Gérer utilisateurs, droits, dossier partagé" },
   { code: "CONSULTER_AUDIT", libelle: "Consulter le journal d'audit" },
+  // Extension hors tableau du CDC §4 (réponse H7 de la Technique, D18) : droit paramétrable.
+  { code: "VALIDER_COTATION", libelle: "Valider une cotation (prime forcée ou seuil dépassé)" },
 ] as const;
+
+/** Actions ajoutées au tableau du CDC §4 par une décision consignée (decisions.md). */
+export const ACTIONS_HORS_CDC: readonly CodeAction[] = ["VALIDER_COTATION"];
 
 export type CodeAction = (typeof ACTIONS)[number]["code"];
 
@@ -64,6 +69,8 @@ const LIGNES: Record<CodeAction, readonly CodeNiveau[]> = {
   PARAMETRER_PRODUITS: [A, A, O, P, V, A],
   GERER_UTILISATEURS: [A, A, A, A, A, O],
   CONSULTER_AUDIT: [A, A, L, A, L, L],
+  // H7 (D18) : la validation des cotations est réservée au profil Technique (droit paramétrable).
+  VALIDER_COTATION: [A, A, V, A, A, A],
 };
 
 export function droitsParDefaut(): MatriceDroits {

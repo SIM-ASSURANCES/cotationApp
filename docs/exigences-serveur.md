@@ -8,7 +8,7 @@ Fiche destinée à l'administrateur du serveur et au superviseur. Depuis la déc
 | --- | --- | --- |
 | Système | Linux 64 bits (distribution à préciser) ; VPS du portail RH | à confirmer |
 | Docker | Docker Engine + plugin Compose v2 | à confirmer |
-| Accès Internet sortant | à la construction : images Docker, paquets Debian, npm, PyPI, Google Fonts (Montserrat). À l'exécution : aucun | à confirmer |
+| Accès Internet sortant | à la construction : images Docker, paquets Debian, npm, PyPI. À l'exécution : aucun | à confirmer |
 | Proxy inverse HTTPS | certificat valide sur le domaine de l'application, transmission de `Host`, `X-Forwarded-For`, `X-Forwarded-Proto` | à confirmer (Q1) |
 | Pare-feu | ouvrir uniquement 80 et 443 | |
 | Domaine | nom de domaine de l'application | à définir par le superviseur |

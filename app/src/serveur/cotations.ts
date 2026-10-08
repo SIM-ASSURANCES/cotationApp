@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { Prisma } from "@/generated/prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 
 import { calculer, type EntreeCalcul, type ResultatCalcul } from "@/domaine/calcul/calcul";
 import type { DateIso } from "@/domaine/calcul/dates";
@@ -34,12 +34,14 @@ import {
   valideurAutorise,
   type RaisonValidation,
 } from "@/domaine/cotation/validation";
+import { normaliserNumeroPolice, problemesNumeroPolice } from "@/domaine/cotation/police";
+import { estTypeContrat, type TypeContrat } from "@/domaine/calcul/taxes";
 import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
 
 import { journaliser, type ActeurAudit } from "./audit";
 import { versSouscripteur } from "./clients";
 import { niveauDuProfil } from "./droits";
-import { allouerNumero, allouerNumeroPolice } from "./numerotation";
+import { allouerNumero } from "./numerotation";
 import {
   aujourdhui,
   construireEntree,
@@ -49,6 +51,7 @@ import {
   type VersionProduit,
 } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
+import { lireFormatNumeroPolice } from "./societe";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 
 const auteur = (u: UtilisateurCourant): ActeurAudit => ({ id: u.id, identifiant: u.identifiant });
@@ -61,6 +64,8 @@ type Tx = Prisma.TransactionClient;
 export type SaisieCotation = {
   codeProduit: string;
   clientId: number | null;
+  /** police.type_contrat : choisit le taux de taxe (D18). Texte lu dans le formulaire, contrôlé ici. */
+  typeContrat: TypeContrat | string;
   souscripteur: Souscripteur;
   dateEffet: DateIso;
   dateEcheance: DateIso;
@@ -71,8 +76,12 @@ export type SaisieCotation = {
   risque: Risque;
 };
 
-/** Ligne stockée : le tarif ET la prime retenue, pour que le forçage reste visible. */
-type LigneStockee = { code: string; effectif: number; primeTarif: string; primeForcee: string | null };
+/**
+ * Ligne stockée : le tarif ET la prime retenue, pour que le forçage reste visible ; la valeur des
+ * accessoires du paramétrage ET celle saisie dans la cotation (H1). Les deux champs d'accessoires
+ * sont absents d'une cotation antérieure à la session 4.0.
+ */
+type LigneStockee = { code: string; effectif: number; primeTarif: string; primeForcee: string | null; accessoireTarif?: string; accessoireSaisi?: string | null };
 
 /** Montants arrondis, en texte, stockés avec la cotation (consultation et listes sans recalcul). */
 type ResultatStocke = {
@@ -134,6 +143,7 @@ type Calcul = {
   lignesStockees: LigneStockee[];
   raisons: RaisonValidation[];
   souscripteur: Souscripteur;
+  typeContrat: TypeContrat;
   forcages: ReturnType<typeof detecterForcages>;
 };
 
@@ -142,7 +152,11 @@ type Calcul = {
  * du moteur, jamais de la saisie. Un forçage exige le droit « Demande » ou « Valide » ET un motif.
  */
 async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: SaisieCotation, dateDocument: DateIso): Promise<Calcul> {
-  const contexte = await resoudreContexte(tx, saisie.codeProduit, dateDocument, saisie.dateEffet);
+  const typeContrat = saisie.typeContrat;
+  if (!estTypeContrat(typeContrat)) {
+    throw new ErreurMetier("Choisissez le type de contrat (individuel, famille, groupe ou groupe ouvert) : il détermine le taux de taxe.");
+  }
+  const contexte = await resoudreContexte(tx, saisie.codeProduit, dateDocument, saisie.dateEffet, typeContrat);
   const { version } = contexte;
 
   let souscripteur = saisie.souscripteur;
@@ -160,7 +174,7 @@ async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: Saisie
   ];
   if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
 
-  const { entree, primesTarif } = construireEntree(contexte, {
+  const { entree, primesTarif, accessoiresTarif } = construireEntree(contexte, {
     dateEffet: saisie.dateEffet,
     dateEcheance: saisie.dateEcheance,
     lignes: saisie.lignes,
@@ -188,11 +202,45 @@ async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: Saisie
       effectif: l.effectif,
       primeTarif: primesTarif[l.codeFormule],
       primeForcee: forcages.some((f) => f.code === l.codeFormule) ? (l.primeForcee ?? null) : null,
+      accessoireTarif: accessoiresTarif[l.codeFormule],
+      // Une valeur saisie égale au paramétrage n'est pas une modification.
+      accessoireSaisi: l.accessoireValeur != null && !montant(l.accessoireValeur).eq(montant(accessoiresTarif[l.codeFormule])) ? montant(l.accessoireValeur).toFixed() : null,
     })),
     raisons: raisonsDeValidation({ forcages, ttc: resultat.totaux.arrondi.ttc, seuil: version.seuilValidationTtc }),
     souscripteur,
+    typeContrat,
     forcages,
   };
+}
+
+/** Valeur des accessoires effectivement retenue pour une ligne stockée (saisie, sinon paramétrage). */
+const accessoireRetenu = (l: LigneStockee): string | null => l.accessoireSaisi ?? l.accessoireTarif ?? null;
+
+/**
+ * H1 (D18) : chaque modification des accessoires est journalisée, avant/après. À la création, « avant »
+ * est la valeur du paramétrage ; ensuite, la valeur retenue jusque-là.
+ */
+async function journaliserAccessoires(tx: Tx, acteur: UtilisateurCourant, id: number, avant: LigneStockee[] | null, apres: LigneStockee[], adresseIp: string | null): Promise<void> {
+  const changements = apres
+    .map((l) => {
+      const precedente = avant?.find((x) => x.code === l.code);
+      const valeurAvant = precedente ? accessoireRetenu(precedente) : (l.accessoireTarif ?? null);
+      return { code: l.code, avant: valeurAvant, apres: accessoireRetenu(l), parametrage: l.accessoireTarif ?? null };
+    })
+    .filter((c) => c.avant !== c.apres && !(c.avant !== null && c.apres !== null && montant(c.avant).eq(montant(c.apres))));
+  if (changements.length === 0) return;
+  await journaliser(
+    {
+      acteur: auteur(acteur),
+      action: "ACCESSOIRES_MODIFIES",
+      objetType: "cotation",
+      objetId: id,
+      avant: Object.fromEntries(changements.map((c) => [c.code, c.avant])),
+      apres: Object.fromEntries(changements.map((c) => [c.code, c.apres])),
+      adresseIp,
+    },
+    tx,
+  );
 }
 
 function donneesAEcrire(saisie: SaisieCotation, c: Calcul) {
@@ -200,6 +248,7 @@ function donneesAEcrire(saisie: SaisieCotation, c: Calcul) {
     produitId: c.produitId,
     versionDateEffet: versDate(c.versionDateEffet),
     clientId: saisie.clientId,
+    typeContrat: c.typeContrat,
     souscripteur: c.souscripteur as unknown as Prisma.InputJsonValue,
     dateEffet: versDate(saisie.dateEffet),
     dateEcheance: versDate(saisie.dateEcheance),
@@ -223,19 +272,21 @@ export async function creerBrouillon(acteur: UtilisateurCourant, saisie: SaisieC
   return obtenirPrisma().$transaction(async (tx) => {
     const c = await calculerSaisie(tx, acteur, saisie, aujourdhui());
     const cree = await tx.cotation.create({
-      data: { ...donneesAEcrire(saisie, c), statut: "BROUILLON", auteurId: acteur.id, auteurIdentifiant: acteur.identifiant },
+      data: { ...donneesAEcrire(saisie, c), statut: "BROUILLON", auteurId: acteur.id, auteurIdentifiant: acteur.identifiant, contributeurs: [acteur.id] },
     });
-    await journaliser({ acteur: auteur(acteur), action: "COTATION_CREEE", objetType: "cotation", objetId: cree.id, apres: { produit: saisie.codeProduit, ttc: c.resultat.totaux.arrondi.ttc.toFixed() }, adresseIp }, tx);
+    await journaliser({ acteur: auteur(acteur), action: "COTATION_CREEE", objetType: "cotation", objetId: cree.id, apres: { produit: saisie.codeProduit, typeContrat: c.typeContrat, ttc: c.resultat.totaux.arrondi.ttc.toFixed() }, adresseIp }, tx);
+    await journaliserAccessoires(tx, acteur, cree.id, null, c.lignesStockees, adresseIp);
     return cree.id;
   });
 }
 
-async function chargerPourModification(tx: Tx, acteur: UtilisateurCourant, id: number) {
+/**
+ * H9 (D18) : tout utilisateur qui a le droit de créer (donc de modifier) une cotation peut modifier ou
+ * soumettre un brouillon, pas seulement son auteur. Le droit est contrôlé par l'appelant (exigerAgir).
+ */
+async function chargerPourModification(tx: Tx, id: number) {
   const cotation = await tx.cotation.findUnique({ where: { id }, include: { produit: true } });
   if (!cotation) throw new ErreurMetier("Cotation introuvable.");
-  if (cotation.auteurId !== acteur.id) {
-    throw new ErreurMetier("Seul l'auteur d'un brouillon peut le modifier ou le soumettre.");
-  }
   if (!peutModifier(cotation.statut as StatutCotation)) {
     throw new ErreurMetier("Cette cotation n'est plus un brouillon : elle est figée.");
   }
@@ -245,14 +296,25 @@ async function chargerPourModification(tx: Tx, acteur: UtilisateurCourant, id: n
 export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, saisie: SaisieCotation, adresseIp: string | null): Promise<void> {
   await exigerAgir(acteur);
   await obtenirPrisma().$transaction(async (tx) => {
-    const avant = await chargerPourModification(tx, acteur, id);
+    const avant = await chargerPourModification(tx, id);
     if (avant.produit.code !== saisie.codeProduit) throw new ErreurMetier("Le produit d'une cotation ne se change pas : créez une nouvelle cotation.");
     const c = await calculerSaisie(tx, acteur, saisie, aujourdhui());
-    await tx.cotation.update({ where: { id }, data: donneesAEcrire(saisie, c) });
+    // Qui a modifié un brouillon ne pourra pas le valider (séparation des tâches renforcée, H9).
+    const contributeurs = avant.contributeurs.includes(acteur.id) ? avant.contributeurs : [...avant.contributeurs, acteur.id];
+    await tx.cotation.update({ where: { id }, data: { ...donneesAEcrire(saisie, c), contributeurs } });
     await journaliser(
-      { acteur: auteur(acteur), action: "COTATION_MODIFIEE", objetType: "cotation", objetId: id, avant: { ttc: avant.ttcTotal?.toFixed() ?? null }, apres: { ttc: c.resultat.totaux.arrondi.ttc.toFixed() }, adresseIp },
+      {
+        acteur: auteur(acteur),
+        action: "COTATION_MODIFIEE",
+        objetType: "cotation",
+        objetId: id,
+        avant: { ttc: avant.ttcTotal?.toFixed() ?? null, typeContrat: avant.typeContrat },
+        apres: { ttc: c.resultat.totaux.arrondi.ttc.toFixed(), typeContrat: c.typeContrat, auteurDuBrouillon: avant.auteurIdentifiant },
+        adresseIp,
+      },
       tx,
     );
+    await journaliserAccessoires(tx, acteur, id, avant.lignes as unknown as LigneStockee[], c.lignesStockees, adresseIp);
   });
 }
 
@@ -289,17 +351,21 @@ async function emettre(tx: Tx, acteur: UtilisateurCourant, cotation: CotationCha
 export async function soumettre(acteur: UtilisateurCourant, id: number, adresseIp: string | null): Promise<{ statut: "A_VALIDER" | "EMISE"; numero: string | null }> {
   await exigerAgir(acteur);
   return obtenirPrisma().$transaction(async (tx) => {
-    const cotation = await chargerPourModification(tx, acteur, id);
+    const cotation = await chargerPourModification(tx, id);
     // Recalcul avec les paramètres du jour, à partir de ce qui est enregistré.
     const lignes = cotation.lignes as unknown as LigneStockee[];
+    if (cotation.typeContrat === null) {
+      throw new ErreurMetier("Ce brouillon date d'avant le choix du type de contrat : modifiez-le pour indiquer le type de contrat, puis soumettez-le.");
+    }
     const saisie: SaisieCotation = {
       codeProduit: cotation.produit.code,
       clientId: cotation.clientId,
+      typeContrat: cotation.typeContrat,
       souscripteur: cotation.souscripteur as unknown as Souscripteur,
       dateEffet: depuisDate(cotation.dateEffet),
       dateEcheance: depuisDate(cotation.dateEcheance),
       nombreTranches: cotation.nombreTranches,
-      lignes: lignes.map((l) => ({ codeFormule: l.code, effectif: l.effectif, primeForcee: l.primeForcee })),
+      lignes: lignes.map((l) => ({ codeFormule: l.code, effectif: l.effectif, primeForcee: l.primeForcee, accessoireValeur: l.accessoireSaisi ?? null })),
       motifForcage: cotation.motifForcage,
       assures: cotation.assures as unknown as Assure[],
       risque: cotation.risque as unknown as Risque,
@@ -334,11 +400,12 @@ export async function soumettre(acteur: UtilisateurCourant, id: number, adresseI
 }
 
 /**
- * Valide une cotation « À valider » (Technique ou Direction Générale) et l'émet. Le valideur ne peut
- * JAMAIS être l'auteur (CDC §4.1, T13).
+ * Valide une cotation « À valider » et l'émet. Droit « Valider une cotation » (H7, D18 : profil
+ * Technique par défaut, paramétrable). Le valideur ne peut JAMAIS être quelqu'un qui a créé OU modifié
+ * la cotation (CDC §4.1, T13 ; séparation renforcée par H9).
  */
 export async function valider(acteur: UtilisateurCourant, id: number, adresseIp: string | null): Promise<string> {
-  if (!peutValider(await niveauDuProfil(acteur.profil, "FORCER_PRIME"))) {
+  if (!peutValider(await niveauDuProfil(acteur.profil, "VALIDER_COTATION"))) {
     throw new ErreurAcces("Droit insuffisant : validation de cotation.");
   }
   return obtenirPrisma().$transaction(async (tx) => {
@@ -348,22 +415,28 @@ export async function valider(acteur: UtilisateurCourant, id: number, adresseIp:
     if (!valideurAutorise(cotation.auteurId, acteur.id)) {
       throw new ErreurMetier("Vous ne pouvez pas valider votre propre cotation : un autre valideur doit la valider (séparation des tâches).");
     }
+    if (cotation.contributeurs.includes(acteur.id)) {
+      throw new ErreurMetier("Vous avez modifié cette cotation : un autre valideur doit la valider (séparation des tâches).");
+    }
     await journaliser({ acteur: auteur(acteur), action: "DOCUMENT_VALIDE", objetType: "cotation", objetId: id, apres: { raisons: cotation.raisonsValidation as unknown as string[] }, adresseIp }, tx);
     return emettre(tx, acteur, cotation, adresseIp, acteur);
   });
 }
 
-/** Renvoie une cotation « À valider » en brouillon (par son auteur, ou par un valideur qui la refuse). */
+/**
+ * Renvoie une cotation « À valider » en brouillon : par son auteur, ou par un valideur qui la refuse
+ * (H12, D18), avec un motif obligatoire, journalisé. Le statut « Refusée » reste réservé au refus du client.
+ */
 export async function renvoyerEnBrouillon(acteur: UtilisateurCourant, id: number, commentaire: string, adresseIp: string | null): Promise<void> {
   await obtenirPrisma().$transaction(async (tx) => {
     const cotation = await tx.cotation.findUnique({ where: { id } });
     if (!cotation) throw new ErreurMetier("Cotation introuvable.");
     if (!peutEtreRenvoyee(cotation.statut as StatutCotation)) throw new ErreurMetier("Cette cotation n'est pas à valider.");
     const estAuteur = cotation.auteurId === acteur.id;
-    if (!estAuteur && !peutValider(await niveauDuProfil(acteur.profil, "FORCER_PRIME"))) {
+    if (!estAuteur && !peutValider(await niveauDuProfil(acteur.profil, "VALIDER_COTATION"))) {
       throw new ErreurAcces("Droit insuffisant : seul l'auteur ou un valideur peut renvoyer cette cotation en brouillon.");
     }
-    if (!estAuteur && commentaire.trim().length < 3) throw new ErreurMetier("Indiquez la raison du renvoi.");
+    if (!estAuteur && commentaire.trim().length < 3) throw new ErreurMetier("Le motif du renvoi en brouillon est obligatoire (3 caractères au moins).");
     await tx.cotation.update({ where: { id }, data: { statut: "BROUILLON" } });
     await journaliser({ acteur: auteur(acteur), action: "COTATION_RENVOYEE", objetType: "cotation", objetId: id, apres: { commentaire: commentaire.trim() }, adresseIp }, tx);
   });
@@ -398,11 +471,27 @@ async function chargerEmise(tx: Tx, id: number) {
 
 /**
  * Le client accepte : il retient une ou plusieurs formules ; le module crée la police avec la formule retenue,
- * les assurés et l'échéancier (CDC §9.4). Impossible si la cotation est expirée (T11).
+ * les assurés et l'échéancier (CDC §9.4). Impossible si la cotation est expirée (T11). Le numéro de police
+ * est attribué par SIM et SAISI ici (H10, D18) : jamais généré ; unique ; format paramétré contrôlé (H31).
  */
-export async function accepter(acteur: UtilisateurCourant, id: number, codesRetenus: string[], adresseIp: string | null): Promise<{ numeroPolice: string }> {
+export async function accepter(acteur: UtilisateurCourant, id: number, codesRetenus: string[], numeroSaisi: string, adresseIp: string | null): Promise<{ numeroPolice: string }> {
   await exigerAgir(acteur);
+  const numeroPolice = normaliserNumeroPolice(numeroSaisi);
+  const problemesNumero = problemesNumeroPolice(numeroPolice, await lireFormatNumeroPolice());
+  if (problemesNumero.length > 0) throw new ErreurMetier(problemesNumero.join(" "));
   await expirerCotations();
+  try {
+    return await accepterDansTransaction(acteur, id, codesRetenus, numeroPolice, adresseIp);
+  } catch (erreur) {
+    // Filet de sécurité de l'unicité (deux saisies simultanées du même numéro) : contrainte unique en base.
+    if (erreur instanceof Prisma.PrismaClientKnownRequestError && erreur.code === "P2002") {
+      throw new ErreurMetier(`Le numéro de police « ${numeroPolice} » est déjà utilisé.`);
+    }
+    throw erreur;
+  }
+}
+
+async function accepterDansTransaction(acteur: UtilisateurCourant, id: number, codesRetenus: string[], numeroPolice: string, adresseIp: string | null): Promise<{ numeroPolice: string }> {
   return obtenirPrisma().$transaction(async (tx) => {
     const { cotation, statut } = await chargerEmise(tx, id);
     if (statut === "EXPIREE") throw new ErreurMetier("Cette cotation est expirée : elle ne peut plus être acceptée ni transformée en police.");
@@ -423,10 +512,13 @@ export async function accepter(acteur: UtilisateurCourant, id: number, codesRete
       cotation.nombreTranches,
     );
 
-    const numeroPolice = await allouerNumeroPolice(tx, aujourdhui());
+    if (await tx.police.findUnique({ where: { numero: numeroPolice }, select: { id: true } })) {
+      throw new ErreurMetier(`Le numéro de police « ${numeroPolice} » est déjà utilisé.`);
+    }
     await tx.police.create({
       data: {
         numero: numeroPolice,
+        typeContrat: cotation.typeContrat,
         cotationId: cotation.id,
         produitCode: cotation.produit.code,
         souscripteur: cotation.souscripteur as Prisma.InputJsonValue,
@@ -510,6 +602,7 @@ export type DetailCotation = {
   filigrane: string | null;
   produit: { code: string; libelle: string };
   versionDateEffet: DateIso;
+  typeContrat: TypeContrat | null;
   souscripteur: Souscripteur;
   clientId: number | null;
   dateEffet: DateIso;
@@ -528,6 +621,8 @@ export type DetailCotation = {
   echeancier: Tranche[] | null;
   auteurId: number;
   auteurIdentifiant: string;
+  /** Qui a créé ou modifié le brouillon (H9) : aucun ne peut valider. */
+  contributeurs: number[];
   formulesRetenues: string[] | null;
   motifRefusCode: string | null;
   refusCommentaire: string | null;
@@ -557,6 +652,7 @@ export async function lireCotation(acteur: UtilisateurCourant, id: number): Prom
     filigrane: filigraneDe(effectif),
     produit: { code: c.produit.code, libelle: c.produit.libelle },
     versionDateEffet: depuisDate(c.versionDateEffet),
+    typeContrat: (c.typeContrat as TypeContrat | null) ?? null,
     souscripteur: c.souscripteur as unknown as Souscripteur,
     clientId: c.clientId,
     dateEffet: depuisDate(c.dateEffet),
@@ -574,6 +670,7 @@ export async function lireCotation(acteur: UtilisateurCourant, id: number): Prom
     echeancier: jsonVersTranches(c.echeancier),
     auteurId: c.auteurId,
     auteurIdentifiant: c.auteurIdentifiant,
+    contributeurs: c.contributeurs,
     formulesRetenues: (c.formulesRetenues as unknown as string[] | null) ?? null,
     motifRefusCode: c.motifRefusCode,
     refusCommentaire: c.refusCommentaire,

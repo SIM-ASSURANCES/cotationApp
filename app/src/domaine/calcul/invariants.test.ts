@@ -42,8 +42,8 @@ describe("invariants du moteur sur 72 règles d'arrondi × 40 cotations aléatoi
     expect(regles).toHaveLength(72);
   });
 
-  it("TTC = nette + accessoires + taxe après arrondi, partout, et montants multiples de la précision", () => {
-    const hasard = aleatoire(20261005);
+  it.each([2, 1] as const)("moteur v%i : TTC = nette + accessoires + taxe après arrondi, partout ; montants multiples de la précision ; échéancier = TTC", (moteur) => {
+    const hasard = aleatoire(20261005 + moteur);
     for (const regle of regles) {
       for (let i = 0; i < 40; i += 1) {
         const lignes = Array.from({ length: entre(hasard, 1, 3) }, (_, k) => ({
@@ -54,8 +54,9 @@ describe("invariants du moteur sur 72 règles d'arrondi × 40 cotations aléatoi
         }));
         const jour = entre(hasard, 1, 28);
         const resultat = calculer({
+          moteur,
           dateEffet: `2026-0${entre(hasard, 1, 9)}-${String(jour).padStart(2, "0")}`,
-          dateEcheance: "2026-12-31",
+          dateEcheance: hasard() > 0.8 ? "2028-12-31" : "2026-12-31",
           parametres: {
             prorata: { actif: hasard() > 0.3, primeMinimale: hasard() > 0.7 ? montantTexte(hasard, 20000) : null },
             arrondi: regle,
@@ -74,14 +75,34 @@ describe("invariants du moteur sur 72 règles d'arrondi × 40 cotations aléatoi
           }
         }
         expect(coherent(resultat.totaux.arrondi), `totaux, règle ${JSON.stringify(regle)}`).toBe(true);
+        if (moteur === 2) {
+          // H4 : à chaque niveau, le TTC est la somme des trois montants arrondis, jamais un arrondi indépendant.
+          for (const ligne of toutes) {
+            const r = (m: ReturnType<typeof montant>) => arrondir(m, regle.precision, regle.sens);
+            expect(ligne.arrondi.ttc.eq(r(ligne.exact.nette).plus(r(ligne.exact.accessoires)).plus(r(ligne.exact.taxe))), "TTC de ligne = somme des arrondis").toBe(true);
+          }
+          expect(resultat.coefProrata.lessThanOrEqualTo(1), "coefficient de prorata ≤ 1 (H3)").toBe(true);
+        }
         if (regle.niveau === "LIGNE") {
           const sommeTtc = toutes.reduce((s, l) => s.plus(l.arrondi.ttc), montant("0"));
           expect(resultat.totaux.arrondi.ttc.eq(sommeTtc), "total = somme des lignes arrondies").toBe(true);
+        } else if (moteur === 2) {
+          const r = (m: ReturnType<typeof montant>) => arrondir(m, regle.precision, regle.sens);
+          const { exact } = resultat.totaux;
+          expect(resultat.totaux.arrondi.ttc.eq(r(exact.nette).plus(r(exact.accessoires)).plus(r(exact.taxe))), "total = somme des totaux arrondis").toBe(true);
         } else {
           expect(
             resultat.totaux.arrondi.ttc.eq(arrondir(resultat.totaux.exact.ttc, regle.precision, regle.sens)),
             "total = somme exacte arrondie",
           ).toBe(true);
+        }
+
+        // Somme de l'échéancier = TTC, pour un nombre de tranches au hasard.
+        const ttc = resultat.totaux.arrondi.ttc;
+        const nombre = entre(hasard, 1, 12);
+        if (ttc.greaterThanOrEqualTo(nombre * regle.precision * 2)) {
+          const tranches = genererEcheancier({ ttc, nombreTranches: nombre, dateEffet: "2026-01-31", arrondi: { precision: regle.precision, sens: regle.sens } });
+          expect(tranches.reduce((s, t) => s.plus(t.montant), montant("0")).eq(ttc), "somme de l'échéancier = TTC").toBe(true);
         }
       }
     }

@@ -44,3 +44,8 @@ export function ajouterMois(date: DateIso, mois: number): DateIso {
   cible.setUTCDate(Math.min(jour, dernierJour));
   return cible.toISOString().slice(0, 10);
 }
+
+/** Ajoute (ou retire, si négatif) un nombre de jours. */
+export function ajouterJours(date: DateIso, jours: number): DateIso {
+  return new Date(enUtc(date) + jours * MS_PAR_JOUR).toISOString().slice(0, 10);
+}

@@ -185,6 +185,75 @@ Journal des décisions du projet, avec leur date. Une décision n'est jamais eff
 H28 – Accessoires et prorata
 Retenu : quand un contrat dure moins d'un an, la prime nette est proratisée (par exemple × 163/365), mais les accessoires restent entiers. Exemple, formule Solo du 22/07 au 31/12/2026 : prime nette de 280 744 ramenée à 125 373, accessoires maintenus à 3 000.
 Question : les accessoires (frais de gestion de police) sont-ils un montant fixe par contrat, ou doivent-ils eux aussi être proratisés à la durée ?
+## D18 — Réponses de la Technique du 08/10/2026
+
+- **Date** : réponses reçues le 08/10/2026 ; consignées et comparées au code le 08/10/2026 (session 4.0), **avant** toute correction.
+- **Règle** : les hypothèses H1 à H12 de D9 et D13 restent dans leurs tableaux pour l'historique ; cette section les remplace là où elle les tranche. « Code avant 4.0 » décrit ce que faisait le dépôt avant la session 4.0.
+
+| # | Réponse de la Technique | Code avant 4.0 | Statut |
+| --- | --- | --- | --- |
+| H1 | Les accessoires « peuvent varier » | accessoires fixés par la formule du produit, non modifiables dans la cotation | **à corriger** : valeur par défaut de la formule, modifiable dans la cotation, modification journalisée (avant/après) ; les seuils de validation s'appliquent au TTC obtenu (choix par défaut de Thierry, qu'il peut changer) |
+| H2 | Question mal comprise : un même produit peut avoir des garanties à prime fixe et des garanties à prime calculée selon des critères | prime minimale appliquée par formule | **en attente** : question reformulée par Thierry. Prime minimale **inchangée** |
+| H3 | Coefficient de prorata plafonné à 1 pour une année complète | coefficient 366/365 pour un contrat de 366 jours | **à corriger** : `coefficient = min(1, jours / 365)` |
+| H4 | Arrondi appliqué à la prime nette, aux accessoires, à la taxe et au TTC, avec nette + accessoires + taxe = TTC | les trois composantes **et** le TTC arrondis séparément ; l'écart est absorbé par une composante paramétrée | **à corriger** : le TTC est **la somme** des trois montants arrondis, jamais un arrondi indépendant. La « composante absorbante » du paramétrage n'a plus d'effet |
+| H5 | Les taux sont fixés par la loi (tableau ci-dessous) | un taux par branche et par date d'effet | **à corriger, changement de modèle** : clé `(branche, type_contrat, date_effet)` |
+| H7 | La Technique valide ; possibilité d'afficher le nom de l'auteur de la cotation | validation par le droit « Valide » sur « Forcer une prime » (Technique **et** Direction Générale) | **à corriger** : validation réservée au profil Technique, par un droit paramétrable ; champ `doc.auteur_nom` ajouté au dictionnaire |
+| H8 | Total = somme des formules (confirmé). Nouveau : des options au choix modifient la prime | total = somme des formules | **conforme** pour le total ; options : **en attente** de précisions, rien n'est codé |
+| H9 | Un collègue ou un responsable peut aussi modifier un brouillon | seul l'auteur modifie et soumet son brouillon | **à corriger** : tout utilisateur qui a le droit de modifier une cotation ; chaque modification tracée ; qui a créé **ou** modifié ne valide pas |
+| H10 | SIM attribue le numéro de police ; format `SCD-2026-000088-G00000` ; import d'une liste de numéros à discuter | numéro provisoire POL-AAAA-NNNNNN généré par le module | **à corriger** : numéro **saisi**, jamais généré ; unique ; format contrôlé par une expression régulière paramétrable. Import : **phase 5** |
+| H11 | Pas de réponse | Aperçu et émission du PDF (H11 de la phase 2) | **réglée** le 08/10/2026 par Thierry : traitée par D17 / H23 (PDF émis automatiquement après l'émission, bouton « Émettre le PDF » en cas d'échec) |
+| H12 | Refus : le valideur renvoie la cotation en brouillon, motif obligatoire | renvoi en brouillon par un valideur, raison obligatoire, journalisé ; statut « Refusée » réservé au refus du client | **conforme** ; le droit du valideur suit H7 ; test automatisé dédié ajouté |
+| H28 | Pas de réponse | accessoires non proratisés | **inchangée, en attente** |
+
+Taux de taxe communiqués (H5), chargés comme **données de démarrage** (jamais écrits dans le moteur) :
+
+| Branche (code retenu) | Type de contrat | Taux |
+| --- | --- | --- |
+| Individuelle accident (`IA`) | tous | 7,25 % |
+| Décès (`DECES`) | tous | 0 % |
+| Santé (`SANTE`) | INDIVIDUEL | 4 % |
+| Santé (`SANTE`) | GROUPE | 1,5 % |
+| Incendie et dommages aux biens (`IARD`) | tous | 12,5 % pour l'incendie ; 7,25 % pour le reste : **taux mixte, non pris en charge** (voir plus bas) |
+
+Conséquences retenues pour le code (session 4.0) :
+
+- **Date du taux** : celui en vigueur à la **date d'effet de la police** (CDC §8.1, D9), décision de Thierry du 08/10/2026 ; la phrase « à la date du document » des instructions 4.0 ne change pas cette règle.
+- **Taux le plus précis** : pour une branche et un type de contrat, le moteur prend d'abord la ligne de ce type, puis celle du type rattaché (H29), puis la ligne « tous types » (type vide).
+- **Incendie / dommages aux biens** : deux taux dans un même contrat. La règle de ventilation n'est pas confirmée : le moteur **refuse** le calcul (« taux mixte non pris en charge : à paramétrer »).
+- **Périodes** : pour une même clé (branche, type de contrat), deux périodes de validité ne se chevauchent jamais (contrainte d'exclusion PostgreSQL). Ajouter un taux après une ligne sans date de fin **clôt** cette ligne la veille de la nouvelle date d'effet : c'est la seule modification permise sur une ligne en vigueur, une seule fois, journalisée.
+- **Documents déjà émis** : jamais recalculés (T10). Les cotations calculées avant la session 4.0 gardent leurs règles d'arrondi et de prorata d'origine (version du moteur enregistrée avec le calcul).
+
+| # | Point | Hypothèse retenue (à faire confirmer) |
+| --- | --- | --- |
+| H29 | `police.type_contrat` a 4 valeurs (INDIVIDUEL, FAMILLE, GROUPE, GROUPE_OUVERT) ; la Technique n'en cite que 2 | FAMILLE prend le taux INDIVIDUEL ; GROUPE_OUVERT prend le taux GROUPE |
+| H30 | T3 (facture **individuelle** YAO) attend 1,5 %, alors que la loi donne 4 % en santé individuelle | **conflit CDC / loi, non tranché** : le test T3 garde les données du CDC, avec `type_contrat = GROUPE` explicite. T3 : individuel à 4 % ou 1,5 % ? |
+| H31 | Format du numéro de police `SCD-2026-000088-G00000` | contrôle par défaut `^[A-Z0-9]+-\d{4}-\d{6}-[GI]\d{5}$`, paramétrable ; signification des 5 chiffres après G ou I **inconnue** |
+
+## D19 — Champs facultatifs du dictionnaire (option b de H19)
+
+- **Date** : 08/10/2026, choix de Thierry (option b), remplace H19.
+- **Décision** : un champ du dictionnaire que l'application ne fournit pas est **absent** des données, et la génération d'un modèle qui l'utilise **échoue** en nommant le champ, **sauf** s'il est déclaré facultatif dans le dictionnaire : il est alors présent, vide. Une valeur connue mais vide (e-mail non saisi, pas encore de paiement) reste une valeur : elle s'écrit vide.
+- **Liste des champs facultatifs** (session 4.0, à faire valider par la Technique) : `doc.empreinte` (H20 : un document ne peut pas contenir sa propre empreinte), `intermediaires`, `police.police_mere`, `police.nantissement`. Ces quatre champs sont rendus vides.
+- **Décision de Thierry du 08/10/2026** : cette liste est retenue. `beneficiaires[]` et `contacts_urgence[]` **ne sont pas facultatifs** : la session 4a devra permettre leur saisie.
+- **Champs non fournis, donc bloquants s'ils sont dans un modèle** : les champs du souscripteur que la saisie ne demande pas (profession, date et lieu de naissance, BP, localité…), `assures[].prime`, `beneficiaires`, `contacts_urgence`, `police.reference`, et `police.type_contrat` d'une cotation antérieure à la session 4.0. Pour en rendre un facultatif : le marquer dans `src/domaine/documents/dictionnaire.ts`.
+
+## D20 — Champ `doc.auteur_nom` (extension du dictionnaire)
+
+- **Date** : 08/10/2026 (réponse H7). Comme `assures[].sexe` (D12), c'est une **extension** du dictionnaire du CDC §6.3.4 : nom de l'utilisateur qui a créé la cotation, affichable sur le document.
+
+## D21 — Choix de mise en œuvre de la session 4.0 (à valider par Thierry)
+
+- **Date** : 08/10/2026. Choix techniques faits pendant la session 4.0, sans règle métier nouvelle ; chacun se change facilement.
+- **Date d'effet des taux de démarrage** : 01/01/2026 (`prisma/donnees/taxes-loi.json`), **validée par Thierry le 08/10/2026 à titre provisoire**. La date réelle d'entrée en vigueur n'a pas été donnée : à confirmer par la Technique (ligne « en attente »).
+- **Branches fiscales** : liste **paramétrable** (écran « Branches », table `branches`), et non plus figée. Chaque ajout ou modification (libellé, état actif) est journalisé. Le code ne change jamais et ne se supprime pas ; une branche désactivée garde ses taux et ses produits mais n'en reçoit plus. Taux et produits ne se rattachent qu'à une branche active de la liste. Branches de démarrage (`prisma/donnees/branches.json`) : `IA`, `DECES`, `SANTE`, `IARD`. Produits hors tableau : H32 ci-dessous.
+- **Droit « modifier une cotation » (H9)** : c'est le droit existant « Créer une cotation » (pas de nouvelle ligne dans la matrice). Celui qui modifie le brouillon d'un autre peut aussi le soumettre ; soumettre ne compte pas comme une modification.
+- **Validation (H7)** : nouveau droit paramétrable « Valider une cotation » (`VALIDER_COTATION`), « Valide » pour la Technique seule. La Direction Générale, qui validait jusqu'ici, ne valide plus par défaut ; l'administrateur peut lui redonner ce droit. **Validé par Thierry le 08/10/2026.** **Écart avec le CDC §4.1** (« Technique ou DG ») : **à présenter au superviseur**.
+- **Composante absorbante** : retirée de l'écran de version de produit (sans effet depuis le moteur v2, H4). La colonne reste en base avec la valeur fixe `TAXE`, pour les versions déjà enregistrées.
+- **H32 (nouveau)** : branche fiscale et taux pour SECURMOTO, RELAXVOYAGE, SECURECOLTE et les autres produits hors tableau de la loi communiqué par la Technique. Tant qu'elle n'a pas répondu, ces produits n'ont pas de taux et leur calcul est refusé (« Aucune taxe en vigueur »).
+- **Numérotation** : H32 est pris par la ligne ci-dessus ; le point « trop-perçu » prévu dans le fichier d'instructions de la phase 4 devient **H33** (à consigner par la session 4b).
+- **Format du numéro de police (H10, H31)** : paramètre historisé de l'écran « Société », modifiable avec le droit « Paramétrer produits ». Le numéro saisi est mis en majuscules ; il est unique en base.
+- **Accessoires (H1)** : une valeur saisie vide reprend la valeur de la formule ; en mode pourcentage, la valeur saisie est un pourcentage (0 à 100).
+
 ## Décisions en attente
 
 | Sujet | Qui décide | Échéance |
@@ -196,7 +265,10 @@ Question : les accessoires (frais de gestion de police) sont-ils un montant fixe
 | Police de remplacement de Tahoma (test D) ; puis Dockerfile et polices exigées par `/sante` (D16) | Thierry | avant la mise en production |
 | H18 à H27 (émission des documents, voir D17) | Direction Technique | avant la recette |
 | Durée de validité d'une cotation : confirmer « 3 mois » (D10) | Direction Technique | avant la recette |
-| Format du numéro de police (provisoire : POL-AAAA-NNNNNN) | Direction Technique | avant la recette |
-| H1 à H5 (moteur de calcul, voir D9) et H7 à H12 (cotation, voir D13) | Direction Technique | avant la recette |
+| H2 (garanties à prime fixe et à prime calculée), H8 (options au choix), H28 (voir D18) | Direction Technique | avant la recette |
+| H29 à H31 (type de contrat et taux, conflit T3, numéro de police : voir D18) ; liste des champs facultatifs (D19) | Direction Technique | avant la recette |
+| Date d'entrée en vigueur des taux, à confirmer par la Technique (date provisoire du 01/01/2026, D21) | Direction Technique | avant la recette |
+| H32 : branche fiscale et taux pour SECURMOTO, RELAXVOYAGE, SECURECOLTE et les autres produits hors tableau | Direction Technique | avant la recette |
+| Écart avec le CDC §4.1 : validation par la Technique seule (D21) | Superviseur (à lui présenter) | avant la recette |
 
 Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir), Q3 (plus de dossier partagé : D11), Q4 (`assures[].sexe` ajouté : D12), Q5 (Thierry balise d'abord, puis la Technique : D12), H6 (validité en mois : D10).

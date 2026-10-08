@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { formaterNumero, formaterNumeroPolice, cleCompteur } from "./numerotation";
+import { formaterNumero, cleCompteur } from "./numerotation";
+import { FORMAT_NUMERO_POLICE_DEFAUT, normaliserNumeroPolice, problemesFormatNumeroPolice, problemesNumeroPolice } from "./police";
 import { problemesAssures, problemesLignes, problemesRisque, problemesSouscripteur, type Assure, type Souscripteur } from "./saisie";
 import {
   dateFinValidite,
@@ -124,8 +125,22 @@ describe("numérotation COT-AAAA-MM-NNNN (CDC §11.4)", () => {
     expect(() => formaterNumero("COT", "2026-10-05", 1.5)).toThrow();
   });
 
-  it("numéro de police provisoire, produit par une seule fonction", () => {
-    expect(formaterNumeroPolice("2026-10-05", 42)).toBe("POL-2026-000042");
+});
+
+describe("numéro de police saisi (H10, H31, D18)", () => {
+  it("accepte l'exemple de la Technique avec le format par défaut", () => {
+    expect(problemesNumeroPolice("SCD-2026-000088-G00000", FORMAT_NUMERO_POLICE_DEFAUT)).toEqual([]);
+    expect(problemesNumeroPolice(normaliserNumeroPolice(" scd-2026-000088-i12345 "), FORMAT_NUMERO_POLICE_DEFAUT)).toEqual([]);
+  });
+
+  it.each(["", "POL-2026-000001", "SCD-2026-88-G00000", "SCD-2026-000088-X00000", "SCD-2026-000088-G0000"])("refuse « %s »", (numero) => {
+    expect(problemesNumeroPolice(numero, FORMAT_NUMERO_POLICE_DEFAUT)).toHaveLength(1);
+  });
+
+  it("le format paramétré doit être une expression complète et valide", () => {
+    expect(problemesFormatNumeroPolice(FORMAT_NUMERO_POLICE_DEFAUT)).toEqual([]);
+    expect(problemesFormatNumeroPolice("[A-Z]+")).toHaveLength(1); // sans ^ ni $
+    expect(problemesFormatNumeroPolice("^([A-Z$")).not.toEqual([]); // expression invalide
   });
 });
 

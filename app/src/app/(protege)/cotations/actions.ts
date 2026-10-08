@@ -89,7 +89,7 @@ export async function renvoyerCotation(_e: EtatFormulaire, d: FormData): Promise
 export async function accepterCotation(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
   const id = idDe(d);
   const retenues = d.getAll("retenue").map(String);
-  return executerAction(async (acteur, ip) => void (await accepter(acteur, id, retenues, ip)), "Cotation acceptée : la police est créée.", `/cotations/${id}`);
+  return executerAction(async (acteur, ip) => void (await accepter(acteur, id, retenues, champ(d, "numeroPolice"), ip)), "Cotation acceptée : la police est créée.", `/cotations/${id}`);
 }
 
 export async function refuserCotation(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {

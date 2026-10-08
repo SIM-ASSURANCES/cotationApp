@@ -3,10 +3,10 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 
 import { peutAgir, peutLire, type CodeAction } from "@/domaine/droits";
-import { calculer, type EntreeCalcul, type AssietteTaxe, type ModeAccessoire, type ResultatCalcul, type RegleArrondi } from "@/domaine/calcul/calcul";
-import { dateValide, type DateIso } from "@/domaine/calcul/dates";
+import { calculer, VERSION_MOTEUR, type EntreeCalcul, type AssietteTaxe, type ModeAccessoire, type ResultatCalcul, type RegleArrondi } from "@/domaine/calcul/calcul";
+import { ajouterJours, dateValide, type DateIso } from "@/domaine/calcul/dates";
 import { genererEcheancier, type Tranche } from "@/domaine/calcul/echeancier";
-import { ErreurCalcul, type Precision } from "@/domaine/calcul/montant";
+import { ErreurCalcul, montant, type Precision } from "@/domaine/calcul/montant";
 import {
   codeValide,
   enVigueur,
@@ -16,6 +16,7 @@ import {
   type TaxeSaisie,
   type VersionSaisie,
 } from "@/domaine/calcul/parametrage";
+import { choisirTaux, estTypeContrat, periodesSeChevauchent, problemesBranche, type BrancheSaisie, type TypeContrat } from "@/domaine/calcul/taxes";
 import { exigeDoubleValidation } from "@/domaine/calcul/validation";
 
 import { journaliser } from "./audit";
@@ -28,6 +29,13 @@ const ACTION_PARAMETRAGE: CodeAction = "PARAMETRER_PRODUITS";
 /** Date (jour) en texte ISO, pour les colonnes `date` de PostgreSQL. */
 const versDate = (iso: DateIso) => new Date(`${iso}T00:00:00.000Z`);
 const depuisDate = (d: Date): DateIso => d.toISOString().slice(0, 10);
+
+/**
+ * Montant déjà validé, en écriture canonique pour la base (« 93 581,33 » → « 93581.33 ») : la base ne
+ * reçoit jamais le texte saisi tel quel (recette 2.3a : erreur 500 de Prisma).
+ */
+const canonique = (t: string): string => montant(t).toFixed();
+const canoniqueOuNull = (t: string | null): string | null => (t === null ? null : canonique(t));
 
 /** Décimal Prisma en texte exact (jamais de notation exponentielle). */
 const texte = (d: { toFixed(): string }) => d.toFixed();
@@ -59,47 +67,52 @@ function refuserSiProblemes(problemes: string[]): void {
   }
 }
 
-// ---------------------------------------------------------------- Taxes
+// ---------------------------------------------------------------- Branches fiscales
 
-export type LigneTaxe = TaxeSaisie & { id: number };
+/** Branche fiscale (D21) : liste paramétrable, clé des taxes et des produits. Le code ne change jamais. */
+export type LigneBranche = BrancheSaisie & { actif: boolean; creePar: string; creeLe: Date };
 
-export async function listerTaxes(acteur: UtilisateurCourant): Promise<LigneTaxe[]> {
+export async function listerBranches(acteur: UtilisateurCourant): Promise<LigneBranche[]> {
   await exigerConsultation(acteur);
-  const taxes = await obtenirPrisma().taxe.findMany({ orderBy: [{ branche: "asc" }, { dateEffet: "desc" }] });
-  return taxes.map((t) => ({
-    id: t.id,
-    branche: t.branche,
-    tauxPourcent: texte(t.tauxPourcent),
-    assiette: t.assiette as AssietteTaxe,
-    dateEffet: depuisDate(t.dateEffet),
-    dateFin: t.dateFin ? depuisDate(t.dateFin) : null,
-  }));
+  const branches = await obtenirPrisma().branche.findMany({ orderBy: { code: "asc" } });
+  return branches.map((b) => ({ code: b.code, libelle: b.libelle, actif: b.actif, creePar: b.creePar, creeLe: b.creeLe }));
 }
 
-export async function creerTaxe(acteur: UtilisateurCourant, saisie: TaxeSaisie, adresseIp: string | null): Promise<void> {
+/** Ajoute une branche à la liste (journalisé). */
+export async function creerBranche(acteur: UtilisateurCourant, saisie: BrancheSaisie, adresseIp: string | null): Promise<void> {
   await exigerEcriture(acteur);
-  refuserSiProblemes(problemesTaxe(saisie));
+  refuserSiProblemes(problemesBranche(saisie));
   await obtenirPrisma().$transaction(async (tx) => {
-    if (await tx.taxe.findUnique({ where: { branche_dateEffet: { branche: saisie.branche, dateEffet: versDate(saisie.dateEffet) } } })) {
-      throw new ErreurMetier("Une taxe existe déjà pour cette branche à cette date d'effet : ajoutez une ligne avec une autre date.");
-    }
-    const cree = await tx.taxe.create({
-      data: {
-        branche: saisie.branche,
-        tauxPourcent: saisie.tauxPourcent,
-        assiette: saisie.assiette,
-        dateEffet: versDate(saisie.dateEffet),
-        dateFin: saisie.dateFin ? versDate(saisie.dateFin) : null,
-        creePar: acteur.identifiant,
-      },
-    });
+    if (await tx.branche.findUnique({ where: { code: saisie.code } })) throw new ErreurMetier(`La branche « ${saisie.code} » existe déjà.`);
+    await tx.branche.create({ data: { code: saisie.code, libelle: saisie.libelle.trim(), creePar: acteur.identifiant } });
+    await journaliser(
+      { acteur: { id: acteur.id, identifiant: acteur.identifiant }, action: "PARAMETRE_MODIFIE", objetType: "branche", objetId: saisie.code, apres: { code: saisie.code, libelle: saisie.libelle.trim(), actif: true }, adresseIp },
+      tx,
+    );
+  });
+}
+
+/**
+ * Modifie le libellé et/ou l'état actif d'une branche (journalisé, avant/après). Une branche ne se
+ * supprime pas : désactivée, elle garde ses taux et ses produits mais n'en reçoit plus de nouveaux.
+ */
+export async function modifierBranche(acteur: UtilisateurCourant, code: string, modif: { libelle: string; actif: boolean }, adresseIp: string | null): Promise<void> {
+  await exigerEcriture(acteur);
+  refuserSiProblemes(problemesBranche({ code, libelle: modif.libelle }));
+  await obtenirPrisma().$transaction(async (tx) => {
+    const avant = await tx.branche.findUnique({ where: { code } });
+    if (!avant) throw new ErreurMetier(`Branche « ${code} » introuvable.`);
+    const libelle = modif.libelle.trim();
+    if (avant.libelle === libelle && avant.actif === modif.actif) return;
+    await tx.branche.update({ where: { code }, data: { libelle, actif: modif.actif } });
     await journaliser(
       {
         acteur: { id: acteur.id, identifiant: acteur.identifiant },
         action: "PARAMETRE_MODIFIE",
-        objetType: "taxe",
-        objetId: cree.id,
-        apres: { ...saisie },
+        objetType: "branche",
+        objetId: code,
+        avant: { libelle: avant.libelle, actif: avant.actif },
+        apres: { libelle, actif: modif.actif },
         adresseIp,
       },
       tx,
@@ -107,22 +120,156 @@ export async function creerTaxe(acteur: UtilisateurCourant, saisie: TaxeSaisie, 
   });
 }
 
-export type ClientLecture = Pick<Prisma.TransactionClient, "taxe" | "produit">;
+/** Branche à utiliser pour un taux ou un produit : elle doit exister et être active. */
+async function exigerBrancheActive(tx: Prisma.TransactionClient, code: string): Promise<void> {
+  const b = await tx.branche.findUnique({ where: { code } });
+  if (!b) throw new ErreurMetier(`La branche « ${code} » n'est pas dans la liste des branches : ajoutez-la d'abord (écran « Branches »).`);
+  if (!b.actif) throw new ErreurMetier(`La branche « ${code} » est désactivée : réactivez-la avant d'y ajouter un taux ou un produit.`);
+}
 
-async function taxeEnVigueur(client: ClientLecture, branche: string, date: DateIso): Promise<TaxeSaisie> {
-  const lignes = await client.taxe.findMany({ where: { branche } });
-  const candidates = lignes.map((t) => ({
+/** Branches de démarrage (prisma/donnees/branches.json), idempotent : une branche existante n'est jamais modifiée. */
+export async function initialiserBranches(lignes: BrancheSaisie[], auteur = "initialisation"): Promise<number> {
+  let crees = 0;
+  for (const l of lignes) {
+    refuserSiProblemes(problemesBranche(l));
+    await obtenirPrisma().$transaction(async (tx) => {
+      if (await tx.branche.findUnique({ where: { code: l.code } })) return;
+      await tx.branche.create({ data: { code: l.code, libelle: l.libelle.trim(), creePar: auteur } });
+      await journaliser({ acteur: null, action: "PARAMETRE_MODIFIE", objetType: "branche", objetId: l.code, apres: { ...l, actif: true, source: "données de démarrage" }, adresseIp: null }, tx);
+      crees += 1;
+    });
+  }
+  return crees;
+}
+
+// ---------------------------------------------------------------- Taxes
+
+/** Une version d'un taux : sa période, sa valeur, son auteur et sa date de saisie (historique, D18). */
+export type LigneTaxe = TaxeSaisie & { id: number; creePar: string; creeLe: Date };
+
+function versLigneTaxe(t: Prisma.TaxeGetPayload<object>): LigneTaxe {
+  return {
+    id: t.id,
     branche: t.branche,
-    tauxPourcent: texte(t.tauxPourcent),
+    typeContrat: (t.typeContrat as TypeContrat | null) ?? null,
+    tauxPourcent: t.tauxPourcent ? texte(t.tauxPourcent) : null,
+    tauxMixte: t.tauxMixte,
+    commentaire: t.commentaire,
     assiette: t.assiette as AssietteTaxe,
     dateEffet: depuisDate(t.dateEffet),
     dateFin: t.dateFin ? depuisDate(t.dateFin) : null,
-  }));
-  const taxe = enVigueur(candidates, date);
-  if (!taxe || (taxe.dateFin !== null && taxe.dateFin < date)) {
-    throw new ErreurMetier(`Aucune taxe en vigueur pour la branche « ${branche} » au ${date}.`);
+    creePar: t.creePar,
+    creeLe: t.creeLe,
+  };
+}
+
+/** Toutes les versions de tous les taux, regroupables par clé (branche, type de contrat), les plus récentes d'abord. */
+export async function listerTaxes(acteur: UtilisateurCourant): Promise<LigneTaxe[]> {
+  await exigerConsultation(acteur);
+  const taxes = await obtenirPrisma().taxe.findMany({ orderBy: [{ branche: "asc" }, { typeContrat: { sort: "asc", nulls: "first" } }, { dateEffet: "desc" }] });
+  return taxes.map(versLigneTaxe);
+}
+
+const libelleCle = (branche: string, type: string | null) => `« ${branche} » (${type ?? "tous types de contrat"})`;
+
+/**
+ * Ajoute une version d'un taux. Pour une même clé (branche, type de contrat), les périodes ne se
+ * chevauchent jamais (recette 2.2b ; contrainte d'exclusion en base). Si la ligne précédente n'a pas de
+ * date de fin et commence avant la nouvelle, elle est CLÔTURÉE la veille : c'est la seule modification
+ * permise sur une ligne en vigueur, et elle est journalisée. Tout autre chevauchement est refusé.
+ */
+export async function creerTaxe(acteur: UtilisateurCourant, saisie: TaxeSaisie, adresseIp: string | null): Promise<void> {
+  await exigerEcriture(acteur);
+  refuserSiProblemes(problemesTaxe(saisie));
+  const auteurAudit = { id: acteur.id, identifiant: acteur.identifiant };
+  try {
+    await obtenirPrisma().$transaction(async (tx) => {
+      await exigerBrancheActive(tx, saisie.branche);
+      const memeCle = (await tx.taxe.findMany({ where: { branche: saisie.branche, typeContrat: saisie.typeContrat } })).map(versLigneTaxe);
+      const chevauchees = memeCle.filter((t) => periodesSeChevauchent(t, saisie));
+      const aCloturer = chevauchees.length === 1 && chevauchees[0].dateFin === null && chevauchees[0].dateEffet < saisie.dateEffet ? chevauchees[0] : null;
+      if (chevauchees.length > 0 && !aCloturer) {
+        const p = chevauchees.map((t) => `du ${t.dateEffet} ${t.dateFin ? `au ${t.dateFin}` : "sans date de fin"}`).join(", ");
+        throw new ErreurMetier(`Période refusée : elle chevauche un taux ${libelleCle(saisie.branche, saisie.typeContrat)} déjà enregistré (${p}). Deux périodes d'un même taux ne peuvent pas se chevaucher.`);
+      }
+      if (aCloturer) {
+        const veille = ajouterJours(saisie.dateEffet, -1);
+        await tx.taxe.update({ where: { id: aCloturer.id }, data: { dateFin: versDate(veille) } });
+        await journaliser(
+          { acteur: auteurAudit, action: "PARAMETRE_MODIFIE", objetType: "taxe", objetId: aCloturer.id, avant: { dateFin: null }, apres: { dateFin: veille, motif: "clôture par un nouveau taux" }, adresseIp },
+          tx,
+        );
+      }
+      const cree = await tx.taxe.create({
+        data: {
+          branche: saisie.branche,
+          typeContrat: saisie.typeContrat,
+          tauxPourcent: canoniqueOuNull(saisie.tauxPourcent),
+          tauxMixte: saisie.tauxMixte,
+          commentaire: saisie.commentaire?.trim() || null,
+          assiette: saisie.assiette,
+          dateEffet: versDate(saisie.dateEffet),
+          dateFin: saisie.dateFin ? versDate(saisie.dateFin) : null,
+          creePar: acteur.identifiant,
+        },
+      });
+      await journaliser({ acteur: auteurAudit, action: "PARAMETRE_MODIFIE", objetType: "taxe", objetId: cree.id, apres: { ...saisie }, adresseIp }, tx);
+    });
+  } catch (erreur) {
+    // Filet de sécurité : la contrainte d'exclusion de la base (deux saisies simultanées, par exemple).
+    if (erreur instanceof Error && /taxes_sans_chevauchement|23P01/.test(erreur.message)) {
+      throw new ErreurMetier(`Période refusée : elle chevauche un taux ${libelleCle(saisie.branche, saisie.typeContrat)} déjà enregistré.`);
+    }
+    throw erreur;
   }
-  return taxe;
+}
+
+export type ClientLecture = Pick<Prisma.TransactionClient, "taxe" | "produit">;
+
+/** Taux le plus précis pour la branche et le type de contrat, en vigueur à la date d'effet (D18, H29). */
+async function taxeEnVigueur(client: ClientLecture, branche: string, typeContrat: TypeContrat, date: DateIso): Promise<TaxeSaisie & { tauxPourcent: string }> {
+  const lignes = (await client.taxe.findMany({ where: { branche } })).map(versLigneTaxe);
+  try {
+    return choisirTaux(lignes, branche, typeContrat, date);
+  } catch (erreur) {
+    if (erreur instanceof ErreurCalcul) throw new ErreurMetier(erreur.message);
+    throw erreur;
+  }
+}
+
+/** Données de démarrage des taux (jamais écrites dans le moteur) : voir prisma/donnees/taxes-loi.json. */
+export type TaxeDemarrage = Omit<TaxeSaisie, "assiette"> & { assiette?: AssietteTaxe };
+
+/**
+ * Charge les taux de démarrage (idempotent) : une ligne n'est ajoutée que si sa clé (branche, type de
+ * contrat) n'a encore AUCUNE ligne. Un taux déjà paramétré n'est jamais modifié.
+ */
+export async function initialiserTaxes(lignes: TaxeDemarrage[], auteur = "initialisation"): Promise<number> {
+  let crees = 0;
+  for (const l of lignes) {
+    const saisie: TaxeSaisie = { ...l, assiette: l.assiette ?? "NETTE_ACCESSOIRES" };
+    const problemes = problemesTaxe(saisie);
+    if (problemes.length > 0) throw new Error(`Taux de démarrage invalide (${libelleCle(l.branche, l.typeContrat)}) : ${problemes.join(" ")}`);
+    await obtenirPrisma().$transaction(async (tx) => {
+      if (await tx.taxe.findFirst({ where: { branche: saisie.branche, typeContrat: saisie.typeContrat } })) return;
+      const cree = await tx.taxe.create({
+        data: {
+          branche: saisie.branche,
+          typeContrat: saisie.typeContrat,
+          tauxPourcent: canoniqueOuNull(saisie.tauxPourcent),
+          tauxMixte: saisie.tauxMixte,
+          commentaire: saisie.commentaire,
+          assiette: saisie.assiette,
+          dateEffet: versDate(saisie.dateEffet),
+          dateFin: saisie.dateFin ? versDate(saisie.dateFin) : null,
+          creePar: auteur,
+        },
+      });
+      await journaliser({ acteur: null, action: "PARAMETRE_MODIFIE", objetType: "taxe", objetId: cree.id, apres: { ...saisie, source: "données de démarrage" }, adresseIp: null }, tx);
+      crees += 1;
+    });
+  }
+  return crees;
 }
 
 // ---------------------------------------------------------------- Produits
@@ -160,7 +307,7 @@ export async function creerProduit(
   await exigerEcriture(acteur);
   const problemes: string[] = [];
   if (!codeValide(saisie.code)) problemes.push("Code produit invalide (majuscules, chiffres et _, 30 caractères au plus).");
-  if (!codeValide(saisie.branche)) problemes.push("Branche invalide (majuscules, chiffres et _).");
+  if (!codeValide(saisie.branche)) problemes.push("Branche invalide (choisissez-la dans la liste des branches).");
   if (saisie.libelle.trim() === "" || saisie.gamme.trim() === "") problemes.push("Libellé et gamme obligatoires.");
   refuserSiProblemes(problemes);
 
@@ -168,6 +315,7 @@ export async function creerProduit(
     if (await tx.produit.findUnique({ where: { code: saisie.code } })) {
       throw new ErreurMetier("Ce code produit existe déjà.");
     }
+    await exigerBrancheActive(tx, saisie.branche);
     const cree = await tx.produit.create({
       data: { code: saisie.code, libelle: saisie.libelle.trim(), gamme: saisie.gamme.trim(), branche: saisie.branche, creePar: acteur.identifiant },
     });
@@ -252,14 +400,14 @@ export async function creerVersion(acteur: UtilisateurCourant, codeProduit: stri
         arrondiNiveau: saisie.arrondi.niveau,
         arrondiComposante: saisie.arrondi.composanteAbsorbante,
         prorataActif: saisie.prorata.actif,
-        primeMinimale: saisie.prorata.primeMinimale,
+        primeMinimale: canoniqueOuNull(saisie.prorata.primeMinimale),
         fractionnementTranchesMax: saisie.fractionnement.tranchesMax,
-        fractionnementRepartition: saisie.fractionnement.repartitionPourcent ?? undefined,
+        fractionnementRepartition: saisie.fractionnement.repartitionPourcent?.map(canonique) ?? undefined,
         fractionnementDecalagesMois: saisie.fractionnement.decalagesMois ?? undefined,
-        fraisFractionnement: saisie.fractionnement.frais,
+        fraisFractionnement: canonique(saisie.fractionnement.frais),
         validiteMois: saisie.cotation.validiteMois,
         formulesMax: saisie.cotation.formulesMax,
-        seuilValidationTtc: saisie.seuilValidationTtc,
+        seuilValidationTtc: canoniqueOuNull(saisie.seuilValidationTtc),
         cgModeleCode: saisie.references?.cgModeleCode ?? null,
         cgVisa: saisie.references?.cgVisa?.trim() ?? null,
         csModeleCode: saisie.references?.csModeleCode ?? null,
@@ -269,10 +417,10 @@ export async function creerVersion(acteur: UtilisateurCourant, codeProduit: stri
           create: saisie.formules.map((f) => ({
             code: f.code,
             libelle: f.libelle.trim(),
-            tauxCouverture: f.tauxCouverture,
-            primeUnitaire: f.primeUnitaire,
+            tauxCouverture: canoniqueOuNull(f.tauxCouverture),
+            primeUnitaire: canonique(f.primeUnitaire),
             accessoireMode: f.accessoireMode,
-            accessoireValeur: f.accessoireValeur,
+            accessoireValeur: canonique(f.accessoireValeur),
           })),
         },
       },
@@ -299,6 +447,8 @@ export type DemandeCalcul = {
   dateEcheance: DateIso;
   /** Date du document : les paramètres utilisés sont ceux en vigueur à cette date (défaut : aujourd'hui). */
   dateDocument?: DateIso;
+  /** Type de contrat (police.type_contrat) : il choisit le taux de taxe (D18). */
+  typeContrat: TypeContrat;
   lignes: { codeFormule: string; effectif: number }[];
   nombreTranches?: number;
 };
@@ -306,7 +456,7 @@ export type DemandeCalcul = {
 export type ReponseCalcul = {
   produit: { code: string; libelle: string };
   versionDu: DateIso;
-  taxe: { branche: string; tauxPourcent: string; dateEffet: DateIso };
+  taxe: { branche: string; typeContrat: TypeContrat | null; tauxPourcent: string; dateEffet: DateIso };
   libelles: Record<string, string>;
   resultat: ResultatCalcul;
   echeancier: Tranche[] | null;
@@ -317,18 +467,20 @@ export type ReponseCalcul = {
 export type ContexteCalcul = {
   produit: { id: number; code: string; libelle: string };
   version: VersionProduit;
-  taxe: TaxeSaisie;
+  taxe: TaxeSaisie & { tauxPourcent: string };
 };
 
 /**
  * Trouve les paramètres EN VIGUEUR : la version du produit à la date du document, la taxe de la
- * branche à la date d'effet de la police (CDC §8.1).
+ * branche et du type de contrat à la date d'effet de la police (CDC §8.1, D18 ; décision de Thierry du
+ * 08/10/2026 : la date d'effet, pas la date du document).
  */
 export async function resoudreContexte(
   client: ClientLecture,
   codeProduit: string,
   dateDocument: DateIso,
   dateEffet: DateIso,
+  typeContrat: TypeContrat,
 ): Promise<ContexteCalcul> {
   for (const d of [dateEffet, dateDocument]) {
     if (!dateValide(d)) {
@@ -349,7 +501,7 @@ export async function resoudreContexte(
   if (!version) {
     throw new ErreurMetier(`Aucun paramétrage de « ${produit.code} » en vigueur au ${dateDocument}.`);
   }
-  const taxe = await taxeEnVigueur(client, produit.branche, dateEffet);
+  const taxe = await taxeEnVigueur(client, produit.branche, typeContrat, dateEffet);
   return { produit: { id: produit.id, code: produit.code, libelle: produit.libelle }, version, taxe };
 }
 
@@ -358,34 +510,54 @@ export type LigneDemande = {
   effectif: number;
   /** Prime unitaire forcée (CDC §4.1) : remplace le tarif ; le motif et la validation sont exigés par l'appelant. */
   primeForcee?: string | null;
+  /**
+   * Valeur des accessoires saisie dans la cotation (H1, D18), dans le mode de la formule : remplace la
+   * valeur par défaut du paramétrage. Ce n'est pas un forçage ; la modification est journalisée.
+   */
+  accessoireValeur?: string | null;
 };
 
 /** Construit l'entrée du moteur à partir du contexte. La prime de tarif de chaque ligne est renvoyée à part. */
 export function construireEntree(
   contexte: ContexteCalcul,
   demande: { dateEffet: DateIso; dateEcheance: DateIso; lignes: LigneDemande[]; nombreTranches: number },
-): { entree: EntreeCalcul; primesTarif: Record<string, string> } {
+): { entree: EntreeCalcul; primesTarif: Record<string, string>; accessoiresTarif: Record<string, string> } {
   const { version, taxe } = contexte;
   if (!Number.isInteger(demande.nombreTranches) || demande.nombreTranches < 1 || demande.nombreTranches > version.fractionnement.tranchesMax) {
     throw new ErreurMetier(`Ce produit autorise de 1 à ${version.fractionnement.tranchesMax} tranche(s).`);
   }
   const primesTarif: Record<string, string> = {};
+  const accessoiresTarif: Record<string, string> = {};
   const lignes = demande.lignes.map((l) => {
     const formule = version.formules.find((f) => f.code === l.codeFormule);
     if (!formule) {
       throw new ErreurMetier(`Formule « ${l.codeFormule} » inconnue pour ce produit.`);
     }
     primesTarif[formule.code] = formule.primeUnitaire;
+    accessoiresTarif[formule.code] = formule.accessoireValeur;
+    const accessoire = l.accessoireValeur ?? formule.accessoireValeur;
+    const problemes: string[] = [];
+    try {
+      const valeur = montant(accessoire);
+      if (valeur.isNegative() || (formule.accessoireMode === "POURCENT" && valeur.greaterThan(100))) {
+        problemes.push(`Accessoires de « ${formule.code} » : valeur hors limites (0 ${formule.accessoireMode === "POURCENT" ? "à 100 %" : "ou plus"}).`);
+      }
+    } catch (erreur) {
+      problemes.push(`Accessoires de « ${formule.code} » : ${erreur instanceof Error ? erreur.message : "valeur invalide"}`);
+    }
+    refuserSiProblemes(problemes);
     return {
       code: formule.code,
       primeUnitaire: l.primeForcee ?? formule.primeUnitaire,
       effectif: l.effectif,
-      accessoire: { mode: formule.accessoireMode, valeur: formule.accessoireValeur },
+      accessoire: { mode: formule.accessoireMode, valeur: canonique(accessoire) },
     };
   });
   return {
     primesTarif,
+    accessoiresTarif,
     entree: {
+      moteur: VERSION_MOTEUR,
       dateEffet: demande.dateEffet,
       dateEcheance: demande.dateEcheance,
       lignes,
@@ -438,7 +610,10 @@ export async function calculerPourProduit(acteur: UtilisateurCourant, demande: D
   if (!dateValide(demande.dateEcheance)) {
     throw new ErreurMetier(`Date invalide : « ${demande.dateEcheance} ».`);
   }
-  const contexte = await resoudreContexte(obtenirPrisma(), demande.codeProduit, dateDocument, demande.dateEffet);
+  if (!estTypeContrat(demande.typeContrat)) {
+    throw new ErreurMetier("Choisissez le type de contrat (individuel, famille, groupe ou groupe ouvert).");
+  }
+  const contexte = await resoudreContexte(obtenirPrisma(), demande.codeProduit, dateDocument, demande.dateEffet, demande.typeContrat);
   const nombreTranches = demande.nombreTranches ?? 1;
   const { entree } = construireEntree(contexte, {
     dateEffet: demande.dateEffet,
@@ -450,7 +625,7 @@ export async function calculerPourProduit(acteur: UtilisateurCourant, demande: D
   return {
     produit: { code: contexte.produit.code, libelle: contexte.produit.libelle },
     versionDu: contexte.version.dateEffet,
-    taxe: { branche: contexte.taxe.branche, tauxPourcent: contexte.taxe.tauxPourcent, dateEffet: contexte.taxe.dateEffet },
+    taxe: { branche: contexte.taxe.branche, typeContrat: contexte.taxe.typeContrat, tauxPourcent: contexte.taxe.tauxPourcent, dateEffet: contexte.taxe.dateEffet },
     libelles: Object.fromEntries(contexte.version.formules.map((f) => [f.code, f.libelle])),
     resultat,
     echeancier,

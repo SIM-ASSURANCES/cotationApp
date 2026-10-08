@@ -2,6 +2,7 @@ import { MODES_ACCESSOIRE, NIVEAUX_ARRONDI, COMPOSANTES, ASSIETTES_TAXE, type As
 import { dateValide, type DateIso } from "./dates";
 import { PRECISIONS, SENS_ARRONDI, montant } from "./montant";
 import { NOMBRE_MAX_TRANCHES } from "./echeancier";
+import { TYPES_CONTRAT, type TypeContrat } from "./taxes";
 
 /**
  * Paramétrage produit et taxes (CDC §7, §8.3). Ces types décrivent ce qu'un administrateur saisit ;
@@ -47,7 +48,14 @@ export type ReferencesContractuelles = { cgModeleCode: string | null; cgVisa: st
 
 export type TaxeSaisie = {
   branche: string;
-  tauxPourcent: string;
+  /** null : tous types de contrat (D18). */
+  typeContrat: TypeContrat | null;
+  /** null seulement pour une ligne à taux mixte. */
+  tauxPourcent: string | null;
+  /** Plusieurs taux dans un même contrat (incendie / dommages aux biens) : le moteur refuse le calcul. */
+  tauxMixte: boolean;
+  /** Précision libre (par exemple les taux d'une ligne mixte). */
+  commentaire: string | null;
   assiette: AssietteTaxe;
   dateEffet: DateIso;
   dateFin: DateIso | null;
@@ -64,8 +72,9 @@ function montantPositifOuNul(texte: string | null, nom: string, problemes: strin
     if (m.isNegative() || (plafond !== undefined && m.greaterThan(plafond))) {
       problemes.push(`${nom} doit être compris entre 0 et ${plafond ?? "l'infini"}.`);
     }
-  } catch {
-    problemes.push(`${nom} n'est pas un nombre valide.`);
+  } catch (erreur) {
+    // Message de l'analyseur unique : il dit pourquoi (« point et virgule mélangés »…).
+    problemes.push(`${nom} n'est pas un nombre valide : ${erreur instanceof Error ? erreur.message : ""}`);
   }
 }
 
@@ -134,7 +143,15 @@ export function problemesVersion(v: VersionSaisie): string[] {
 export function problemesTaxe(t: TaxeSaisie): string[] {
   const p: string[] = [];
   if (!codeValide(t.branche)) p.push("La branche est invalide (majuscules, chiffres et _).");
-  montantPositifOuNul(t.tauxPourcent, "Le taux", p, 100);
+  if (t.typeContrat !== null && !TYPES_CONTRAT.includes(t.typeContrat)) p.push("Le type de contrat est invalide.");
+  if (t.tauxMixte) {
+    if (t.tauxPourcent !== null) p.push("Une ligne à taux mixte n'a pas de taux unique : laissez le taux vide et décrivez les taux en commentaire.");
+  } else if (t.tauxPourcent === null) {
+    p.push("Le taux est obligatoire.");
+  } else {
+    montantPositifOuNul(t.tauxPourcent, "Le taux", p, 100);
+  }
+  if (t.commentaire !== null && t.commentaire.length > 300) p.push("Le commentaire est trop long (300 caractères au plus).");
   if (!ASSIETTES_TAXE.includes(t.assiette)) p.push("L'assiette est invalide.");
   if (!dateValide(t.dateEffet)) p.push("La date d'effet est invalide.");
   if (t.dateFin !== null && (!dateValide(t.dateFin) || t.dateFin < t.dateEffet)) p.push("La date de fin est invalide ou antérieure à la date d'effet.");

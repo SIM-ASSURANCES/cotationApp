@@ -46,6 +46,8 @@ export const ACTIONS_AUDIT = [
   "MODELE_APERCU",
   // Documents émis (phase 3b) ; DOCUMENT_EMIS, DOCUMENT_REEDITE, DOCUMENT_TELECHARGE sont plus haut
   "DOCUMENT_ANNULE",
+  // Session 4.0 : accessoires modifiés dans une cotation (H1, D18)
+  "ACCESSOIRES_MODIFIES",
 ] as const;
 
 export type ActionAudit = (typeof ACTIONS_AUDIT)[number];

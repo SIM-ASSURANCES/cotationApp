@@ -8,7 +8,7 @@ import { lireVersion } from "./lire-version";
 function formulaireBeni(surcharge: Record<string, string> = {}): FormData {
   const d = new FormData();
   const champs: Record<string, string> = {
-    dateEffet: "2026-01-01", precision: "1", sens: "PROCHE", niveau: "LIGNE", composante: "TAXE",
+    dateEffet: "2026-01-01", precision: "1", sens: "PROCHE", niveau: "LIGNE",
     prorataActif: "on", primeMinimale: "", tranchesMax: "4", repartition: "", decalages: "", frais: "0",
     validiteMois: "3", formulesMax: "3", seuil: "20000000", ...surcharge,
   };
@@ -34,7 +34,7 @@ describe("lireVersion : formulaire -> version saisie", () => {
     expect(v.seuilValidationTtc).toBe("20000000");
     expect(v.formules.map((f) => [f.code, f.primeUnitaire, f.accessoireMode, f.accessoireValeur])).toEqual([
       ["SOLO", "93581.33", "FIXE", "3000"], // code mis en majuscules
-      ["FAMILLE", "252657,63", "FIXE", "210000"],
+      ["FAMILLE", "252657.63", "FIXE", "210000"], // virgule décimale mise en écriture canonique par l'analyseur unique
     ]);
     expect(typeof v.formules[0].primeUnitaire).toBe("string");
   });

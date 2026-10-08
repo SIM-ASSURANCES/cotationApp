@@ -2,7 +2,7 @@
 # Image de l'application (Next.js). Construction en plusieurs étapes : l'image finale ne contient
 # que la sortie autonome de `next build` (pas de node_modules complet, pas de code source).
 # Contexte de construction : le dossier app/ (voir docker-compose.yml).
-# ATTENTION : la construction télécharge la police Montserrat (accès Internet nécessaire).
+# La police Montserrat est hébergée dans le dépôt (src/app/polices, licence OFL) : rien à télécharger pour elle.
 
 FROM node:24-bookworm-slim AS dependances
 WORKDIR /app

@@ -19,7 +19,7 @@ Volumes persistants : `donnees_postgres`, `donnees_redis`, `documents` (document
 ## 2. Prérequis
 
 - VPS Linux avec **Docker Engine** et le plugin **Docker Compose v2** (`docker compose version`).
-- Accès Internet sortant pendant la construction : images Docker, paquets Debian, paquets npm et Python, police Montserrat.
+- Accès Internet sortant pendant la construction : images Docker, paquets Debian, paquets npm et Python (Montserrat est hébergée dans le dépôt depuis la session 4.0).
 - Un **proxy inverse HTTPS** devant `127.0.0.1:3000` (Dokploy/Traefik, Caddy ou nginx : voir la question Q1) avec un certificat valide. Il doit transmettre `Host`, `X-Forwarded-For` et `X-Forwarded-Proto`. Le pare-feu n'ouvre que les ports 80 et 443 : **jamais** 3000, 5432, 6379 ni 8001.
 - Les polices des modèles dans `generateur/polices/` (voir son README et la question Q2).
 

@@ -12,7 +12,7 @@ function formulaire(champs: [string, string][]): FormData {
 
 const base: [string, string][] = [
   ["codeProduit", "BENI"], ["clientId", ""], ["souscripteur_type", "PHYSIQUE"], ["souscripteur_nom", "KOUADIO"], ["souscripteur_prenoms", "Test"],
-  ["dateEffet", "2026-01-01"], ["dateEcheance", "2026-12-31"], ["nombreTranches", "4"], ["motifForcage", ""],
+  ["typeContrat", "GROUPE"], ["dateEffet", "2026-01-01"], ["dateEcheance", "2026-12-31"], ["nombreTranches", "4"], ["motifForcage", ""],
   ["eff_SOLO", "3"], ["forcee_SOLO", ""], ["eff_FAMILLE", "60"], ["forcee_FAMILLE", ""],
 ];
 
@@ -22,9 +22,10 @@ describe("lireCotation : formulaire -> saisie", () => {
 
     expect(s.codeProduit).toBe("BENI");
     expect(s.lignes).toEqual([
-      { codeFormule: "SOLO", effectif: 3, primeForcee: null },
-      { codeFormule: "FAMILLE", effectif: 60, primeForcee: null },
+      { codeFormule: "SOLO", effectif: 3, primeForcee: null, accessoireValeur: null },
+      { codeFormule: "FAMILLE", effectif: 60, primeForcee: null, accessoireValeur: null },
     ]);
+    expect(s.typeContrat).toBe("GROUPE");
     expect(s.nombreTranches).toBe(4);
     expect(s.clientId).toBeNull();
     expect(problemesSouscripteur(s.souscripteur)).toEqual([]);
@@ -35,8 +36,14 @@ describe("lireCotation : formulaire -> saisie", () => {
     const s = lireCotation(formulaire([...base.filter(([k]) => !["eff_FAMILLE", "forcee_SOLO"].includes(k)), ["eff_FAMILLE", ""], ["forcee_SOLO", "80000,5"]]));
 
     expect(s.lignes).toHaveLength(1);
-    expect(s.lignes[0].primeForcee).toBe("80000,5");
+    expect(s.lignes[0].primeForcee).toBe("80000.5"); // écriture canonique (analyseur unique)
     expect(typeof s.lignes[0].primeForcee).toBe("string");
+  });
+
+  it("lit les accessoires saisis (H1) en écriture canonique ; vide = valeur par défaut de la formule", () => {
+    const s = lireCotation(formulaire([...base, ["acc_SOLO", "4 500"], ["acc_FAMILLE", ""]]));
+
+    expect(s.lignes.map((l) => l.accessoireValeur)).toEqual(["4500", null]);
   });
 
   it("un effectif illisible devient NaN, refusé ensuite avec un message clair", () => {

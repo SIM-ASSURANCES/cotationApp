@@ -2,7 +2,7 @@
 
 import type { EtatFormulaire } from "@/composants/types";
 import { IMAGES_SOCIETE, lireLignes, type ImageSociete, type ParametresSociete } from "@/domaine/documents/societe";
-import { enregistrerImageSociete, enregistrerSociete } from "@/serveur/societe";
+import { enregistrerFormatNumeroPolice, enregistrerImageSociete, enregistrerSociete } from "@/serveur/societe";
 
 import { champ, executerAction } from "../../executer";
 
@@ -36,4 +36,9 @@ export async function enregistrerUneImage(_e: EtatFormulaire, d: FormData): Prom
   if (!(IMAGES_SOCIETE as readonly string[]).includes(nom) || !(fichier instanceof File) || fichier.size === 0) return { erreur: "Choisissez une image PNG." };
   const png = new Uint8Array(await fichier.arrayBuffer());
   return executerAction((acteur, ip) => enregistrerImageSociete(acteur, nom, png, champ(d, "dateEffet"), ip), "Image enregistrée.", "/parametrage/societe");
+}
+
+/** Format du numéro de police (H10, H31) : historisé, journalisé. */
+export async function enregistrerLeFormatPolice(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
+  return executerAction((acteur, ip) => enregistrerFormatNumeroPolice(acteur, champ(d, "format"), champ(d, "dateEffet"), ip), "Format du numéro de police enregistré.", "/parametrage/societe");
 }

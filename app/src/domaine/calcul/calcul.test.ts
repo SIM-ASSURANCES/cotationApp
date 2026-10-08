@@ -14,7 +14,9 @@ const parametres = (surcharge: Partial<ParametresCalcul> = {}): ParametresCalcul
   ...surcharge,
 });
 
-const AN_2026 = { dateEffet: "2026-01-01", dateEcheance: "2026-12-31" } as const;
+// Règles en vigueur (version 2 du moteur, D18) : tous les cas ci-dessous les utilisent.
+const V2 = { moteur: 2 } as const;
+const AN_2026 = { ...V2, dateEffet: "2026-01-01", dateEcheance: "2026-12-31" } as const;
 
 /** Chiffre sous forme de texte, pour comparer avec les chiffres du CDC. */
 const texte = (m: { toString(): string }) => m.toString();
@@ -84,6 +86,7 @@ describe("T3 : facture individuelle YAO, prorata (CDC §16.1, §8.2, §8.3)", ()
 
   it("le coefficient de prorata vaut 163/365 (0,44658)", () => {
     const r = calculer({
+      ...V2,
       dateEffet: "2026-07-22",
       dateEcheance: "2026-12-31",
       parametres: parametres(),
@@ -97,6 +100,7 @@ describe("T3 : facture individuelle YAO, prorata (CDC §16.1, §8.2, §8.3)", ()
 
   it("taxe de 1,5 % sur 120 633 F : 1 809,495 exactement, soit 1 809,50 à deux décimales ; jamais 2 292", () => {
     const r = calculer({
+      ...V2,
       dateEffet: "2026-07-22",
       dateEcheance: "2026-12-31",
       parametres: parametres({ prorata: { actif: false, primeMinimale: null } }),
@@ -114,6 +118,7 @@ describe("T3 : facture individuelle YAO, prorata (CDC §16.1, §8.2, §8.3)", ()
     // Prime annuelle choisie pour que la prime nette proratisée vaille exactement 120 633.
     const primeAnnuelle = montant("120633").mul(365).div(163).toString();
     const r = calculer({
+      ...V2,
       dateEffet: "2026-07-22",
       dateEcheance: "2026-12-31",
       parametres: parametres(),
@@ -129,6 +134,7 @@ describe("T3 : facture individuelle YAO, prorata (CDC §16.1, §8.2, §8.3)", ()
 
   it("la prime minimale remplace une prime proratisée trop faible", () => {
     const r = calculer({
+      ...V2,
       dateEffet: "2026-12-01",
       dateEcheance: "2026-12-31", // 31 jours
       parametres: parametres({ prorata: { actif: true, primeMinimale: "5000" } }),
@@ -167,6 +173,51 @@ describe("accessoires, assiette et frais de fractionnement", () => {
     expect(texte(r.fraisFractionnement!.arrondi.accessoires)).toBe("2000");
     expect(texte(r.fraisFractionnement!.arrondi.taxe)).toBe("30");
     expect(texte(r.totaux.arrondi.ttc)).toBe("42630"); // 40 000 + 600 + 2 000 + 30
+  });
+});
+
+describe("réponses de la Technique du 08/10/2026 (D18) : prorata plafonné, TTC = somme des arrondis", () => {
+  const ligne = (primeUnitaire: string, accessoire = "0") => [{ code: "F", primeUnitaire, effectif: 1, accessoire: { mode: "FIXE" as const, valeur: accessoire } }];
+  const ANNEE_BISSEXTILE = { dateEffet: "2028-01-01", dateEcheance: "2028-12-31" } as const;
+
+  it("H3 : effet 01/01/2028, échéance 31/12/2028 (366 jours) → coefficient 1", () => {
+    const r = calculer({ ...V2, ...ANNEE_BISSEXTILE, parametres: parametres(), lignes: ligne("365000") });
+
+    expect(r.joursCouverts).toBe(366);
+    expect(texte(r.coefProrata)).toBe("1");
+    expect(texte(r.lignes[0].exact.nette)).toBe("365000"); // et non 366 000
+  });
+
+  it("H3 : T3 (163 jours) reste à 163/365", () => {
+    const r = calculer({ ...V2, dateEffet: "2026-07-22", dateEcheance: "2026-12-31", parametres: parametres(), lignes: ligne("365000") });
+
+    expect(r.coefProrata.eq(montant("163").div(365))).toBe(true);
+  });
+
+  it("H4 : le TTC est la somme des trois montants arrondis, jamais un arrondi indépendant", () => {
+    // nette 100,4 ; accessoires 100,4 ; taxe 0,2 % de 200,8 = 0,4016 ; TTC exact 201,2016.
+    const r = calculer({ ...AN_2026, parametres: parametres({ prorata: { actif: false, primeMinimale: null }, taxe: { tauxPourcent: "0.2", assiette: "NETTE_ACCESSOIRES" } }), lignes: ligne("100.4", "100.4") });
+    const a = r.lignes[0].arrondi;
+
+    expect([texte(a.nette), texte(a.accessoires), texte(a.taxe), texte(a.ttc)]).toEqual(["100", "100", "0", "200"]);
+    expect(texte(r.totaux.arrondi.ttc)).toBe("200");
+  });
+
+  it("un calcul enregistré avant la session 4.0 (sans version) se refait à l'identique, avec les règles d'origine (T10)", () => {
+    const ancien = calculer({ ...ANNEE_BISSEXTILE, parametres: parametres(), lignes: ligne("365000") });
+    expect(texte(ancien.lignes[0].arrondi.nette)).toBe("366000"); // 366/365, comme à l'émission
+
+    const ancienArrondi = calculer({
+      ...AN_2026,
+      moteur: undefined,
+      parametres: parametres({ prorata: { actif: false, primeMinimale: null }, taxe: { tauxPourcent: "0.2", assiette: "NETTE_ACCESSOIRES" } }),
+      lignes: ligne("100.4", "100.4"),
+    }).lignes[0].arrondi;
+    expect([texte(ancienArrondi.taxe), texte(ancienArrondi.ttc)]).toEqual(["1", "201"]); // écart absorbé par la taxe
+  });
+
+  it("refuse une version du moteur inconnue", () => {
+    expect(() => calculer({ ...AN_2026, moteur: 3 as never, parametres: parametres(), lignes: ligne("100") })).toThrow(ErreurCalcul);
   });
 });
 

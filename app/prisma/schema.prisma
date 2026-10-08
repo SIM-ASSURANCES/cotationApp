@@ -99,37 +99,61 @@ model JournalAudit {
   @@map("journal_audit")
 }
 
-/// Taux de taxe par branche (CDC §8.3), historisé : une ligne par période, jamais modifiée.
-model Taxe {
-  id           Int       @id @default(autoincrement())
-  branche      String
-  /// En pourcentage : 1.5 pour 1,5 %.
-  tauxPourcent Decimal   @map("taux_pourcent") @db.Decimal(9, 6)
-  /// NETTE_ACCESSOIRES (défaut du CDC) ou NETTE.
-  assiette     String    @default("NETTE_ACCESSOIRES")
-  dateEffet    DateTime  @map("date_effet") @db.Date
-  dateFin      DateTime? @map("date_fin") @db.Date
-  creeLe       DateTime  @default(now()) @map("cree_le")
-  creePar      String    @map("cree_par")
+/// Branche fiscale (D21) : liste paramétrable, clé des taux de taxe et des produits. Le code ne change
+/// jamais ; le libellé et l'état actif se modifient (modifications journalisées). Une branche désactivée
+/// garde ses taux et ses produits, mais n'en reçoit plus de nouveaux.
+model Branche {
+  code     String    @id
+  libelle  String
+  actif    Boolean   @default(true)
+  creeLe   DateTime  @default(now()) @map("cree_le")
+  creePar  String    @map("cree_par")
+  taxes    Taxe[]
+  produits Produit[]
 
-  @@unique([branche, dateEffet])
+  @@map("branches")
+}
+
+/// Taux de taxe (CDC §8.3, D18), historisé : clé (branche, type de contrat, date d'effet). Une ligne en
+/// vigueur ne se modifie pas, sauf sa clôture (date de fin posée une fois). Pour une même clé, deux
+/// périodes ne se chevauchent jamais : contrainte d'exclusion PostgreSQL (voir la migration).
+model Taxe {
+  id             Int       @id @default(autoincrement())
+  branche        String
+  brancheFiscale Branche   @relation(fields: [branche], references: [code], onDelete: Restrict, onUpdate: Restrict)
+  /// INDIVIDUEL, FAMILLE, GROUPE, GROUPE_OUVERT, ou null : tous types de contrat.
+  typeContrat    String?   @map("type_contrat")
+  /// En pourcentage : 1.5 pour 1,5 %. Null seulement pour une ligne à taux mixte.
+  tauxPourcent   Decimal?  @map("taux_pourcent") @db.Decimal(9, 6)
+  /// Plusieurs taux dans un même contrat (incendie / dommages aux biens) : calcul refusé.
+  tauxMixte      Boolean   @default(false) @map("taux_mixte")
+  commentaire    String?
+  /// NETTE_ACCESSOIRES (défaut du CDC) ou NETTE.
+  assiette       String    @default("NETTE_ACCESSOIRES")
+  dateEffet      DateTime  @map("date_effet") @db.Date
+  dateFin        DateTime? @map("date_fin") @db.Date
+  creeLe         DateTime  @default(now()) @map("cree_le")
+  creePar        String    @map("cree_par")
+
+  @@index([branche])
   @@map("taxes")
 }
 
 /// Produit d'assurance (CDC §2.3, §7). Aucun produit n'est codé en dur : tout vient d'ici.
 model Produit {
-  id        Int              @id @default(autoincrement())
-  code      String           @unique
-  libelle   String
-  gamme     String
-  /// Branche fiscale : clé de la table des taxes.
-  branche   String
-  actif     Boolean          @default(true)
-  creeLe    DateTime         @default(now()) @map("cree_le")
-  creePar   String           @map("cree_par")
-  versions  ProduitVersion[]
-  cotations Cotation[]
-  modeles   Modele[]
+  id             Int              @id @default(autoincrement())
+  code           String           @unique
+  libelle        String
+  gamme          String
+  /// Branche fiscale : clé de la table des taxes (liste paramétrable, table branches).
+  branche        String
+  brancheFiscale Branche          @relation(fields: [branche], references: [code], onDelete: Restrict, onUpdate: Restrict)
+  actif          Boolean          @default(true)
+  creeLe         DateTime         @default(now()) @map("cree_le")
+  creePar        String           @map("cree_par")
+  versions       ProduitVersion[]
+  cotations      Cotation[]
+  modeles        Modele[]
 
   @@map("produits")
 }
@@ -245,6 +269,9 @@ model Cotation {
   motifForcage      String?   @map("motif_forcage")
   assures           Json      @default("[]")
   risque            Json      @default("{}")
+  /// INDIVIDUEL, FAMILLE, GROUPE ou GROUPE_OUVERT (police.type_contrat) : choisit le taux de taxe (D18).
+  /// Null pour une cotation créée avant la session 4.0.
+  typeContrat       String?   @map("type_contrat")
   /// Entrée complète du moteur de calcul (montants en texte) : permet de recalculer à l'identique.
   donneesCalcul     Json?     @map("donnees_calcul")
   /// Montants arrondis par formule et en total (texte).
@@ -255,6 +282,8 @@ model Cotation {
   raisonsValidation Json      @default("[]") @map("raisons_validation")
   auteurId          Int       @map("auteur_id")
   auteurIdentifiant String    @map("auteur_identifiant")
+  /// Utilisateurs qui ont créé ou modifié le brouillon (H9) : aucun d'eux ne peut valider la cotation.
+  contributeurs     Int[]     @default([])
   valideParId       Int?      @map("valide_par_id")
   valideLe          DateTime? @map("valide_le")
   dateEtablissement DateTime? @map("date_etablissement") @db.Date
@@ -276,10 +305,13 @@ model Cotation {
   @@map("cotations")
 }
 
-/// Police créée à l'acceptation d'une cotation (CDC §9.4). Le numéro vient d'un format provisoire.
+/// Police créée à l'acceptation d'une cotation (CDC §9.4). Le numéro est attribué par SIM et SAISI
+/// (H10, D18) : jamais généré par le module ; unique ; format contrôlé par un paramètre (H31).
 model Police {
   id               Int      @id @default(autoincrement())
   numero           String   @unique
+  /// INDIVIDUEL, FAMILLE, GROUPE ou GROUPE_OUVERT (police.type_contrat). Null avant la session 4.0.
+  typeContrat      String?  @map("type_contrat")
   cotationId       Int      @unique @map("cotation_id")
   produitCode      String   @map("produit_code")
   souscripteur     Json
@@ -330,39 +362,39 @@ model Modele {
 /// publiée ne change plus du tout (déclencheur PostgreSQL) : un document émis se régénère avec la
 /// version de son époque (T10).
 model ModeleVersion {
-  id                  Int       @id @default(autoincrement())
-  modeleId            Int       @map("modele_id")
+  id                  Int            @id @default(autoincrement())
+  modeleId            Int            @map("modele_id")
   /// 1, 2, 3… attribué au dépôt.
   numero              Int
   /// BROUILLON, SOUMIS ou PUBLIE (« archivé » se déduit des dates, voir domaine/documents/modeles.ts).
   statut              String
   /// Le .docx déposé, tel quel.
   fichier             Bytes
-  nomFichier          String    @map("nom_fichier")
+  nomFichier          String         @map("nom_fichier")
   taille              Int
   /// SHA-256 du fichier, en hexadécimal.
   empreinte           String
   commentaire         String
   /// Utilisée pour les nouvelles générations à partir de cette date (fixée à la publication).
-  dateEffet           DateTime  @map("date_effet") @db.Date
+  dateEffet           DateTime       @map("date_effet") @db.Date
   /// Résultat des contrôles au dépôt : avertissements, polices, données lues.
   analyse             Json
-  auteurId            Int       @map("auteur_id")
-  auteurIdentifiant   String    @map("auteur_identifiant")
-  deposeLe            DateTime  @default(now()) @map("depose_le")
-  soumisLe            DateTime? @map("soumis_le")
+  auteurId            Int            @map("auteur_id")
+  auteurIdentifiant   String         @map("auteur_identifiant")
+  deposeLe            DateTime       @default(now()) @map("depose_le")
+  soumisLe            DateTime?      @map("soumis_le")
   /// Renvoi en brouillon par le valideur : motif.
-  motifRenvoi         String?   @map("motif_renvoi")
-  valideurId          Int?      @map("valideur_id")
-  valideurIdentifiant String?   @map("valideur_identifiant")
-  publieLe            DateTime? @map("publie_le")
+  motifRenvoi         String?        @map("motif_renvoi")
+  valideurId          Int?           @map("valideur_id")
+  valideurIdentifiant String?        @map("valideur_identifiant")
+  publieLe            DateTime?      @map("publie_le")
   /// CG et CS : visa et date du document (produit.cg_visa, produit.cg_date…).
   visa                String?
-  dateDocument        DateTime? @map("date_document") @db.Date
+  dateDocument        DateTime?      @map("date_document") @db.Date
   /// CG et CS : PDF produit UNE fois, à la publication, et jamais reconverti.
   pdf                 Bytes?
-  pdfEmpreinte        String?   @map("pdf_empreinte")
-  modele              Modele    @relation(fields: [modeleId], references: [id], onDelete: Restrict)
+  pdfEmpreinte        String?        @map("pdf_empreinte")
+  modele              Modele         @relation(fields: [modeleId], references: [id], onDelete: Restrict)
   documents           DocumentEmis[]
 
   @@unique([modeleId, numero])

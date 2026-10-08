@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { LignesFormules } from "@/composants/LignesFormules";
-import { COMPOSANTES, NIVEAUX_ARRONDI } from "@/domaine/calcul/calcul";
+import { NIVEAUX_ARRONDI } from "@/domaine/calcul/calcul";
 import { PRECISIONS, SENS_ARRONDI, montant } from "@/domaine/calcul/montant";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
@@ -15,7 +15,6 @@ import { ajouterUneVersion } from "./actions";
 const select = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2";
 const LIBELLE_SENS = { PROCHE: "Au plus proche", SUPERIEUR: "Au supérieur", INFERIEUR: "À l'inférieur" } as const;
 const LIBELLE_NIVEAU = { LIGNE: "Chaque ligne", TOTAL: "Total seulement" } as const;
-const LIBELLE_COMPOSANTE = { NETTE: "Prime nette", ACCESSOIRES: "Accessoires", TAXE: "Taxe" } as const;
 
 /** Décimal en texte sans zéros inutiles (« 3000.000000 » devient « 3000 »). */
 const net = (texte: string) => montant(texte).toString();
@@ -25,8 +24,7 @@ function Resume({ v }: { v: VersionProduit }) {
     <section className="mb-4 rounded border border-bordure p-4 text-sm">
       <h3 className="mb-2 font-semibold">Version en vigueur depuis le {v.dateEffet}</h3>
       <p className="mb-2 text-zinc-700">
-        Arrondi : {v.arrondi.precision} F, {LIBELLE_SENS[v.arrondi.sens].toLowerCase()}, {LIBELLE_NIVEAU[v.arrondi.niveau].toLowerCase()}, écart absorbé par{" "}
-        {LIBELLE_COMPOSANTE[v.arrondi.composanteAbsorbante].toLowerCase()} · Prorata {v.prorata.actif ? "actif" : "inactif"}
+        Arrondi : {v.arrondi.precision} F, {LIBELLE_SENS[v.arrondi.sens].toLowerCase()}, {LIBELLE_NIVEAU[v.arrondi.niveau].toLowerCase()} · Prorata {v.prorata.actif ? "actif" : "inactif"}
         {v.prorata.primeMinimale ? `, prime minimale ${net(v.prorata.primeMinimale)}` : ""} · Fractionnement jusqu'à {v.fractionnement.tranchesMax} tranche(s)
         {net(v.fractionnement.frais) !== "0" ? `, frais ${net(v.fractionnement.frais)}` : ""} · Validité {v.cotation.validiteMois} mois
         {v.seuilValidationTtc ? ` · Double validation au-delà de ${net(v.seuilValidationTtc)} F TTC` : ""}
@@ -120,16 +118,6 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
                   {NIVEAUX_ARRONDI.map((n) => (
                     <option key={n} value={n}>
                       {LIBELLE_NIVEAU[n]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="mb-4 block text-sm font-medium">
-                Composante qui absorbe l'écart d'arrondi
-                <select name="composante" defaultValue={base?.arrondi.composanteAbsorbante ?? "TAXE"} className={select}>
-                  {COMPOSANTES.map((c) => (
-                    <option key={c} value={c}>
-                      {LIBELLE_COMPOSANTE[c]}
                     </option>
                   ))}
                 </select>

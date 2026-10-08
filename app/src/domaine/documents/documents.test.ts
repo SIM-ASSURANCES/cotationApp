@@ -20,14 +20,28 @@ const cellule = (tableau: number, ligne: number, colonne: number, extrait: strin
 
 /** Socle obligatoire des CP (police, souscripteur, dates, prime TTC). */
 const SOCLE_CP = ["police.numero", "souscripteur.nom", "police.date_effet", "police.date_echeance", "prime.ttc"];
+/** Contenu obligatoire des CP (CDC §10.1, session 4a) : le socle, plus durée, primes complètes, CG, réclamation, lieu, date, signature. */
+const CONTENU_CP = [
+  ...SOCLE_CP,
+  "police.duree_libelle",
+  "prime.nette",
+  "prime.accessoires",
+  "prime.taxe",
+  "produit.cg_libelle",
+  "produit.cg_visa",
+  "societe.email_reclamation",
+  "doc.lieu_emission",
+  "doc.date_emission",
+  "signature_sim",
+];
 const refs = (chemins: string[]) => chemins.map((chemin) => ({ chemin, balise: `{{ ${chemin} }}`, emplacement: ici() }));
 
 function analyse(surcharge: Partial<Analyse> = {}): Analyse {
   return {
     docx_valide: true,
     erreur: null,
-    nombre_balises: SOCLE_CP.length,
-    references: refs(SOCLE_CP),
+    nombre_balises: CONTENU_CP.length,
+    references: refs(CONTENU_CP),
     problemes: [],
     champs_word: [],
     blocs: [],
@@ -85,7 +99,7 @@ describe("contrôles au dépôt (CDC §6.7)", () => {
   it("T9 : {{ client.nom }} est rejeté avec un message et son emplacement", () => {
     const r = controlerDepot(
       "CP",
-      analyse({ references: [...refs(SOCLE_CP), { chemin: "client.nom", balise: "{{ client.nom }}", emplacement: cellule(1, 2, 1, "{{ client.nom }}") }] }),
+      analyse({ references: [...refs(CONTENU_CP), { chemin: "client.nom", balise: "{{ client.nom }}", emplacement: cellule(1, 2, 1, "{{ client.nom }}") }] }),
     );
     expect(r.rejets).toEqual([
       {
@@ -150,15 +164,29 @@ describe("contrôles au dépôt (CDC §6.7)", () => {
 
   it("CP, cotation, reçu : numéro, souscripteur, dates d'effet et d'échéance, prime TTC obligatoires (correction de H15)", () => {
     const vide = analyse({ references: refs(["produit.libelle"]) });
+    const manque = (chemin: string) => `Champ obligatoire pour un modèle de conditions particulières absent : {{ ${chemin} }}.`;
     expect(controlerDepot("CP", vide).rejets.map((c) => c.message)).toEqual([
-      "Champ obligatoire pour un modèle de conditions particulières absent : {{ police.numero }}.",
+      manque("police.numero"),
       "Champ obligatoire pour un modèle de conditions particulières absent : {{ souscripteur.nom }} ou {{ souscripteur.raison_sociale }}.",
-      "Champ obligatoire pour un modèle de conditions particulières absent : {{ police.date_effet }}.",
-      "Champ obligatoire pour un modèle de conditions particulières absent : {{ police.date_echeance }}.",
-      "Champ obligatoire pour un modèle de conditions particulières absent : {{ prime.ttc }}.",
+      manque("police.date_effet"),
+      manque("police.date_echeance"),
+      manque("prime.ttc"),
+      // Contenu obligatoire du §10.1 (session 4a) :
+      manque("police.duree_libelle"),
+      manque("prime.nette"),
+      manque("prime.accessoires"),
+      manque("prime.taxe"),
+      manque("produit.cg_libelle"),
+      manque("produit.cg_visa"),
+      manque("societe.email_reclamation"),
+      manque("doc.lieu_emission"),
+      manque("doc.date_emission"),
+      manque("signature_sim"),
     ]);
+    // Le socle seul ne suffit plus pour des CP : il manque le bloc des primes, la clause CG, la réclamation, la signature…
+    expect(controlerDepot("CP", analyse({ references: refs(SOCLE_CP) })).rejets).toHaveLength(10);
     // Personne morale : la raison sociale suffit.
-    expect(controlerDepot("CP", analyse({ references: refs(["police.numero", "souscripteur.raison_sociale", "police.date_effet", "police.date_echeance", "prime.ttc"]) })).rejets).toEqual([]);
+    expect(controlerDepot("CP", analyse({ references: refs(CONTENU_CP.map((c) => (c === "souscripteur.nom" ? "souscripteur.raison_sociale" : c))) })).rejets).toEqual([]);
     // Cotation : son numéro est doc.numero (pas encore de police).
     const cotation = ["doc.numero", "souscripteur.nom", "police.date_effet", "police.date_echeance", "prime.ttc"];
     expect(controlerDepot("COTATION", analyse({ references: refs(cotation) })).rejets).toEqual([]);
@@ -169,6 +197,19 @@ describe("contrôles au dépôt (CDC §6.7)", () => {
       "Champ obligatoire pour un modèle de reçu absent : {{ doc.facture_origine }}.",
     ]);
     expect(controlerDepot("RECU", analyse({ references: refs([...SOCLE_CP, "paiements[].montant", "doc.facture_origine"]) })).rejets).toEqual([]);
+  });
+
+  it("certificat d'adhésion : numéro, police mère, adhérent, date d'effet et date d'émission ; aucune prime exigée (H36)", () => {
+    const manque = (chemin: string) => `Champ obligatoire pour un modèle de certificat d'adhésion absent : {{ ${chemin} }}.`;
+    expect(controlerDepot("CERTIFICAT", analyse({ references: refs(["produit.libelle"]) })).rejets.map((c) => c.message)).toEqual([
+      manque("police.numero"),
+      manque("police.police_mere"),
+      "Champ obligatoire pour un modèle de certificat d'adhésion absent : {{ souscripteur.nom }} ou {{ souscripteur.raison_sociale }}.",
+      manque("police.date_effet"),
+      manque("doc.date_emission"),
+    ]);
+    const certificat = ["police.numero", "police.police_mere", "souscripteur.nom", "police.date_effet", "doc.date_emission"];
+    expect(controlerDepot("CERTIFICAT", analyse({ references: refs(certificat) })).rejets).toEqual([]);
   });
 
   it("facture : doc.numero, prime.ttc et societe.rccm obligatoires", () => {

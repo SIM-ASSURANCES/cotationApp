@@ -5,13 +5,14 @@ import type { DateIso } from "../calcul/dates";
  * sont dans serveur/documents.ts.
  */
 
-export const TYPES_DOCUMENT = ["COTATION", "CP", "FACTURE", "AVOIR", "RECU", "AVIS_ECHEANCE", "RELANCE"] as const;
+export const TYPES_DOCUMENT = ["COTATION", "CP", "CERTIFICAT", "FACTURE", "AVOIR", "RECU", "AVIS_ECHEANCE", "RELANCE"] as const;
 export type TypeDocument = (typeof TYPES_DOCUMENT)[number];
 
 /** Libellé et accord (« Annulée », « Annulé », « Annulées ») de chaque type. */
 export const DOCUMENTS: Record<TypeDocument, { libelle: string; accord: "f" | "m" | "fp" }> = {
   COTATION: { libelle: "Cotation", accord: "f" },
   CP: { libelle: "Conditions particulières", accord: "fp" },
+  CERTIFICAT: { libelle: "Certificat d'adhésion", accord: "m" },
   FACTURE: { libelle: "Facture", accord: "f" },
   AVOIR: { libelle: "Avoir", accord: "m" },
   RECU: { libelle: "Reçu", accord: "m" },

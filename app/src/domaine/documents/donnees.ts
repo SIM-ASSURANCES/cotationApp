@@ -1,6 +1,6 @@
 import type { DateIso } from "../calcul/dates";
 import { montant } from "../calcul/montant";
-import type { Assure, Risque, Souscripteur } from "../cotation/saisie";
+import type { Assure, Beneficiaire, ContactUrgence, Risque, Souscripteur } from "../cotation/saisie";
 import { appliquerFacultatifs, champsInconnus, NON_FOURNI, type NonFourni } from "./dictionnaire";
 import type { TypeDocument } from "./emission";
 import type { MentionsDocument, Societe } from "./societe";
@@ -40,6 +40,11 @@ export type SourceDocument = {
   cs: { libelle: string; visa: string } | null;
   souscripteur: Souscripteur;
   assures: Assure[];
+  /** null : jamais fournis (cotation ou police d'avant la 4a) ; [] : saisis et laissés vides. */
+  beneficiaires: Beneficiaire[] | null;
+  contactsUrgence: ContactUrgence[] | null;
+  /** Certificat d'adhésion : numéro de la police mère (police.police_mere) ; null pour un autre document. */
+  policeMere: string | null;
   risque: Risque;
   dateEffet: DateIso;
   dateEcheance: DateIso;
@@ -64,7 +69,10 @@ const ou = <T,>(v: T | undefined | null): T | null => (v === undefined || v === 
 const fourni = <T,>(v: T | undefined | null): T | null | NonFourni => (v === undefined ? NON_FOURNI : ou(v));
 
 export function donneesDocument(s: SourceDocument): Record<string, unknown> {
-  const sous = s.souscripteur as Souscripteur & Record<string, string | undefined>;
+  const sous = s.souscripteur;
+  // Certificat d'adhésion (§10.2) : pas de prime, d'échéancier ni de solde (H36) ; ils sont non fournis, donc
+  // absents, et un modèle de certificat qui les utilise ne se génère pas (le générateur nomme le champ).
+  const certificat = s.type === "CERTIFICAT";
   const baseTaxe = s.taxe.assiette === "NETTE" ? montant(s.totaux.nette) : montant(s.totaux.nette).plus(montant(s.totaux.accessoires));
   const donnees = {
     societe: s.societe,
@@ -109,8 +117,12 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
       formule: ou(a.formule),
       prime: NON_FOURNI, // le moteur calcule par formule, pas par assuré
     })),
-    beneficiaires: NON_FOURNI,
-    contacts_urgence: NON_FOURNI,
+    // null : jamais fournis (d'avant la 4a) → absents ; [] : saisis et laissés vides → liste vide (D19).
+    beneficiaires:
+      s.beneficiaires === null
+        ? NON_FOURNI
+        : s.beneficiaires.map((b) => ({ ordre: b.ordre, nom_prenoms: b.nom_prenoms, lien: ou(b.lien), contact: ou(b.contact), quote_part: b.quote_part })),
+    contacts_urgence: s.contactsUrgence === null ? NON_FOURNI : s.contactsUrgence.map((u) => ({ nom_prenoms: u.nom_prenoms, contact: u.contact })),
     risque: s.risque,
     police: {
       numero: s.policeNumero,
@@ -121,33 +133,35 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
       duree_jours: s.joursCouverts,
       duree_libelle: `${s.joursCouverts} jours`,
       type_contrat: s.typeContrat ?? NON_FOURNI,
-      police_mere: NON_FOURNI,
+      police_mere: s.policeMere ?? NON_FOURNI,
       nantissement: NON_FOURNI,
     },
     formules: s.formules.map((f) => ({
       code: f.code,
       libelle: f.libelle,
       taux_couverture: f.tauxCouverture,
-      effectif: f.effectif,
-      prime_unitaire: f.primeUnitaire,
-      prime_nette: f.nette,
-      accessoires: f.accessoires,
-      taxe: f.taxe,
-      ttc: f.ttc,
+      effectif: certificat ? NON_FOURNI : f.effectif,
+      prime_unitaire: certificat ? NON_FOURNI : f.primeUnitaire,
+      prime_nette: certificat ? NON_FOURNI : f.nette,
+      accessoires: certificat ? NON_FOURNI : f.accessoires,
+      taxe: certificat ? NON_FOURNI : f.taxe,
+      ttc: certificat ? NON_FOURNI : f.ttc,
     })),
-    prime: {
-      nette: s.totaux.nette,
-      accessoires: s.totaux.accessoires,
-      base_taxe: baseTaxe.toFixed(),
-      taux_taxe: s.taxe.tauxPourcent,
-      taxe: s.totaux.taxe,
-      ttc: s.totaux.ttc,
-      forcee: s.forcee,
-      motif_forcage: s.motifForcage,
-    },
-    echeances: s.echeances.map((e) => ({ numero: e.numero, date: e.date, montant: e.montant, statut: "À payer" })),
+    prime: certificat
+      ? NON_FOURNI
+      : {
+          nette: s.totaux.nette,
+          accessoires: s.totaux.accessoires,
+          base_taxe: baseTaxe.toFixed(),
+          taux_taxe: s.taxe.tauxPourcent,
+          taxe: s.totaux.taxe,
+          ttc: s.totaux.ttc,
+          forcee: s.forcee,
+          motif_forcage: s.motifForcage,
+        },
+    echeances: certificat ? NON_FOURNI : s.echeances.map((e) => ({ numero: e.numero, date: e.date, montant: e.montant, statut: "À payer" })),
     paiements: [],
-    solde: { total_paye: "0", restant_du: s.totaux.ttc },
+    solde: certificat ? NON_FOURNI : { total_paye: "0", restant_du: s.totaux.ttc },
     doc: {
       type: s.type,
       numero: s.numero,

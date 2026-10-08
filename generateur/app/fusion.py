@@ -8,7 +8,8 @@ Règles :
   - bac à sable Jinja : un modèle déposé ne peut atteindre aucun objet Python interne ;
   - aucun calcul : les montants arrivent arrondis et ne sont que formatés (filtres.py).
 
-Listes longues (§6.5) : au-delà du seuil, chaque boucle {%tr for … %} (ligne de tableau) ou
+Listes longues (§6.5) : au-delà du seuil — ou toujours, pour les listes que l'appelant déclare
+`listes_en_annexe` (liste des adhérents d'une police de groupe, §10.2) — chaque boucle {%tr for … %} (ligne de tableau) ou
 {%p for … %} (paragraphes) du corps sur cette liste est remplacée par le renvoi « Voir annexe –
 Liste des assurés (25 personnes) », et la liste complète est rendue par le modèle d'annexe.
 """
@@ -16,7 +17,7 @@ Liste des assurés (25 personnes) », et la liste complète est rendue par le mo
 import copy
 import io
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -314,8 +315,9 @@ def fusionner(
     annexes: dict[str, bytes] | None = None,
     sous_modeles: dict[str, dict[str, bytes]] | None = None,
     images: dict[str, Image] | None = None,
+    listes_en_annexe: Collection[str] = (),
 ) -> Resultat:
-    """Fusionne le modèle ; produit le corps et, pour chaque liste trop longue, son annexe."""
+    """Fusionne le modèle ; produit le corps et, pour chaque liste trop longue ou imposée, son annexe."""
     annexes = annexes or {}
     images = images or {}
     en_annexe: list[str] = []
@@ -324,15 +326,14 @@ def fusionner(
         _isoler_les_blocs(corps)
         for liste, (libelle, unite) in LISTES_LONGUES.items():
             valeur = donnees.get(liste)
-            if not isinstance(valeur, list) or len(valeur) <= seuil_liste:
+            imposee = liste in listes_en_annexe
+            if not isinstance(valeur, list) or (len(valeur) <= seuil_liste and not imposee):
                 continue
             renvoi = f"Voir annexe – {libelle} ({len(valeur)} {unite})"
             if _remplacer_boucles(corps, liste, renvoi):
                 if liste not in annexes:
-                    raise ErreurFusion(
-                        f"{libelle} trop longue ({len(valeur)} lignes, seuil {seuil_liste}) : "
-                        f"aucun modèle d'annexe pour « {liste} »"
-                    )
+                    raison = "renvoyée en annexe" if imposee else f"trop longue ({len(valeur)} lignes, seuil {seuil_liste})"
+                    raise ErreurFusion(f"{libelle} {raison} : aucun modèle d'annexe pour « {liste} »")
                 en_annexe.append(liste)
 
     corps = _rendre(modele, donnees, images, retouche, sous_modeles or {})

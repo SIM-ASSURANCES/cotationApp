@@ -63,6 +63,15 @@ export default async function PageAide() {
             Conditions générales et spéciales : documents fixes, convertis une seule fois en PDF à la publication. Seules balises permises :{" "}
             <code className={code}>{BALISES_FIXES.CG.join(", ")}</code> (CG) et <code className={code}>{BALISES_FIXES.CS.join(", ")}</code> (CS).
           </li>
+          <li>
+            Facture et reçu (extensions D23) : le bloc « Envoyé à » s'écrit{" "}
+            <code className={code}>{"{%p if envoye_a %}"}</code>, puis <code className={code}>{"{{ envoye_a.nom }}"}</code> et{" "}
+            <code className={code}>{"{{ envoye_a.adresse }}"}</code>, puis <code className={code}>{"{%p endif %}"}</code>, chacun seul dans son
+            paragraphe : <code className={code}>envoye_a</code> est vide quand le destinataire n'est pas saisi ou qu'il est le même que « Facturé
+            à », et le bloc disparaît. Dans le tableau des formules, la base de la taxe s'écrit{" "}
+            <code className={code}>{"{{ f.base_taxe | montant }}"}</code> ; dans celui des paiements, la personne qui a payé :{" "}
+            <code className={code}>{"{{ p.payeur }}"}</code>.
+          </li>
           <li>Polices : utilisez celles installées sur le générateur (Calibri, Tahoma, Arial, Times New Roman, MS Gothic…). Une autre police fait l'objet d'un avertissement au dépôt : la mise en page pourrait différer de Word.</li>
         </ul>
       </section>

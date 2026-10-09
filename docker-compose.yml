@@ -36,7 +36,8 @@ services:
     image: redis:7-alpine
     # Pas de cap_drop ici : l'entrée de l'image démarre en root puis abandonne ses privilèges (il lui faut SETUID/SETGID).
     restart: unless-stopped
-    # Mot de passe obligatoire. Réservé à la file de tâches de la phase 5 ; rien ne l'utilise encore.
+    # Mot de passe obligatoire. File de tâches BullMQ (D24) : l'application enfile, le service « travailleur » exécute.
+    # appendonly : les tâches en attente survivent à un redémarrage de Redis.
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?définir REDIS_PASSWORD dans .env}", "--appendonly", "yes"]
     environment:
       REDISCLI_AUTH: ${REDIS_PASSWORD}
@@ -76,6 +77,8 @@ services:
     environment:
       GENERATEUR_SECRET: ${GENERATEUR_SECRET:?définir GENERATEUR_SECRET dans .env}
       DELAI_CONVERSION_S: ${DELAI_CONVERSION_S:-60}
+      # Conversions LibreOffice simultanées, chacune avec son propre profil (session 5a, T8). Même valeur que le travailleur.
+      CONVERSIONS_SIMULTANEES: ${CONVERSIONS_SIMULTANEES:-2}
     volumes:
       # Documents émis et profil LibreOffice : conservés entre les redémarrages et les mises à jour.
       - documents:/donnees
@@ -95,10 +98,42 @@ services:
       URL_PUBLIQUE: ${URL_PUBLIQUE:-}
       # Derrière le proxy HTTPS : Auth.js fait confiance à l'hôte transmis par le proxy.
       AUTH_TRUST_HOST: "true"
+      # File de tâches (D24) : l'application y dépose les imports confirmés et les écritures différées (T14).
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
       postgres:
+        condition: service_healthy
+      outils:
+        condition: service_completed_successfully
+      generateur:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  # Travailleur de la file de tâches (D24) : MÊME image et même code serveur que l'application (étape « outils » du
+  # Dockerfile, qui garde le code source et tsx). Il produit les certificats des imports en masse et reprend les
+  # écritures différées quand le stockage revient (T14). Un seul suffit ; il peut être redémarré à tout moment :
+  # les tâches interrompues sont reprises sans doublon.
+  travailleur:
+    build:
+      context: ./app
+      target: outils
+    <<: *securite
+    command: ["npm", "run", "travailleur"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      GENERATEUR_URL: http://generateur:8001
+      GENERATEUR_SECRET: ${GENERATEUR_SECRET}
+      AUTH_SECRET: ${AUTH_SECRET:?définir AUTH_SECRET dans .env}
+      URL_PUBLIQUE: ${URL_PUBLIQUE:-}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      CONVERSIONS_SIMULTANEES: ${CONVERSIONS_SIMULTANEES:-2}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       outils:
         condition: service_completed_successfully

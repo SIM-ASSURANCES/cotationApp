@@ -13,6 +13,7 @@ import type { Analyse } from "@/domaine/documents/analyse";
 import type { Assure } from "@/domaine/cotation/saisie";
 
 import { lireAdherents } from "./adherents";
+import { lireJournal } from "./audit";
 import { assurerBranche } from "./branches-test";
 import { accepter, creerBrouillon, soumettre, type SaisieCotation } from "./cotations";
 import { emettreCertificat, telechargerDocument, zipDocuments } from "./documents";
@@ -136,7 +137,9 @@ async function lireXlsx(contenu: Uint8Array): Promise<ExcelJS.Workbook> {
   return c;
 }
 
-const journal = (action: string, objetId: number) => obtenirPrisma().journalAudit.findMany({ where: { action, objetId: String(objetId) } });
+/** Lignes du journal d'audit pour une action et un objet (« lot_import 12 », « document 345 »). */
+const journal = async (action: string, objetType: "lot_import" | "document", objetId: number) =>
+  (await lireJournal({ action })).lignes.filter((l) => l.objet === `${objetType} ${objetId}`);
 const certificats = (policeId: number) => obtenirPrisma().documentEmis.count({ where: { policeId, type: "CERTIFICAT" } });
 
 beforeAll(async () => {
@@ -254,7 +257,7 @@ describe("import en masse : contrôle, rapport, confirmation, traitement", () =>
     const controle = (await lireLot(technique, lotId))!;
     expect(controle).toMatchObject({ statut: "CONTROLE", total: 5, valides: 2, erreurs: 3 });
     expect(controle.lignesEnErreur.map((l) => l.numero)).toEqual([4, 5, 6]);
-    expect(await journal("IMPORT_CONTROLE", lotId)).toHaveLength(1);
+    expect(await journal("IMPORT_CONTROLE", "lot_import", lotId)).toHaveLength(1);
 
     // Rapport : ligne, colonne, valeur, message en français.
     const rapport = (await lireXlsx((await rapportErreurs(technique, lotId)).contenu)).getWorksheet("Erreurs")!;
@@ -281,7 +284,7 @@ describe("import en masse : contrôle, rapport, confirmation, traitement", () =>
     expect(docs.map((d) => [d.adherentOrdre, d.numero])).toEqual([[3, n[0]], [4, n[1]]]);
     const zip = await zipDuLot(technique, lotId, null);
     expect(new TextDecoder().decode(zip.contenu)).toBe(`PK ${n[0]}_CERTIFICAT_v1.pdf,${n[1]}_CERTIFICAT_v1.pdf`);
-    const [termine] = await journal("IMPORT_TERMINE", lotId);
+    const [termine] = await journal("IMPORT_TERMINE", "lot_import", lotId);
     expect(termine.apres).toMatchObject({ total: 5, produits: 2, enErreur: 3, enEchec: 0 });
   });
 
@@ -340,7 +343,7 @@ describe("T14 : stockage indisponible, le document reste émis et l'écriture es
       const attente = await obtenirPrisma().ecritureDifferee.findUniqueOrThrow({ where: { documentId: doc.id } });
       expect(attente.empreinte).toBe(emis.empreinte);
       expect(attente.derniereErreur).toMatch(/injoignable/);
-      expect(await journal("ECRITURE_PARTAGE_ECHEC", doc.id)).toHaveLength(1);
+      expect(await journal("ECRITURE_PARTAGE_ECHEC", "document", doc.id)).toHaveLength(1);
 
       // Alerte : pour l'administrateur seulement.
       expect(await alerteStockage(admin)).toMatchObject({ enAttente: 1 });
@@ -362,9 +365,9 @@ describe("T14 : stockage indisponible, le document reste émis et l'écriture es
     await jusqua(async () => (await obtenirPrisma().ecritureDifferee.count({ where: { documentId: doc.id } })) === 0);
     const emis = await obtenirPrisma().documentEmis.findUniqueOrThrow({ where: { id: doc.id } });
     expect(sha256(fichiers.get(emis.chemin)!)).toBe(emis.empreinte);
-    const [reprise] = await journal("ECRITURE_REPRISE", doc.id);
+    const [reprise] = await journal("ECRITURE_REPRISE", "document", doc.id);
     expect(reprise.apres).toMatchObject({ issue: "ECRITE", chemin: emis.chemin });
-    expect(await obtenirPrisma().journalAudit.count({ where: { action: "ECRITURE_RELANCEE", utilisateurId: admin.id } })).toBe(1);
+    expect((await lireJournal({ action: "ECRITURE_RELANCEE" })).lignes.filter((l) => l.utilisateur === admin.identifiant)).toHaveLength(1);
     expect(await alerteStockage(admin)).toBeNull();
     expect((await zipDocuments(technique, [doc.id], null)).contenu.byteLength).toBeGreaterThan(0);
   });
@@ -393,7 +396,7 @@ describe("T14 : stockage indisponible, le document reste émis et l'écriture es
     fichiers.set(attente.chemin, new Uint8Array(attente.contenu)); // écrit en réalité, mais la réponse s'est perdue
     panne = false;
     await jusqua(async () => (await obtenirPrisma().ecritureDifferee.count({ where: { documentId: doc.id } })) === 0);
-    const [reprise] = await journal("ECRITURE_REPRISE", doc.id);
+    const [reprise] = await journal("ECRITURE_REPRISE", "document", doc.id);
     expect(reprise.apres).toMatchObject({ issue: "DEJA_ECRITE" });
   });
 });

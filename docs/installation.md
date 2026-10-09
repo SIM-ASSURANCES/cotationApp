@@ -11,6 +11,7 @@ Installation pas à pas, depuis zéro, sur un poste **Windows** avec **PowerShel
 | Python et son lanceur `py` | 3.14.7 | `py --version` |
 | PostgreSQL, service démarré | 18.6 | `psql --version` |
 | LibreOffice | 26.8.0.3 | `Test-Path "C:\Program Files\LibreOffice\program\soffice.com"` doit afficher `True` |
+| Redis (ou Memurai, compatible Redis sous Windows), avec un mot de passe | 7 ou plus | `redis-cli -a MOT_DE_PASSE ping` doit afficher `PONG` |
 
 Il faut aussi un accès Internet pendant l'installation : paquets npm et Python, et moteur de migration de Prisma, téléchargé au premier usage depuis `binaries.prisma.sh`.
 
@@ -149,6 +150,16 @@ curl.exe -s http://localhost:3000/api/sante
 Réponse attendue : `{"statut":"ok","base":"ok","generateur":"ok"}`. Si le générateur est arrêté, on obtient `"generateur":"ko"` et le code HTTP 503.
 
 On écrit `curl.exe` et non `curl` : dans Windows PowerShell 5.1, `curl` est un alias d'`Invoke-WebRequest`.
+
+### 6.1 File de tâches (session 5a, D24)
+
+L'import en masse et la reprise des écritures différées passent par une file de tâches BullMQ, sur Redis. Dans `app/.env`, renseigner `REDIS_URL="redis://:MOT_DE_PASSE@127.0.0.1:6379"` (et, facultatif, `CONVERSIONS_SIMULTANEES=2`, la même valeur que dans `generateur/.env`). Puis, dans un **troisième** terminal, depuis `app/` :
+
+```powershell
+npm run travailleur
+```
+
+Il affiche `[travailleur] démarré : 0 lot(s) et 0 écriture(s) différée(s) repris.` et reste au premier plan ; Ctrl+C l'arrête proprement. Sans lui, un import se contrôle et se confirme, mais ses certificats ne sont produits qu'à son démarrage. `npm run test:integration` et `npm run test:e2e` exigent aussi `REDIS_URL` (ils démarrent leur propre travailleur, le service n'a pas besoin d'être lancé).
 
 ## 7. Messages normaux (ce ne sont pas des erreurs)
 

@@ -101,7 +101,10 @@ export type Assure = {
   nom_prenoms: string;
   date_naissance: DateIso | "";
   sexe: "M" | "F" | "";
+  /** Lien avec le souscripteur (filiation en santé). */
   lien: string;
+  /** Pièce d'identité de l'assuré (CNI, passeport…), facultative ; absente des listes d'avant la session 6.0. */
+  num_identification?: string;
   /** Code de la formule de l'assuré, ou vide. */
   formule: string;
 };
@@ -200,6 +203,9 @@ export function problemesContactsUrgence(liste: ContactUrgence[]): string[] {
   return p;
 }
 
+/** Longueur maximale du numéro de pièce d'identité d'un assuré (session 6.0). */
+export const LONGUEUR_MAX_NUM_IDENTIFICATION = 50;
+
 export function problemesAssures(assures: Assure[], codesFormules: readonly string[], aujourdhui: DateIso): string[] {
   const p: string[] = [];
   if (assures.length > NOMBRE_MAX_ASSURES) p.push(`Au plus ${NOMBRE_MAX_ASSURES} assurés par cotation.`);
@@ -210,6 +216,7 @@ export function problemesAssures(assures: Assure[], codesFormules: readonly stri
       p.push(`${ligne} : date de naissance invalide.`);
     }
     if (a.sexe !== "" && !(SEXES as readonly string[]).includes(a.sexe)) p.push(`${ligne} : sexe invalide (M ou F).`);
+    if ((a.num_identification ?? "").length > LONGUEUR_MAX_NUM_IDENTIFICATION) p.push(`${ligne} : numéro d'identification trop long (${LONGUEUR_MAX_NUM_IDENTIFICATION} caractères au plus).`);
     if (a.formule !== "" && !codesFormules.includes(a.formule)) p.push(`${ligne} : formule « ${a.formule} » inconnue.`);
   });
   return p;

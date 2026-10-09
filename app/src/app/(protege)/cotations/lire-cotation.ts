@@ -45,16 +45,17 @@ export function lireCotation(d: FormData): SaisieFormulaire {
       accessoireValeur: champ(d, `acc_${l.code}`) ? normaliserMontantSaisi(champ(d, `acc_${l.code}`)) : null,
     }));
 
-  const [noms, naissances, sexes, liens, formules] = ["assure_nom", "assure_naissance", "assure_sexe", "assure_lien", "assure_formule"].map((n) => colonne(d, n));
+  const [noms, naissances, sexes, liens, identifications, formules] = ["assure_nom", "assure_naissance", "assure_sexe", "assure_lien", "assure_identification", "assure_formule"].map((n) => colonne(d, n));
   const assures: Assure[] = noms
     .map((nom, i) => ({
       nom_prenoms: nom,
       date_naissance: (naissances[i] ?? "") as Assure["date_naissance"],
       sexe: (sexes[i] ?? "") as Assure["sexe"],
       lien: liens[i] ?? "",
+      num_identification: identifications[i] ?? "",
       formule: formules[i] ?? "",
     }))
-    .filter((a) => a.nom_prenoms !== "" || a.date_naissance !== "" || a.lien !== "")
+    .filter((a) => a.nom_prenoms !== "" || a.date_naissance !== "" || a.lien !== "" || a.num_identification !== "")
     .map((a, i) => ({ ordre: i + 1, ...a }));
 
   const [cles, valeurs] = ["risque_cle", "risque_valeur"].map((n) => colonne(d, n));

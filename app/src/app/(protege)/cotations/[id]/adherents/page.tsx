@@ -53,7 +53,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
               <thead>
                 <tr className="bg-sim-bleu text-left text-white">
                   {agit ? <th className="p-2">Retrait</th> : null}
-                  <th className="p-2">N°</th><th className="p-2">Nom et prénoms</th><th className="p-2">Naissance</th><th className="p-2">Sexe</th><th className="p-2">Lien</th><th className="p-2">Formule</th><th className="p-2">Certificat</th>
+                  <th className="p-2">N°</th><th className="p-2">Nom et prénoms</th><th className="p-2">Naissance</th><th className="p-2">Sexe</th><th className="p-2">Lien</th><th className="p-2">Pièce d&apos;identité</th><th className="p-2">Formule</th><th className="p-2">Certificat</th>
                 </tr>
               </thead>
               <tbody>
@@ -62,7 +62,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
                   return (
                     <tr key={a.ordre} className="border-b border-bordure">
                       {agit ? <td className="p-2"><input type="checkbox" name="retrait" value={a.ordre} aria-label={`Retirer l'adhérent ${a.ordre}`} /></td> : null}
-                      <td className="p-2">{a.ordre}</td><td className="p-2">{a.nom_prenoms}</td><td className="p-2">{a.date_naissance || "—"}</td><td className="p-2">{a.sexe || "—"}</td><td className="p-2">{a.lien || "—"}</td><td className="p-2">{a.formule || "—"}</td>
+                      <td className="p-2">{a.ordre}</td><td className="p-2">{a.nom_prenoms}</td><td className="p-2">{a.date_naissance || "—"}</td><td className="p-2">{a.sexe || "—"}</td><td className="p-2">{a.lien || "—"}</td><td className="p-2">{a.num_identification || "—"}</td><td className="p-2">{a.formule || "—"}</td>
                       <td className="p-2">{certificat ? <a href={`/api/documents/${certificat.id}`} className="text-sim-bleu underline">{certificat.numero} (v{certificat.version})</a> : "—"}</td>
                     </tr>
                   );
@@ -80,7 +80,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
           <FormulaireAction action={incorporerLesAdherents} libelleBouton="Incorporer">
             <input type="hidden" name="cotationId" value={cotationId} />
             <input type="hidden" name="policeId" value={policeId} />
-            <LignesAssures initiales={[{ nom: "", naissance: "", sexe: "", lien: "", formule: "" }]} formules={vue.formules.map((code) => ({ code, libelle: code }))} />
+            <LignesAssures initiales={[{ nom: "", naissance: "", sexe: "", lien: "", identification: "", formule: "" }]} formules={vue.formules.map((code) => ({ code, libelle: code }))} />
             <div className="max-w-xs">
               <Champ nom="dateEffet" libelle="Date d'effet de l'incorporation (AAAA-MM-JJ)" autoComplete="off" valeur={derniere?.dateEffet} />
             </div>

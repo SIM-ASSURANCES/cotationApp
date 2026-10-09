@@ -181,12 +181,12 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           <h2 className="mb-2 text-lg font-semibold">Assurés</h2>
           <table className="w-full max-w-3xl border-collapse text-sm">
             <thead>
-              <tr className="text-left text-zinc-600"><th className="p-1">N°</th><th className="p-1">Nom et prénoms</th><th className="p-1">Naissance</th><th className="p-1">Sexe</th><th className="p-1">Lien</th><th className="p-1">Formule</th></tr>
+              <tr className="text-left text-zinc-600"><th className="p-1">N°</th><th className="p-1">Nom et prénoms</th><th className="p-1">Naissance</th><th className="p-1">Sexe</th><th className="p-1">Lien</th><th className="p-1">Pièce d&apos;identité</th><th className="p-1">Formule</th></tr>
             </thead>
             <tbody>
               {c.assures.map((a) => (
                 <tr key={a.ordre} className="border-t border-bordure">
-                  <td className="p-1">{a.ordre}</td><td className="p-1">{a.nom_prenoms}</td><td className="p-1">{a.date_naissance || "—"}</td><td className="p-1">{a.sexe || "—"}</td><td className="p-1">{a.lien || "—"}</td><td className="p-1">{a.formule || "—"}</td>
+                  <td className="p-1">{a.ordre}</td><td className="p-1">{a.nom_prenoms}</td><td className="p-1">{a.date_naissance || "—"}</td><td className="p-1">{a.sexe || "—"}</td><td className="p-1">{a.lien || "—"}</td><td className="p-1">{a.num_identification || "—"}</td><td className="p-1">{a.formule || "—"}</td>
                 </tr>
               ))}
             </tbody>

@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import { problemesVersion, type VersionSaisie } from "../calcul/parametrage";
-import { ageRevolu, cleDEntete, controlerLignes, lireDate, type ContexteControle, type LigneBrute } from "./adherents";
+import { adherentDeLigne, ageRevolu, cleDEntete, controlerLignes, lireDate, type ContexteControle, type LigneBrute } from "./adherents";
 
 const ctx: ContexteControle = {
   dateEffet: "2026-07-01",
@@ -77,6 +77,14 @@ describe("contrôles ligne par ligne (CDC §13)", () => {
     expect(messages(ligne({ numero_certificat: "TST-2026-000001-I00004" }))[0]).toMatch(/doit s'écrire TST-2026-000001-G/);
     expect(messages(ligne({ numero_certificat: "TST-2026-000001-G00000" }))[0]).toMatch(/00000 est réservé au contrat/);
     expect(messages(ligne({ numero_certificat: "TST-2026-000001-G00001" }))[0]).toMatch(/déjà utilisé par une police, un document ou un import en cours/);
+  });
+
+  it("pièce d'identité (assures[].num_identification, session 6.0) : facultative, 50 caractères au plus, reprise dans l'adhérent", () => {
+    const [r] = controlerLignes([ligne({ num_identification: " CNI C0000000001 " })], ctx);
+    expect(r.erreurs).toEqual([]);
+    expect(adherentDeLigne(r.donnees).num_identification).toBe("CNI C0000000001");
+    expect(messages(ligne({ num_identification: "X".repeat(51) }))).toEqual(["num_identification : Texte trop long (50 caractères au plus)."]);
+    expect(cleDEntete("assures[].num_identification")).toBe("num_identification");
   });
 
   it("formule inconnue du produit, ou connue mais non retenue dans la police", () => {

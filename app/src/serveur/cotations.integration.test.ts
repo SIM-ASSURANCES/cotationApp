@@ -535,6 +535,14 @@ describe("saisie, droits et traçabilité", () => {
     expect(c.risque).toEqual({ marque: "Yamaha" });
   });
 
+  it("pièce d'identité d'un assuré (assures[].num_identification, session 6.0) : facultative, enregistrée, 50 caractères au plus", async () => {
+    const assure = { ordre: 1, nom_prenoms: "Test", date_naissance: "1990-01-01", sexe: "M" as const, lien: "Enfant", formule: "SOLO" };
+    await expect(creerBrouillon(commercial, saisie({ assures: [{ ...assure, num_identification: "X".repeat(51) }] }), null)).rejects.toThrow(/numéro d'identification trop long/);
+    const id = await creerBrouillon(commercial, saisie({ assures: [{ ...assure, num_identification: "CNI C0000000001" }, { ...assure, ordre: 2, nom_prenoms: "Sans pièce" }] }), null);
+    const c = (await lireCotation(commercial, id))!;
+    expect(c.assures.map((a) => a.num_identification ?? "")).toEqual(["CNI C0000000001", ""]);
+  });
+
   it("copie le client choisi dans la cotation : la cotation ne bouge pas si le client change ensuite", async () => {
     const clientId = await creerClient(commercial, { ...prospect, nom: "CLIENT ENREGISTRÉ" }, null);
     const id = await creerBrouillon(commercial, saisie({ clientId, souscripteur: { ...prospect, nom: "ignoré" } }), null);

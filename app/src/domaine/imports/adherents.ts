@@ -1,6 +1,6 @@
 import { dateValide, type DateIso } from "../calcul/dates";
 import { normaliserNumeroPolice, numeroCertificatParDefaut, problemesNumeroCertificat } from "../cotation/police";
-import { SEXES, type Assure } from "../cotation/saisie";
+import { LONGUEUR_MAX_NUM_IDENTIFICATION, SEXES, type Assure } from "../cotation/saisie";
 
 /**
  * Import en masse des adhérents d'une police mère (CDC §13, session 5a). Règles PURES : lecture d'une ligne de
@@ -11,7 +11,7 @@ import { SEXES, type Assure } from "../cotation/saisie";
  * (session 6.0, D27, H60).
  */
 
-export type CleColonne = "numero_certificat" | "nom_prenoms" | "date_naissance" | "sexe" | "lien" | "formule";
+export type CleColonne = "numero_certificat" | "nom_prenoms" | "date_naissance" | "sexe" | "lien" | "num_identification" | "formule";
 
 export type Colonne = { cle: CleColonne; obligatoire: boolean; libelle: string; format: string; exemple: string };
 
@@ -21,7 +21,8 @@ export const COLONNES_IMPORT: readonly Colonne[] = [
   { cle: "nom_prenoms", obligatoire: true, libelle: "Nom et prénoms de l'adhérent (assures[].nom_prenoms)", format: "texte, 300 caractères au plus", exemple: "KOFFI Ama Inventée" },
   { cle: "date_naissance", obligatoire: true, libelle: "Date de naissance (assures[].date_naissance)", format: "JJ/MM/AAAA, AAAA-MM-JJ ou cellule date d'Excel", exemple: "14/03/1988" },
   { cle: "sexe", obligatoire: false, libelle: "Sexe (assures[].sexe)", format: "M ou F, ou vide", exemple: "F" },
-  { cle: "lien", obligatoire: false, libelle: "Lien avec le souscripteur (assures[].lien)", format: "texte (ex. Salarié, Conjoint)", exemple: "Salarié" },
+  { cle: "lien", obligatoire: false, libelle: "Lien avec le souscripteur, filiation en santé (assures[].lien)", format: "texte (ex. Salarié, Conjoint, Enfant)", exemple: "Salarié" },
+  { cle: "num_identification", obligatoire: false, libelle: "Pièce d'identité (assures[].num_identification)", format: `texte, ${LONGUEUR_MAX_NUM_IDENTIFICATION} caractères au plus, ou vide`, exemple: "CNI C0000000001" },
   { cle: "formule", obligatoire: true, libelle: "Code de la formule (assures[].formule)", format: "code d'une formule retenue dans la police", exemple: "SOLO" },
 ];
 
@@ -108,6 +109,7 @@ function controlerLigne(l: LigneBrute, ctx: ContexteControle): LigneControlee {
   for (const cle of ["nom_prenoms", "lien"] as const) {
     if (valeurs[cle].length > 300) erreur(cle, "Texte trop long (300 caractères au plus).");
   }
+  if (valeurs.num_identification.length > LONGUEUR_MAX_NUM_IDENTIFICATION) erreur("num_identification", `Texte trop long (${LONGUEUR_MAX_NUM_IDENTIFICATION} caractères au plus).`);
 
   const numero = normaliserNumeroPolice(valeurs.numero_certificat);
   if (numero !== "") {
@@ -203,5 +205,7 @@ export const adherentDeLigne = (d: DonneesLigne): Omit<Assure, "ordre"> => ({
   date_naissance: d.date_naissance,
   sexe: d.sexe as Assure["sexe"],
   lien: d.lien,
+  // Lignes d'un import d'avant la session 6.0 : pas de colonne de pièce d'identité.
+  num_identification: d.num_identification ?? "",
   formule: d.formule,
 });

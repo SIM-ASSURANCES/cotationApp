@@ -158,6 +158,7 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
       date_naissance: ou(a.date_naissance),
       sexe: ou(a.sexe),
       lien: ou(a.lien),
+      num_identification: ou(a.num_identification ?? ""),
       formule: ou(a.formule),
       prime: certificat ? NON_FOURNI : primeDeLAssure(a, s.formules, s.ordresSansPrime), // H36 : pas de prime sur le certificat
     })),

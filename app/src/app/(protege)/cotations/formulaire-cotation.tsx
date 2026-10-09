@@ -126,7 +126,7 @@ export function FormulaireCotation({
       <h2 className="mb-2 mt-2 text-lg font-semibold">Assurés (facultatif)</h2>
       <LignesAssures
         formules={formules}
-        initiales={(base?.assures ?? []).map((a) => ({ nom: a.nom_prenoms, naissance: a.date_naissance, sexe: a.sexe, lien: a.lien, formule: a.formule }))}
+        initiales={(base?.assures ?? []).map((a) => ({ nom: a.nom_prenoms, naissance: a.date_naissance, sexe: a.sexe, lien: a.lien, identification: a.num_identification ?? "", formule: a.formule }))}
       />
 
       <h2 className="mb-2 text-lg font-semibold">Bénéficiaires (SECURVIE, RELAXACCIDENT)</h2>

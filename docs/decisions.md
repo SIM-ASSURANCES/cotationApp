@@ -374,6 +374,33 @@ Conséquences retenues pour le code (session 4.0) :
 - **Refus groupé à l'émission** : la fusion va jusqu'au bout du corps, des annexes et des sous-modèles avant de refuser. Le message liste d'un coup toutes les données absentes, tous les champs obligatoires vides passés dans un filtre et les sous-modèles introuvables : « Génération impossible : 3 points à corriger : … ; … ; … ». Un seul problème garde son message habituel. La génération ayant lieu avant la transaction d'émission, un refus ne consomme aucun numéro.
 - **Chemins** : les éléments d'une liste sont nommés avec leur rang (`assures[1].date_naissance`, à partir de 0), y compris pour une donnée absente (avant : `assures[].date_naissance`).
 
+## D27 — Réponses de la Technique du 09/10/2026
+
+- **Date** : réponses reçues le 09/10/2026, transmises par Thierry (fichier d'instructions de la session 6.0) ; consignées **avant** toute correction, branche `phase-6.0` (créée depuis `phase-5b`).
+- **Règle** : comme pour D18, les hypothèses gardent leurs tableaux d'origine pour l'historique ; cette section les remplace là où elle les tranche.
+
+### Réponses de la Technique du 09/10/2026
+
+| # | Sujet | Réponse de la Technique | Effet |
+| --- | --- | --- | --- |
+| H47 | Facture payée en partie, avec erreur | Annuler la facture (conservée comme annulée), puis émettre la nouvelle facture à jour | **À corriger** (session 6.0, §2.1) |
+| H30 | T3 (YAO individuel) à 1,5 % | Cas spécial dû à une erreur ; la règle normale (individuel 4 %) s'applique | **Fermée**. T3 garde `GROUPE` explicite, avec ce motif en commentaire |
+| H32 | Taux des produits hors tableau (SECURMOTO, RELAXVOYAGE, SECURECOLTE) | 7,25 % | **À corriger** (§2.3). Le taux mixte de l'IARD reste refusé : H32 reste ouverte sur ce seul point |
+| — | Date d'entrée en vigueur des taux | « Taux de taxe officiel » (pas de date donnée) | Reste **01/01/2026, provisoire** |
+| H1 | Accessoires | Varient selon le produit ou la formule **et** d'un contrat à l'autre | **Conforme**. Fermée |
+| H28 | Accessoires d'un contrat de moins d'un an | Restent entiers ; seule la prime nette est proratisée | **Conforme**. Fermée |
+| H2 | Prime minimale | Pas de prime minimale. Certains produits ont des durées fixes (annuelle, mensuelle) avec des montants déjà arrêtés ; pour un prorata particulier, la Technique saisit elle-même prime nette, accessoires, surprimes ou majorations, et le type de taxe | **Fermée**. Nouveaux besoins (composition manuelle, durées fixes) : P2, après validation des P1 par Thierry |
+| H29 | Taux FAMILLE / GROUPE_OUVERT | « Un bouton pour dire si le contrat est individuel ou groupe » | **À corriger** (§2.2) |
+| H8 | Options | Pas un montant fixe, encadré, avec taxes ; voir le simulateur SECURPRO, SECURHOME | **En attente** (Thierry consulte le simulateur). Rien à coder |
+| H47 bis | Avoir partiel | Les deux, selon le type d'avoir et le cas | P2 |
+| H33 | Trop-perçu | Paiement accepté ; l'excédent est gardé en avance pour la prochaine échéance **ou** restitué | **À corriger** (§2.4) |
+| H52 | Qui décide d'un avoir | **Pas de réponse** | Reste ouverte |
+| H51 | Avenant | Incorporation au prorata **ou** prime entière ; un retrait peut donner lieu à un remboursement ou non | P2 |
+| H31 / H37 | 5 chiffres après G ou I | Numéro personnel de chaque client ; le numéro du contrat garde `00000` | **À corriger** (§2.5) |
+| H46 | `police.reference` | = numéro de police (différent d'une référence de paiement) | **À corriger** (§2.5) |
+| — | Tableau des assurés (santé) | Nom, prénom, date de naissance, filiation (si nécessaire), numéro de pièce d'identité ; un exemple sera envoyé | **À corriger** (§2.6) |
+| H36, H45 | Prime sur le certificat ; prime d'un membre de famille | **Pas de réponse** (exemple annoncé) | Restent ouvertes |
+
 ## Décisions en attente
 
 | Sujet | Qui décide | Échéance |

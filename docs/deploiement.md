@@ -8,7 +8,7 @@ Décision D5 (05/10/2026) : l'application est déployée sur un **VPS Linux** av
 
 | Service | Rôle | Joignable depuis |
 | --- | --- | --- |
-| `app` | Application Next.js | `127.0.0.1:3000` de l'hôte (le proxy inverse y envoie le trafic HTTPS) |
+| `app` | Application Next.js | `127.0.0.1:${APP_PORT}` de l'hôte (3000 par défaut ; le proxy inverse y envoie le trafic HTTPS) |
 | `generateur` | FastAPI + LibreOffice + polices | réseau Docker uniquement (`http://generateur:8001`) |
 | `postgres` | Base de données | réseau Docker uniquement |
 | `redis` | File de tâches BullMQ (D24) : imports en masse, reprise des écritures différées | réseau Docker uniquement |
@@ -21,7 +21,8 @@ Volumes persistants : `donnees_postgres`, `donnees_redis`, `documents` (document
 
 - VPS Linux avec **Docker Engine** et le plugin **Docker Compose v2** (`docker compose version`).
 - Accès Internet sortant pendant la construction : images Docker, paquets Debian, paquets npm et Python (Montserrat est hébergée dans le dépôt depuis la session 4.0).
-- Un **proxy inverse HTTPS** devant `127.0.0.1:3000` (Dokploy/Traefik, Caddy ou nginx : voir la question Q1) avec un certificat valide. Il doit transmettre `Host`, `X-Forwarded-For` et `X-Forwarded-Proto`. Le pare-feu n'ouvre que les ports 80 et 443 : **jamais** 3000, 5432, 6379 ni 8001.
+- Un **port libre** sur l'hôte pour l'application : `APP_PORT` dans `.env` (3000 par défaut). Le VPS est **partagé avec le portail RH**, qui peut déjà occuper 3000 : vérifier avec `ss -ltn` et choisir un autre port (ex. 3010) si besoin.
+- Un **proxy inverse HTTPS** devant `127.0.0.1:${APP_PORT}` (Dokploy/Traefik, Caddy ou nginx : voir la question Q1) avec un certificat valide. Il doit transmettre `Host`, `X-Forwarded-For` et `X-Forwarded-Proto`. Le pare-feu n'ouvre que les ports 80 et 443 : **jamais** `APP_PORT`, 5432, 6379 ni 8001.
 - Les polices des modèles dans `generateur/polices/` (voir son README et la question Q2).
 
 ## 3. Installation initiale
@@ -50,7 +51,7 @@ docker compose run --rm outils npm run creer-admin
 
 ```bash
 docker compose ps                                   # tous les services « running » ou « healthy »
-curl -s http://127.0.0.1:3000/api/sante             # {"statut":"ok","base":"ok","generateur":"ok"}
+curl -s http://127.0.0.1:${APP_PORT:-3000}/api/sante # {"statut":"ok","base":"ok","generateur":"ok"}
 curl -s -o /dev/null -w "%{http_code}\n" https://<domaine>/api/documents    # 401 : les routes sont protégées
 docker compose exec generateur python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8001/sante').read().decode())"
                                                     # "libreoffice_trouve": true, "polices_manquantes": []

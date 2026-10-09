@@ -81,3 +81,12 @@ def zipper(base: Path, fichiers: list[tuple[str, str]]) -> bytes:
         for chemin, nom in fichiers:
             archive.writestr(_resoudre(Path("."), nom).name, lire(base, chemin))
     return sortie.getvalue()
+
+
+def zipper_et_stocker(base: Path, fichiers: list[tuple[str, str]], chemin: str) -> tuple[str, int]:
+    """Archive ZIP de fichiers stockés, ÉCRITE dans le stockage (ajout seul) : (empreinte, taille).
+
+    Sert à l'archive d'un import en masse (phase 5) : les PDF ne repassent pas par l'application.
+    """
+    contenu = zipper(base, fichiers)
+    return ecrire(base, chemin, contenu), len(contenu)

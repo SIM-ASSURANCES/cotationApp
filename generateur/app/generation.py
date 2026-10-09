@@ -61,6 +61,7 @@ def generer_pdf(
                     executable=parametres.libreoffice_chemin,
                     profil=parametres.profil_libreoffice,
                     delai_s=parametres.delai_conversion_s,
+                    simultanees=parametres.conversions_simultanees,
                 ).read_bytes()  # lu en mémoire : sous Windows, un fichier ouvert empêcherait d'effacer le dossier
             )
     pdf = assembler(pdfs + list(pieces_jointes or []))

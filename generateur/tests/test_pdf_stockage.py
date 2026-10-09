@@ -106,3 +106,25 @@ def test_routes_de_stockage(client_stockage: TestClient, secret_test: str) -> No
     assert client_stockage.get("/interne/stockage", params={"chemin": "PRD/2026/10/CP/POL-1_v1.pdf"}).status_code == 401
     zip_ = client_stockage.post("/interne/stockage/zip", headers=entete, json={"fichiers": [{"chemin": "PRD/2026/10/CP/POL-1_v1.pdf", "nom": "POL-1.pdf"}]})
     assert zip_.status_code == 200 and zip_.content[:2] == b"PK"
+
+
+def test_zip_stocke_dans_le_stockage(client_stockage: TestClient, secret_test: str, tmp_path: Path) -> None:
+    # Phase 5 : l'archive d'un import en masse est écrite dans le stockage, en ajout seul, sans repasser par l'application.
+    entete = {"X-Generateur-Secret": secret_test}
+    for i in (1, 2):
+        corps = {"chemin": f"PRD/2026/10/CERTIFICAT/C-{i}_v1.pdf", "contenu": base64.b64encode(f"%PDF-{i}".encode()).decode()}
+        assert client_stockage.post("/interne/stockage", headers=entete, json=corps).status_code == 200
+    demande = {
+        "chemin": "lots/LOT-1/certificats_v1.zip",
+        "fichiers": [{"chemin": f"PRD/2026/10/CERTIFICAT/C-{i}_v1.pdf", "nom": f"C-{i}.pdf"} for i in (1, 2)],
+    }
+    reponse = client_stockage.post("/interne/stockage/zip/stocker", headers=entete, json=demande)
+    assert reponse.status_code == 200
+    stocke = stockage.lire(stockage.racine(tmp_path), "lots/LOT-1/certificats_v1.zip")
+    assert reponse.json()["empreinte"] == hashlib.sha256(stocke).hexdigest()
+    with zipfile.ZipFile(io.BytesIO(stocke)) as archive:
+        assert sorted(archive.namelist()) == ["C-1.pdf", "C-2.pdf"]
+    # Jamais d'écrasement ; un fichier absent est signalé.
+    assert client_stockage.post("/interne/stockage/zip/stocker", headers=entete, json=demande).status_code == 409
+    absent = {**demande, "chemin": "lots/LOT-1/autre.zip", "fichiers": [{"chemin": "PRD/absent.pdf", "nom": "x.pdf"}]}
+    assert client_stockage.post("/interne/stockage/zip/stocker", headers=entete, json=absent).status_code == 404

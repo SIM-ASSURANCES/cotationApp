@@ -1,6 +1,7 @@
 import "server-only";
 
 import { schemaAnalyse, type Analyse } from "@/domaine/documents/analyse";
+import { CHAMPS_FACULTATIFS } from "@/domaine/documents/dictionnaire";
 
 import { obtenirConfig } from "./config";
 import { ErreurMetier } from "./types";
@@ -116,6 +117,7 @@ const clientHttp: ClientGenerateur = {
         pieces_jointes: (d.piecesJointes ?? []).map(base64),
         filigrane: d.filigrane ?? null,
         listes_en_annexe: d.listesEnAnnexe ?? [],
+        champs_facultatifs: CHAMPS_FACULTATIFS,
       },
       DELAI_PDF_MS,
     );

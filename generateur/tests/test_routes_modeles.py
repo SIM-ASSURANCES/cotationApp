@@ -44,6 +44,26 @@ def test_pdf_donnee_absente_422_avec_message(client: TestClient, secret_test: st
     assert reponse.json()["detail"] == "donnée absente : « souscripteur.nom »"
 
 
+def test_pdf_champ_vide_dans_un_filtre(client: TestClient, secret_test: str) -> None:
+    modele = b64(document("Effet : {{ police.date_effet | date }} ; référence : {{ police.reference | date }}"))
+    entetes = {"X-Generateur-Secret": secret_test}
+    donnees = {"police": {"date_effet": None, "reference": None}}
+    # police.reference facultatif (D19, liste envoyée par l'application) : seul date_effet est nommé.
+    reponse = client.post(
+        "/interne/documents/pdf",
+        headers=entetes,
+        json={"modele": modele, "donnees": donnees, "seuil_liste": 10, "champs_facultatifs": ["police.reference"]},
+    )
+    assert reponse.status_code == 422
+    assert reponse.json()["detail"] == "champ obligatoire vide : « police.date_effet » (filtre date)"
+    # Sans la liste, les deux champs sont nommés dans le même message.
+    reponse = client.post("/interne/documents/pdf", headers=entetes, json={"modele": modele, "donnees": donnees, "seuil_liste": 10})
+    assert reponse.json()["detail"] == (
+        "2 points à corriger : champ obligatoire vide : « police.date_effet » (filtre date) ; "
+        "champ obligatoire vide : « police.reference » (filtre date)"
+    )
+
+
 def test_pdf_liste_sans_annexe_possible(client: TestClient, secret_test: str) -> None:
     reponse = client.post(
         "/interne/documents/pdf",

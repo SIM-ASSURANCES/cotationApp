@@ -6,11 +6,18 @@ flottante : il arrive en texte (« 11592000 », « 1809.50 ») ou en entier.
 
 Une valeur que le filtre ne sait pas écrire fait ÉCHOUER la génération (ErreurFiltre), avec un
 message clair : jamais un blanc ni une valeur approximative dans un document émis.
+
+Valeur VIDE (null ou texte blanc) reçue par un filtre : la fusion la remplace par un objet Vide qui
+connaît le chemin du champ (« formules[0].taux_couverture ») et s'il est facultatif (D19).
+  - champ facultatif vide : le filtre écrit une chaîne vide ;
+  - champ obligatoire vide : la génération s'arrête en nommant le champ (ChampObligatoireVide).
 """
 
 import re
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
+
+from jinja2 import Undefined
 
 from app.lettres import MontantInvalide, montant_en_lettres
 
@@ -24,6 +31,62 @@ CASE_VIDE = "☐"  # U+2610
 
 class ErreurFiltre(ValueError):
     """Valeur qu'un filtre ne sait pas écrire : la génération s'arrête avec ce message."""
+
+
+class ChampObligatoireVide(ErreurFiltre):
+    """Champ obligatoire vide passé dans un filtre : la fusion le relève avec les autres."""
+
+    def __init__(self, filtre: str, chemin: str | None) -> None:
+        self.filtre = filtre
+        self.chemin = chemin
+        nom = f"« {chemin} »" if chemin else "(champ non nommé)"
+        super().__init__(f"champ obligatoire vide : {nom} (filtre {filtre})")
+
+
+class Vide(str):
+    """Valeur vide des données (null, ou texte vide ou blanc), qui connaît son chemin.
+
+    C'est un texte : elle s'écrit telle quelle hors filtre (null s'écrit vide, D19), est fausse dans
+    un {% if %}, et une valeur null reste égale à None et vérifie le test « is none ».
+    """
+
+    chemin: str
+    facultatif: bool
+    nulle: bool
+
+    def __new__(cls, valeur: str | None, chemin: str, facultatif: bool) -> "Vide":
+        objet = super().__new__(cls, valeur or "")
+        objet.chemin = chemin
+        objet.facultatif = facultatif
+        objet.nulle = valeur is None
+        return objet
+
+    def __eq__(self, autre: object) -> bool:
+        if autre is None:
+            return self.nulle
+        return str.__eq__(self, autre)
+
+    def __ne__(self, autre: object) -> bool:
+        return not self.__eq__(autre)
+
+    __hash__ = str.__hash__
+
+
+def est_vide(valeur: object) -> bool:
+    return valeur is None or (isinstance(valeur, str) and not valeur.strip())
+
+
+def _vide(valeur: object, filtre: str) -> bool:
+    """Vrai si le filtre doit écrire une chaîne vide (champ facultatif vide, ou donnée absente déjà
+    relevée par la fusion) ; lève ChampObligatoireVide pour un champ obligatoire vide."""
+    if isinstance(valeur, Undefined):
+        str(valeur)  # donnée absente : lève l'erreur qui la nomme (ou la relève, pendant une fusion)
+        return True
+    if not est_vide(valeur):
+        return False
+    if isinstance(valeur, Vide) and valeur.facultatif:
+        return True
+    raise ChampObligatoireVide(filtre, valeur.chemin if isinstance(valeur, Vide) else None)
 
 
 def _decimal(valeur: object, filtre: str) -> Decimal:
@@ -69,6 +132,8 @@ def montant(valeur: object) -> str:
     Les décimales reçues sont écrites telles quelles (le moteur a déjà arrondi) ; des décimales
     toutes nulles ne s'écrivent pas.
     """
+    if _vide(valeur, "montant"):
+        return ""
     nombre = _decimal(valeur, "montant")
     entier, _, decimales = format(nombre, "f").partition(".")
     return _ecrire(nombre, supprimer_zeros=not decimales.strip("0"))
@@ -76,6 +141,8 @@ def montant(valeur: object) -> str:
 
 def lettres(valeur: object) -> str:
     """« 11592000 » → « onze millions cinq cent quatre-vingt-douze mille francs CFA »."""
+    if _vide(valeur, "lettres"):
+        return ""
     nombre = _decimal(valeur, "lettres")
     try:
         return montant_en_lettres(nombre)
@@ -105,11 +172,15 @@ def _lire_date(valeur: object, filtre: str) -> date | datetime:
 
 def date_fr(valeur: object) -> str:
     """« 2026-09-01 » → « 01/09/2026 » (une heure éventuelle n'est pas écrite)."""
+    if _vide(valeur, "date"):
+        return ""
     return _lire_date(valeur, "date").strftime("%d/%m/%Y")
 
 
 def dateheure(valeur: object) -> str:
     """« 2026-09-01T08:00 » → « 01/09/2026 à 08h00 ». Une date sans heure est refusée."""
+    if _vide(valeur, "dateheure"):
+        return ""
     moment = _lire_date(valeur, "dateheure")
     if not isinstance(moment, datetime):
         raise ErreurFiltre(f"dateheure : heure absente ({valeur!r}), attendu AAAA-MM-JJTHH:MM")
@@ -118,12 +189,16 @@ def dateheure(valeur: object) -> str:
 
 def pct(valeur: object) -> str:
     """« 80 » ou « 80.000 » → « 80 % » ; « 1.5 » → « 1,5 % » (espace insécable avant %)."""
+    if _vide(valeur, "pct"):
+        return ""
     return _ecrire(_decimal(valeur, "pct"), supprimer_zeros=True) + ESPACE_INSECABLE + "%"
 
 
 def case(valeur: object) -> str:
     """Vrai → ☒, faux → ☐. Seul un booléen est accepté : écrire la condition dans le modèle,
     ENTRE PARENTHÈSES : {{ (risque.statut == "PROPRIETAIRE") | case }}."""
+    if _vide(valeur, "case"):
+        return ""
     if not isinstance(valeur, bool):
         raise ErreurFiltre(
             f"case : vrai ou faux attendu, reçu {valeur!r} ; écrire une condition entre parenthèses, "

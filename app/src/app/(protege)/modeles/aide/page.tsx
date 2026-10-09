@@ -58,6 +58,8 @@ export default async function PageAide() {
           <li>
             Aucun calcul dans un modèle (pas de <code className={code}>+ - * /</code>) : tous les montants viennent du moteur de calcul, déjà
             arrondis. Pas de <code className={code}>default</code> : une donnée absente arrête la génération avec son nom, plutôt qu'un blanc.
+            Une valeur vide passée dans un filtre s'écrit vide si le champ est facultatif ; sinon la génération s'arrête en nommant le champ.
+            Un refus liste d'un coup tous les champs à compléter.
           </li>
           <li>
             Conditions générales et spéciales : documents fixes, convertis une seule fois en PDF à la publication. Seules balises permises :{" "}

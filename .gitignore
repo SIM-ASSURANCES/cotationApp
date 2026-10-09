@@ -63,3 +63,5 @@ generateur/polices/*
 !generateur/polices/README.md
 
 PHASE_3_instructions_claude_code.md
+# --- Redis lancé depuis le dépôt (développement) : instantané local -----
+dump.rdb

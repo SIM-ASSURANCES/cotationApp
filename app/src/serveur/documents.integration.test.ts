@@ -9,15 +9,18 @@ import type { Analyse } from "@/domaine/documents/analyse";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 
 import { assurerBranche } from "./branches-test";
-import { creerBrouillon, accepter, soumettre, type SaisieCotation } from "./cotations";
+import { lireJournal } from "./audit";
+import { creerBrouillon, accepter, lireCotation, modifierBrouillon, soumettre, type SaisieCotation } from "./cotations";
 import { annulerParAvoir, documentsDe, emettreCotation, emettreCp, rechercherDocuments, reediter, telechargerDocument, verifierJeton, zipDocuments } from "./documents";
 import { initialiserProfilsEtDroits } from "./droits";
+import { creerIntermediaire, modifierIntermediaire } from "./intermediaires";
 import { remplacerGenerateur, type DemandePdf } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
 import { assurerSignature } from "./societe-test";
 import { aujourdhui, creerProduit, creerTaxe, creerVersion } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { remplacerStockage } from "./stockage";
+import { tableauDeBord } from "./tableaux-de-bord";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
 
@@ -107,24 +110,26 @@ async function produit(references?: VersionSaisie["references"]): Promise<string
   return code;
 }
 
-/** Cotation T1 émise : 3 Solo + 60 Famille = 15 888 000 F. */
-async function cotationT1(produitCode: string): Promise<number> {
-  const saisie: SaisieCotation = {
-    codeProduit: produitCode,
-    clientId: null,
-    typeContrat: "GROUPE",
-    souscripteur: { type: "PHYSIQUE", nom: "KOUADIO", prenoms: "Awa Inventée", raison_sociale: "", telephone: "0700000000", email: "", adresse: "" },
-    dateEffet: "2026-01-01",
-    dateEcheance: "2026-12-31",
-    nombreTranches: 1,
-    lignes: [{ codeFormule: "SOLO", effectif: 3 }, { codeFormule: "FAMILLE", effectif: 60 }],
-    motifForcage: null,
-    assures: [],
-    beneficiaires: null,
-    contactsUrgence: null,
-    risque: {},
-  };
-  const id = await creerBrouillon(commercial, saisie, null);
+/** Saisie de la cotation T1 : 3 Solo + 60 Famille = 15 888 000 F. */
+const saisieT1 = (produitCode: string): SaisieCotation => ({
+  codeProduit: produitCode,
+  clientId: null,
+  typeContrat: "GROUPE",
+  souscripteur: { type: "PHYSIQUE", nom: "KOUADIO", prenoms: "Awa Inventée", raison_sociale: "", telephone: "0700000000", email: "", adresse: "" },
+  dateEffet: "2026-01-01",
+  dateEcheance: "2026-12-31",
+  nombreTranches: 1,
+  lignes: [{ codeFormule: "SOLO", effectif: 3 }, { codeFormule: "FAMILLE", effectif: 60 }],
+  motifForcage: null,
+  assures: [],
+  beneficiaires: null,
+  contactsUrgence: null,
+  risque: {},
+});
+
+/** Cotation T1 émise. */
+async function cotationT1(produitCode: string, intermediaires?: string[]): Promise<number> {
+  const id = await creerBrouillon(commercial, { ...saisieT1(produitCode), intermediaires }, null);
   expect((await soumettre(commercial, id, null)).statut).toBe("EMISE");
   return id;
 }
@@ -353,5 +358,55 @@ describe("documents émis : ajout seul, recherche, intégrité", () => {
     const ligne = await prisma.documentEmis.findUniqueOrThrow({ where: { id: doc.id } });
     fichiers.set(ligne.chemin, texte("fichier altéré"));
     await expect(telechargerDocument(commercial, doc.id, null)).rejects.toThrow(/ne correspond plus à son empreinte/);
+  });
+});
+
+// ---------------------------------------------------------------- Intermédiaires (session 6.0, H71 fermée)
+
+describe("intermédiaires : référentiel, choix sur la cotation, documents, tableau de bord", () => {
+  it("référentiel réservé au paramétrage, journalisé ; 0 à 2 par cotation, dans l'ordre ; repris dans intermediaires[] ; taux de transformation", async () => {
+    const [a, b, c] = [CODE("INT"), CODE("INT"), CODE("INT")];
+    await expect(creerIntermediaire(commercial, { code: a, nom: "Courtier A inventé", role: "Apporteur" }, null)).rejects.toBeInstanceOf(ErreurAcces);
+    await creerIntermediaire(technique, { code: a, nom: "Courtier A inventé", role: "Apporteur" }, null);
+    await creerIntermediaire(technique, { code: b, nom: "Agent B inventé", role: "Gestionnaire" }, null);
+    await creerIntermediaire(technique, { code: c, nom: "Agent C inventé", role: "Apporteur" }, null);
+    await expect(creerIntermediaire(technique, { code: a, nom: "Autre", role: "Apporteur" }, null)).rejects.toThrow(/existe déjà/);
+    expect((await lireJournal({ action: "INTERMEDIAIRE_CREE" })).lignes.some((l) => l.objet === `intermediaire ${a}`)).toBe(true);
+
+    const p = await produit();
+    await publier("COTATION", p, "modele cotation", SOCLE("doc.numero"));
+    await expect(cotationT1(p, [a, b, c])).rejects.toThrow(/Au plus 2 intermédiaires/);
+    await expect(cotationT1(p, [a, a])).rejects.toThrow(/choisi deux fois/);
+    await expect(cotationT1(p, ["INCONNU_X"])).rejects.toThrow(/inconnu/);
+
+    const id = await cotationT1(p, [b.toLowerCase(), a]);
+    expect((await lireCotation(commercial, id))!.intermediaires.map((i) => i.code)).toEqual([b, a]);
+    demandes.length = 0;
+    await emettreCotation(commercial, id, null);
+    expect(demandes[0].donnees.intermediaires).toEqual([
+      { nom: "Agent B inventé", code: b, role: "Gestionnaire" },
+      { nom: "Courtier A inventé", code: a, role: "Apporteur" },
+    ]);
+
+    // Sans intermédiaire : liste vide (champ facultatif, D19).
+    demandes.length = 0;
+    await emettreCotation(commercial, await cotationT1(p), null);
+    expect(demandes[0].donnees.intermediaires).toEqual([]);
+
+    // Désactivé : il ne peut plus être choisi, mais le brouillon qui l'avait déjà le garde.
+    const brouillon = await creerBrouillon(commercial, { ...saisieT1(p), intermediaires: [c] }, null);
+    await modifierIntermediaire(technique, c, { nom: "Agent C inventé", role: "Apporteur", actif: false }, null);
+    expect((await lireJournal({ action: "INTERMEDIAIRE_MODIFIE" })).lignes.some((l) => l.objet === `intermediaire ${c}`)).toBe(true);
+    await expect(cotationT1(p, [c])).rejects.toThrow(/désactivé/);
+    await modifierBrouillon(commercial, brouillon, { ...saisieT1(p), intermediaires: [c] }, null);
+    await modifierBrouillon(commercial, brouillon, saisieT1(p), null); // champ absent : inchangés
+    expect((await lireCotation(commercial, brouillon))!.intermediaires.map((i) => i.code)).toEqual([c]);
+
+    // Tableau de bord : la cotation de A et B (émise, non acceptée) compte pour chacun des deux.
+    const t = await tableauDeBord(dg);
+    const ligne = (code: string) => t.cotations.transformation.parIntermediaire.find((l) => l.cle.endsWith(`(${code})`));
+    expect(ligne(a)).toMatchObject({ emises: 1, acceptees: 0, taux: "0.0" });
+    expect(ligne(b)).toMatchObject({ emises: 1, acceptees: 0 });
+    expect(t.cotations.transformation.parIntermediaire.some((l) => l.cle === "Sans intermédiaire")).toBe(true);
   });
 });

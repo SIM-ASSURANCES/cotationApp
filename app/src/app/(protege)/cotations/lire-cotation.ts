@@ -22,6 +22,8 @@ export type SaisieFormulaire = {
   beneficiaires: Beneficiaire[];
   contactsUrgence: ContactUrgence[];
   risque: Risque;
+  /** Codes des intermédiaires choisis (session 6.0), contrôlés par le service. */
+  intermediaires: string[];
 };
 
 const champ = (d: FormData, nom: string) => String(d.get(nom) ?? "").trim();
@@ -91,5 +93,7 @@ export function lireCotation(d: FormData): SaisieFormulaire {
     beneficiaires: lireBeneficiaires(d),
     contactsUrgence: lireContactsUrgence(d),
     risque,
+    // Deux listes de choix « intermédiaire » : les vides sont retirés par le serveur.
+    intermediaires: d.getAll("intermediaire").map((v) => String(v)),
   };
 }

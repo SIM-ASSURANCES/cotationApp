@@ -123,7 +123,7 @@ describe("données d'une cotation T1 (dictionnaire, montants du moteur)", () => 
   });
 
   it("liste des champs facultatifs envoyée au générateur (D19) : vides, ils s'écrivent vides même dans un filtre", () => {
-    expect([...CHAMPS_FACULTATIFS].sort()).toEqual(["doc.empreinte", "intermediaires", "police.nantissement", "police.police_mere"]);
+    expect([...CHAMPS_FACULTATIFS].sort()).toEqual(["doc.empreinte", "formules[].taux_couverture", "intermediaires", "police.nantissement", "police.police_mere"]);
   });
 
   const assure = (ordre: number, formule: string) => ({ ordre, nom_prenoms: `ASSURÉ ${ordre}`, date_naissance: "" as const, sexe: "" as const, lien: "", formule });

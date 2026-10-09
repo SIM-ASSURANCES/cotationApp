@@ -1,6 +1,7 @@
 import type { DateIso } from "../calcul/dates";
 import { montant } from "../calcul/montant";
 import type { Assure, Beneficiaire, ContactUrgence, Risque, Souscripteur } from "../cotation/saisie";
+import type { IntermediaireDocument } from "../intermediaires";
 import { appliquerFacultatifs, champsInconnus, NON_FOURNI, type NonFourni } from "./dictionnaire";
 import { libelleDuree } from "./duree";
 import type { TypeDocument } from "./emission";
@@ -53,6 +54,8 @@ export type SourceDocument = {
   contactsUrgence: ContactUrgence[] | null;
   /** Certificat d'adhésion : numéro de la police mère (police.police_mere) ; null pour un autre document. */
   policeMere: string | null;
+  /** Intermédiaires de la cotation (0 à 2, session 6.0) ; absent : document qui ne les connaît pas (liste vide, D19). */
+  intermediaires?: IntermediaireDocument[];
   risque: Risque;
   dateEffet: DateIso;
   dateEcheance: DateIso;
@@ -128,7 +131,7 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
       cs_libelle: s.cs?.libelle ?? null,
       cs_visa: s.cs?.visa ?? null,
     },
-    intermediaires: NON_FOURNI,
+    intermediaires: s.intermediaires ? s.intermediaires.map((i) => ({ nom: i.nom, code: i.code, role: i.role })) : NON_FOURNI,
     souscripteur: {
       type: sous.type,
       nom: ou(sous.nom),

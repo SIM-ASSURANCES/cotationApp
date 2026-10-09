@@ -3,6 +3,7 @@ import Link from "next/link";
 import { enVigueur } from "@/domaine/calcul/parametrage";
 import { peutAgir } from "@/domaine/droits";
 import { listerClients } from "@/serveur/clients";
+import { listerIntermediaires } from "@/serveur/intermediaires";
 import { aujourdhui, listerProduits, listerVersions } from "@/serveur/parametrage";
 import { exigerDroit } from "@/serveur/session";
 
@@ -44,7 +45,7 @@ export default async function PageNouvelleCotation(props: PageProps<"/cotations/
       </main>
     );
   }
-  const clients = await listerClients(utilisateur);
+  const [clients, intermediaires] = await Promise.all([listerClients(utilisateur), listerIntermediaires(utilisateur, { actifsSeulement: true })]);
 
   return (
     <main>
@@ -62,6 +63,7 @@ export default async function PageNouvelleCotation(props: PageProps<"/cotations/
         clients={clients}
         tranchesMax={version.fractionnement.tranchesMax}
         formulesMax={version.cotation.formulesMax}
+        intermediaires={intermediaires.map((i) => ({ code: i.code, nom: i.nom, role: i.role }))}
       />
     </main>
   );

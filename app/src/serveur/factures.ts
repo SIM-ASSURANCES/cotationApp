@@ -41,6 +41,7 @@ import { journaliser, type ActeurAudit } from "./audit";
 import { contexteProduit, montantsDu } from "./documents";
 import { avanceDisponible, encaissementsDe, inclusionImputations, versEncaissements } from "./encaissements";
 import { niveauDuProfil } from "./droits";
+import { versIntermediairesDocument } from "./intermediaires";
 import { modelesAssocies, versionPublieeEnVigueur } from "./modeles";
 import { allouerNumero } from "./numerotation";
 import { aujourdhui, construireEntree, executerCalcul, resoudreContexte } from "./parametrage";
@@ -99,7 +100,7 @@ async function exigerLecture(acteur: UtilisateurCourant) {
 // ---------------------------------------------------------------- Chargements
 
 export const chargerPolice = (client: Tx, policeId: number) =>
-  client.police.findUnique({ where: { id: policeId }, include: { adherents: { orderBy: { numero: "asc" } }, cotation: { select: { produitId: true, versionDateEffet: true, regimeTaxe: true } } } });
+  client.police.findUnique({ where: { id: policeId }, include: { adherents: { orderBy: { numero: "asc" } }, cotation: { select: { produitId: true, versionDateEffet: true, regimeTaxe: true, intermediaires: true } } } });
 type PoliceChargee = NonNullable<Awaited<ReturnType<typeof chargerPolice>>>;
 
 /** Verrou de la ligne de la facture jusqu'à la fin de la transaction : deux émissions, deux paiements passent l'un après l'autre. */
@@ -157,6 +158,7 @@ async function contenuCalcule(
     taxe: m.taxe,
     echeances: o.echeances,
     entree,
+    intermediaires: versIntermediairesDocument(police.cotation.intermediaires),
   };
 }
 
@@ -420,6 +422,7 @@ export function donnees(
     ordresSansPrime: contenu.ordresSansPrime,
     beneficiaires: null,
     contactsUrgence: null,
+    intermediaires: contenu.intermediaires,
     policeMere: null,
     risque: police.risque as Risque,
     dateEffet: contenu.dateEffet,

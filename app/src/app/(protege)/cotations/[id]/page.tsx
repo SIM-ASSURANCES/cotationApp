@@ -88,6 +88,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         <p><strong>Valide jusqu'au :</strong> {formatDate(c.dateValidite)}</p>
         <p><strong>Paramétrage du produit du :</strong> {formatDate(c.versionDateEffet)}</p>
         <p><strong>Auteur :</strong> {c.auteurIdentifiant}</p>
+        <p><strong>Intermédiaire(s) :</strong> {c.intermediaires.length > 0 ? c.intermediaires.map((i) => `${i.nom} (${i.code}, ${i.role})`).join(" ; ") : "aucun"}</p>
         {c.numeroPolice ? <p><strong>Police créée :</strong> {c.numeroPolice}</p> : null}
         {c.numeroPolice && avertissementNumeroContrat(c.numeroPolice) ? <p role="status" className="text-amber-800">{avertissementNumeroContrat(c.numeroPolice)}</p> : null}
         {c.numeroPolice && estContratDeGroupe(c.typeContrat) ? (

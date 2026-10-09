@@ -27,6 +27,7 @@ import { IMAGES_SOCIETE } from "@/domaine/documents/societe";
 import { peutAgir, peutLire, type CodeAction } from "@/domaine/droits";
 
 import { journaliser, type ActeurAudit } from "./audit";
+import { versIntermediairesDocument } from "./intermediaires";
 import { obtenirConfig } from "./config";
 import { niveauDuProfil } from "./droits";
 import { generateur, type ImagePng } from "./generateur";
@@ -339,7 +340,7 @@ async function sourceCommune(contexte: ContexteProduit, date: DateIso) {
 // ---------------------------------------------------------------- Cotation (CDC §9)
 
 export async function chargerCotation(id: number) {
-  const c = await obtenirPrisma().cotation.findUnique({ where: { id }, include: { produit: true } });
+  const c = await obtenirPrisma().cotation.findUnique({ where: { id }, include: { produit: true, intermediaires: true } });
   if (!c) throw new ErreurMetier("Cotation introuvable.");
   // doc.auteur_nom (D20) : nom de l'utilisateur qui a créé la cotation.
   const auteur = await obtenirPrisma().utilisateur.findUnique({ where: { id: c.auteurId }, select: { nom: true } });
@@ -371,6 +372,7 @@ function sourceDeCotation(
     ordresSansPrime: [],
     beneficiaires: (c.beneficiaires as unknown as Beneficiaire[] | null) ?? null,
     contactsUrgence: (c.contactsUrgence as unknown as ContactUrgence[] | null) ?? null,
+    intermediaires: versIntermediairesDocument(c.intermediaires),
     policeMere: null,
     risque: c.risque as unknown as Risque,
     dateEffet: depuisDate(c.dateEffet),
@@ -518,6 +520,7 @@ async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<
     ordresSansPrime: ordresIncorpores(police),
     beneficiaires: (police.beneficiaires as unknown as Beneficiaire[] | null) ?? null,
     contactsUrgence: (police.contactsUrgence as unknown as ContactUrgence[] | null) ?? null,
+    intermediaires: versIntermediairesDocument(c.intermediaires),
     policeMere: null,
     risque: police.risque as unknown as Risque,
     dateEffet: depuisDate(police.dateEffet),
@@ -683,6 +686,7 @@ export async function emettreCertificat(acteur: UtilisateurCourant, policeId: nu
     ordresSansPrime: [],
     beneficiaires: null,
     contactsUrgence: null,
+    intermediaires: versIntermediairesDocument(c.intermediaires),
     policeMere: police.numero,
     risque: police.risque as unknown as Risque,
     dateEffet: adhesion,

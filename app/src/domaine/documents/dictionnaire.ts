@@ -151,7 +151,7 @@ export const CHAMPS: readonly Champ[] = [
   c("formules", "liste", "Une ligne par formule (Solo, Famille…)", undefined, S3),
   c("formules[].code", "texte", "Code de la formule", "SOLO", S3),
   c("formules[].libelle", "texte", "Libellé", "Solo", S3),
-  c("formules[].taux_couverture", "pourcentage", "Taux de couverture", "80", S3),
+  c("formules[].taux_couverture", "pourcentage", "Taux de couverture ; vide hors santé (facultatif, décision de Thierry, session 6.0)", "80", S3, FACULTATIF),
   c("formules[].effectif", "entier", "Effectif", 3, S3),
   c("formules[].prime_unitaire", "montant", "Prime unitaire", "93581.33", S3),
   c("formules[].prime_nette", "montant", "Prime nette", "280744", S3),

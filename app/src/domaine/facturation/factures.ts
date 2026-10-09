@@ -1,6 +1,7 @@
 import { ajouterJours, ajouterMois, dateValide, type DateIso } from "../calcul/dates";
 import { analyserMontant, ErreurCalcul, montant, ZERO, type Montant } from "../calcul/montant";
 import type { Assure, Souscripteur } from "../cotation/saisie";
+import type { IntermediaireDocument } from "../intermediaires";
 import type { FormuleSource } from "../documents/donnees";
 
 /**
@@ -72,6 +73,8 @@ export type ContenuFacture = {
   echeances: { numero: number; date: DateIso; montant: string }[];
   /** Entrée du moteur dont viennent les montants (null pour un avoir : ses montants sont ceux de la facture annulée). */
   entree: unknown;
+  /** Intermédiaires de la cotation (session 6.0) ; absent d'une facture d'avant : liste vide dans le document. */
+  intermediaires?: IntermediaireDocument[];
 };
 
 // ------------------------------------------------------------------ « Envoyé à »

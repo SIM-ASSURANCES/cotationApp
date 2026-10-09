@@ -114,6 +114,39 @@ model Branche {
   @@map("branches")
 }
 
+/// Intermédiaire (CDC §10.1, session 6.0, H71 fermée) : courtier ou agent qui apporte l'affaire. Code immuable, jamais
+/// supprimé (désactivé à la place) ; nom et rôle modifiables, chaque changement journalisé.
+model Intermediaire {
+  id        Int                     @id @default(autoincrement())
+  code      String                  @unique
+  nom       String
+  /// Rôle repris dans les documents (apporteur, gestionnaire…).
+  role      String
+  actif     Boolean                 @default(true)
+  creeLe    DateTime                @default(now()) @map("cree_le")
+  creePar   String                  @map("cree_par")
+  cotations CotationIntermediaire[]
+
+  @@map("intermediaires")
+}
+
+/// Intermédiaire choisi sur une cotation (0 à 2, ordre 1 ou 2). Code, nom et rôle copiés au moment du choix (T10).
+model CotationIntermediaire {
+  cotationId      Int           @map("cotation_id")
+  ordre           Int           @db.SmallInt
+  intermediaireId Int           @map("intermediaire_id")
+  code            String
+  nom             String
+  role            String
+  cotation        Cotation      @relation(fields: [cotationId], references: [id], onDelete: Restrict)
+  intermediaire   Intermediaire @relation(fields: [intermediaireId], references: [id], onDelete: Restrict)
+
+  @@id([cotationId, ordre])
+  @@unique([cotationId, intermediaireId], map: "cotations_intermediaires_unique")
+  @@index([intermediaireId])
+  @@map("cotations_intermediaires")
+}
+
 /// Taux de taxe (CDC §8.3, D18), historisé : clé (branche, type de contrat, date d'effet). Une ligne en
 /// vigueur ne se modifie pas, sauf sa clôture (date de fin posée une fois). Pour une même clé, deux
 /// périodes ne se chevauchent jamais : contrainte d'exclusion PostgreSQL (voir la migration).
@@ -269,60 +302,61 @@ model MotifRefus {
 /// Cotation (CDC §9). Brouillon et « À valider » se modifient ; dès « Émise », les données sont FIGÉES
 /// (déclencheur PostgreSQL) : seuls le statut et l'issue (acceptation, refus) évoluent.
 model Cotation {
-  id                Int       @id @default(autoincrement())
+  id                Int                     @id @default(autoincrement())
   /// COT-AAAA-MM-NNNN : attribué à l'émission seulement (un brouillon n'a pas de numéro).
-  numero            String?   @unique
+  numero            String?                 @unique
   /// BROUILLON, A_VALIDER, EMISE, ACCEPTEE, REFUSEE ou EXPIREE.
   statut            String
-  produitId         Int       @map("produit_id")
+  produitId         Int                     @map("produit_id")
   /// Date d'effet de la version du produit utilisée pour le calcul.
-  versionDateEffet  DateTime  @map("version_date_effet") @db.Date
-  clientId          Int?      @map("client_id")
+  versionDateEffet  DateTime                @map("version_date_effet") @db.Date
+  clientId          Int?                    @map("client_id")
   /// Dictionnaire souscripteur.* (copie : une cotation émise ne bouge pas si le client est modifié).
   souscripteur      Json
-  dateEffet         DateTime  @map("date_effet") @db.Date
-  dateEcheance      DateTime  @map("date_echeance") @db.Date
-  nombreTranches    Int       @default(1) @map("nombre_tranches")
+  dateEffet         DateTime                @map("date_effet") @db.Date
+  dateEcheance      DateTime                @map("date_echeance") @db.Date
+  nombreTranches    Int                     @default(1) @map("nombre_tranches")
   /// [{ code, effectif, primeTarif, primeForcee|null }]
   lignes            Json
-  motifForcage      String?   @map("motif_forcage")
-  assures           Json      @default("[]")
+  motifForcage      String?                 @map("motif_forcage")
+  assures           Json                    @default("[]")
   /// Bénéficiaires et contacts d'urgence (dictionnaire §6.3.2, session 4a). Null : cotation d'avant la 4a,
   /// où ces données n'étaient pas saisies (« jamais fournies », D19) ; [] : saisies et laissées vides.
   beneficiaires     Json?
-  contactsUrgence   Json?     @map("contacts_urgence")
-  risque            Json      @default("{}")
+  contactsUrgence   Json?                   @map("contacts_urgence")
+  risque            Json                    @default("{}")
   /// INDIVIDUEL, FAMILLE, GROUPE ou GROUPE_OUVERT (police.type_contrat). Choisissait le taux avant la session 6.0 (D18).
   /// Null pour une cotation créée avant la session 4.0.
-  typeContrat       String?   @map("type_contrat")
+  typeContrat       String?                 @map("type_contrat")
   /// Régime de taxe (INDIVIDUEL ou GROUPE) : il sélectionne le taux (session 6.0, H29 fermée). Null avant la session 6.0.
-  regimeTaxe        String?   @map("regime_taxe")
+  regimeTaxe        String?                 @map("regime_taxe")
   /// Entrée complète du moteur de calcul (montants en texte) : permet de recalculer à l'identique.
-  donneesCalcul     Json?     @map("donnees_calcul")
+  donneesCalcul     Json?                   @map("donnees_calcul")
   /// Montants arrondis par formule et en total (texte).
   resultat          Json?
-  ttcTotal          Decimal?  @map("ttc_total") @db.Decimal(18, 2)
+  ttcTotal          Decimal?                @map("ttc_total") @db.Decimal(18, 2)
   echeancier        Json?
   /// ["PRIME_FORCEE", "SEUIL_DEPASSE"] : pourquoi la validation est exigée.
-  raisonsValidation Json      @default("[]") @map("raisons_validation")
-  auteurId          Int       @map("auteur_id")
-  auteurIdentifiant String    @map("auteur_identifiant")
+  raisonsValidation Json                    @default("[]") @map("raisons_validation")
+  auteurId          Int                     @map("auteur_id")
+  auteurIdentifiant String                  @map("auteur_identifiant")
   /// Utilisateurs qui ont créé ou modifié le brouillon (H9) : aucun d'eux ne peut valider la cotation.
-  contributeurs     Int[]     @default([])
-  valideParId       Int?      @map("valide_par_id")
-  valideLe          DateTime? @map("valide_le")
-  dateEtablissement DateTime? @map("date_etablissement") @db.Date
-  dateValidite      DateTime? @map("date_validite") @db.Date
-  emiseLe           DateTime? @map("emise_le")
-  formulesRetenues  Json?     @map("formules_retenues")
-  accepteeLe        DateTime? @map("acceptee_le")
-  motifRefusCode    String?   @map("motif_refus_code")
-  refusCommentaire  String?   @map("refus_commentaire")
-  creeLe            DateTime  @default(now()) @map("cree_le")
-  modifieLe         DateTime  @updatedAt @map("modifie_le")
-  produit           Produit   @relation(fields: [produitId], references: [id], onDelete: Restrict)
-  client            Client?   @relation(fields: [clientId], references: [id], onDelete: Restrict)
+  contributeurs     Int[]                   @default([])
+  valideParId       Int?                    @map("valide_par_id")
+  valideLe          DateTime?               @map("valide_le")
+  dateEtablissement DateTime?               @map("date_etablissement") @db.Date
+  dateValidite      DateTime?               @map("date_validite") @db.Date
+  emiseLe           DateTime?               @map("emise_le")
+  formulesRetenues  Json?                   @map("formules_retenues")
+  accepteeLe        DateTime?               @map("acceptee_le")
+  motifRefusCode    String?                 @map("motif_refus_code")
+  refusCommentaire  String?                 @map("refus_commentaire")
+  creeLe            DateTime                @default(now()) @map("cree_le")
+  modifieLe         DateTime                @updatedAt @map("modifie_le")
+  produit           Produit                 @relation(fields: [produitId], references: [id], onDelete: Restrict)
+  client            Client?                 @relation(fields: [clientId], references: [id], onDelete: Restrict)
   police            Police?
+  intermediaires    CotationIntermediaire[]
 
   @@index([statut])
   @@index([dateValidite])
@@ -808,6 +842,11 @@ model TachePolice {
   versionAdherents Int        @map("version_adherents")
   creePar          String     @map("cree_par")
   creeLe           DateTime   @default(now()) @map("cree_le")
+  /// H66 (session 6.0) : AUTOMATIQUE (pièce émise) ou MANUELLE (motif obligatoire) ; null tant qu'elle est ouverte.
+  fermeture        String?
+  fermeeLe         DateTime?  @map("fermee_le")
+  fermeePar        String?    @map("fermee_par")
+  motifFermeture   String?    @map("motif_fermeture")
   police           Police     @relation(fields: [policeId], references: [id], onDelete: Restrict)
   lot              LotImport? @relation(fields: [lotId], references: [id], onDelete: Restrict)
 

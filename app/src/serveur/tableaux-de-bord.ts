@@ -37,7 +37,7 @@ export type TableauDeBord = {
   aujourdhui: DateIso;
   cotations: {
     parStatut: Record<StatutCotation, number>;
-    transformation: { parProduit: LigneTransformation[]; parCommercial: LigneTransformation[]; parIntermediaire: null };
+    transformation: { parProduit: LigneTransformation[]; parCommercial: LigneTransformation[]; parIntermediaire: LigneTransformation[] };
   };
   facturation: {
     emis: string;
@@ -53,6 +53,9 @@ export type TableauDeBord = {
     imports: { lots: number; traites: number; enErreur: number; enEchec: number };
   };
 };
+
+/** Libellé des cotations émises sans intermédiaire (affaires directes). */
+export const SANS_INTERMEDIAIRE = "Sans intermédiaire";
 
 export async function tableauDeBord(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauDeBord> {
   if (!peutLire(await niveauDuProfil(acteur.profil, "CONSULTER_TABLEAUX_DE_BORD"))) throw new ErreurAcces("Droit insuffisant : tableaux de bord.");
@@ -72,12 +75,22 @@ export async function tableauDeBord(acteur: UtilisateurCourant, periode?: Partia
     jour,
   );
   // Transformation (H70) : cotations ÉMISES dans la période (numéro COT), acceptées ou non à ce jour.
-  const emises = await prisma.cotation.findMany({ where: { emiseLe: entreInstants, numero: { not: null } }, select: { statut: true, auteurIdentifiant: true, produit: { select: { code: true } } } });
+  const emises = await prisma.cotation.findMany({
+    where: { emiseLe: entreInstants, numero: { not: null } },
+    select: { statut: true, auteurIdentifiant: true, produit: { select: { code: true } }, intermediaires: { select: { intermediaire: { select: { code: true, nom: true } } } } },
+  });
   const transformation = {
     parProduit: tauxTransformation(emises.map((c) => ({ cle: c.produit.code, acceptee: c.statut === "ACCEPTEE" }))),
     parCommercial: tauxTransformation(emises.map((c) => ({ cle: c.auteurIdentifiant, acceptee: c.statut === "ACCEPTEE" }))),
-    // L'application ne connaît pas les intermédiaires (champ `intermediaires` non fourni, D19) : H71.
-    parIntermediaire: null,
+    // Session 6.0 (H71 fermée) : une cotation compte pour chacun de ses intermédiaires (0 à 2) ; sans intermédiaire, elle
+    // est comptée à part (« Sans intermédiaire »). Libellé : nom actuel du référentiel et code.
+    parIntermediaire: tauxTransformation(
+      emises.flatMap((c) => {
+        const acceptee = c.statut === "ACCEPTEE";
+        if (c.intermediaires.length === 0) return [{ cle: SANS_INTERMEDIAIRE, acceptee }];
+        return c.intermediaires.map((i) => ({ cle: `${i.intermediaire.nom} (${i.intermediaire.code})`, acceptee }));
+      }),
+    ),
   };
 
   // ------------------------------------------------ Facturation

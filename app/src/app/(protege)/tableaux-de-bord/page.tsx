@@ -68,10 +68,7 @@ export default async function PageTableauxDeBord(props: PageProps<"/tableaux-de-
         <div className="grid gap-6 md:grid-cols-3">
           <Transformation titre="Par produit" lignes={c.transformation.parProduit} />
           <Transformation titre="Par commercial (auteur de la cotation)" lignes={c.transformation.parCommercial} />
-          <div>
-            <h3 className="mb-1 font-semibold">Par intermédiaire</h3>
-            <p className="text-sm text-zinc-700">Non disponible : l&apos;application ne connaît pas encore les intermédiaires des cotations (H71).</p>
-          </div>
+          <Transformation titre="Par intermédiaire (une cotation compte pour chacun de ses intermédiaires)" lignes={c.transformation.parIntermediaire} />
         </div>
       </section>
 

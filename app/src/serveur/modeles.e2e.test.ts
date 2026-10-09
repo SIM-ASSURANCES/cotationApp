@@ -102,7 +102,7 @@ describe("bout en bout avec le vrai générateur", () => {
   it("champs obligatoires vides dans un filtre : tous nommés en un seul refus, les facultatifs vides passent", async () => {
     const donnees = donneesExemple() as Record<string, Record<string, unknown>> & { formules: Record<string, unknown>[]; assures: Record<string, unknown>[] };
     donnees.souscripteur.date_naissance = null; // | date
-    donnees.formules[0].taux_couverture = null; // | pct
+    donnees.formules[0].taux_couverture = null; // | pct, facultatif depuis la session 6.0 : jamais nommé
     donnees.assures[1].date_naissance = ""; // | date
     donnees.police.nantissement = null; // facultatif (D19) : jamais nommé
     const refus = await generateur()
@@ -111,7 +111,7 @@ describe("bout en bout avec le vrai générateur", () => {
     const message = refus instanceof Error ? refus.message : String(refus);
     expect(message).toMatch(/^Génération impossible : \d+ points à corriger : /);
     expect(message).toContain("champ obligatoire vide : « souscripteur.date_naissance » (filtre date)");
-    expect(message).toContain("champ obligatoire vide : « formules[0].taux_couverture » (filtre pct)");
+    expect(message).not.toContain("taux_couverture");
     expect(message).toContain("champ obligatoire vide : « assures[1].date_naissance » (filtre date)");
     expect(message).not.toContain("police.nantissement");
   });

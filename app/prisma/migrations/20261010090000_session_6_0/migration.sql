@@ -134,3 +134,63 @@ $$;
 -- proposé par défaut pour son type de contrat (INDIVIDUEL, FAMILLE → INDIVIDUEL ; GROUPE, GROUPE_OUVERT → GROUPE).
 ALTER TABLE "cotations" ADD COLUMN "regime_taxe" TEXT;
 ALTER TABLE "cotations" ADD CONSTRAINT "cotations_regime_taxe_valide" CHECK ("regime_taxe" IS NULL OR "regime_taxe" IN ('INDIVIDUEL', 'GROUPE'));
+
+-- ================================================================ §2.7 : référentiel des intermédiaires (CDC §10.1, §9.4 ; H71 fermée)
+
+-- Référentiel : code immuable (jamais supprimé ; désactivé à la place), nom et rôle modifiables, chaque changement journalisé.
+CREATE TABLE "intermediaires" (
+  "id" SERIAL PRIMARY KEY,
+  "code" TEXT NOT NULL,
+  "nom" TEXT NOT NULL,
+  "role" TEXT NOT NULL,
+  "actif" BOOLEAN NOT NULL DEFAULT TRUE,
+  "cree_le" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "cree_par" TEXT NOT NULL,
+  CONSTRAINT "intermediaires_code_valide" CHECK ("code" ~ '^[A-Z0-9][A-Z0-9_-]{0,29}$'),
+  CONSTRAINT "intermediaires_nom_rempli" CHECK (btrim("nom") <> '' AND btrim("role") <> '')
+);
+CREATE UNIQUE INDEX "intermediaires_code_key" ON "intermediaires"("code");
+
+-- 0 à 2 intermédiaires par cotation, dans l'ordre de la saisie. Nom, code et rôle sont COPIÉS au moment du choix : un
+-- document émis ou réédité garde l'intermédiaire tel qu'il était (T10), même si le référentiel change ensuite.
+CREATE TABLE "cotations_intermediaires" (
+  "cotation_id" INTEGER NOT NULL,
+  "ordre" SMALLINT NOT NULL,
+  "intermediaire_id" INTEGER NOT NULL,
+  "code" TEXT NOT NULL,
+  "nom" TEXT NOT NULL,
+  "role" TEXT NOT NULL,
+  CONSTRAINT "cotations_intermediaires_pkey" PRIMARY KEY ("cotation_id", "ordre"),
+  CONSTRAINT "cotations_intermediaires_ordre_valide" CHECK ("ordre" IN (1, 2)),
+  CONSTRAINT "cotations_intermediaires_cotation_id_fkey" FOREIGN KEY ("cotation_id") REFERENCES "cotations"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT "cotations_intermediaires_intermediaire_id_fkey" FOREIGN KEY ("intermediaire_id") REFERENCES "intermediaires"("id") ON DELETE RESTRICT ON UPDATE CASCADE
+);
+CREATE UNIQUE INDEX "cotations_intermediaires_unique" ON "cotations_intermediaires"("cotation_id", "intermediaire_id");
+CREATE INDEX "cotations_intermediaires_intermediaire_id_idx" ON "cotations_intermediaires"("intermediaire_id");
+
+-- ================================================================ §2.7 : fermeture des tâches d'import (H66 fermée)
+
+-- AUTOMATIQUE : à l'émission de la pièce (nouvelle version des CP, facture d'avenant de la version de la liste) ;
+-- MANUELLE : par un utilisateur habilité, motif obligatoire (ex. « pas de facturation »). Une tâche fermée ne rouvre pas.
+ALTER TABLE "taches_police"
+  ADD COLUMN "fermeture" TEXT,
+  ADD COLUMN "fermee_le" TIMESTAMP(3),
+  ADD COLUMN "fermee_par" TEXT,
+  ADD COLUMN "motif_fermeture" TEXT;
+ALTER TABLE "taches_police" ADD CONSTRAINT "taches_police_fermeture_coherente" CHECK (
+  ("fermeture" IS NULL AND "fermee_le" IS NULL AND "fermee_par" IS NULL AND "motif_fermeture" IS NULL)
+  OR ("fermeture" = 'AUTOMATIQUE' AND "fermee_le" IS NOT NULL AND "fermee_par" IS NOT NULL)
+  OR ("fermeture" = 'MANUELLE' AND "fermee_le" IS NOT NULL AND "fermee_par" IS NOT NULL AND btrim(coalesce("motif_fermeture", '')) <> '')
+);
+
+-- Une tâche fermée ne se rouvre pas et ne change plus.
+CREATE OR REPLACE FUNCTION tache_police_fermeture_definitive() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+  IF OLD."fermeture" IS NOT NULL THEN
+    RAISE EXCEPTION 'tâche % déjà fermée : elle ne change plus', OLD."id" USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER "taches_police_fermeture_definitive" BEFORE UPDATE ON "taches_police" FOR EACH ROW EXECUTE FUNCTION tache_police_fermeture_definitive();

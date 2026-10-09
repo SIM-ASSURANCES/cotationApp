@@ -34,6 +34,10 @@ const MIGRATIONS_4A = [
 const MIGRATIONS_4B = ["20261009110000_factures_paiements_recus"];
 const DERNIERE_MIGRATION_4B = "20261009110000";
 
+/** Migration de la session 5a ; toute migration plus récente (corrections de la 5a, 5b) est nommée après elle. */
+const MIGRATIONS_5A = ["20261009120000_import_masse_stockage_differe"];
+const DERNIERE_MIGRATION_5A = "20261009120000";
+
 type Migration = { nom: string; sql: string };
 
 /** SQL sans commentaires ni textes entre apostrophes (messages d'erreur, valeurs) : seuls restent les identifiants. */
@@ -120,6 +124,12 @@ describe("ordre des migrations du dépôt", () => {
     expect(noms.filter((n) => MIGRATIONS_4B.includes(n))).toEqual(MIGRATIONS_4B);
     const nouvelles = noms.filter((n) => !MIGRATIONS_4A.includes(n) && !MIGRATIONS_4B.includes(n));
     expect(nouvelles.filter((n) => n.slice(0, 14) <= DERNIERE_MIGRATION_4B)).toEqual([]);
+  });
+
+  it(`toute migration plus récente que la 5a est nommée après ${DERNIERE_MIGRATION_5A}`, () => {
+    expect(noms.filter((n) => MIGRATIONS_5A.includes(n))).toEqual(MIGRATIONS_5A);
+    const nouvelles = noms.filter((n) => !MIGRATIONS_4A.includes(n) && !MIGRATIONS_4B.includes(n) && !MIGRATIONS_5A.includes(n));
+    expect(nouvelles.filter((n) => n.slice(0, 14) <= DERNIERE_MIGRATION_5A)).toEqual([]);
   });
 
   it("aucune migration ne dépend d'une migration nommée après elle", () => {

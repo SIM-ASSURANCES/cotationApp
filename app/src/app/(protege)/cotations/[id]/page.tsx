@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ComplementsSouscripteur } from "@/composants/ComplementsSouscripteur";
 import { FormulaireAction } from "@/composants/FormulaireAction";
 import { LignesBeneficiaires, LignesContactsUrgence } from "@/composants/LignesDynamiques";
+import { TachesPolice } from "@/composants/TachesPolice";
 import { formaterMontant, montant, type Montant } from "@/domaine/calcul/montant";
 import { LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
@@ -17,6 +18,7 @@ import { documentsDe } from "@/serveur/documents";
 import { niveauDuProfil } from "@/serveur/droits";
 import { lireFormatNumeroPolice } from "@/serveur/societe";
 import { exigerDroit } from "@/serveur/session";
+import { tachesDeCotation } from "@/serveur/taches-police";
 import { lireValidationContrat } from "@/serveur/validation-contrat";
 
 import { accepterCotation, emettreCpDeCotation, emettrePdfDeCotation, reediterDocument, refuserCotation, renvoyerCotation, soumettreCotation, validerCotation } from "../actions";
@@ -43,6 +45,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
   ]);
   // Contrat au-dessus du seuil du produit : demande de validation en cours, ou validation exigée de ce profil (CDC §4.1).
   const etatContrat = c.numeroPolice && peutLire(niveauContrat) ? await lireValidationContrat(utilisateur, c.id) : null;
+  const taches = c.numeroPolice ? await tachesDeCotation(utilisateur, c.id) : [];
   const pdfCotation = documents.filter((d) => d.type === "COTATION");
   const pdfCp = documents.filter((d) => d.type === "CP");
   const emise = c.numero !== null && c.statut !== "BROUILLON" && c.statut !== "A_VALIDER";
@@ -72,6 +75,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           {c.filigrane}
         </p>
       ) : null}
+      <TachesPolice taches={taches} cotationId={c.id} />
 
       <section className="mb-6 grid max-w-4xl gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
         <p><strong>Produit :</strong> {c.produit.code} — {c.produit.libelle}</p>

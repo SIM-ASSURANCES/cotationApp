@@ -89,6 +89,13 @@ describe("contrôles ligne par ligne (CDC §13)", () => {
     expect(messages(ligne({ date_naissance: "30/06/1960" }))[0]).toMatch(/66 ans .* maximum 65 ans/);
     expect(messages(ligne({ date_naissance: "30/06/1940", formule: "FAMILLE" }))).toEqual([]);
   });
+
+  it("adhérent ajouté en cours de contrat : l'âge est celui de SA date d'adhésion, pas de la date d'effet de la police (H62, Thierry, 09/10/2026)", () => {
+    // 17 ans au 01/01/2026 (début de la police), 18 ans au 01/07/2026 (date d'adhésion) : accepté.
+    expect(messages(ligne({ date_naissance: "02/03/2008" }))).toEqual([]);
+    // 65 ans au début de la police, 66 ans à la date d'adhésion : refusé.
+    expect(messages(ligne({ date_naissance: "15/03/1960" }))[0]).toMatch(/66 ans à la date d'adhésion \(2026-07-01\), maximum 65 ans/);
+  });
 });
 
 describe("doublons (H63)", () => {

@@ -3,12 +3,14 @@ import { notFound } from "next/navigation";
 
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { LignesAssures } from "@/composants/LignesDynamiques";
+import { TachesPolice } from "@/composants/TachesPolice";
 import { LIBELLE_MOTIF_ADHERENTS } from "@/domaine/cotation/adherents";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { lireAdherents, policeDeCotation } from "@/serveur/adherents";
 import { listerLots } from "@/serveur/imports";
 import { niveauDuProfil } from "@/serveur/droits";
 import { exigerDroit } from "@/serveur/session";
+import { tachesDePolice } from "@/serveur/taches-police";
 
 import { LIBELLE_STATUT_LOT } from "../../../imports/libelles";
 import { controlerLeFichier, emettreLeCertificat, incorporerLesAdherents, mettreAJourLesCp, retirerLesAdherents } from "./actions";
@@ -25,7 +27,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
   const agit = peutAgir(await niveauDuProfil(utilisateur.profil, "EMETTRE_CONTRAT"));
   const derniere = vue.versions[vue.versions.length - 1];
   const cpAJour = vue.cp !== null && vue.cp.versionAdherents === derniere?.numero;
-  const lots = await listerLots(utilisateur, { policeId });
+  const [lots, taches] = await Promise.all([listerLots(utilisateur, { policeId }), tachesDePolice(utilisateur, policeId)]);
   const produitCode = vue.police.produitCode;
 
   return (
@@ -38,6 +40,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
         Période de la police : du {vue.police.dateEffet} au {vue.police.dateEcheance}. La liste évolue par versions : chaque incorporation ou retrait crée une nouvelle version,
         l'historique reste consultable. Les conditions particulières de la police mère reprennent la liste courante en annexe.
       </p>
+      <TachesPolice taches={taches} cotationId={cotationId} />
 
       <section className="mb-8">
         <h2 className="mb-2 text-lg font-semibold">Liste courante ({vue.courants.length} adhérents, version {derniere?.numero ?? "—"})</h2>

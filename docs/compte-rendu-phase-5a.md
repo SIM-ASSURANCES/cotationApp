@@ -40,3 +40,10 @@
 ## Hypothèses ouvertes
 
 Nouvelles : **H60** (colonnes du fichier, numéro de certificat fourni), **H61** (date de naissance et formule obligatoires), **H62** (âges limites dans le paramétrage des formules, âge révolu à la date d'effet), **H63** (définition d'un doublon), **H64** (pas de CP ni de facture automatiques après un import), **H65** (« montant ambigu » sans objet). H53 reste à valider par toi. Restent ouvertes des sessions précédentes : H2, H8, H28 à H33, H44 à H47, H51, H52.
+
+## Corrections après tes décisions du 09/10/2026
+
+- **H65** : pas de colonne de montant. Rien à changer.
+- **H62** validée ; précision appliquée et testée : l'âge d'un adhérent ajouté en cours de contrat se calcule à **sa date d'adhésion** (date d'effet de l'import), pas à la date d'effet de la police. C'était déjà le calcul ; un test le prouve désormais.
+- **H63** : un doublon = même nom et même date de naissance. C'était déjà la règle du code ; rien à corriger.
+- **H64** : pas d'émission automatique ; la confirmation d'un import crée sur la police deux tâches, « Nouvelle version des CP à émettre » et « Facture d'avenant à émettre », affichées sur l'écran de la cotation et sur celui des adhérents jusqu'à l'émission de la pièce. Table `taches_police`, migration `20261009130000_taches_police` ; état recalculé depuis la base (règle de fermeture : **H66**, à confirmer). Tests : `domaine/imports/taches.test.ts` et `import-masse.integration.test.ts` (« H64 »).

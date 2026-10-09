@@ -33,6 +33,7 @@ import { aujourdhui } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { lireFormatNumeroPolice } from "./societe";
 import { ecrituresDifferees, lireDocumentEmis, zipStocker } from "./stockage";
+import { creerTachesImport } from "./taches-police";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 import { versUtilisateurCourant } from "./utilisateurs";
 
@@ -459,6 +460,8 @@ export async function confirmerImport(acteur: UtilisateurCourant, lotId: number,
           await tx.ligneImport.update({ where: { id: valides[i].id }, data: { adherentOrdre: ordres[i] } });
         }
         await tx.lotImport.update({ where: { id: lotId }, data: { versionAdherents: numeroVersion } });
+        // H64 : pas d'émission automatique ; deux tâches visibles sur la police jusqu'à l'émission des pièces.
+        await creerTachesImport(tx, { policeId: police.id, lotId, versionAdherents: numeroVersion, creePar: acteur.identifiant });
         await journaliser(
           { acteur: auteur(acteur), action: "IMPORT_CONFIRME", objetType: "lot_import", objetId: lotId, apres: { police: police.numero, versionAdherents: numeroVersion, lignes: valides.length }, adresseIp },
           tx,

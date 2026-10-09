@@ -16,8 +16,9 @@ import { lireAdherents } from "./adherents";
 import { lireJournal } from "./audit";
 import { assurerBranche } from "./branches-test";
 import { accepter, creerBrouillon, soumettre, type SaisieCotation } from "./cotations";
-import { emettreCertificat, telechargerDocument, zipDocuments } from "./documents";
+import { emettreCertificat, emettreCp, mettreAJourCp, telechargerDocument, zipDocuments } from "./documents";
 import { initialiserProfilsEtDroits } from "./droits";
+import { creerFactureAffaireNouvelle, creerFactureAvenant, emettreFacture } from "./factures";
 import { ErreurDejaStocke, remplacerGenerateur } from "./generateur";
 import { abandonnerImport, confirmerImport, controlerImport, lireLot, modeleImport, rapportErreurs, lireFichierImport, traiterLot, zipDuLot } from "./imports";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
@@ -26,6 +27,7 @@ import { obtenirPrisma } from "./prisma";
 import { assurerSignature } from "./societe-test";
 import { remplacerStockage } from "./stockage";
 import { alerteStockage, relancerEcritures } from "./surveillance";
+import { tachesDePolice } from "./taches-police";
 import { fermerFiles, FILE_IMPORTS, FILE_STOCKAGE, reglerReprise, viderFile } from "./taches";
 import { demarrerTravailleur, type Travailleur } from "./travailleur";
 import { ErreurMetier, type UtilisateurCourant } from "./types";
@@ -80,11 +82,25 @@ const analyse = (chemins: string[]): Analyse => ({
   textes: [],
 });
 const CONTENU_CERTIFICAT = ["police.numero", "police.police_mere", "souscripteur.nom", "police.date_effet", "doc.date_emission"];
+// Modèles de CP et de facture du produit, pour les tâches de H64 (pièces à émettre après un import).
+const CONTENU_CP = [
+  "police.numero", "souscripteur.nom", "police.date_effet", "police.date_echeance", "prime.ttc", "police.duree_libelle", "prime.nette", "prime.accessoires", "prime.taxe",
+  "produit.cg_libelle", "produit.cg_visa", "societe.email_reclamation", "doc.lieu_emission", "doc.date_emission", "signature_sim",
+];
+const CONTENU_FACTURE = [
+  "doc.numero", "doc.date_emission", "police.numero", "police.date_effet", "police.date_echeance", "souscripteur.raison_sociale", "souscripteur.adresse",
+  "prime.taux_taxe", "prime.taxe", "prime.ttc", "societe.rccm", "societe.ncc", "societe.rib[].numero", "societe.mobile_money[].numero_marchand", "signature_sim", "qr_code",
+  "echeances[].statut", "solde.restant_du", "envoye_a.nom",
+];
 const sans = { niveauRelance: null, listeAnnexe: null, blocNom: null, blocCle: null };
 
-async function publier(type: "CG" | "CERTIFICAT", code: string | null, chemins: string[], visa?: string) {
+async function publier(type: "CG" | "CERTIFICAT" | "CP" | "FACTURE", code: string | null, chemins: string[], visa?: string) {
   const id = await creerModele(technique, { type, code: CODE(type), libelle: `Modèle ${type}`, produitCode: code, ...sans }, null);
   prochaineAnalyse = analyse(chemins);
+  if (type === "FACTURE") {
+    // Une facture exige le filtre « lettres » et la mention de l'article 13 du Code CIMA.
+    prochaineAnalyse = { ...prochaineAnalyse, filtres: ["lettres"], textes: [{ texte: "Article 13 du Code CIMA : la prise d'effet est subordonnée au paiement de la prime.", emplacement: ici }] };
+  }
   await deposerVersion(technique, id, { fichier: texte(`docx ${type}`), nomFichier: "m.docx", commentaire: "test", dateEffet: aujourdhui(), visa: visa ?? null, dateDocument: visa ? "2025-06-19" : null }, null);
   const v = await obtenirPrisma().modeleVersion.findFirstOrThrow({ where: { modeleId: id }, orderBy: { numero: "desc" } });
   await soumettreVersion(technique, v.id, null);
@@ -99,7 +115,7 @@ async function compte(identifiant: string): Promise<UtilisateurCourant> {
 const existants: Assure[] = [1, 2].map((i) => ({ ordre: i, nom_prenoms: `Existant ${i} Inventé`, date_naissance: "1980-01-0" + i, sexe: "M", lien: "Salarié", formule: "SOLO" }) as Assure);
 
 /** Police mère de groupe à deux adhérents, formules SOLO (18 à 65 ans) retenue, SENIOR non retenue. */
-async function policeDeGroupe(): Promise<{ policeId: number; numero: string }> {
+async function policeDeGroupe(): Promise<{ policeId: number; numero: string; cotationId: number }> {
   const saisie: SaisieCotation = {
     codeProduit: produitCode,
     clientId: null,
@@ -119,7 +135,7 @@ async function policeDeGroupe(): Promise<{ policeId: number; numero: string }> {
   await soumettre(commercial, cotationId, null);
   const { numeroPolice } = await accepter(commercial, cotationId, ["SOLO"], numero(), null);
   const police = await obtenirPrisma().police.findUniqueOrThrow({ where: { numero: numeroPolice } });
-  return { policeId: police.id, numero: numeroPolice };
+  return { policeId: police.id, numero: numeroPolice, cotationId };
 }
 
 /** Classeur .xlsx avec les en-têtes du modèle. */
@@ -196,6 +212,8 @@ beforeAll(async () => {
   };
   await creerVersion(technique, code, version, null);
   await publier("CERTIFICAT", code, CONTENU_CERTIFICAT);
+  await publier("CP", code, CONTENU_CP);
+  await publier("FACTURE", code, CONTENU_FACTURE);
   produitCode = code;
 
   reglerReprise({ delaiMs: 150 });
@@ -328,6 +346,41 @@ describe("import en masse : contrôle, rapport, confirmation, traitement", () =>
     const { policeId } = await policeDeGroupe();
     await expect(controlerImport(technique, policeId, "2027-02-01", { nom: "a.xlsx", contenu: await xlsx([]) }, null)).rejects.toThrow(/période de la police/);
     await expect(controlerImport(technique, policeId, "2026-07-01", { nom: "a.xlsx", contenu: await xlsx([]) }, null)).rejects.toThrow(/aucune ligne/);
+  });
+});
+
+describe("H64 : pièces à émettre après un import, visibles sur la police jusqu'à leur émission", () => {
+  it("l'import crée « Nouvelle version des CP à émettre » et « Facture d'avenant à émettre » ; chacune disparaît à l'émission de sa pièce, pas avant", async () => {
+    const { policeId, cotationId } = await policeDeGroupe();
+    await emettreCp(technique, cotationId, null);
+    await emettreFacture(technique, await creerFactureAffaireNouvelle(technique, policeId, null, null), null);
+    expect(await tachesDePolice(technique, policeId)).toEqual([]);
+
+    const lotId = await controlerImport(technique, policeId, "2026-07-01", { nom: "t.xlsx", contenu: await xlsx([1, 2].map((i) => [numero(), `Tâche ${i} Inventé`, "1987-04-04", "F", "Salarié", "SOLO"])) }, null);
+    expect(await tachesDePolice(technique, policeId)).toEqual([]); // le contrôle seul ne crée rien
+    await confirmerImport(technique, lotId, null);
+    const version = (await lireLot(technique, lotId))!.versionAdherents!;
+    const taches = await tachesDePolice(technique, policeId);
+    expect(taches.map((t) => [t.libelle, t.versionAdherents, t.lotId])).toEqual([
+      ["Nouvelle version des CP à émettre", version, lotId],
+      ["Facture d'avenant à émettre", version, lotId],
+    ]);
+    // Pas d'émission automatique : ni nouvelle version des CP, ni facture d'avenant.
+    await jusqua(async () => (await lireLot(technique, lotId))!.statut === "TERMINE");
+    expect(await obtenirPrisma().documentEmis.count({ where: { policeId, type: "CP" } })).toBe(1);
+    expect(await obtenirPrisma().facture.count({ where: { policeId, type: "AVENANT" } })).toBe(0);
+    // Visible par qui lit les contrats ou les factures, pas par le Commercial.
+    expect(await tachesDePolice(commercial, policeId)).toEqual([]);
+
+    // Un brouillon de facture d'avenant ne ferme pas la tâche ; son émission, si.
+    const avenant = await creerFactureAvenant(technique, policeId, version, null, null);
+    expect((await tachesDePolice(technique, policeId)).map((t) => t.type)).toEqual(["CP_A_EMETTRE", "FACTURE_AVENANT_A_EMETTRE"]);
+    await emettreFacture(technique, avenant, null);
+    expect((await tachesDePolice(technique, policeId)).map((t) => t.type)).toEqual(["CP_A_EMETTRE"]);
+
+    // La nouvelle version des CP (annexe à jour) ferme la dernière tâche.
+    await mettreAJourCp(technique, policeId, null);
+    expect(await tachesDePolice(technique, policeId)).toEqual([]);
   });
 });
 

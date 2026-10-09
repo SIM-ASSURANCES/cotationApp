@@ -361,6 +361,8 @@ model Police {
   factures         Facture[]
   /// Imports en masse d'adhérents (CDC §13, session 5a).
   lots             LotImport[]
+  /// Tâches de la police (H64) : pièces à émettre après un import en masse.
+  taches           TachePolice[]
 
   @@map("polices")
 }
@@ -695,6 +697,7 @@ model LotImport {
   derniereErreur   String?       @map("derniere_erreur")
   police           Police        @relation(fields: [policeId], references: [id], onDelete: Restrict)
   lignes           LigneImport[]
+  taches           TachePolice[]
 
   @@index([policeId])
   @@map("lots_import")
@@ -737,4 +740,24 @@ model EcritureDifferee {
   document       DocumentEmis @relation(fields: [documentId], references: [id], onDelete: Restrict)
 
   @@map("ecritures_differees")
+}
+
+/// Tâche visible sur une police (H64) : « Nouvelle version des CP à émettre » ou « Facture d'avenant à émettre », créée par
+/// un import confirmé. Ouverte tant que la pièce n'est pas émise : l'état est lu dans les documents et les factures.
+model TachePolice {
+  id               Int        @id @default(autoincrement())
+  policeId         Int        @map("police_id")
+  /// CP_A_EMETTRE | FACTURE_AVENANT_A_EMETTRE
+  type             String
+  lotId            Int?       @map("lot_id")
+  /// Version de la liste des adhérents à reprendre (CP) ou à facturer (avenant).
+  versionAdherents Int        @map("version_adherents")
+  creePar          String     @map("cree_par")
+  creeLe           DateTime   @default(now()) @map("cree_le")
+  police           Police     @relation(fields: [policeId], references: [id], onDelete: Restrict)
+  lot              LotImport? @relation(fields: [lotId], references: [id], onDelete: Restrict)
+
+  @@unique([policeId, type, versionAdherents], map: "taches_police_unique")
+  @@index([lotId])
+  @@map("taches_police")
 }

@@ -76,7 +76,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           {c.filigrane}
         </p>
       ) : null}
-      <TachesPolice taches={taches} cotationId={c.id} />
+      <TachesPolice taches={taches} cotationId={c.id} chemin={`/cotations/${c.id}`} />
 
       <section className="mb-6 grid max-w-4xl gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
         <p><strong>Produit :</strong> {c.produit.code} — {c.produit.libelle}</p>

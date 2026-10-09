@@ -36,6 +36,7 @@ import { aujourdhui } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { lireImageSociete, lireParametresSociete } from "./societe";
 import { differerEcriture, ecrituresDifferees, lireDocumentEmis, programmerReprise, stockage, tenterEcriture } from "./stockage";
+import { fermerTachesAutomatiquement } from "./taches-police";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 import { cloreValidationContrat, controlerSeuilContrat, demanderValidationContrat, exigerAutreQueLeDemandeur } from "./validation-contrat";
 
@@ -273,6 +274,8 @@ async function produire(acteur: UtilisateurCourant, p: Production, adresseIp: st
       tx,
     );
     if (!ecriture.ecrit) await differerEcriture(tx, { documentId: ligne.id, numero: p.numero, version, chemin, empreinte, contenu: pdf, erreur: ecriture.erreur }, auteur(acteur), adresseIp);
+    // H66 : une version des CP émise ferme les tâches « Nouvelle version des CP à émettre » qu'elle satisfait.
+    if (p.type === "CP" && p.policeId !== null) await fermerTachesAutomatiquement(tx, p.policeId, auteur(acteur), adresseIp);
     return ligne;
   });
   if (!ecriture.ecrit) await programmerReprise(cree.id);

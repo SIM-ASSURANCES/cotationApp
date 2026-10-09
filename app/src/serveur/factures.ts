@@ -48,6 +48,7 @@ import { aujourdhui, construireEntree, executerCalcul, resoudreContexte } from "
 import { obtenirPrisma } from "./prisma";
 import { figer, produire, produireEnAttente, prochaineVersion, type AssociesFiges, type IssueProduction, type TypeAProduire } from "./production";
 import { lireParametresSociete } from "./societe";
+import { fermerTachesAutomatiquement } from "./taches-police";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 
 /**
@@ -524,6 +525,8 @@ export async function emettreFacture(acteur: UtilisateurCourant, factureId: numb
     await tx.facture.update({ where: { id: f.id }, data: { statut: "EMISE", numero, dateEmission: versDate(date), emiseParId: acteur.id, emisePar: acteur.identifiant, emiseLe: new Date() } });
     // H47 (09/10/2026) : la facture qui remplace une facture annulée reprend ses paiements, déjà reportés en avance.
     if (f.remplaceId) await imputerReports(tx, acteur, { id: f.id, numero, ttc: contenu.totaux.ttc, remplaceId: f.remplaceId, policeId: police.id }, adresseIp);
+    // H66 : la facture d'avenant émise ferme la tâche « Facture d'avenant à émettre » de sa version de la liste.
+    if (f.type === "AVENANT") await fermerTachesAutomatiquement(tx, police.id, auteur(acteur), adresseIp);
     const etat = etatPaiements(contenu.totaux.ttc, contenu.echeances, await encaissementsDe(tx, f.id));
     const avance = await avanceDisponible(tx, police.id);
     const idProduction = await figer(tx, {

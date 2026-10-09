@@ -41,7 +41,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
         Période de la police : du {vue.police.dateEffet} au {vue.police.dateEcheance}. La liste évolue par versions : chaque incorporation ou retrait crée une nouvelle version,
         l'historique reste consultable. Les conditions particulières de la police mère reprennent la liste courante en annexe.
       </p>
-      <TachesPolice taches={taches} cotationId={cotationId} />
+      <TachesPolice taches={taches} cotationId={cotationId} chemin={`/cotations/${cotationId}/adherents`} />
 
       <section className="mb-8">
         <h2 className="mb-2 text-lg font-semibold">Liste courante ({vue.courants.length} adhérents, version {derniere?.numero ?? "—"})</h2>

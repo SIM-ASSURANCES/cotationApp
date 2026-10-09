@@ -27,10 +27,10 @@ import { obtenirPrisma } from "./prisma";
 import { assurerSignature } from "./societe-test";
 import { remplacerStockage } from "./stockage";
 import { alerteStockage, relancerEcritures } from "./surveillance";
-import { tachesDePolice } from "./taches-police";
+import { fermerTache, tachesDePolice } from "./taches-police";
 import { fermerFiles, FILE_IMPORTS, FILE_STOCKAGE, reglerReprise, viderFile } from "./taches";
 import { demarrerTravailleur, type Travailleur } from "./travailleur";
-import { ErreurMetier, type UtilisateurCourant } from "./types";
+import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
 
 const MDP = "phrase-de-passe-inventee-2026";
@@ -403,6 +403,34 @@ describe("H64 : pièces à émettre après un import, visibles sur la police jus
     // La nouvelle version des CP (annexe à jour) ferme la dernière tâche.
     await mettreAJourCp(technique, policeId, null);
     expect(await tachesDePolice(technique, policeId)).toEqual([]);
+
+    // H66 : fermetures enregistrées (automatiques, par qui a émis la pièce) et journalisées.
+    const fermees = await obtenirPrisma().tachePolice.findMany({ where: { policeId }, orderBy: { type: "asc" } });
+    expect(fermees.map((t) => [t.type, t.fermeture, t.fermeePar])).toEqual([
+      ["CP_A_EMETTRE", "AUTOMATIQUE", technique.identifiant],
+      ["FACTURE_AVENANT_A_EMETTRE", "AUTOMATIQUE", technique.identifiant],
+    ]);
+    const journalTaches = (await lireJournal({ action: "TACHE_FERMEE" })).lignes.filter((l) => fermees.some((t) => l.objet === `tache_police ${t.id}`));
+    expect(journalTaches).toHaveLength(2);
+  });
+
+  it("fermeture manuelle d'une tâche (H66) : motif obligatoire, droit d'émettre la pièce, journalisée, définitive", async () => {
+    const { policeId, cotationId } = await policeDeGroupe();
+    await emettreCp(technique, cotationId, null);
+    const lotId = await controlerImport(technique, policeId, "2026-07-01", { nom: "m.xlsx", contenu: await xlsx([[numero(), "Manuelle Inventée", "1987-04-04", "F", "Salarié", "SOLO"]]) }, null);
+    await confirmerImport(technique, lotId, null);
+    const facture = (await tachesDePolice(technique, policeId)).find((t) => t.type === "FACTURE_AVENANT_A_EMETTRE")!;
+    expect(facture.fermable).toBe(true);
+
+    await expect(fermerTache(commercial, facture.id, "Pas de facturation", null)).rejects.toBeInstanceOf(ErreurAcces);
+    await expect(fermerTache(technique, facture.id, "  ", null)).rejects.toThrow(/motif est obligatoire/);
+    await fermerTache(technique, facture.id, "Pas de facturation", null);
+    expect((await tachesDePolice(technique, policeId)).map((t) => t.type)).toEqual(["CP_A_EMETTRE"]);
+    await expect(fermerTache(technique, facture.id, "Encore", null)).rejects.toThrow(/déjà fermée/);
+    const [ligne] = (await lireJournal({ action: "TACHE_FERMEE" })).lignes.filter((l) => l.objet === `tache_police ${facture.id}`);
+    expect(ligne.apres).toMatchObject({ fermeture: "MANUELLE", motif: "Pas de facturation" });
+    // Définitive, même en base : une tâche fermée ne se rouvre pas.
+    await expect(obtenirPrisma().tachePolice.update({ where: { id: facture.id }, data: { fermeture: null, fermeeLe: null, fermeePar: null, motifFermeture: null } })).rejects.toThrow(/déjà fermée/);
   });
 });
 

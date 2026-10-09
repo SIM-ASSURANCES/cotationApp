@@ -378,6 +378,7 @@ Conséquences retenues pour le code (session 4.0) :
 
 - **Date** : réponses reçues le 09/10/2026, transmises par Thierry (fichier d'instructions de la session 6.0) ; consignées **avant** toute correction, branche `phase-6.0` (créée depuis `phase-5b`).
 - **Règle** : comme pour D18, les hypothèses gardent leurs tableaux d'origine pour l'historique ; cette section les remplace là où elle les tranche.
+- **Suite** : toutes les lignes « À corriger » sont faites en session 6.0 (voir D28).
 
 ### Réponses de la Technique du 09/10/2026
 
@@ -401,6 +402,33 @@ Conséquences retenues pour le code (session 4.0) :
 | — | Tableau des assurés (santé) | Nom, prénom, date de naissance, filiation (si nécessaire), numéro de pièce d'identité ; un exemple sera envoyé | **À corriger** (§2.6) |
 | H36, H45 | Prime sur le certificat ; prime d'un membre de famille | **Pas de réponse** (exemple annoncé) | Restent ouvertes |
 
+## D28 — Choix de mise en œuvre de la session 6.0 (P1 des réponses de la Technique)
+
+- **Date** : 09/10/2026. Branche `phase-6.0`, créée depuis `phase-5b` (après fusion de `phase-4b` et `phase-5a` dans `main`). Une seule migration, `20261010090000_session_6_0`, nommée après `20261009140000`.
+- **Avance d'une police (§2.1 et §2.4, H33 et H47 fermées)** : grand livre `mouvements_avance` en **ajout seul**, quatre mouvements : EXCÉDENT (trop-perçu d'un paiement), REPORT (somme d'une facture annulée par avoir), IMPUTATION (avance appliquée à une facture de la même police), RESTITUTION (rendue au client). Avance disponible = crédits − débits, calculée en base (`avance_disponible`). Un déclencheur verrouille la police et refuse tout débit au-delà du disponible (« avance insuffisante ») et toute imputation au-delà du TTC d'une facture émise : **l'avance n'est jamais négative**, même avec deux demandes simultanées.
+- **Trop-perçu** : un paiement supérieur au restant dû est accepté ; la part au-delà est enregistrée comme `paiements.excedent` (jamais négative, toujours inférieure au montant) et créditée en avance. Le déclencheur des paiements refuse un trop-perçu non déclaré et un excédent sur un paiement qui ne solde pas la facture. Le reçu porte l'avance de la police.
+- **Avoir sur une facture payée en partie (T4 sur T3)** : l'avoir n'est plus refusé. La facture d'origine passe « Annulée » et reste conservée ; chaque paiement devient un REPORT en avance (journal `PAIEMENT_REPORTE`) ; à l'émission de la facture de remplacement, les reports sont imputés automatiquement (journal `AVANCE_IMPUTEE`), dans la limite de son TTC ; le surplus reste en avance. La facture de remplacement affiche chaque somme reprise (date, montant, reçu d'origine) ; les reçus REC d'origine restent valables. Numérotation FAC sans trou (testé).
+- **Extension du dictionnaire** : `solde.avance` (montant), avance disponible de la police au moment du document (facture, reçu, avis, relance).
+- **Régime de taxe (§2.2, H29 fermée)** : colonne `cotations.regime_taxe` (INDIVIDUEL ou GROUPE), obligatoire pour toute cotation enregistrée depuis la 6.0, proposée selon le type de contrat (INDIVIDUEL, FAMILLE → Individuel ; GROUPE, GROUPE_OUVERT → Groupe), modifiable. C'est elle qui choisit la ligne de taux ; le type de contrat reste dans `police.type_contrat`. Aucun recalcul d'une cotation émise (T10).
+- **Branches de démarrage (§2.3)** : `MOTO` « Moto (SECURMOTO) », `VOYAGE` « Assistance voyage (RELAXVOYAGE) », `RECOLTE` « Récoltes (SECURECOLTE) », chacune à 7,25 % depuis le 01/01/2026 (provisoire), dans `prisma/donnees/branches.json` et `taxes-loi.json` (H76).
+- **Numéros (§2.5, H31, H37, H46 fermées)** : avertissement **sans blocage**, en direct à la saisie puis après l'acceptation, si le numéro de contrat ne finit pas par `00000` après G ou I. Certificat : racine et lettre de la police mère, puis numéro personnel sur 5 chiffres ; par défaut le numéro d'ordre de l'adhérent ; modifiable à la saisie unitaire et dans l'import (colonne devenue facultative) ; format, `00000` et unicité contrôlés (H78). `police.reference` = `police.numero`, retiré des champs facultatifs.
+- **Assurés (§2.6)** : `assures[].num_identification` (pièce d'identité), facultatif à la saisie : dictionnaire, saisie des assurés et des adhérents, fichier modèle, contrôles de l'import (H80). `lien` = filiation.
+- **§2.7** : `formules[].taux_couverture` devient facultatif (D19) ; `assures[].date_naissance` reste obligatoire. Référentiel des **intermédiaires** (table `intermediaires`, écran « Intermédiaires », journal `INTERMEDIAIRE_CREE` / `INTERMEDIAIRE_MODIFIE`) ; 0 à 2 par cotation (table `cotations_intermediaires`, copie au moment du choix), repris dans `intermediaires[]` de la cotation, des CP, du certificat et des factures ; taux de transformation par intermédiaire au tableau de bord (H71 fermée, H79). **Tâches d'import** : fermeture enregistrée (`taches_police.fermeture`), automatique à l'émission de la pièce, ou manuelle avec motif obligatoire ; journal `TACHE_FERMEE` ; une tâche fermée ne se rouvre pas (déclencheur) (H66 fermée, H81).
+
+### Hypothèses de la session 6.0, à faire confirmer
+
+| # | Point | Hypothèse retenue (à faire confirmer) |
+| --- | --- | --- |
+| H73 | Sommes reportées d'une facture annulée | créditées en avance **à l'avoir**, imputées automatiquement à l'émission de la facture de remplacement (même police, même type, même période ou même liste). Elles ne sont **pas réservées** : tant que la facture de remplacement n'est pas émise, elles peuvent être imputées ailleurs ou restituées |
+| H74 | Restitution d'une avance | date, montant, canal, référence ; **pas de nouveau type de document** (ni reçu, ni avoir) : la trace est le journal (`AVANCE_RESTITUEE`) et la liste des mouvements sur l'écran des factures de la police. Droit : « Enregistrer un paiement » |
+| H75 | Imputation d'une avance | proposée sur l'écran d'une facture émise de la même police (montant proposé = le plus petit de l'avance et du restant dû), **confirmée par l'utilisateur**. Elle apparaît dans les paiements de la facture (canal « Avance ») et réédite la facture ; elle ne crée **pas de reçu** (ce n'est pas un encaissement) |
+| H76 | Codes des branches hors tableau | `MOTO`, `VOYAGE`, `RECOLTE` (libellés ci-dessus). Un code ne change plus une fois en production : **à confirmer par la Technique avant le déploiement** |
+| H77 | Régime de taxe des cotations d'avant la 6.0 | NULL en base, jamais recalculées (T10) ; le renouvellement de leur police prend le régime proposé pour son type de contrat. Un appel sans formulaire qui n'indique pas le régime reçoit ce même régime proposé ; un régime vide ou inconnu est refusé |
+| H78 | Numéro de certificat | refusé s'il ne reprend pas la racine et la lettre de la police mère, ou s'il vaut `00000` ; numéro proposé = numéro d'ordre de l'adhérent. Une police mère dont le numéro ne finit pas par G ou I et 5 chiffres ne peut pas avoir de certificat dérivé (refus expliqué). Dans un import, les numéros proposés suivent les numéros d'ordre des **seules lignes valides** ; les numéros d'un import confirmé restent réservés jusqu'à la production de leur certificat. Les colonnes facultatives (`numero_certificat`, `sexe`, `lien`, `num_identification`) peuvent manquer dans le fichier |
+| H79 | Intermédiaires | le **rôle** est porté par le référentiel (pas choisi cotation par cotation). Même droit que le paramétrage des produits (Technique). Un intermédiaire désactivé ne peut plus être choisi mais reste sur le brouillon qui l'avait. Au tableau de bord, une cotation compte pour chacun de ses intermédiaires ; les cotations sans intermédiaire forment la ligne « Sans intermédiaire » |
+| H80 | Pièce d'identité d'un assuré | texte libre, 50 caractères au plus, sans contrôle de format (CNI, passeport…) |
+| H81 | Fermeture manuelle d'une tâche | par qui peut **émettre** la pièce (« Émettre un contrat » pour les CP, « Émettre une facture » pour l'avenant), motif de 500 caractères au plus ; définitive. Une facture d'avenant émise puis annulée par un avoir ne rouvre pas la tâche |
+
 ## Décisions en attente
 
 | Sujet | Qui décide | Échéance |
@@ -412,16 +440,16 @@ Conséquences retenues pour le code (session 4.0) :
 | Police de remplacement de Tahoma (test D) ; puis Dockerfile et polices exigées par `/sante` (D16) | Thierry | avant la mise en production |
 | H18 à H27 (émission des documents, voir D17) | Direction Technique | avant la recette |
 | Durée de validité d'une cotation : confirmer « 3 mois » (D10) | Direction Technique | avant la recette |
-| H2 (garanties à prime fixe et à prime calculée), H8 (options au choix), H28 (voir D18) | Direction Technique | avant la recette |
-| H29 à H31 (type de contrat et taux, conflit T3, numéro de police : voir D18) ; liste des champs facultatifs (D19) | Direction Technique | avant la recette |
-| Date d'entrée en vigueur des taux, à confirmer par la Technique (date provisoire du 01/01/2026, D21) | Direction Technique | avant la recette |
-| H32 : branche fiscale et taux pour SECURMOTO, RELAXVOYAGE, SECURECOLTE et les autres produits hors tableau | Direction Technique | avant la recette |
+| H8 (options : Thierry consulte le simulateur SECURPRO, SECURHOME) ; H1, H2, H28 fermées (D27) | Thierry | avant la recette |
+| Liste des champs facultatifs (D19, complétée par D28 : `formules[].taux_couverture` ajouté, `police.reference` retiré) | Direction Technique | avant la recette |
+| Date d'entrée en vigueur des taux : la Technique répond « taux officiel » sans date ; le 01/01/2026 reste provisoire (D27) | Direction Technique | avant la recette |
+| H32, sur le seul taux mixte de l'IARD (12,5 % incendie, 7,25 % le reste) : règle de ventilation ; H76 : codes des branches MOTO, VOYAGE, RECOLTE | Direction Technique | avant le déploiement |
 | Écart avec le CDC §4.1 : validation par la Technique seule (D21) | Superviseur (à lui présenter) | avant la recette |
-| H34 à H46 (contrats complets et groupes : voir D22), en particulier H44 (validation du contrat, écart DG) et H46 (`police.reference`) ; H37 et H39 sont tranchées par Thierry le 08/10/2026 | Direction Technique | avant la recette |
-| H31 : les 5 chiffres du numéro de police sont-ils le numéro de l'adhérent ? | Direction Technique | avant la recette |
+| H34 à H45 (contrats complets et groupes : voir D22), en particulier H44 (validation du contrat, écart DG) et H36, H45 (prime sur le certificat, prime d'un membre de famille : exemple annoncé) ; H37, H39 et H46 sont fermées | Direction Technique | avant la recette |
 | Écart avec le CDC §4 : Comptabilité en « Lecture » au lieu de « Taxes (proposition) » (D21) ; écart avec le CDC §4.1 : la DG ne valide pas non plus l'émission d'un contrat (H44) ni d'une facture (H56) | Superviseur (à lui présenter) | avant la recette |
-| H33 et H47 à H59 (factures, avoirs, paiements, reçus : voir D23), en particulier H33 (trop-perçu), H47 (avoir partiel, facture déjà payée), H51 (avenant), H52 (sens de « Valide » pour l'avoir) ; H45 : prime d'un membre de famille | Direction Technique | avant la recette |
-| H60, H61 et H66 (import en masse : voir D24) ; H62 à H65 tranchées par Thierry le 09/10/2026, H62 (âges limites dans le paramétrage des formules) reste à présenter à la Direction Technique | Thierry, puis Direction Technique | avant la recette |
-| H67 à H72 (avis, relances, tableaux de bord : voir D25), en particulier H67 (facture sans échéancier) et H71 (intermédiaires) ; droit « Consulter les tableaux de bord » (extension du CDC §4) | Thierry, puis Direction Technique | avant la recette |
+| H48 à H59 (factures, avoirs, paiements, reçus : voir D23), en particulier H52 (qui décide d'un avoir : pas de réponse) ; H47 bis (avoir partiel), H51 (avenant au prorata ou prime entière) et H2 (composition manuelle) sont des P2, à lancer après validation des P1 par Thierry | Direction Technique, puis Thierry | avant la recette |
+| H60 et H61 (import en masse : voir D24, colonnes revues par D28) ; H62 (âges limites dans le paramétrage des formules) reste à présenter à la Direction Technique ; H66 fermée | Thierry, puis Direction Technique | avant la recette |
+| H67 à H70 et H72 (avis, relances, tableaux de bord : voir D25), en particulier H67 (facture sans échéancier) ; droit « Consulter les tableaux de bord » (extension du CDC §4) ; H71 fermée | Thierry, puis Direction Technique | avant la recette |
+| H73 à H81 (session 6.0 : voir D28) | Thierry, puis Direction Technique | avant la recette |
 
 Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir), Q3 (plus de dossier partagé : D11), Q4 (`assures[].sexe` ajouté : D12), Q5 (Thierry balise d'abord, puis la Technique : D12), H6 (validité en mois : D10).

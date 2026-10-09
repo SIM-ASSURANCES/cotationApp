@@ -238,6 +238,12 @@ export const RACINES: ReadonlySet<string> = new Set(CHAMPS.map((champ) => champ.
 export const estFacultatif = (chemin: string): boolean => PAR_CHEMIN.get(chemin)?.facultatif === true;
 
 /**
+ * Champs facultatifs (D19), envoyés au générateur avec chaque demande de PDF : vide, un champ facultatif
+ * s'écrit vide même passé dans un filtre (« | date », « | pct »…) ; un champ obligatoire vide arrête la génération.
+ */
+export const CHAMPS_FACULTATIFS: readonly string[] = CHAMPS.filter((champ) => champ.facultatif).map((champ) => champ.chemin);
+
+/**
  * Marqueur d'une donnée que l'application NE FOURNIT PAS (profession non saisie, bénéficiaires non gérés…).
  * Distinct de null, qui veut dire « connue et vide ».
  */

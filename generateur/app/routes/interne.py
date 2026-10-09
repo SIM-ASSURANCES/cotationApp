@@ -84,6 +84,9 @@ class DemandeDocument(BaseModel):
     listes_en_annexe: list[str] = Field(
         default=[], description="Listes toujours renvoyées en annexe, même sous le seuil (police de groupe : adhérents)"
     )
+    champs_facultatifs: list[str] = Field(
+        default=[], description="Champs facultatifs du dictionnaire (D19, « police.reference ») : vides, ils s'écrivent vides même dans un filtre"
+    )
 
 
 class QrDemande(BaseModel):
@@ -121,6 +124,7 @@ def document_pdf(demande: DemandeDocument, parametres: Annotated[Parametres, Dep
             pieces_jointes=[_decoder(p, "pièce jointe") for p in demande.pieces_jointes],
             filigrane=demande.filigrane,
             listes_en_annexe=tuple(demande.listes_en_annexe),
+            champs_facultatifs=tuple(demande.champs_facultatifs),
         )
     except ErreurFusion as erreur:
         raise HTTPException(status_code=422, detail=str(erreur)) from None

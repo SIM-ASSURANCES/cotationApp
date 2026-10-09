@@ -366,6 +366,14 @@ Conséquences retenues pour le code (session 4.0) :
 | H71 | Transformation par intermédiaire | **non disponible** : l'application ne connaît pas l'intermédiaire d'une cotation (`intermediaires` est un champ facultatif non saisi, D19). Il faudrait ajouter l'intermédiaire à la saisie de la cotation |
 | H72 | Numéros des avis et relances | préfixes **AVE** (avis d'échéance) et **REL** (relance), compteur annuel sans trou, format paramétrable sur l'écran Société comme les autres (`AVE-{AAAA}-{MM}-{NNNN}`, `REL-{AAAA}-{MM}-{NNNN}`) |
 
+## D26 — Valeur vide dans un filtre et refus groupé (correction de recette du 09/10/2026)
+
+- **Date** : 09/10/2026, règle de Thierry après la recette de la 4b (défaut : « date : date absente ou illisible (None) », sans nom de champ ; même défaut avec `pct`). Numéro D26 : D24 et D25 sont pris par les branches `phase-5a` et `phase-5b`.
+- **Règle** : une valeur vide (null, texte vide ou blanc) passée dans un des 6 filtres (`montant`, `lettres`, `date`, `dateheure`, `pct`, `case`) s'écrit **vide** si le champ est **facultatif** (liste de D19, envoyée par l'application avec chaque demande de PDF : `CHAMPS_FACULTATIFS` de `dictionnaire.ts`) ; sinon la génération s'arrête en **nommant le champ** par son chemin complet, rang compris : « champ obligatoire vide : « formules[0].taux_couverture » (filtre pct) ». Hors filtre, rien ne change : une valeur vide s'écrit vide (D19).
+- **Précision de D19** : D19 et D22 disaient qu'un champ « saisi puis laissé vide s'écrit vide ». C'est toujours vrai hors filtre ; **dans un filtre, un champ obligatoire vide bloque désormais**, comme le demande Thierry.
+- **Refus groupé à l'émission** : la fusion va jusqu'au bout du corps, des annexes et des sous-modèles avant de refuser. Le message liste d'un coup toutes les données absentes, tous les champs obligatoires vides passés dans un filtre et les sous-modèles introuvables : « Génération impossible : 3 points à corriger : … ; … ; … ». Un seul problème garde son message habituel. La génération ayant lieu avant la transaction d'émission, un refus ne consomme aucun numéro.
+- **Chemins** : les éléments d'une liste sont nommés avec leur rang (`assures[1].date_naissance`, à partir de 0), y compris pour une donnée absente (avant : `assures[].date_naissance`).
+
 ## Décisions en attente
 
 | Sujet | Qui décide | Échéance |

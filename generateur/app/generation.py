@@ -32,6 +32,7 @@ def generer_pdf(
     pieces_jointes: list[bytes] | None = None,
     filigrane: str | None = None,
     listes_en_annexe: tuple[str, ...] = (),
+    champs_facultatifs: tuple[str, ...] = (),
 ) -> bytes:
     images = dict(images or {})
     if qr_url:
@@ -44,6 +45,7 @@ def generer_pdf(
         sous_modeles=sous_modeles,
         images=images,
         listes_en_annexe=listes_en_annexe,
+        champs_facultatifs=champs_facultatifs,
     )
     travail = parametres.dossier_sortie / "travail"
     travail.mkdir(parents=True, exist_ok=True)

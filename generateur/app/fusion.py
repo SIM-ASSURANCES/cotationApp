@@ -4,6 +4,10 @@ Règles :
   - une donnée ABSENTE fait échouer la fusion avec son chemin (« souscripteur.nom ») : jamais un
     blanc silencieux. Une donnée présente mais vide (null) s'écrit vide : c'est l'application qui
     décide qu'elle n'a pas de valeur ;
+  - une donnée vide passée dans un filtre (« | date », « | pct »…) s'écrit vide si le champ est
+    facultatif (D19, liste envoyée par l'application), et arrête la fusion en le nommant sinon ;
+  - la fusion va jusqu'au bout du modèle avant d'échouer : le message liste d'un coup TOUTES les
+    données absentes et tous les champs obligatoires vides, et non le premier seulement ;
   - autoescape : un « < » ou un « & » dans les données ne casse jamais le document ;
   - bac à sable Jinja : un modèle déposé ne peut atteindre aucun objet Python interne ;
   - aucun calcul : les montants arrivent arrondis et ne sont que formatés (filtres.py).
@@ -28,7 +32,7 @@ from jinja2.sandbox import SandboxedEnvironment, SecurityError
 from jinja2.utils import missing
 from lxml import etree
 
-from app.filtres import FILTRES, ErreurFiltre
+from app.filtres import FILTRES, ChampObligatoireVide, ErreurFiltre, Vide, est_vide
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 w = lambda nom: f"{{{W}}}{nom}"  # noqa: E731
@@ -63,16 +67,47 @@ class Liste(list):  # type: ignore[type-arg]
         self._chemin = chemin
 
 
-def envelopper(valeur: Any, chemin: str = "") -> Any:
+def chemin_generique(chemin: str) -> str:
+    """« formules[0].taux_couverture » → « formules[].taux_couverture » (notation du dictionnaire)."""
+    return re.sub(r"\[\d+\]", "[]", chemin)
+
+
+def envelopper(valeur: Any, chemin: str = "", facultatifs: Collection[str] = frozenset()) -> Any:
+    """Données → objets qui connaissent leur chemin ; une valeur vide devient un Vide nommé."""
     if isinstance(valeur, dict):
-        return Objet({k: envelopper(v, f"{chemin}.{k}" if chemin else k) for k, v in valeur.items()}, chemin)
+        return Objet({k: envelopper(v, f"{chemin}.{k}" if chemin else k, facultatifs) for k, v in valeur.items()}, chemin)
     if isinstance(valeur, list):
-        return Liste([envelopper(v, f"{chemin}[]") for v in valeur], chemin)
+        return Liste([envelopper(v, f"{chemin}[{i}]", facultatifs) for i, v in enumerate(valeur)], chemin)
+    if est_vide(valeur):
+        return Vide(valeur, chemin, chemin_generique(chemin) in facultatifs)  # type: ignore[arg-type]
     return valeur
 
 
+class Releve:
+    """Problèmes de données relevés pendant une fusion (dans l'ordre, sans doublon)."""
+
+    def __init__(self) -> None:
+        self.messages: dict[str, None] = {}
+
+    def noter(self, message: str) -> None:
+        self.messages.setdefault(message, None)
+
+    def __bool__(self) -> bool:
+        return bool(self.messages)
+
+    def erreur(self) -> "ErreurFusion":
+        messages = list(self.messages)
+        if len(messages) == 1:
+            return ErreurFusion(messages[0])
+        return ErreurFusion(f"{len(messages)} points à corriger : " + " ; ".join(messages))
+
+
 class DonneeAbsente(StrictUndefined):
+    """Donnée absente. Pendant une fusion (attribut _releve), elle est RELEVÉE et la fusion continue
+    avec une valeur neutre (vide, fausse, liste vide), pour que le message final les nomme toutes."""
+
     __slots__ = ()
+    _releve: Releve | None = None
 
     @property
     def _undefined_message(self) -> str:
@@ -85,15 +120,64 @@ class DonneeAbsente(StrictUndefined):
             chemin = f"{conteneur}[{nom}]"
         return f"donnée absente : « {chemin} »"
 
+    def _fail_with_undefined_error(self, *args: Any, **kwargs: Any) -> Any:
+        if self._releve is None:
+            return super()._fail_with_undefined_error(*args, **kwargs)
+        self._releve.noter(self._undefined_message)
+        return self
 
-def _environnement() -> SandboxedEnvironment:
+    def _neutre(self, valeur: Any) -> Any:
+        self._fail_with_undefined_error()
+        return valeur
+
+    def __str__(self) -> str:
+        return self._neutre("")
+
+    def __iter__(self) -> Any:
+        return self._neutre(iter(()))
+
+    def __len__(self) -> int:
+        return self._neutre(0)
+
+    def __bool__(self) -> bool:
+        return self._neutre(False)
+
+    def __eq__(self, autre: object) -> bool:
+        return self._neutre(False)
+
+    def __ne__(self, autre: object) -> bool:
+        return self._neutre(True)
+
+    def __contains__(self, element: object) -> bool:
+        return self._neutre(False)
+
+    def __hash__(self) -> int:
+        return self._neutre(id(self))
+
+
+def _environnement(releve: Releve | None = None) -> SandboxedEnvironment:
     environnement = SandboxedEnvironment(
-        undefined=DonneeAbsente,
+        undefined=type("DonneeAbsenteRelevee", (DonneeAbsente,), {"__slots__": (), "_releve": releve}),
         autoescape=True,
         # null s'écrit vide (et non « None ») ; une donnée absente, elle, fait échouer la fusion.
         finalize=lambda valeur: "" if valeur is None else valeur,
     )
-    environnement.filters.update(FILTRES)
+
+    def filtre(nom: str, fonction: Callable[[Any], str]) -> Callable[[Any], str]:
+        def appliquer(valeur: Any) -> str:
+            try:
+                return fonction(valeur)
+            except ChampObligatoireVide as erreur:
+                if releve is None:
+                    raise
+                releve.noter(str(erreur))
+                return ""
+
+        return appliquer
+
+    environnement.filters.update({nom: filtre(nom, f) for nom, f in FILTRES.items()})
+    # Une donnée null, devenue Vide, reste « none » pour {% if x is none %}.
+    environnement.tests["none"] = lambda valeur: valeur is None or (isinstance(valeur, Vide) and valeur.nulle)
     return environnement
 
 
@@ -252,14 +336,17 @@ def _rendre(
     images: dict[str, Image],
     retouche: Callable[[etree._Element], None] | None = None,
     sous_modeles: dict[str, dict[str, bytes]] | None = None,
+    *,
+    releve: Releve,
+    facultatifs: Collection[str] = frozenset(),
 ) -> bytes:
     gabarit = DocxTemplate(io.BytesIO(modele))
     gabarit.init_docx()
     corps = gabarit.docx.element.body
     if retouche:
         retouche(corps)
-    environnement = _environnement()
-    contexte = envelopper(donnees)
+    environnement = _environnement(releve)
+    contexte = envelopper(donnees, facultatifs=facultatifs)
     for nom, image in images.items():
         contexte[nom] = InlineImage(gabarit, io.BytesIO(image.png), width=Mm(image.largeur_mm))
 
@@ -271,9 +358,11 @@ def _rendre(
             if (nom, cle_texte) not in rendus:
                 sous_modele = sous_modeles.get(nom, {}).get(cle_texte)
                 if sous_modele is None:
-                    raise ErreurFusion(f"sous-modèle « {nom} » introuvable pour « {cle_texte} »")
+                    # Relevé avec les données manquantes : un seul refus liste tout ce qui est à corriger.
+                    releve.noter(f"sous-modèle « {nom} » introuvable pour « {cle_texte} »")
+                    return ""
                 # Le sous-modèle est fusionné avec les mêmes données (sans bloc() à son tour).
-                rendu = _rendre(sous_modele, donnees, images)
+                rendu = _rendre(sous_modele, donnees, images, releve=releve, facultatifs=facultatifs)
                 rendus[(nom, cle_texte)] = gabarit.new_subdoc(io.BytesIO(rendu))
             return rendus[(nom, cle_texte)]
 
@@ -281,21 +370,27 @@ def _rendre(
 
     try:
         gabarit.render(contexte, jinja_env=environnement, autoescape=True)
-    except ErreurFusion:
-        raise
-    except UndefinedError as erreur:
-        raise ErreurFusion(str(erreur) + _pres_de(erreur)) from None
-    except ErreurFiltre as erreur:
-        raise ErreurFusion(str(erreur)) from None
-    except SecurityError:
-        raise ErreurFusion("opération interdite dans le modèle") from None
-    except TemplateSyntaxError as erreur:
-        raise ErreurFusion(f"modèle invalide : {erreur.message}{_pres_de(erreur)}") from None
-    except TemplateError as erreur:
-        raise ErreurFusion(f"fusion impossible : {erreur}") from None
+    except (TemplateError, ErreurFiltre) as erreur:
+        # Une erreur qui suit des données manquantes en est souvent la conséquence : on les nomme.
+        if releve and not isinstance(erreur, (SecurityError, TemplateSyntaxError)):
+            raise releve.erreur() from None
+        raise _traduire(erreur) from None
     sortie = io.BytesIO()
     gabarit.save(sortie)
     return sortie.getvalue()
+
+
+def _traduire(erreur: Exception) -> ErreurFusion:
+    """Erreur de rendu → ErreurFusion au message lisible."""
+    if isinstance(erreur, UndefinedError):
+        return ErreurFusion(str(erreur) + _pres_de(erreur))
+    if isinstance(erreur, ErreurFiltre):
+        return ErreurFusion(str(erreur))
+    if isinstance(erreur, SecurityError):
+        return ErreurFusion("opération interdite dans le modèle")
+    if isinstance(erreur, TemplateSyntaxError):
+        return ErreurFusion(f"modèle invalide : {erreur.message}{_pres_de(erreur)}")
+    return ErreurFusion(f"fusion impossible : {erreur}")
 
 
 def _pres_de(erreur: Exception) -> str:
@@ -316,8 +411,15 @@ def fusionner(
     sous_modeles: dict[str, dict[str, bytes]] | None = None,
     images: dict[str, Image] | None = None,
     listes_en_annexe: Collection[str] = (),
+    champs_facultatifs: Collection[str] = (),
 ) -> Resultat:
-    """Fusionne le modèle ; produit le corps et, pour chaque liste trop longue ou imposée, son annexe."""
+    """Fusionne le modèle ; produit le corps et, pour chaque liste trop longue ou imposée, son annexe.
+
+    `champs_facultatifs` : chemins du dictionnaire déclarés facultatifs (D19, « police.reference »,
+    « formules[].x ») ; vides, ils s'écrivent vides même dans un filtre. Toutes les données absentes
+    et tous les champs obligatoires vides du corps et des annexes sont nommés dans une seule erreur."""
+    facultatifs = frozenset(champs_facultatifs)
+    releve = Releve()
     annexes = annexes or {}
     images = images or {}
     en_annexe: list[str] = []
@@ -336,8 +438,9 @@ def fusionner(
                     raise ErreurFusion(f"{libelle} {raison} : aucun modèle d'annexe pour « {liste} »")
                 en_annexe.append(liste)
 
-    corps = _rendre(modele, donnees, images, retouche, sous_modeles or {})
-    return Resultat(
-        corps=corps,
-        annexes=[Annexe(liste, _rendre(annexes[liste], donnees, images, sous_modeles=sous_modeles or {})) for liste in en_annexe],
-    )
+    options = {"releve": releve, "facultatifs": facultatifs}
+    corps = _rendre(modele, donnees, images, retouche, sous_modeles or {}, **options)  # type: ignore[arg-type]
+    rendues = [Annexe(liste, _rendre(annexes[liste], donnees, images, sous_modeles=sous_modeles or {}, **options)) for liste in en_annexe]  # type: ignore[arg-type]
+    if releve:
+        raise releve.erreur()
+    return Resultat(corps=corps, annexes=rendues)

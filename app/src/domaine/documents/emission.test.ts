@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { calculer, type EntreeCalcul } from "../calcul/calcul";
+import { CHAMPS_FACULTATIFS } from "./dictionnaire";
 import { donneesDocument, type SourceDocument } from "./donnees";
 import { cheminStockage, masquerSouscripteur, problemesVisas, statutPublic } from "./emission";
 import { SOCIETE_DEFAUT, lireLignes, lireSociete, problemesSociete } from "./societe";
@@ -118,6 +119,10 @@ describe("données d'une cotation T1 (dictionnaire, montants du moteur)", () => 
     expect(d.doc.empreinte).toBeNull();
     // Fourni depuis la session 4.0.
     expect(d.police.type_contrat).toBe("GROUPE");
+  });
+
+  it("liste des champs facultatifs envoyée au générateur (D19) : vides, ils s'écrivent vides même dans un filtre", () => {
+    expect([...CHAMPS_FACULTATIFS].sort()).toEqual(["doc.empreinte", "intermediaires", "police.nantissement", "police.police_mere", "police.reference"]);
   });
 
   const assure = (ordre: number, formule: string) => ({ ordre, nom_prenoms: `ASSURÉ ${ordre}`, date_naissance: "" as const, sexe: "" as const, lien: "", formule });

@@ -575,8 +575,11 @@ async function finaliserLot(lotId: number): Promise<void> {
   let zip: { chemin: string; empreinte: string; taille: number } | null = null;
   let erreurZip: string | null = null;
   if (dansLArchive.length > 0) {
-    const precedent = lot.zipChemin ? Number(/_v(\d+)\.zip$/.exec(lot.zipChemin)?.[1] ?? 1) : 0;
-    const chemin = `lots/LOT-${lot.id}/certificats_lot_${lot.id}_v${precedent + 1}.zip`;
+    // Stockage en ajout seul : chaque archive a son propre nom (horodaté à la milliseconde, avec la police). Un nom
+    // fixe heurterait l'archive d'une finalisation interrompue après l'écriture, ou celle d'un lot de même numéro
+    // d'une base restaurée : l'archive ne serait jamais refaite.
+    const horodatage = new Date().toISOString().replace(/[-:.TZ]/g, "");
+    const chemin = `lots/${lot.police.numero.replace(/[^A-Za-z0-9_-]/g, "_")}/LOT-${lot.id}/certificats_lot_${lot.id}_${horodatage}.zip`;
     const fichiers = dansLArchive.map((d) => ({ chemin: d.chemin, nom: `${d.numero.replace(/[^A-Za-z0-9_-]/g, "_")}_CERTIFICAT_v${d.version}.pdf` }));
     try {
       zip = { chemin, ...(await zipStocker(fichiers, chemin)) };

@@ -2,7 +2,8 @@
 // l'ordre ALPHABÉTIQUE de leur dossier : sur une base neuve, une migration nommée avant une autre passe avant elle.
 // Ce test, sans base de données, vérifie :
 //   1. que chaque nom suit le format AAAAMMJJHHMMSS_nom et que les horodatages sont STRICTEMENT croissants (pas de doublon) ;
-//   2. que toute migration ajoutée après la session 4a porte un horodatage postérieur à 20261009100000 ;
+//   2. que toute migration ajoutée après la session 4a porte un horodatage postérieur à 20261009100000, et toute migration
+//      ajoutée après la 4b un horodatage postérieur à 20261009110000 (phase 5) ;
 //   3. qu'aucune migration ne dépend d'un objet (table, fonction, type) créé par une migration nommée APRÈS elle.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -28,6 +29,10 @@ const MIGRATIONS_4A = [
   "20261009090000_contrats_4a",
   "20261009100000_validation_contrat_et_droits",
 ];
+
+/** Migrations ajoutées par la session 4b ; toute migration plus récente est nommée après la dernière (phase 5). */
+const MIGRATIONS_4B = ["20261009110000_factures_paiements_recus"];
+const DERNIERE_MIGRATION_4B = "20261009110000";
 
 type Migration = { nom: string; sql: string };
 
@@ -109,6 +114,12 @@ describe("ordre des migrations du dépôt", () => {
   it(`toute nouvelle migration est nommée après ${DERNIERE_MIGRATION_4A}`, () => {
     const nouvelles = noms.filter((n) => !MIGRATIONS_4A.includes(n));
     expect(nouvelles.filter((n) => n.slice(0, 14) <= DERNIERE_MIGRATION_4A)).toEqual([]);
+  });
+
+  it(`toute migration plus récente que la 4b est nommée après ${DERNIERE_MIGRATION_4B}`, () => {
+    expect(noms.filter((n) => MIGRATIONS_4B.includes(n))).toEqual(MIGRATIONS_4B);
+    const nouvelles = noms.filter((n) => !MIGRATIONS_4A.includes(n) && !MIGRATIONS_4B.includes(n));
+    expect(nouvelles.filter((n) => n.slice(0, 14) <= DERNIERE_MIGRATION_4B)).toEqual([]);
   });
 
   it("aucune migration ne dépend d'une migration nommée après elle", () => {

@@ -23,7 +23,16 @@ function messageDErreur(fn: () => unknown): string {
 
 describe("validerConfig", () => {
   it("accepte une configuration complète", () => {
-    expect(validerConfig(configComplete)).toEqual(configComplete);
+    expect(validerConfig(configComplete)).toEqual({ ...configComplete, CONVERSIONS_SIMULTANEES: 2 });
+  });
+
+  it("file de tâches (phase 5) : REDIS_URL facultative mais en redis:// ; CONVERSIONS_SIMULTANEES de 1 à 16, 2 par défaut", () => {
+    const avec = validerConfig({ ...configComplete, REDIS_URL: "redis://:mot-de-passe-invente@redis:6379", CONVERSIONS_SIMULTANEES: "3" });
+    expect(avec.REDIS_URL).toBe("redis://:mot-de-passe-invente@redis:6379");
+    expect(avec.CONVERSIONS_SIMULTANEES).toBe(3);
+    expect(messageDErreur(() => validerConfig({ ...configComplete, REDIS_URL: "http://redis:6379" }))).toContain("REDIS_URL : doit être une adresse redis://");
+    expect(messageDErreur(() => validerConfig({ ...configComplete, CONVERSIONS_SIMULTANEES: "0" }))).toContain("CONVERSIONS_SIMULTANEES : doit être un nombre entier de 1 à 16");
+    expect(messageDErreur(() => validerConfig({ ...configComplete, CONVERSIONS_SIMULTANEES: "deux" }))).toContain("CONVERSIONS_SIMULTANEES : doit être un nombre entier de 1 à 16");
   });
 
   it("refuse une configuration où il manque DATABASE_URL, en nommant la variable", () => {

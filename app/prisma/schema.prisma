@@ -205,6 +205,9 @@ model Formule {
   /// AUCUN, FIXE, PAR_TETE, PAR_FAMILLE ou POURCENT.
   accessoireMode   String         @map("accessoire_mode")
   accessoireValeur Decimal        @default(0) @map("accessoire_valeur") @db.Decimal(18, 6)
+  /// Âges limites de la formule, en années révolues (session 5a, contrôle de l'import en masse : H62). Null : pas de limite.
+  ageMin           Int?           @map("age_min")
+  ageMax           Int?           @map("age_max")
   version          ProduitVersion @relation(fields: [produitVersionId], references: [id], onDelete: Restrict)
 
   @@unique([produitVersionId, code])
@@ -356,6 +359,8 @@ model Police {
   validations      ValidationContrat[]
   /// Factures et avoirs de la police (CDC §11, session 4b).
   factures         Facture[]
+  /// Imports en masse d'adhérents (CDC §13, session 5a).
+  lots             LotImport[]
 
   @@map("polices")
 }
@@ -525,6 +530,10 @@ model DocumentEmis {
   modeleVersion      ModeleVersion      @relation(fields: [modeleVersionId], references: [id], onDelete: Restrict)
   /// Facture, avoir ou reçu : la production en attente dont il est issu.
   production         DocumentAProduire?
+  /// Ligne d'import en masse qui l'a produit (certificat d'adhésion, session 5a).
+  ligneImport        LigneImport?
+  /// Écriture différée (T14) : fichier pas encore écrit dans le stockage.
+  ecritureDifferee   EcritureDifferee?
 
   @@unique([numero, version])
   @@index([type])
@@ -654,4 +663,78 @@ model DocumentAProduire {
   @@index([statut])
   @@index([factureId])
   @@map("documents_a_produire")
+}
+
+/// Import en masse des adhérents d'une police mère (CDC §13, session 5a, D24). CONTROLE : fichier lu et contrôlé, rien
+/// n'est encore créé ; EN_COURS : confirmé, adhérents incorporés (UNE version de la liste), certificats produits par la
+/// file de tâches ; TERMINE : archive ZIP et récapitulatif ; ABANDONNE : contrôle abandonné. L'avancement se lit dans
+/// les lignes, jamais dans un compteur à part.
+model LotImport {
+  id               Int           @id @default(autoincrement())
+  policeId         Int           @map("police_id")
+  produitCode      String        @map("produit_code")
+  /// Date d'effet de l'incorporation (date d'adhésion des adhérents importés).
+  dateEffet        DateTime      @map("date_effet") @db.Date
+  fichierNom       String        @map("fichier_nom")
+  statut           String
+  total            Int
+  valides          Int
+  erreurs          Int
+  /// Version de la liste des adhérents créée par la confirmation.
+  versionAdherents Int?          @map("version_adherents")
+  zipChemin        String?       @map("zip_chemin")
+  zipEmpreinte     String?       @map("zip_empreinte")
+  zipTaille        Int?          @map("zip_taille")
+  creeParId        Int           @map("cree_par_id")
+  creePar          String        @map("cree_par")
+  creeLe           DateTime      @default(now()) @map("cree_le")
+  confirmeParId    Int?          @map("confirme_par_id")
+  confirmePar      String?       @map("confirme_par")
+  debut            DateTime?
+  fin              DateTime?
+  derniereErreur   String?       @map("derniere_erreur")
+  police           Police        @relation(fields: [policeId], references: [id], onDelete: Restrict)
+  lignes           LigneImport[]
+
+  @@index([policeId])
+  @@map("lots_import")
+}
+
+/// Ligne d'un import : données lues (noms du dictionnaire), erreurs de contrôle ([{ colonne, valeur, message }]).
+/// VALIDE → PRODUIT (certificat émis) ou ECHEC (génération en échec, rejouée à la relance) ; ERREUR : jamais traitée.
+model LigneImport {
+  id             Int           @id @default(autoincrement())
+  lotId          Int           @map("lot_id")
+  numeroLigne    Int           @map("numero_ligne")
+  donnees        Json
+  erreurs        Json
+  statut         String
+  adherentOrdre  Int?          @map("adherent_ordre")
+  documentId     Int?          @unique @map("document_id")
+  tentatives     Int           @default(0)
+  derniereErreur String?       @map("derniere_erreur")
+  lot            LotImport     @relation(fields: [lotId], references: [id], onDelete: Restrict)
+  document       DocumentEmis? @relation(fields: [documentId], references: [id], onDelete: Restrict)
+
+  @@unique([lotId, numeroLigne])
+  @@index([lotId, statut])
+  @@map("lots_import_lignes")
+}
+
+/// Écriture différée (T14, D11) : le document est ÉMIS (documents_emis), mais son fichier n'a pas pu être écrit dans
+/// le stockage. Le PDF est gardé ici (toujours téléchargeable) ; la file de tâches reprend l'écriture avec des délais
+/// croissants, et la ligne disparaît quand le fichier est écrit. Alerte : journal d'audit et bandeau d'administration.
+model EcritureDifferee {
+  id             Int          @id @default(autoincrement())
+  documentId     Int          @unique @map("document_id")
+  chemin         String
+  empreinte      String
+  contenu        Bytes
+  tentatives     Int          @default(1)
+  derniereErreur String       @map("derniere_erreur")
+  creeLe         DateTime     @default(now()) @map("cree_le")
+  dernierEssai   DateTime     @default(now()) @map("dernier_essai")
+  document       DocumentEmis @relation(fields: [documentId], references: [id], onDelete: Restrict)
+
+  @@map("ecritures_differees")
 }

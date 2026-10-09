@@ -356,6 +356,8 @@ function versVersion(v: Prisma.ProduitVersionGetPayload<{ include: { formules: t
           primeUnitaire: texte(f.primeUnitaire),
           accessoireMode: f.accessoireMode as ModeAccessoire,
           accessoireValeur: texte(f.accessoireValeur),
+          ageMin: f.ageMin,
+          ageMax: f.ageMax,
         }),
       )
       .sort((a, b) => (a.code < b.code ? -1 : 1)),
@@ -420,6 +422,8 @@ export async function creerVersion(acteur: UtilisateurCourant, codeProduit: stri
             primeUnitaire: canonique(f.primeUnitaire),
             accessoireMode: f.accessoireMode,
             accessoireValeur: canonique(f.accessoireValeur),
+            ageMin: f.ageMin ?? null,
+            ageMax: f.ageMax ?? null,
           })),
         },
       },

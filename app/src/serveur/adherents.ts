@@ -31,7 +31,7 @@ async function exiger(acteur: UtilisateurCourant, ecriture: boolean): Promise<vo
 export type VersionLue = VersionAdherents & { creeLe: Date; creePar: string };
 
 export type VueAdherents = {
-  police: { id: number; numero: string; typeContrat: string; dateEffet: DateIso; dateEcheance: DateIso; cotationId: number };
+  police: { id: number; numero: string; typeContrat: string; dateEffet: DateIso; dateEcheance: DateIso; cotationId: number; produitCode: string };
   courants: Assure[];
   versions: VersionLue[];
   /** Formules de la police : celles que peut choisir un adhérent incorporé. */
@@ -55,7 +55,7 @@ export async function lireAdherents(acteur: UtilisateurCourant, policeId: number
     if (d.type === "CP") cp = { numero: d.numero, version: d.version, versionAdherents: (d.versionsAssociees as { versionAdherents?: number | null }).versionAdherents ?? null };
   }
   return {
-    police: { id: police.id, numero: police.numero, typeContrat: police.typeContrat ?? "", dateEffet: depuisDate(police.dateEffet), dateEcheance: depuisDate(police.dateEcheance), cotationId: police.cotationId },
+    police: { id: police.id, numero: police.numero, typeContrat: police.typeContrat ?? "", dateEffet: depuisDate(police.dateEffet), dateEcheance: depuisDate(police.dateEcheance), cotationId: police.cotationId, produitCode: police.produitCode },
     courants: police.assures as unknown as Assure[],
     versions: police.adherents.map((v) => ({
       numero: v.numero,
@@ -72,6 +72,8 @@ export async function lireAdherents(acteur: UtilisateurCourant, policeId: number
   };
 }
 
+type Application = (courants: Assure[], dejaAttribues: number[], formules: string[]) => { liste: Assure[]; ordres: number[] } | { problemes: string[] };
+
 /** Enregistre une nouvelle version de la liste (dans la transaction) et met à jour la liste courante de la police. */
 async function changer(
   acteur: UtilisateurCourant,
@@ -79,41 +81,11 @@ async function changer(
   dateEffet: DateIso,
   adresseIp: string | null,
   motif: Exclude<MotifAdherents, "INITIALE">,
-  appliquer: (courants: Assure[], dejaAttribues: number[], formules: string[]) => { liste: Assure[]; ordres: number[] } | { problemes: string[] },
+  appliquer: Application,
 ): Promise<{ numeroVersion: number; ordres: number[] }> {
   await exiger(acteur, true);
   try {
-    return await obtenirPrisma().$transaction(async (tx) => {
-      const police = await tx.police.findUnique({ where: { id: policeId }, include: { adherents: { orderBy: { numero: "asc" } } } });
-      if (!police) throw new ErreurMetier("Police introuvable.");
-      if (!estContratDeGroupe(police.typeContrat)) throw new ErreurMetier("Seul un contrat de groupe a des adhérents.");
-      const derniere = police.adherents[police.adherents.length - 1];
-      if (!derniere) throw new ErreurMetier("Cette police n'a pas de liste initiale d'adhérents : elle date d'avant la session 4a.");
-      const problemesDate = problemesDateChangement(dateEffet, { dateEffet: depuisDate(police.dateEffet), dateEcheance: depuisDate(police.dateEcheance) }, depuisDate(derniere.dateEffet));
-      if (problemesDate.length > 0) throw new ErreurMetier(problemesDate.join(" "));
-
-      const dejaAttribues = police.adherents.flatMap((v) => (v.adherents as unknown as Assure[]).map((a) => a.ordre));
-      const r = appliquer(police.assures as unknown as Assure[], dejaAttribues, police.formulesRetenues as unknown as string[]);
-      if ("problemes" in r) throw new ErreurMetier(r.problemes.join(" "));
-
-      const numeroVersion = derniere.numero + 1;
-      await tx.adherentsVersion.create({
-        data: { policeId, numero: numeroVersion, motif, dateEffet: versDate(dateEffet), adherents: r.liste as unknown as Prisma.InputJsonValue, concernes: r.ordres, creePar: acteur.identifiant },
-      });
-      await tx.police.update({ where: { id: policeId }, data: { assures: r.liste as unknown as Prisma.InputJsonValue } });
-      await journaliser(
-        {
-          acteur: auteur(acteur),
-          action: motif === "INCORPORATION" ? "ADHERENTS_INCORPORES" : "ADHERENTS_RETIRES",
-          objetType: "police",
-          objetId: police.numero,
-          apres: { version: numeroVersion, dateEffet, adherents: r.ordres, total: r.liste.length },
-          adresseIp,
-        },
-        tx,
-      );
-      return { numeroVersion, ordres: r.ordres };
-    });
+    return await obtenirPrisma().$transaction((tx) => changerDans(tx, acteur, policeId, dateEffet, adresseIp, motif, appliquer));
   } catch (erreur) {
     // Deux changements simultanés visent le même numéro de version : la base n'en garde qu'un.
     if (erreur instanceof Prisma.PrismaClientKnownRequestError && erreur.code === "P2002") {
@@ -123,11 +95,60 @@ async function changer(
   }
 }
 
+/** Le changement lui-même, dans une transaction fournie (l'import en masse y ajoute ses propres écritures). */
+async function changerDans(
+  tx: Prisma.TransactionClient,
+  acteur: UtilisateurCourant,
+  policeId: number,
+  dateEffet: DateIso,
+  adresseIp: string | null,
+  motif: Exclude<MotifAdherents, "INITIALE">,
+  appliquer: Application,
+): Promise<{ numeroVersion: number; ordres: number[] }> {
+  const police = await tx.police.findUnique({ where: { id: policeId }, include: { adherents: { orderBy: { numero: "asc" } } } });
+  if (!police) throw new ErreurMetier("Police introuvable.");
+  if (!estContratDeGroupe(police.typeContrat)) throw new ErreurMetier("Seul un contrat de groupe a des adhérents.");
+  const derniere = police.adherents[police.adherents.length - 1];
+  if (!derniere) throw new ErreurMetier("Cette police n'a pas de liste initiale d'adhérents : elle date d'avant la session 4a.");
+  const problemesDate = problemesDateChangement(dateEffet, { dateEffet: depuisDate(police.dateEffet), dateEcheance: depuisDate(police.dateEcheance) }, depuisDate(derniere.dateEffet));
+  if (problemesDate.length > 0) throw new ErreurMetier(problemesDate.join(" "));
+
+  const dejaAttribues = police.adherents.flatMap((v) => (v.adherents as unknown as Assure[]).map((a) => a.ordre));
+  const r = appliquer(police.assures as unknown as Assure[], dejaAttribues, police.formulesRetenues as unknown as string[]);
+  if ("problemes" in r) throw new ErreurMetier(r.problemes.join(" "));
+
+  const numeroVersion = derniere.numero + 1;
+  await tx.adherentsVersion.create({
+    data: { policeId, numero: numeroVersion, motif, dateEffet: versDate(dateEffet), adherents: r.liste as unknown as Prisma.InputJsonValue, concernes: r.ordres, creePar: acteur.identifiant },
+  });
+  await tx.police.update({ where: { id: policeId }, data: { assures: r.liste as unknown as Prisma.InputJsonValue } });
+  await journaliser(
+    {
+      acteur: auteur(acteur),
+      action: motif === "INCORPORATION" ? "ADHERENTS_INCORPORES" : "ADHERENTS_RETIRES",
+      objetType: "police",
+      objetId: police.numero,
+      apres: { version: numeroVersion, dateEffet, adherents: r.ordres, total: r.liste.length },
+      adresseIp,
+    },
+    tx,
+  );
+  return { numeroVersion, ordres: r.ordres };
+}
+
 export type NouvelAdherent = Omit<Assure, "ordre">;
 
 /** Incorporation : les nouveaux adhérents prennent les numéros d'ordre qui suivent le plus grand numéro jamais attribué. */
 export function incorporerAdherents(acteur: UtilisateurCourant, policeId: number, dateEffet: DateIso, nouveaux: NouvelAdherent[], adresseIp: string | null) {
   return changer(acteur, policeId, dateEffet, adresseIp, "INCORPORATION", (courants, dejaAttribues, formules) => incorporer(courants, dejaAttribues, nouveaux, formules, aujourdhui()));
+}
+
+/**
+ * Import en masse (session 5a, CDC §13) : UNE seule incorporation pour toutes les lignes valides du fichier, dans la
+ * transaction de la confirmation. Les numéros d'ordre sont attribués dans l'ordre des lignes. Droit vérifié par l'appelant.
+ */
+export function incorporerDansTransaction(tx: Prisma.TransactionClient, acteur: UtilisateurCourant, policeId: number, dateEffet: DateIso, nouveaux: NouvelAdherent[], adresseIp: string | null) {
+  return changerDans(tx, acteur, policeId, dateEffet, adresseIp, "INCORPORATION", (courants, dejaAttribues, formules) => incorporer(courants, dejaAttribues, nouveaux, formules, aujourdhui()));
 }
 
 /** Retrait : les adhérents retirés quittent la liste courante ; leur historique et leurs certificats émis restent. */

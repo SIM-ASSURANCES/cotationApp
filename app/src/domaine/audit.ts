@@ -62,6 +62,13 @@ export const ACTIONS_AUDIT = [
   "FACTURE_ANNULEE",
   "PAIEMENT_ENREGISTRE",
   "PDF_EN_ATTENTE",
+  // Session 5a : stockage indisponible (T14, ECRITURE_PARTAGE_ECHEC est plus haut) et import en masse (CDC §13)
+  "ECRITURE_REPRISE",
+  "ECRITURE_RELANCEE",
+  "IMPORT_CONTROLE",
+  "IMPORT_ABANDONNE",
+  "IMPORT_CONFIRME",
+  "IMPORT_TERMINE",
 ] as const;
 
 export type ActionAudit = (typeof ACTIONS_AUDIT)[number];

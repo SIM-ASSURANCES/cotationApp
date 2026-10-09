@@ -17,6 +17,7 @@
     "initialiser": "tsx --conditions=react-server scripts/initialiser.mts",
     "creer-admin": "tsx --conditions=react-server scripts/creer-admin.mts",
     "seed:dev": "tsx --conditions=react-server scripts/seed-dev.mts",
+    "travailleur": "tsx --conditions=react-server scripts/travailleur.mts",
     "test:integration:preparer": "node scripts/preparer-base-test.mjs",
     "test:integration": "npm run test:integration:preparer && vitest run --config vitest.integration.config.mts",
     "test:e2e": "npm run test:integration:preparer && vitest run --config vitest.e2e.config.mts"
@@ -24,7 +25,10 @@
   "dependencies": {
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
+    "bullmq": "6.3.8",
     "decimal.js": "10.6.0",
+    "exceljs": "4.4.0",
+    "ioredis": "5.11.1",
     "next": "16.3.8",
     "next-auth": "5.0.0-beta.32",
     "react": "19.2.8",
@@ -47,5 +51,10 @@
     "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.0.3"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
   }
 }

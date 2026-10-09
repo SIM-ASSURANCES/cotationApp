@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
   // simple `node server.js` (image Docker, service Windows ou systemd). Voir docs/deploiement.md.
   output: "standalone",
   poweredByHeader: false, // ne pas annoncer « Next.js » à chaque réponse
+  // File de tâches et classeurs Excel (phase 5) : chargés tels quels par Node.js, jamais regroupés par Next.js
+  // (BullMQ lit ses scripts Lua dans son propre dossier).
+  serverExternalPackages: ["bullmq", "ioredis", "exceljs"],
 
   experimental: {
     // Dépôt d'un modèle Word (15 Mo au plus, voir domaine/documents/modeles.ts) par une Server

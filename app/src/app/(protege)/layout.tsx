@@ -1,7 +1,10 @@
+import Link from "next/link";
+
 import { EnTete, type LienNavigation } from "@/composants/EnTete";
 import { peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
 import { exigerUtilisateur } from "@/serveur/session";
+import { alerteStockage } from "@/serveur/surveillance";
 
 import { deconnecter } from "./actions";
 
@@ -11,6 +14,8 @@ export default async function LayoutProtege({ children }: LayoutProps<"/">) {
   const utilisateur = await exigerUtilisateur({ autoriserChangementMotDePasse: true });
 
   const liens: LienNavigation[] = [{ href: "/", libelle: "Accueil" }];
+  // T14 : alerte de l'administrateur, sur chaque écran, tant qu'un document émis attend son écriture dans le stockage.
+  const alerte = utilisateur.doitChangerMotDePasse ? null : await alerteStockage(utilisateur);
   if (!utilisateur.doitChangerMotDePasse) {
     const [parametrage, cotation, depotModele, publicationModele] = await Promise.all([
       niveauDuProfil(utilisateur.profil, "PARAMETRER_PRODUITS"),
@@ -36,6 +41,10 @@ export default async function LayoutProtege({ children }: LayoutProps<"/">) {
     if (lectureDocuments.some(peutLire)) {
       liens.push({ href: "/documents", libelle: "Documents émis" });
     }
+    // Import en masse des adhérents (CDC §13) : droit des adhérents et des certificats, « Émettre un contrat ».
+    if (peutLire(lectureDocuments[1])) {
+      liens.push({ href: "/imports", libelle: "Imports" });
+    }
     if (peutLire(parametrage)) {
       liens.push({ href: "/parametrage/produits", libelle: "Produits" }, { href: "/parametrage/branches", libelle: "Branches" }, { href: "/parametrage/taxes", libelle: "Taxes" }, { href: "/parametrage/societe", libelle: "Société" });
     }
@@ -43,7 +52,7 @@ export default async function LayoutProtege({ children }: LayoutProps<"/">) {
       liens.push({ href: "/calcul", libelle: "Calcul" });
     }
     if (await niveauDuProfil(utilisateur.profil, "GERER_UTILISATEURS").then((n) => n === "OUI")) {
-      liens.push({ href: "/admin/utilisateurs", libelle: "Utilisateurs" }, { href: "/admin/droits", libelle: "Droits" });
+      liens.push({ href: "/admin/utilisateurs", libelle: "Utilisateurs" }, { href: "/admin/droits", libelle: "Droits" }, { href: "/admin/stockage", libelle: "Stockage" });
     }
     if (await niveauDuProfil(utilisateur.profil, "CONSULTER_AUDIT").then(peutLire)) {
       liens.push({ href: "/admin/audit", libelle: "Journal d'audit" });
@@ -53,6 +62,15 @@ export default async function LayoutProtege({ children }: LayoutProps<"/">) {
   return (
     <>
       <EnTete nom={utilisateur.nom} libelleProfil={utilisateur.libelleProfil} liens={liens} deconnexion={deconnecter} />
+      {alerte ? (
+        <div role="alert" className="border-b border-amber-400 bg-amber-50 px-6 py-2 text-sm text-amber-900">
+          <div className="mx-auto max-w-6xl">
+            <strong>Stockage indisponible :</strong> {alerte.enAttente} document(s) émis attendent l'écriture de leur fichier
+            {alerte.plusAncienne ? ` (depuis le ${alerte.plusAncienne.toLocaleString("fr-FR", { timeZone: "Africa/Abidjan" })})` : ""}. Les documents restent téléchargeables ; la reprise est automatique.{" "}
+            <Link href="/admin/stockage" className="underline">Voir le détail</Link>
+          </div>
+        </div>
+      ) : null}
       <div className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">{children}</div>
     </>
   );

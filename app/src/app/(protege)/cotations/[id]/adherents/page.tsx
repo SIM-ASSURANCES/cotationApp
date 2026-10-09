@@ -6,10 +6,12 @@ import { LignesAssures } from "@/composants/LignesDynamiques";
 import { LIBELLE_MOTIF_ADHERENTS } from "@/domaine/cotation/adherents";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { lireAdherents, policeDeCotation } from "@/serveur/adherents";
+import { listerLots } from "@/serveur/imports";
 import { niveauDuProfil } from "@/serveur/droits";
 import { exigerDroit } from "@/serveur/session";
 
-import { emettreLeCertificat, incorporerLesAdherents, mettreAJourLesCp, retirerLesAdherents } from "./actions";
+import { LIBELLE_STATUT_LOT } from "../../../imports/libelles";
+import { controlerLeFichier, emettreLeCertificat, incorporerLesAdherents, mettreAJourLesCp, retirerLesAdherents } from "./actions";
 
 const entree = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2";
 
@@ -23,6 +25,8 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
   const agit = peutAgir(await niveauDuProfil(utilisateur.profil, "EMETTRE_CONTRAT"));
   const derniere = vue.versions[vue.versions.length - 1];
   const cpAJour = vue.cp !== null && vue.cp.versionAdherents === derniere?.numero;
+  const lots = await listerLots(utilisateur, { policeId });
+  const produitCode = vue.police.produitCode;
 
   return (
     <main>
@@ -80,6 +84,46 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
         </section>
       ) : null}
 
+      {agit ? (
+        <section className="mb-8 max-w-3xl rounded border border-bordure p-4">
+          <h2 className="mb-2 text-lg font-semibold">Import en masse (fichier Excel ou CSV)</h2>
+          <p className="mb-3 text-sm text-zinc-700">
+            Une ligne par adhérent, avec le numéro de son certificat. Le fichier est d'abord <strong>contrôlé</strong> : rien n'est créé avant votre
+            confirmation sur l'écran de contrôle. Les lignes valides deviennent alors <strong>une seule</strong> incorporation, et un certificat
+            d'adhésion est produit pour chacune, en tâche de fond.{" "}
+            <a href={`/api/imports/modele?produit=${encodeURIComponent(produitCode)}`} className="text-sim-bleu underline">
+              Télécharger le fichier modèle ({produitCode})
+            </a>
+          </p>
+          <FormulaireAction action={controlerLeFichier} libelleBouton="Contrôler le fichier">
+            <input type="hidden" name="cotationId" value={cotationId} />
+            <input type="hidden" name="policeId" value={policeId} />
+            <label className="mb-4 block text-sm font-medium">
+              Fichier des adhérents (.xlsx ou .csv, 10 Mo au plus)
+              <input name="fichier" type="file" required accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" className="mt-1 block w-full text-base" />
+            </label>
+            <div className="max-w-xs">
+              <Champ nom="dateEffet" libelle="Date d'effet de l'incorporation (AAAA-MM-JJ)" autoComplete="off" valeur={derniere?.dateEffet} />
+            </div>
+          </FormulaireAction>
+          {lots.length > 0 ? (
+            <table className="mt-4 w-full border-collapse text-sm">
+              <thead>
+                <tr className="text-left text-zinc-600"><th className="p-1">Import</th><th className="p-1">Fichier</th><th className="p-1">Lignes</th><th className="p-1">En erreur</th><th className="p-1">État</th></tr>
+              </thead>
+              <tbody>
+                {lots.map((l) => (
+                  <tr key={l.id} className="border-t border-bordure">
+                    <td className="p-1"><Link href={`/imports/${l.id}`} className="text-sim-bleu underline">n° {l.id}</Link></td>
+                    <td className="p-1">{l.fichierNom}</td><td className="p-1">{l.total}</td><td className="p-1">{l.erreurs}</td><td className="p-1">{LIBELLE_STATUT_LOT[l.statut]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : null}
+        </section>
+      ) : null}
+
       <section className="mb-8 max-w-3xl rounded border border-bordure p-4">
         <h2 className="mb-2 text-lg font-semibold">Conditions particulières de la police mère</h2>
         {vue.cp === null ? (
@@ -102,7 +146,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
       {agit ? (
         <section className="mb-8 max-w-3xl rounded border border-bordure p-4">
           <h2 className="mb-2 text-lg font-semibold">Certificat d'adhésion (unitaire)</h2>
-          <p className="mb-3 text-sm text-zinc-700">Un certificat par adhérent, avec son propre numéro, attribué par SIM et saisi ici (le module ne le génère pas), et son propre QR code. La génération en masse viendra en phase 5.</p>
+          <p className="mb-3 text-sm text-zinc-700">Un certificat par adhérent, avec son propre numéro, attribué par SIM et saisi ici (le module ne le génère pas), et son propre QR code. Pour de nombreux adhérents : l'import en masse ci-dessus.</p>
           <FormulaireAction action={emettreLeCertificat} libelleBouton="Émettre le certificat" discret>
             <input type="hidden" name="cotationId" value={cotationId} />
             <input type="hidden" name="policeId" value={policeId} />

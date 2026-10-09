@@ -34,7 +34,7 @@ import { fichiersAssocies, lireSeuilListe, modelesAssocies, versionPublieeEnVigu
 import { aujourdhui } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { lireFormatNumeroPolice, lireImageSociete, lireParametresSociete } from "./societe";
-import { stockage } from "./stockage";
+import { differerEcriture, ecrituresDifferees, lireDocumentEmis, programmerReprise, stockage, tenterEcriture } from "./stockage";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 import { cloreValidationContrat, controlerSeuilContrat, demanderValidationContrat, exigerAutreQueLeDemandeur } from "./validation-contrat";
 
@@ -222,8 +222,8 @@ async function produire(acteur: UtilisateurCourant, p: Production, adresseIp: st
 
   const empreinte = sha256(pdf);
   const chemin = cheminStockage({ produitCode: p.produitCode, type: p.type, numero: p.numero, dateEmission: aujourdhui(), version });
-  const ecrit = await stockage().ecrire(chemin, pdf);
-  if (ecrit.empreinte !== empreinte) throw new Error(`Stockage : empreinte différente pour ${chemin}`);
+  // Stockage indisponible (T14) : le document est émis quand même, son fichier attend en base (écriture différée).
+  const ecriture = await tenterEcriture(chemin, pdf, empreinte);
 
   const versionsAssociees = {
     ...p.associes.ids,
@@ -271,8 +271,10 @@ async function produire(acteur: UtilisateurCourant, p: Production, adresseIp: st
       },
       tx,
     );
+    if (!ecriture.ecrit) await differerEcriture(tx, { documentId: ligne.id, numero: p.numero, version, chemin, empreinte, contenu: pdf, erreur: ecriture.erreur }, auteur(acteur), adresseIp);
     return ligne;
   });
+  if (!ecriture.ecrit) await programmerReprise(cree.id);
   return versLu(cree);
 }
 
@@ -852,15 +854,8 @@ export async function documentsDe(acteur: UtilisateurCourant, critere: { cotatio
   return lignes.map(versLu);
 }
 
-/** Lit un document stocké et vérifie son intégrité (empreinte, CDC §14.3). */
-async function lireVerifie(d: LigneDocument): Promise<Uint8Array> {
-  const contenu = await stockage().lire(d.chemin);
-  if (sha256(contenu) !== d.empreinte) {
-    console.error(`[documents] empreinte différente pour ${d.chemin}`);
-    throw new ErreurMetier(`Le fichier stocké du document ${d.numero} (v${d.version}) ne correspond plus à son empreinte : prévenez l'administrateur.`);
-  }
-  return contenu;
-}
+/** Lit un document émis et vérifie son intégrité (empreinte, CDC §14.3) ; en attente d'écriture (T14) : depuis la base. */
+const lireVerifie = (d: LigneDocument): Promise<Uint8Array> => lireDocumentEmis(d);
 
 const nomFichier = (d: { numero: string; version: number; type: string }) => `${d.numero.replace(/[^A-Za-z0-9_-]/g, "_")}_${d.type}_v${d.version}.pdf`;
 
@@ -881,6 +876,11 @@ export async function zipDocuments(acteur: UtilisateurCourant, ids: number[], ad
   for (const d of lignes) {
     if (!estTypeDocument(d.type)) throw new ErreurMetier("Document introuvable.");
     await exigerSurType(acteur, d.type, false);
+  }
+  const differes = await ecrituresDifferees(lignes.map((d) => d.id));
+  if (differes.size > 0) {
+    const noms = lignes.filter((d) => differes.has(d.id)).map((d) => `${d.numero} v${d.version}`);
+    throw new ErreurMetier(`Fichier en attente d'écriture dans le stockage : ${noms.join(", ")}. Téléchargez ce document seul, ou réessayez l'archive après la reprise automatique.`);
   }
   const contenu = await stockage().zip(lignes.map((d) => ({ chemin: d.chemin, nom: nomFichier(d) })));
   await journaliser({ acteur: auteur(acteur), action: "DOCUMENT_TELECHARGE", objetType: "documents", objetId: lignes.map((d) => d.id).join(","), apres: { zip: lignes.map((d) => `${d.numero} v${d.version}`) }, adresseIp });

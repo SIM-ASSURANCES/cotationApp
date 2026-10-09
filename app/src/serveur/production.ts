@@ -13,7 +13,7 @@ import { images, nouveauJeton, urlPublique, versLu, type DocumentLu } from "./do
 import { generateur } from "./generateur";
 import { fichiersAssocies, lireSeuilListe, type VersionsAssociees } from "./modeles";
 import { obtenirPrisma } from "./prisma";
-import { stockage } from "./stockage";
+import { differerEcriture, programmerReprise, tenterEcriture } from "./stockage";
 import type { UtilisateurCourant } from "./types";
 
 /**
@@ -134,8 +134,8 @@ export async function produire(acteur: UtilisateurCourant, id: number, adresseIp
     });
     const empreinte = sha256(pdf);
     const fichier = chemin(p, essai.tentatives);
-    const ecrit = await stockage().ecrire(fichier, pdf);
-    if (ecrit.empreinte !== empreinte) throw new Error(`Stockage : empreinte différente pour ${fichier}`);
+    // Stockage indisponible (T14) : le document est inscrit quand même, son fichier attend en base (écriture différée).
+    const ecriture = await tenterEcriture(fichier, pdf, empreinte);
 
     const document = await prisma.$transaction(async (tx) => {
       const origine = p.version > 1 ? await tx.documentEmis.findUnique({ where: { numero_version: { numero: p.numero, version: 1 } }, select: { id: true } }) : null;
@@ -170,6 +170,7 @@ export async function produire(acteur: UtilisateurCourant, id: number, adresseIp
           ? await tx.documentEmis.update({ where: { id: cree.id }, data: { annuleParNumero: facture.annuleePar.numero, annuleLe: facture.annuleeLe ?? new Date() } })
           : cree;
       await tx.documentAProduire.update({ where: { id }, data: { statut: "PRODUIT", documentId: cree.id, produitLe: new Date(), derniereErreur: null } });
+      if (!ecriture.ecrit) await differerEcriture(tx, { documentId: cree.id, numero: p.numero, version: p.version, chemin: fichier, empreinte, contenu: pdf, erreur: ecriture.erreur }, auteur(acteur), adresseIp);
       await journaliser(
         {
           acteur: auteur(acteur),
@@ -183,6 +184,7 @@ export async function produire(acteur: UtilisateurCourant, id: number, adresseIp
       );
       return document;
     });
+    if (!ecriture.ecrit) await programmerReprise(document.id);
     return { ...issue, ok: true, document: versLu(document) };
   } catch (erreur) {
     const message = erreur instanceof Error ? erreur.message : String(erreur);

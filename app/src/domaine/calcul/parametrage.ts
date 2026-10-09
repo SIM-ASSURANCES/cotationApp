@@ -19,7 +19,15 @@ export type FormuleSaisie = {
   primeUnitaire: string;
   accessoireMode: ModeAccessoire;
   accessoireValeur: string;
+  /**
+   * Âges limites de la formule, en années révolues (session 5a : contrôle de l'import en masse, H62). Facultatifs :
+   * absents ou null, aucune limite. Les valeurs sont celles de la Technique, saisies dans le paramétrage.
+   */
+  ageMin?: number | null;
+  ageMax?: number | null;
 };
+
+export const AGE_MAXIMAL = 120;
 
 export type VersionSaisie = {
   dateEffet: DateIso;
@@ -136,6 +144,12 @@ export function problemesVersion(v: VersionSaisie): string[] {
     montantPositifOuNul(f.primeUnitaire, `${nom} : la prime unitaire`, p);
     montantPositifOuNul(f.accessoireValeur, `${nom} : la valeur des accessoires`, p, f.accessoireMode === "POURCENT" ? 100 : undefined);
     montantPositifOuNul(f.tauxCouverture, `${nom} : le taux de couverture`, p, 100);
+    const ages = [f.ageMin ?? null, f.ageMax ?? null];
+    if (ages.some((a) => a !== null && (!Number.isInteger(a) || a < 0 || a > AGE_MAXIMAL))) {
+      p.push(`${nom} : les âges limites sont des nombres entiers d'années, de 0 à ${AGE_MAXIMAL}.`);
+    } else if (ages[0] !== null && ages[1] !== null && ages[0] > ages[1]) {
+      p.push(`${nom} : l'âge minimal dépasse l'âge maximal.`);
+    }
   }
   return p;
 }

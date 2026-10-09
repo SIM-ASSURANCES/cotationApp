@@ -11,6 +11,8 @@ export type LigneFormule = {
   primeUnitaire: string;
   accessoireMode: string;
   accessoireValeur: string;
+  ageMin: string;
+  ageMax: string;
 };
 
 const LIBELLE_MODE: Record<string, string> = {
@@ -21,7 +23,7 @@ const LIBELLE_MODE: Record<string, string> = {
   POURCENT: "% de la prime nette",
 };
 
-const vide = (): LigneFormule => ({ code: "", libelle: "", tauxCouverture: "", primeUnitaire: "", accessoireMode: "AUCUN", accessoireValeur: "0" });
+const vide = (): LigneFormule => ({ code: "", libelle: "", tauxCouverture: "", primeUnitaire: "", accessoireMode: "AUCUN", accessoireValeur: "0", ageMin: "", ageMax: "" });
 
 const entree = "w-full rounded border border-bordure bg-white px-2 py-1";
 
@@ -34,7 +36,7 @@ export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
 
   return (
     <div className="mb-4 overflow-x-auto">
-      <table className="w-full min-w-[56rem] border-collapse text-sm">
+      <table className="w-full min-w-[64rem] border-collapse text-sm">
         <thead>
           <tr className="bg-sim-bleu text-left text-white">
             <th className="p-2">Code</th>
@@ -43,6 +45,8 @@ export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
             <th className="p-2">Prime unitaire (avec décimales)</th>
             <th className="p-2">Accessoires</th>
             <th className="p-2">Valeur</th>
+            <th className="p-2" title="Âges limites en années révolues (contrôle de l'import en masse) ; vide : pas de limite">Âge min.</th>
+            <th className="p-2">Âge max.</th>
             <th className="p-2" />
           </tr>
         </thead>
@@ -72,6 +76,12 @@ export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
               </td>
               <td className="p-1">
                 <input name="formule_valeur" value={l.accessoireValeur} onChange={(e) => modifier(i, "accessoireValeur", e.target.value)} aria-label="Valeur des accessoires" inputMode="decimal" className={entree} required />
+              </td>
+              <td className="p-1">
+                <input name="formule_age_min" value={l.ageMin} onChange={(e) => modifier(i, "ageMin", e.target.value)} aria-label="Âge minimal" inputMode="numeric" className={entree} />
+              </td>
+              <td className="p-1">
+                <input name="formule_age_max" value={l.ageMax} onChange={(e) => modifier(i, "ageMax", e.target.value)} aria-label="Âge maximal" inputMode="numeric" className={entree} />
               </td>
               <td className="p-1">
                 <button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} disabled={lignes.length === 1} className="rounded border border-bordure px-2 py-1 disabled:opacity-40">

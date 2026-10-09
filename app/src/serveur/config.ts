@@ -33,6 +33,19 @@ const schemaConfig = z.object({
     (v) => (v === "" ? undefined : v),
     z.url({ protocol: /^https?$/, error: "doit être une adresse http:// ou https:// (ex. https://documents.exemple.ci)" }).optional(),
   ),
+  // File de tâches (phase 5, D24 : BullMQ) : adresse de Redis, avec son mot de passe
+  // (redis://:MOT_DE_PASSE@hote:6379). Facultative pour l'application : sans elle, seuls l'import en masse et la
+  // reprise automatique des écritures sont indisponibles (message clair). Obligatoire pour le travailleur.
+  REDIS_URL: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.url({ protocol: /^rediss?$/, error: "doit être une adresse redis:// ou rediss:// (ex. redis://:mot-de-passe@redis:6379)" }).optional(),
+  ),
+  // Conversions LibreOffice simultanées demandées au générateur par la file de tâches (T8). Doit valoir au plus
+  // CONVERSIONS_SIMULTANEES du générateur (au-delà, les demandes attendent leur tour là-bas). Défaut prudent : 2.
+  CONVERSIONS_SIMULTANEES: z.preprocess(
+    (v) => (v === undefined || v === "" ? "2" : v),
+    z.coerce.number({ error: "doit être un nombre entier de 1 à 16" }).int({ error: "doit être un nombre entier de 1 à 16" }).min(1, { error: "doit être un nombre entier de 1 à 16" }).max(16, { error: "doit être un nombre entier de 1 à 16" }),
+  ),
   // Clé de signature des sessions : Auth.js la lit lui-même, on exige sa présence au démarrage.
   AUTH_SECRET: z
     .string({ error: messageSi("doit être une chaîne de caractères") })

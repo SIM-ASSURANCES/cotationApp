@@ -1,11 +1,14 @@
 "use server";
 
+import { redirect } from "next/navigation";
+
 import type { EtatFormulaire } from "@/composants/types";
 import type { Assure } from "@/domaine/cotation/saisie";
 import { incorporerAdherents, retirerAdherents } from "@/serveur/adherents";
 import { emettreCertificat, mettreAJourCp } from "@/serveur/documents";
+import { controlerImport } from "@/serveur/imports";
 
-import { champ, executerAction } from "../../../executer";
+import { avecMessage, champ, executerAction } from "../../../executer";
 
 const identifiants = (d: FormData) => ({ cotationId: Number(champ(d, "cotationId")), policeId: Number(champ(d, "policeId")) });
 const colonne = (d: FormData, nom: string) => d.getAll(nom).map((v) => String(v).trim());
@@ -55,4 +58,16 @@ export async function emettreLeCertificat(_e: EtatFormulaire, d: FormData): Prom
 export async function mettreAJourLesCp(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
   const { cotationId, policeId } = identifiants(d);
   return executerAction(async (acteur, ip) => void (await mettreAJourCp(acteur, policeId, ip)), "Nouvelle version des conditions particulières émise.", `/cotations/${cotationId}/adherents`);
+}
+
+/** Import en masse (CDC §13) : dépôt et contrôle du fichier ; rien n'est créé avant la confirmation sur l'écran de contrôle. */
+export async function controlerLeFichier(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
+  const { policeId } = identifiants(d);
+  const fichier = d.get("fichier");
+  if (!(fichier instanceof File) || fichier.size === 0) return { erreur: "Choisissez le fichier des adhérents (.xlsx ou .csv)." };
+  if (fichier.size > 10 * 1024 * 1024) return { erreur: "Le fichier dépasse 10 Mo." };
+  const contenu = new Uint8Array(await fichier.arrayBuffer());
+  const r = await avecMessage((acteur, ip) => controlerImport(acteur, policeId, champ(d, "dateEffet"), { nom: fichier.name, contenu }, ip));
+  if (!r.ok) return r.etat;
+  redirect(`/imports/${r.valeur}`);
 }

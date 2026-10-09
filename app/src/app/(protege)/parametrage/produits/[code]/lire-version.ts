@@ -11,6 +11,9 @@ const mOuNull = (texte: string | null): string | null => (texte === null ? null 
 /** Liste de textes séparés par des points-virgules ou des espaces (la virgule reste le séparateur décimal). */
 const liste = (texte: string | null): string[] | null => (texte ? texte.split(/[;\s]+/).filter(Boolean) : null);
 
+/** Âge limite saisi : vide = pas de limite ; un texte non entier devient NaN, que la validation refuse avec un message. */
+const age = (texte: string | undefined): number | null => ((texte ?? "").trim() === "" ? null : Number((texte ?? "").trim()));
+
 /** Valeur parmi celles autorisées ; sinon une valeur volontairement invalide, que la validation refusera avec un message. */
 const parmi = <T extends string>(valeur: string, autorisees: readonly T[]): T =>
   (autorisees as readonly string[]).includes(valeur) ? (valeur as T) : ("INVALIDE" as T);
@@ -23,7 +26,7 @@ const parmi = <T extends string>(valeur: string, autorisees: readonly T[]): T =>
  */
 export function lireVersion(donnees: FormData): VersionSaisie {
   const colonne = (nom: string) => donnees.getAll(nom).map(String);
-  const [libelles, taux, primes, modes, valeurs] = ["formule_libelle", "formule_taux", "formule_prime", "formule_mode", "formule_valeur"].map(colonne);
+  const [libelles, taux, primes, modes, valeurs, agesMin, agesMax] = ["formule_libelle", "formule_taux", "formule_prime", "formule_mode", "formule_valeur", "formule_age_min", "formule_age_max"].map(colonne);
   return {
     dateEffet: champ(donnees, "dateEffet"),
     arrondi: {
@@ -55,6 +58,8 @@ export function lireVersion(donnees: FormData): VersionSaisie {
       primeUnitaire: m(primes[i] ?? ""),
       accessoireMode: (modes[i] ?? "AUCUN") as ModeAccessoire,
       accessoireValeur: m((valeurs[i] ?? "0").trim() || "0"),
+      ageMin: age(agesMin[i]),
+      ageMax: age(agesMax[i]),
     })),
   };
 }

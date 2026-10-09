@@ -2,7 +2,7 @@ import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { ComplementsSouscripteur } from "@/composants/ComplementsSouscripteur";
 import { LignesAssures, LignesBeneficiaires, LignesContactsUrgence, LignesRisque } from "@/composants/LignesDynamiques";
 import { montant } from "@/domaine/calcul/montant";
-import { LIBELLE_TYPE_CONTRAT, TYPES_CONTRAT } from "@/domaine/calcul/taxes";
+import { ChoixContrat } from "@/composants/ChoixContrat";
 import type { LigneClient } from "@/serveur/clients";
 import type { DetailCotation } from "@/serveur/cotations";
 
@@ -64,19 +64,7 @@ export function FormulaireCotation({
       <ComplementsSouscripteur valeurs={s} />
 
       <h2 className="mb-2 text-lg font-semibold">Contrat</h2>
-      <label className="mb-4 block max-w-md text-sm font-medium">
-        Type de contrat (obligatoire : il détermine le taux de taxe)
-        <select name="typeContrat" defaultValue={base?.typeContrat ?? ""} required className={entree}>
-          <option value="" disabled>
-            — Choisir —
-          </option>
-          {TYPES_CONTRAT.map((t) => (
-            <option key={t} value={t}>
-              {LIBELLE_TYPE_CONTRAT[t]}
-            </option>
-          ))}
-        </select>
-      </label>
+      <ChoixContrat typeContrat={base?.typeContrat ?? ""} regimeTaxe={base?.regimeTaxe ?? ""} />
 
       <h2 className="mb-2 text-lg font-semibold">Période et fractionnement</h2>
       <div className="mb-4 grid max-w-4xl gap-x-6 sm:grid-cols-3">

@@ -5,7 +5,7 @@ import { Prisma } from "@/generated/prisma/client";
 import type { EntreeCalcul } from "@/domaine/calcul/calcul";
 import type { DateIso } from "@/domaine/calcul/dates";
 import { montant } from "@/domaine/calcul/montant";
-import { estTypeContrat } from "@/domaine/calcul/taxes";
+import { estRegimeTaxe, estTypeContrat, REGIME_PAR_DEFAUT } from "@/domaine/calcul/taxes";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
 import type { Assure, Risque, Souscripteur } from "@/domaine/cotation/saisie";
 import { validationContratRequise } from "@/domaine/cotation/validation";
@@ -99,7 +99,7 @@ async function exigerLecture(acteur: UtilisateurCourant) {
 // ---------------------------------------------------------------- Chargements
 
 export const chargerPolice = (client: Tx, policeId: number) =>
-  client.police.findUnique({ where: { id: policeId }, include: { adherents: { orderBy: { numero: "asc" } }, cotation: { select: { produitId: true, versionDateEffet: true } } } });
+  client.police.findUnique({ where: { id: policeId }, include: { adherents: { orderBy: { numero: "asc" } }, cotation: { select: { produitId: true, versionDateEffet: true, regimeTaxe: true } } } });
 type PoliceChargee = NonNullable<Awaited<ReturnType<typeof chargerPolice>>>;
 
 /** Verrou de la ligne de la facture jusqu'à la fin de la transaction : deux émissions, deux paiements passent l'un après l'autre. */
@@ -256,7 +256,9 @@ async function dernierePeriode(tx: Tx, policeId: number) {
 async function calculRenouvellement(tx: Tx, police: PoliceChargee, precedente: LigneFacture, saisie: SaisieRenouvellement) {
   if (!police.typeContrat || !estTypeContrat(police.typeContrat)) throw new ErreurMetier("Police sans type de contrat (antérieure à la session 4.0) : le taux de taxe du renouvellement ne peut pas être choisi.");
   const { dateEffet, dateEcheance } = periodeRenouvellement(depuisDate(precedente.dateEcheance));
-  const contexte = await resoudreContexte(tx, police.produitCode, dateEffet, dateEffet, police.typeContrat);
+  // Régime de taxe de la cotation (session 6.0) ; cotation plus ancienne : le régime proposé pour son type de contrat.
+  const regime = police.cotation.regimeTaxe && estRegimeTaxe(police.cotation.regimeTaxe) ? police.cotation.regimeTaxe : REGIME_PAR_DEFAUT[police.typeContrat];
+  const contexte = await resoudreContexte(tx, police.produitCode, dateEffet, dateEffet, regime);
   const avant = contenuDe(precedente).entree as EntreeCalcul;
   const lignes = saisie.lignes ?? avant.lignes.map((l) => ({ codeFormule: l.code, effectif: l.effectif }));
   if (lignes.length === 0 || lignes.some((l) => !Number.isInteger(l.effectif) || l.effectif < 1)) throw new ErreurMetier("Chaque formule renouvelée a un effectif entier d'au moins 1.");

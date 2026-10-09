@@ -1,7 +1,7 @@
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { ASSIETTES_TAXE } from "@/domaine/calcul/calcul";
 import { montant } from "@/domaine/calcul/montant";
-import { LIBELLE_TYPE_CONTRAT, RATTACHEMENT_TYPE_CONTRAT, TYPES_CONTRAT, enVigueurLe, type TypeContrat } from "@/domaine/calcul/taxes";
+import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT, REGIMES_TAXE, enVigueurLe, estRegimeTaxe, type TypeContrat } from "@/domaine/calcul/taxes";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { aujourdhui, listerBranches, listerTaxes, type LigneTaxe } from "@/serveur/parametrage";
 import { niveauDuProfil } from "@/serveur/droits";
@@ -11,7 +11,8 @@ import { creerUneTaxe } from "./actions";
 
 const LIBELLE_ASSIETTE = { NETTE_ACCESSOIRES: "Nette + accessoires", NETTE: "Nette seule" } as const;
 const entree = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2";
-const libelleType = (t: TypeContrat | null) => (t ? LIBELLE_TYPE_CONTRAT[t] : "Tous types");
+/** Régime de la ligne ; une ligne FAMILLE ou GROUPE_OUVERT d'avant la session 6.0 n'est plus retenue par le calcul. */
+const libelleType = (t: TypeContrat | null) => (t === null ? "Tous régimes" : estRegimeTaxe(t) ? `Régime ${LIBELLE_REGIME_TAXE[t].toLowerCase()}` : `${LIBELLE_TYPE_CONTRAT[t]} (ancienne clé, non utilisée)`);
 const taux = (t: LigneTaxe) => (t.tauxMixte || t.tauxPourcent === null ? "Taux mixte" : `${montant(t.tauxPourcent).toString().replace(".", ",")} %`);
 
 export default async function PageTaxes() {
@@ -30,17 +31,14 @@ export default async function PageTaxes() {
     <main>
       <h1 className="mb-2 text-2xl font-semibold text-sim-bleu">Table des taxes</h1>
       <p className="mb-2 max-w-3xl text-sm text-zinc-700">
-        Taux de taxe par <strong>branche et type de contrat</strong> (CDC §8.3, réponse de la Technique du 08/10/2026), historisés : on ajoute une
+        Taux de taxe par <strong>branche et régime de taxe</strong> (CDC §8.3, réponses de la Technique des 08 et 09/10/2026), historisés : on ajoute une
         version avec une date d'effet, on ne modifie jamais une version en vigueur. Pour un même taux, deux périodes ne peuvent pas se chevaucher ;
         la version précédente sans date de fin est clôturée la veille de la nouvelle.
       </p>
       <p className="mb-6 max-w-3xl text-sm text-zinc-700">
-        Le taux appliqué est celui en vigueur à la <strong>date d'effet</strong> de la police, pour son type de contrat ; à défaut, celui du type
-        rattaché (hypothèse H29 :{" "}
-        {Object.entries(RATTACHEMENT_TYPE_CONTRAT)
-          .map(([de, vers]) => `${LIBELLE_TYPE_CONTRAT[de as TypeContrat].toLowerCase()} → ${LIBELLE_TYPE_CONTRAT[vers].toLowerCase()}`)
-          .join(", ")}
-        ), puis celui de « tous types ». Une branche à taux mixte refuse le calcul tant que la ventilation n'est pas paramétrée.
+        Le taux appliqué est celui en vigueur à la <strong>date d'effet</strong> de la police, pour le <strong>régime de taxe</strong> choisi sur la
+        cotation (Individuel ou Groupe, H29 fermée le 09/10/2026), puis celui de « tous régimes ». Le type de contrat ne choisit plus le taux.
+        Une branche à taux mixte refuse le calcul tant que la ventilation n'est pas paramétrée.
       </p>
 
       {peutAgir(niveau) ? (
@@ -61,12 +59,12 @@ export default async function PageTaxes() {
               </select>
             </label>
             <label className="mb-4 block text-sm font-medium">
-              Type de contrat
+              Régime de taxe
               <select name="typeContrat" defaultValue="" className={entree}>
-                <option value="">Tous types</option>
-                {TYPES_CONTRAT.map((t) => (
+                <option value="">Tous régimes</option>
+                {REGIMES_TAXE.map((t) => (
                   <option key={t} value={t}>
-                    {LIBELLE_TYPE_CONTRAT[t]}
+                    {LIBELLE_REGIME_TAXE[t]}
                   </option>
                 ))}
               </select>

@@ -126,3 +126,11 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+-- ================================================================ §2.2 : régime de taxe « Individuel / Groupe » (H29 fermée)
+
+-- Choisi sur la cotation, obligatoire pour toute cotation enregistrée à partir de la session 6.0 ; il sélectionne le taux.
+-- NULL pour une cotation d'avant : elle n'est jamais recalculée (T10) ; un renouvellement de sa police prend le régime
+-- proposé par défaut pour son type de contrat (INDIVIDUEL, FAMILLE → INDIVIDUEL ; GROUPE, GROUPE_OUVERT → GROUPE).
+ALTER TABLE "cotations" ADD COLUMN "regime_taxe" TEXT;
+ALTER TABLE "cotations" ADD CONSTRAINT "cotations_regime_taxe_valide" CHECK ("regime_taxe" IS NULL OR "regime_taxe" IN ('INDIVIDUEL', 'GROUPE'));

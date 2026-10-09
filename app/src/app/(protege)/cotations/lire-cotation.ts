@@ -10,6 +10,8 @@ export type SaisieFormulaire = {
   clientId: number | null;
   /** Texte saisi ; contrôlé par le service (INDIVIDUEL, FAMILLE, GROUPE, GROUPE_OUVERT). */
   typeContrat: string;
+  /** Régime de taxe (INDIVIDUEL ou GROUPE), contrôlé par le service ; vide : refusé (obligatoire). */
+  regimeTaxe: string;
   souscripteur: Souscripteur;
   dateEffet: string;
   dateEcheance: string;
@@ -68,6 +70,7 @@ export function lireCotation(d: FormData): SaisieFormulaire {
     codeProduit: champ(d, "codeProduit"),
     clientId: clientTexte ? Number(clientTexte) : null,
     typeContrat: champ(d, "typeContrat"),
+    regimeTaxe: champ(d, "regimeTaxe"),
     souscripteur: {
       type: champ(d, "souscripteur_type") === "MORALE" ? "MORALE" : "PHYSIQUE",
       nom: champ(d, "souscripteur_nom"),

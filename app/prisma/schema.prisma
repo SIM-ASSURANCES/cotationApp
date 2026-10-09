@@ -292,9 +292,11 @@ model Cotation {
   beneficiaires     Json?
   contactsUrgence   Json?     @map("contacts_urgence")
   risque            Json      @default("{}")
-  /// INDIVIDUEL, FAMILLE, GROUPE ou GROUPE_OUVERT (police.type_contrat) : choisit le taux de taxe (D18).
+  /// INDIVIDUEL, FAMILLE, GROUPE ou GROUPE_OUVERT (police.type_contrat). Choisissait le taux avant la session 6.0 (D18).
   /// Null pour une cotation créée avant la session 4.0.
   typeContrat       String?   @map("type_contrat")
+  /// Régime de taxe (INDIVIDUEL ou GROUPE) : il sélectionne le taux (session 6.0, H29 fermée). Null avant la session 6.0.
+  regimeTaxe        String?   @map("regime_taxe")
   /// Entrée complète du moteur de calcul (montants en texte) : permet de recalculer à l'identique.
   donneesCalcul     Json?     @map("donnees_calcul")
   /// Montants arrondis par formule et en total (texte).

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { choisirTaux, periodesSeChevauchent, type LigneTaux } from "./taxes";
+import { choisirTaux, periodesSeChevauchent, REGIME_PAR_DEFAUT, type LigneTaux } from "./taxes";
 
 const ligne = (surcharge: Partial<LigneTaux>): LigneTaux => ({
   branche: "SANTE",
@@ -22,26 +22,28 @@ const loi: LigneTaux[] = [
   ligne({ branche: "IARD", tauxPourcent: null, tauxMixte: true }),
 ];
 
-describe("choix du taux de taxe (D18, H29)", () => {
-  it("prend la ligne la plus précise : le type du contrat avant « tous types »", () => {
+describe("choix du taux de taxe (D18 ; régime de taxe, H29 fermée le 09/10/2026)", () => {
+  it("prend la ligne la plus précise : le régime avant « tous régimes »", () => {
     const lignes = [...loi, ligne({ branche: "IA", typeContrat: "GROUPE", tauxPourcent: "5" })];
 
     expect(choisirTaux(lignes, "IA", "GROUPE", "2026-10-08").tauxPourcent).toBe("5");
     expect(choisirTaux(lignes, "IA", "INDIVIDUEL", "2026-10-08").tauxPourcent).toBe("7.25");
-    expect(choisirTaux(lignes, "DECES", "FAMILLE", "2026-10-08").tauxPourcent).toBe("0");
+    expect(choisirTaux(lignes, "DECES", "INDIVIDUEL", "2026-10-08").tauxPourcent).toBe("0");
   });
 
-  it("santé : 4 % en individuel, 1,5 % en groupe ; FAMILLE → INDIVIDUEL et GROUPE_OUVERT → GROUPE (H29)", () => {
+  it("santé : 4 % en régime individuel, 1,5 % en régime groupe", () => {
     expect(choisirTaux(loi, "SANTE", "INDIVIDUEL", "2026-10-08").tauxPourcent).toBe("4");
     expect(choisirTaux(loi, "SANTE", "GROUPE", "2026-10-08").tauxPourcent).toBe("1.5");
-    expect(choisirTaux(loi, "SANTE", "FAMILLE", "2026-10-08").tauxPourcent).toBe("4");
-    expect(choisirTaux(loi, "SANTE", "GROUPE_OUVERT", "2026-10-08").tauxPourcent).toBe("1.5");
   });
 
-  it("une ligne propre au type FAMILLE l'emporte sur le rattachement H29", () => {
+  it("régime proposé par défaut : INDIVIDUEL et FAMILLE → Individuel ; GROUPE et GROUPE_OUVERT → Groupe", () => {
+    expect(REGIME_PAR_DEFAUT).toEqual({ INDIVIDUEL: "INDIVIDUEL", FAMILLE: "INDIVIDUEL", GROUPE: "GROUPE", GROUPE_OUVERT: "GROUPE" });
+  });
+
+  it("une ligne FAMILLE d'avant la session 6.0 n'est plus retenue : seul le régime choisit le taux", () => {
     const lignes = [...loi, ligne({ branche: "SANTE", typeContrat: "FAMILLE", tauxPourcent: "3" })];
 
-    expect(choisirTaux(lignes, "SANTE", "FAMILLE", "2026-10-08").tauxPourcent).toBe("3");
+    expect(choisirTaux(lignes, "SANTE", "INDIVIDUEL", "2026-10-08").tauxPourcent).toBe("4");
   });
 
   it("IARD : refuse le calcul tant que le taux mixte n'est pas paramétré", () => {

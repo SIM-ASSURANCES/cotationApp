@@ -16,7 +16,7 @@ import {
   type TaxeSaisie,
   type VersionSaisie,
 } from "@/domaine/calcul/parametrage";
-import { choisirTaux, estTypeContrat, periodesSeChevauchent, problemesBranche, type BrancheSaisie, type TypeContrat } from "@/domaine/calcul/taxes";
+import { choisirTaux, estRegimeTaxe, periodesSeChevauchent, problemesBranche, type BrancheSaisie, type RegimeTaxe, type TypeContrat } from "@/domaine/calcul/taxes";
 import { exigeDoubleValidation } from "@/domaine/calcul/validation";
 
 import { journaliser } from "./audit";
@@ -225,11 +225,11 @@ export async function creerTaxe(acteur: UtilisateurCourant, saisie: TaxeSaisie, 
 
 export type ClientLecture = Pick<Prisma.TransactionClient, "taxe" | "produit">;
 
-/** Taux le plus précis pour la branche et le type de contrat, en vigueur à la date d'effet (D18, H29). */
-async function taxeEnVigueur(client: ClientLecture, branche: string, typeContrat: TypeContrat, date: DateIso): Promise<TaxeSaisie & { tauxPourcent: string }> {
+/** Taux le plus précis pour la branche et le régime de taxe, en vigueur à la date d'effet (D18 ; H29 fermée, session 6.0). */
+async function taxeEnVigueur(client: ClientLecture, branche: string, regime: RegimeTaxe, date: DateIso): Promise<TaxeSaisie & { tauxPourcent: string }> {
   const lignes = (await client.taxe.findMany({ where: { branche } })).map(versLigneTaxe);
   try {
-    return choisirTaux(lignes, branche, typeContrat, date);
+    return choisirTaux(lignes, branche, regime, date);
   } catch (erreur) {
     if (erreur instanceof ErreurCalcul) throw new ErreurMetier(erreur.message);
     throw erreur;
@@ -450,8 +450,8 @@ export type DemandeCalcul = {
   dateEcheance: DateIso;
   /** Date du document : les paramètres utilisés sont ceux en vigueur à cette date (défaut : aujourd'hui). */
   dateDocument?: DateIso;
-  /** Type de contrat (police.type_contrat) : il choisit le taux de taxe (D18). */
-  typeContrat: TypeContrat;
+  /** Régime de taxe (Individuel ou Groupe) : il choisit le taux de taxe (session 6.0, H29 fermée). */
+  regimeTaxe: RegimeTaxe | string;
   lignes: { codeFormule: string; effectif: number }[];
   nombreTranches?: number;
 };
@@ -475,15 +475,15 @@ export type ContexteCalcul = {
 
 /**
  * Trouve les paramètres EN VIGUEUR : la version du produit à la date du document, la taxe de la
- * branche et du type de contrat à la date d'effet de la police (CDC §8.1, D18 ; décision de Thierry du
- * 08/10/2026 : la date d'effet, pas la date du document).
+ * branche et du régime de taxe à la date d'effet de la police (CDC §8.1, D18 ; décision de Thierry du
+ * 08/10/2026 : la date d'effet, pas la date du document ; régime de taxe : session 6.0, H29 fermée).
  */
 export async function resoudreContexte(
   client: ClientLecture,
   codeProduit: string,
   dateDocument: DateIso,
   dateEffet: DateIso,
-  typeContrat: TypeContrat,
+  regime: RegimeTaxe,
 ): Promise<ContexteCalcul> {
   for (const d of [dateEffet, dateDocument]) {
     if (!dateValide(d)) {
@@ -504,7 +504,7 @@ export async function resoudreContexte(
   if (!version) {
     throw new ErreurMetier(`Aucun paramétrage de « ${produit.code} » en vigueur au ${dateDocument}.`);
   }
-  const taxe = await taxeEnVigueur(client, produit.branche, typeContrat, dateEffet);
+  const taxe = await taxeEnVigueur(client, produit.branche, regime, dateEffet);
   return { produit: { id: produit.id, code: produit.code, libelle: produit.libelle }, version, taxe };
 }
 
@@ -613,10 +613,10 @@ export async function calculerPourProduit(acteur: UtilisateurCourant, demande: D
   if (!dateValide(demande.dateEcheance)) {
     throw new ErreurMetier(`Date invalide : « ${demande.dateEcheance} ».`);
   }
-  if (!estTypeContrat(demande.typeContrat)) {
-    throw new ErreurMetier("Choisissez le type de contrat (individuel, famille, groupe ou groupe ouvert).");
+  if (!estRegimeTaxe(demande.regimeTaxe)) {
+    throw new ErreurMetier("Choisissez le régime de taxe (individuel ou groupe).");
   }
-  const contexte = await resoudreContexte(obtenirPrisma(), demande.codeProduit, dateDocument, demande.dateEffet, demande.typeContrat);
+  const contexte = await resoudreContexte(obtenirPrisma(), demande.codeProduit, dateDocument, demande.dateEffet, demande.regimeTaxe);
   const nombreTranches = demande.nombreTranches ?? 1;
   const { entree } = construireEntree(contexte, {
     dateEffet: demande.dateEffet,

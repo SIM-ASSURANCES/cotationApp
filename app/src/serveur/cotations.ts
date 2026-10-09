@@ -41,7 +41,7 @@ import {
   type RaisonValidation,
 } from "@/domaine/cotation/validation";
 import { normaliserNumeroPolice, problemesNumeroPolice } from "@/domaine/cotation/police";
-import { estTypeContrat, type TypeContrat } from "@/domaine/calcul/taxes";
+import { estRegimeTaxe, estTypeContrat, REGIME_PAR_DEFAUT, type RegimeTaxe, type TypeContrat } from "@/domaine/calcul/taxes";
 import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
 
 import { journaliser, type ActeurAudit } from "./audit";
@@ -70,8 +70,13 @@ type Tx = Prisma.TransactionClient;
 export type SaisieCotation = {
   codeProduit: string;
   clientId: number | null;
-  /** police.type_contrat : choisit le taux de taxe (D18). Texte lu dans le formulaire, contrôlé ici. */
+  /** police.type_contrat (documents). Texte lu dans le formulaire, contrôlé ici. */
   typeContrat: TypeContrat | string;
+  /**
+   * Régime de taxe (session 6.0, H29 fermée) : INDIVIDUEL ou GROUPE ; il choisit le taux. Obligatoire : le formulaire le
+   * propose selon le type de contrat et l'envoie toujours ; absent (appel sans formulaire), c'est ce régime proposé.
+   */
+  regimeTaxe?: RegimeTaxe | string;
   souscripteur: Souscripteur;
   dateEffet: DateIso;
   dateEcheance: DateIso;
@@ -164,6 +169,7 @@ type Calcul = {
   raisons: RaisonValidation[];
   souscripteur: Souscripteur;
   typeContrat: TypeContrat;
+  regimeTaxe: RegimeTaxe;
   forcages: ReturnType<typeof detecterForcages>;
 };
 
@@ -176,7 +182,11 @@ async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: Saisie
   if (!estTypeContrat(typeContrat)) {
     throw new ErreurMetier("Choisissez le type de contrat (individuel, famille, groupe ou groupe ouvert) : il détermine le taux de taxe.");
   }
-  const contexte = await resoudreContexte(tx, saisie.codeProduit, dateDocument, saisie.dateEffet, typeContrat);
+  const regimeTaxe = saisie.regimeTaxe ?? REGIME_PAR_DEFAUT[typeContrat];
+  if (!estRegimeTaxe(regimeTaxe)) {
+    throw new ErreurMetier("Choisissez le régime de taxe (individuel ou groupe) : il détermine le taux de taxe.");
+  }
+  const contexte = await resoudreContexte(tx, saisie.codeProduit, dateDocument, saisie.dateEffet, regimeTaxe);
   const { version } = contexte;
 
   let souscripteur = saisie.souscripteur;
@@ -231,6 +241,7 @@ async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: Saisie
     raisons: raisonsDeValidation({ forcages, ttc: resultat.totaux.arrondi.ttc, seuil: version.seuilValidationTtc }),
     souscripteur,
     typeContrat,
+    regimeTaxe,
     forcages,
   };
 }
@@ -274,6 +285,7 @@ function donneesAEcrire(saisie: SaisieCotation, c: Calcul) {
     versionDateEffet: versDate(c.versionDateEffet),
     clientId: saisie.clientId,
     typeContrat: c.typeContrat,
+    regimeTaxe: c.regimeTaxe,
     souscripteur: c.souscripteur as unknown as Prisma.InputJsonValue,
     dateEffet: versDate(saisie.dateEffet),
     dateEcheance: versDate(saisie.dateEcheance),
@@ -301,7 +313,7 @@ export async function creerBrouillon(acteur: UtilisateurCourant, saisie: SaisieC
     const cree = await tx.cotation.create({
       data: { ...donneesAEcrire(saisie, c), statut: "BROUILLON", auteurId: acteur.id, auteurIdentifiant: acteur.identifiant, contributeurs: [acteur.id] },
     });
-    await journaliser({ acteur: auteur(acteur), action: "COTATION_CREEE", objetType: "cotation", objetId: cree.id, apres: { produit: saisie.codeProduit, typeContrat: c.typeContrat, ttc: c.resultat.totaux.arrondi.ttc.toFixed() }, adresseIp }, tx);
+    await journaliser({ acteur: auteur(acteur), action: "COTATION_CREEE", objetType: "cotation", objetId: cree.id, apres: { produit: saisie.codeProduit, typeContrat: c.typeContrat, regimeTaxe: c.regimeTaxe, ttc: c.resultat.totaux.arrondi.ttc.toFixed() }, adresseIp }, tx);
     await journaliserAccessoires(tx, acteur, cree.id, null, c.lignesStockees, adresseIp);
     return cree.id;
   });
@@ -335,8 +347,8 @@ export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, 
         action: "COTATION_MODIFIEE",
         objetType: "cotation",
         objetId: id,
-        avant: { ttc: avant.ttcTotal?.toFixed() ?? null, typeContrat: avant.typeContrat },
-        apres: { ttc: c.resultat.totaux.arrondi.ttc.toFixed(), typeContrat: c.typeContrat, auteurDuBrouillon: avant.auteurIdentifiant },
+        avant: { ttc: avant.ttcTotal?.toFixed() ?? null, typeContrat: avant.typeContrat, regimeTaxe: avant.regimeTaxe },
+        apres: { ttc: c.resultat.totaux.arrondi.ttc.toFixed(), typeContrat: c.typeContrat, regimeTaxe: c.regimeTaxe, auteurDuBrouillon: avant.auteurIdentifiant },
         adresseIp,
       },
       tx,
@@ -669,6 +681,8 @@ export type DetailCotation = {
   produit: { code: string; libelle: string };
   versionDateEffet: DateIso;
   typeContrat: TypeContrat | null;
+  /** null : cotation d'avant la session 6.0 (le taux venait alors du type de contrat). */
+  regimeTaxe: RegimeTaxe | null;
   souscripteur: Souscripteur;
   clientId: number | null;
   dateEffet: DateIso;
@@ -722,6 +736,7 @@ export async function lireCotation(acteur: UtilisateurCourant, id: number): Prom
     produit: { code: c.produit.code, libelle: c.produit.libelle },
     versionDateEffet: depuisDate(c.versionDateEffet),
     typeContrat: (c.typeContrat as TypeContrat | null) ?? null,
+    regimeTaxe: (c.regimeTaxe as RegimeTaxe | null) ?? null,
     souscripteur: c.souscripteur as unknown as Souscripteur,
     clientId: c.clientId,
     dateEffet: depuisDate(c.dateEffet),

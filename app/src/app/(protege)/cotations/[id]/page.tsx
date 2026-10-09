@@ -6,7 +6,7 @@ import { FormulaireAction } from "@/composants/FormulaireAction";
 import { LignesBeneficiaires, LignesContactsUrgence } from "@/composants/LignesDynamiques";
 import { TachesPolice } from "@/composants/TachesPolice";
 import { formaterMontant, montant, type Montant } from "@/domaine/calcul/montant";
-import { LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
+import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
 import { FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
 import { LIBELLE_STATUT, peutAccepter, peutEtreValidee, peutModifier } from "@/domaine/cotation/statuts";
@@ -80,6 +80,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
       <section className="mb-6 grid max-w-4xl gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
         <p><strong>Produit :</strong> {c.produit.code} — {c.produit.libelle}</p>
         <p><strong>Type de contrat :</strong> {c.typeContrat ? LIBELLE_TYPE_CONTRAT[c.typeContrat] : "non renseigné (cotation antérieure)"}</p>
+        <p><strong>Régime de taxe :</strong> {c.regimeTaxe ? LIBELLE_REGIME_TAXE[c.regimeTaxe] : "non renseigné (cotation antérieure à la session 6.0 : taux choisi par le type de contrat)"}</p>
         <p><strong>Souscripteur :</strong> {nom} ({c.souscripteur.type === "MORALE" ? "personne morale" : "personne physique"})</p>
         <p><strong>Période :</strong> du {formatDate(c.dateEffet)} au {formatDate(c.dateEcheance)} ({x.joursCouverts} jours)</p>
         <p><strong>Établie le :</strong> {formatDate(c.dateEtablissement)}</p>

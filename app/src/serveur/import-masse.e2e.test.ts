@@ -254,7 +254,7 @@ describe("T8 : import de 500 adhérents, 12 erreurs de types différents", () =>
         expect(texte).toContain(`CERTIFICAT D'ADHÉSION n° ${exemple.numero}`);
         expect(texte).toContain(`Police mère n° ${numeroPolice}`);
         expect(texte).toContain(`Adhérent n° 3 : ${personne(0)}`);
-        expect(texte).toMatch(/Vérification : https:\/\/documents\.exemple\.ci\/verif\//);
+        expect(texte).toMatch(/Vérification :\s+https:\/\/documents\.exemple\.ci\/verif\//);
       }
 
       // Archive ZIP : 488 PDF ; récapitulatif au journal.

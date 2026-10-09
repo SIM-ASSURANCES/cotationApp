@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.filtres import ErreurFiltre, case, date_fr, dateheure, lettres, montant, pct
+from app.filtres import ChampObligatoireVide, ErreurFiltre, Vide, case, date_fr, dateheure, lettres, montant, pct
 
 NB = " "  # espace insécable
 
@@ -79,7 +79,23 @@ def test_case() -> None:
     assert case(False) == "☐"
 
 
-@pytest.mark.parametrize("valeur", ["PROPRIETAIRE", "oui", 1, None])
+@pytest.mark.parametrize("valeur", ["PROPRIETAIRE", "oui", 1])
 def test_case_refuse_ce_qui_n_est_pas_un_booleen(valeur: object) -> None:
     with pytest.raises(ErreurFiltre, match="parenthèses"):
         case(valeur)
+
+
+# Valeur vide (null ou texte vide) : la fusion la remplace par un Vide nommé (voir test_fusion.py).
+FILTRES = {"montant": montant, "lettres": lettres, "date": date_fr, "dateheure": dateheure, "pct": pct, "case": case}
+
+
+@pytest.mark.parametrize("nom", FILTRES)
+@pytest.mark.parametrize("vide", [None, "", "  "], ids=["null", "texte_vide", "blanc"])
+def test_valeur_vide(nom: str, vide: str | None) -> None:
+    filtre = FILTRES[nom]
+    assert filtre(Vide(vide, "formules[0].champ", facultatif=True)) == ""
+    with pytest.raises(ChampObligatoireVide, match=rf"^champ obligatoire vide : « formules\[0\]\.champ » \(filtre {nom}\)$"):
+        filtre(Vide(vide, "formules[0].champ", facultatif=False))
+    # Appelé hors fusion, sans chemin : refusé quand même (jamais un blanc silencieux).
+    with pytest.raises(ChampObligatoireVide, match=rf"filtre {nom}"):
+        filtre(vide)

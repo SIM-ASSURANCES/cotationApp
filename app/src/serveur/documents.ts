@@ -34,7 +34,7 @@ import { fichiersAssocies, lireSeuilListe, modelesAssocies, versionPublieeEnVigu
 import { aujourdhui } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { lireFormatNumeroPolice, lireImageSociete, lireParametresSociete } from "./societe";
-import { stockage } from "./stockage";
+import { differerEcriture, ecrituresDifferees, lireDocumentEmis, programmerReprise, stockage, tenterEcriture } from "./stockage";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 import { cloreValidationContrat, controlerSeuilContrat, demanderValidationContrat, exigerAutreQueLeDemandeur } from "./validation-contrat";
 
@@ -50,7 +50,7 @@ const auteur = (u: UtilisateurCourant): ActeurAudit => ({ id: u.id, identifiant:
 const sha256 = (octets: Uint8Array) => createHash("sha256").update(octets).digest("hex");
 
 /** Jeton du QR code : 256 bits aléatoires (CDC §14.1 : non devinable, jamais un identifiant). */
-const nouveauJeton = () => randomBytes(32).toString("base64url");
+export const nouveauJeton = () => randomBytes(32).toString("base64url");
 
 // ---------------------------------------------------------------- Droits (CDC §4)
 
@@ -83,14 +83,14 @@ async function exigerSurType(acteur: UtilisateurCourant, type: TypeDocument, ecr
 
 // ---------------------------------------------------------------- Sources : cotation et police
 
-type ContexteProduit = {
+export type ContexteProduit = {
   produit: { id: number; code: string; libelle: string; gamme: string; branche: string };
   versionDateEffet: DateIso;
   formules: Map<string, { libelle: string; tauxCouverture: string | null }>;
   references: { cgModeleCode: string | null; cgVisa: string | null; csModeleCode: string | null; csVisa: string | null };
 };
 
-async function contexteProduit(produitId: number, versionDateEffet: Date): Promise<ContexteProduit> {
+export async function contexteProduit(produitId: number, versionDateEffet: Date): Promise<ContexteProduit> {
   const version = await obtenirPrisma().produitVersion.findUniqueOrThrow({
     where: { produitId_dateEffet: { produitId, dateEffet: versionDateEffet } },
     include: { formules: true, produit: true },
@@ -104,7 +104,7 @@ async function contexteProduit(produitId: number, versionDateEffet: Date): Promi
 }
 
 /** Montants du moteur (recalculés à l'identique depuis l'entrée figée), formule par formule. */
-function montantsDu(entree: EntreeCalcul, contexte: ContexteProduit) {
+export function montantsDu(entree: EntreeCalcul, contexte: ContexteProduit) {
   const resultat = calculer(entree);
   const t = (m: { toFixed(): string }) => m.toFixed();
   const formules: FormuleSource[] = resultat.lignes.map((l, i) => ({
@@ -113,7 +113,8 @@ function montantsDu(entree: EntreeCalcul, contexte: ContexteProduit) {
     tauxCouverture: contexte.formules.get(l.code)?.tauxCouverture ?? null,
     effectif: l.effectif,
     primeUnitaire: String(entree.lignes[i].primeUnitaire),
-    primeParAssure: t(l.primeParUnite),
+    // H45 (décision de Thierry du 08/10/2026) : TTC d'une unité de la formule, comme le « TTC/personne » de T1.
+    primeParAssure: t(l.ttcParUnite),
     nette: t(l.arrondi.nette),
     accessoires: t(l.arrondi.accessoires),
     taxe: t(l.arrondi.taxe),
@@ -177,7 +178,7 @@ export type DocumentLu = {
   urlVerification: string | null;
 };
 
-function urlPublique(): string {
+export function urlPublique(): string {
   const url = obtenirConfig().URL_PUBLIQUE;
   if (!url) {
     throw new ErreurMetier("Adresse publique de l'application non configurée (variable URL_PUBLIQUE) : les QR codes de vérification ne peuvent pas être produits. Prévenez l'administrateur.");
@@ -185,7 +186,7 @@ function urlPublique(): string {
   return url.replace(/\/+$/, "");
 }
 
-async function images(champs: string[]): Promise<Record<string, ImagePng>> {
+export async function images(champs: string[]): Promise<Record<string, ImagePng>> {
   const resultat: Record<string, ImagePng> = {};
   for (const nom of IMAGES_SOCIETE) {
     if (!champs.includes(nom)) continue;
@@ -221,8 +222,8 @@ async function produire(acteur: UtilisateurCourant, p: Production, adresseIp: st
 
   const empreinte = sha256(pdf);
   const chemin = cheminStockage({ produitCode: p.produitCode, type: p.type, numero: p.numero, dateEmission: aujourdhui(), version });
-  const ecrit = await stockage().ecrire(chemin, pdf);
-  if (ecrit.empreinte !== empreinte) throw new Error(`Stockage : empreinte différente pour ${chemin}`);
+  // Stockage indisponible (T14) : le document est émis quand même, son fichier attend en base (écriture différée).
+  const ecriture = await tenterEcriture(chemin, pdf, empreinte);
 
   const versionsAssociees = {
     ...p.associes.ids,
@@ -270,14 +271,16 @@ async function produire(acteur: UtilisateurCourant, p: Production, adresseIp: st
       },
       tx,
     );
+    if (!ecriture.ecrit) await differerEcriture(tx, { documentId: ligne.id, numero: p.numero, version, chemin, empreinte, contenu: pdf, erreur: ecriture.erreur }, auteur(acteur), adresseIp);
     return ligne;
   });
+  if (!ecriture.ecrit) await programmerReprise(cree.id);
   return versLu(cree);
 }
 
 type LigneDocument = Prisma.DocumentEmisGetPayload<object>;
 
-function versLu(d: LigneDocument): DocumentLu {
+export function versLu(d: LigneDocument): DocumentLu {
   const type = d.type as TypeDocument;
   return {
     id: d.id,
@@ -335,7 +338,7 @@ async function sourceCommune(contexte: ContexteProduit, date: DateIso) {
 
 // ---------------------------------------------------------------- Cotation (CDC §9)
 
-async function chargerCotation(id: number) {
+export async function chargerCotation(id: number) {
   const c = await obtenirPrisma().cotation.findUnique({ where: { id }, include: { produit: true } });
   if (!c) throw new ErreurMetier("Cotation introuvable.");
   // doc.auteur_nom (D20) : nom de l'utilisateur qui a créé la cotation.
@@ -723,6 +726,11 @@ export async function reediter(acteur: UtilisateurCourant, documentId: number, a
   const d = await prisma.documentEmis.findUnique({ where: { id: documentId } });
   if (!d || !estTypeDocument(d.type)) throw new ErreurMetier("Document introuvable.");
   await exigerSurType(acteur, d.type, true);
+  // Session 4b (H55) : une facture se réédite à chaque paiement (version + 1, restant dû à jour) ; un avoir et un reçu ne
+  // changent pas. Leur PDF en attente se relance depuis la fiche de la facture, à l'identique.
+  if (d.type === "FACTURE" || d.type === "AVOIR" || d.type === "RECU") {
+    throw new ErreurMetier("Une facture, un avoir ou un reçu ne se réédite pas ici : la facture est rééditée à chaque paiement, et un PDF en attente se relance depuis la fiche de la facture.");
+  }
   const origine = d.origineId ? await prisma.documentEmis.findUniqueOrThrow({ where: { id: d.origineId } }) : d;
   const ids = origine.versionsAssociees as unknown as VersionsAssociees & { cs: number | null; cg: number | null; listesEnAnnexe?: string[]; versionAdherents?: number | null };
   const modele = await prisma.modeleVersion.findUniqueOrThrow({ where: { id: origine.modeleVersionId }, select: { id: true, fichier: true, analyse: true } });
@@ -846,15 +854,8 @@ export async function documentsDe(acteur: UtilisateurCourant, critere: { cotatio
   return lignes.map(versLu);
 }
 
-/** Lit un document stocké et vérifie son intégrité (empreinte, CDC §14.3). */
-async function lireVerifie(d: LigneDocument): Promise<Uint8Array> {
-  const contenu = await stockage().lire(d.chemin);
-  if (sha256(contenu) !== d.empreinte) {
-    console.error(`[documents] empreinte différente pour ${d.chemin}`);
-    throw new ErreurMetier(`Le fichier stocké du document ${d.numero} (v${d.version}) ne correspond plus à son empreinte : prévenez l'administrateur.`);
-  }
-  return contenu;
-}
+/** Lit un document émis et vérifie son intégrité (empreinte, CDC §14.3) ; en attente d'écriture (T14) : depuis la base. */
+const lireVerifie = (d: LigneDocument): Promise<Uint8Array> => lireDocumentEmis(d);
 
 const nomFichier = (d: { numero: string; version: number; type: string }) => `${d.numero.replace(/[^A-Za-z0-9_-]/g, "_")}_${d.type}_v${d.version}.pdf`;
 
@@ -875,6 +876,11 @@ export async function zipDocuments(acteur: UtilisateurCourant, ids: number[], ad
   for (const d of lignes) {
     if (!estTypeDocument(d.type)) throw new ErreurMetier("Document introuvable.");
     await exigerSurType(acteur, d.type, false);
+  }
+  const differes = await ecrituresDifferees(lignes.map((d) => d.id));
+  if (differes.size > 0) {
+    const noms = lignes.filter((d) => differes.has(d.id)).map((d) => `${d.numero} v${d.version}`);
+    throw new ErreurMetier(`Fichier en attente d'écriture dans le stockage : ${noms.join(", ")}. Téléchargez ce document seul, ou réessayez l'archive après la reprise automatique.`);
   }
   const contenu = await stockage().zip(lignes.map((d) => ({ chemin: d.chemin, nom: nomFichier(d) })));
   await journaliser({ acteur: auteur(acteur), action: "DOCUMENT_TELECHARGE", objetType: "documents", objetId: lignes.map((d) => d.id).join(","), apres: { zip: lignes.map((d) => `${d.numero} v${d.version}`) }, adresseIp });

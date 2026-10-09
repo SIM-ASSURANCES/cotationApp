@@ -32,6 +32,10 @@ type RegleType = {
    * (raison sociale).
    */
   obligatoires: readonly (string | readonly string[])[];
+  /** Filtres que le modèle doit employer (facture : le TTC en lettres, filtre « lettres »). */
+  filtres?: readonly string[];
+  /** Mentions de texte fixe que le modèle doit contenir (facture : rappel de l'article 13 du code CIMA). */
+  textes?: readonly { motif: RegExp; libelle: string }[];
 };
 
 const SOUSCRIPTEUR = ["souscripteur.nom", "souscripteur.raison_sociale"] as const;
@@ -58,6 +62,32 @@ const CONTENU_CP = [
   "signature_sim",
 ] as const;
 
+/**
+ * Contenu obligatoire de la facture (CDC §11.2, session 4b, H57) : en-tête (numéro, date, police, dates d'effet et de fin,
+ * RCCM, NCC), « Facturé à » avec l'adresse, taux de taxe, taxe et TTC (en lettres : filtre « lettres »), RIB, Mobile Money,
+ * signature, QR code et rappel de l'art. 13 CIMA. « Envoyé à », les blocs d'échéancier et de paiements sont conditionnels :
+ * ils ne sont pas exigés.
+ */
+const CONTENU_FACTURE = [
+  "doc.numero",
+  "doc.date_emission",
+  "police.numero",
+  "police.date_effet",
+  "police.date_echeance",
+  SOUSCRIPTEUR,
+  "souscripteur.adresse",
+  "prime.taux_taxe",
+  "prime.taxe",
+  "prime.ttc",
+  "societe.rccm",
+  "societe.ncc",
+  ["societe.rib", "societe.rib[].numero"],
+  ["societe.mobile_money", "societe.mobile_money[].numero_marchand"],
+  "signature_sim",
+  "qr_code",
+] as const;
+const RAPPEL_CIMA = [{ motif: /CIMA/i, libelle: "le rappel de l'article 13 du code CIMA (la prise d'effet est subordonnée au paiement de la prime)" }] as const;
+
 export const REGLES: Record<TypeModele, RegleType> = {
   CP: { libelle: "Conditions particulières", genere: true, fixe: false, produit: "obligatoire", obligatoires: CONTENU_CP },
   // Certificat d'adhésion unitaire (CDC §10.2) : son numéro, la police mère, l'adhérent, la date d'effet de l'adhésion. Pas de prime (H36).
@@ -70,8 +100,9 @@ export const REGLES: Record<TypeModele, RegleType> = {
   },
   // Une cotation n'a pas encore de numéro de police : son numéro est celui du document (COT-…), H18.
   COTATION: { libelle: "Cotation", genere: true, fixe: false, produit: "obligatoire", obligatoires: SOCLE("doc.numero") },
-  FACTURE: { libelle: "Facture", genere: true, fixe: false, produit: "facultatif", obligatoires: ["doc.numero", "prime.ttc", "societe.rccm"] },
-  AVOIR: { libelle: "Avoir", genere: true, fixe: false, produit: "facultatif", obligatoires: [] },
+  FACTURE: { libelle: "Facture", genere: true, fixe: false, produit: "facultatif", obligatoires: CONTENU_FACTURE, filtres: ["lettres"], textes: RAPPEL_CIMA },
+  // Avoir (CDC §11.3) : son numéro, la facture qu'il annule, la police, le souscripteur et les montants (négatifs).
+  AVOIR: { libelle: "Avoir", genere: true, fixe: false, produit: "facultatif", obligatoires: ["doc.numero", "doc.date_emission", "doc.facture_origine", "police.numero", SOUSCRIPTEUR, "prime.ttc", "qr_code"] },
   // Reçu : montant payé et facture réglée (H18).
   RECU: { libelle: "Reçu", genere: true, fixe: false, produit: "facultatif", obligatoires: [...SOCLE("police.numero"), "paiements[].montant", "doc.facture_origine"] },
   AVIS_ECHEANCE: { libelle: "Avis d'échéance", genere: true, fixe: false, produit: "facultatif", obligatoires: [] },

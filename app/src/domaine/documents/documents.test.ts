@@ -212,12 +212,40 @@ describe("contrôles au dépôt (CDC §6.7)", () => {
     expect(controlerDepot("CERTIFICAT", analyse({ references: refs(certificat) })).rejets).toEqual([]);
   });
 
-  it("facture : doc.numero, prime.ttc et societe.rccm obligatoires", () => {
+  it("facture (CDC §11.2, H57) : en-tête, « Facturé à » et adresse, taxe et TTC en lettres, RIB, Mobile Money, signature, QR, rappel CIMA", () => {
+    const manque = (chemin: string) => `Champ obligatoire pour un modèle de facture absent : {{ ${chemin} }}.`;
     const r = controlerDepot("FACTURE", analyse({ references: [{ chemin: "prime.ttc", balise: "{{ prime.ttc | montant }}", emplacement: ici() }] }));
     expect(r.rejets.map((c) => c.message)).toEqual([
-      "Champ obligatoire pour un modèle de facture absent : {{ doc.numero }}.",
-      "Champ obligatoire pour un modèle de facture absent : {{ societe.rccm }}.",
+      manque("doc.numero"),
+      manque("doc.date_emission"),
+      manque("police.numero"),
+      manque("police.date_effet"),
+      manque("police.date_echeance"),
+      "Champ obligatoire pour un modèle de facture absent : {{ souscripteur.nom }} ou {{ souscripteur.raison_sociale }}.",
+      manque("souscripteur.adresse"),
+      manque("prime.taux_taxe"),
+      manque("prime.taxe"),
+      manque("societe.rccm"),
+      manque("societe.ncc"),
+      "Champ obligatoire pour un modèle de facture absent : {{ societe.rib }} ou {{ societe.rib[].numero }}.",
+      "Champ obligatoire pour un modèle de facture absent : {{ societe.mobile_money }} ou {{ societe.mobile_money[].numero_marchand }}.",
+      manque("signature_sim"),
+      manque("qr_code"),
+      "Filtre obligatoire pour un modèle de facture absent : « lettres » (par exemple {{ prime.ttc | lettres }}).",
+      expect.stringContaining("Mention obligatoire pour un modèle de facture absente : le rappel de l'article 13 du code CIMA"),
     ]);
+    const complete = [
+      "doc.numero", "doc.date_emission", "police.numero", "police.date_effet", "police.date_echeance", "souscripteur.raison_sociale", "souscripteur.adresse",
+      "prime.taux_taxe", "prime.taxe", "prime.ttc", "societe.rccm", "societe.ncc", "societe.rib[].numero", "societe.mobile_money[].numero_marchand", "signature_sim", "qr_code",
+    ];
+    const ok = analyse({ references: refs(complete), filtres: ["lettres", "montant"], textes: [{ texte: "Art. 13 du code CIMA : la prise d'effet est subordonnée au paiement.", emplacement: ici(9) }] });
+    expect(controlerDepot("FACTURE", ok).rejets).toEqual([]);
+  });
+
+  it("avoir : numéro, facture d'origine, police, souscripteur, TTC, date et QR code", () => {
+    expect(controlerDepot("AVOIR", analyse({ references: refs(["produit.libelle"]) })).rejets).toHaveLength(7);
+    const avoir = ["doc.numero", "doc.date_emission", "doc.facture_origine", "police.numero", "souscripteur.nom", "prime.ttc", "qr_code"];
+    expect(controlerDepot("AVOIR", analyse({ references: refs(avoir) })).rejets).toEqual([]);
   });
 
   it("police absente et marqueur hérité : avertissements, sans rejet", () => {

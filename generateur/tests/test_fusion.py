@@ -65,7 +65,7 @@ def test_valeurs_et_filtres() -> None:
 def test_donnee_absente_nommee_par_son_chemin() -> None:
     with pytest.raises(ErreurFusion, match=r"donnée absente : « souscripteur\.prenoms »"):
         corps(document("{{ souscripteur.nom }} {{ souscripteur.prenoms }}"), {"souscripteur": {"nom": "KOUADIO"}})
-    with pytest.raises(ErreurFusion, match=r"« assures\[\]\.date_naissance »"):
+    with pytest.raises(ErreurFusion, match=r"« assures\[0\]\.date_naissance »"):
         corps(document("{%p for a in assures %}", "{{ a.date_naissance }}", "{%p endfor %}"), {"assures": [{"nom_prenoms": "X"}]})
     with pytest.raises(ErreurFusion, match=r"« police »"):
         corps(document("{{ police.numero }}"), {})
@@ -73,6 +73,82 @@ def test_donnee_absente_nommee_par_son_chemin() -> None:
 
 def test_donnee_vide_ecrite_vide() -> None:
     assert corps(document("Courriel : [{{ souscripteur.email }}]"), {"souscripteur": {"email": None}}) == "Courriel : []"
+
+
+# ------------------------------------------------------------------ Valeur vide dans un filtre (D19)
+
+# Pour chaque filtre : un champ obligatoire et un champ facultatif (du point de vue de ce test), dans
+# une liste pour vérifier que le message donne le rang de l'élément (« formules[0]… »).
+FILTRES_VIDES = [
+    ("montant", "formules[].prime_nette"),
+    ("lettres", "formules[].prime_ttc"),
+    ("date", "formules[].date_effet"),
+    ("dateheure", "formules[].date_emission"),
+    ("pct", "formules[].taux_couverture"),
+    ("case", "formules[].incluse"),
+]
+
+
+@pytest.mark.parametrize(("filtre", "champ"), FILTRES_VIDES, ids=[f for f, _ in FILTRES_VIDES])
+@pytest.mark.parametrize("vide", [None, ""], ids=["null", "texte_vide"])
+def test_filtre_sur_un_champ_vide(filtre: str, champ: str, vide: str | None) -> None:
+    nom = champ.removeprefix("formules[].")
+    modele = document("{%p for f in formules %}", f"[{{{{ f.{nom} | {filtre} }}}}]", "{%p endfor %}")
+    donnees = {"formules": [{nom: vide}]}
+    # Obligatoire : la génération s'arrête et nomme le champ, avec le rang de l'élément.
+    with pytest.raises(ErreurFusion) as erreur:
+        corps(modele, donnees)
+    assert str(erreur.value) == f"champ obligatoire vide : « formules[0].{nom} » (filtre {filtre})"
+    # Facultatif (D19) : chaîne vide.
+    assert corps(modele, donnees, champs_facultatifs=[champ]) == "[]"
+
+
+def test_filtre_sur_un_champ_facultatif_hors_liste() -> None:
+    modele = document("Référence : [{{ police.reference | date }}]")
+    assert corps(modele, {"police": {"reference": None}}, champs_facultatifs=["police.reference"]) == "Référence : []"
+
+
+def test_tous_les_champs_manquants_nommes_d_un_coup() -> None:
+    modele = document(
+        "{{ souscripteur.nom }} {{ souscripteur.profession }}",
+        "Effet : {{ police.date_effet | date }} ; émis le {{ doc.date_emission | dateheure }}",
+        "{%p for f in formules %}",
+        "{{ f.code }} : {{ f.taux_couverture | pct }} {{ f.prime_ttc | montant }}",
+        "{%p endfor %}",
+        "Référence : {{ police.reference | date }} ; rappel : {{ police.date_effet | date }}",
+    )
+    donnees = {
+        "souscripteur": {"nom": "KOUADIO"},
+        "police": {"date_effet": None, "reference": None},
+        "doc": {"date_emission": ""},
+        "formules": [{"code": "SOLO", "taux_couverture": "80", "prime_ttc": "96000"}, {"code": "FAMILLE", "taux_couverture": None}],
+    }
+    with pytest.raises(ErreurFusion) as erreur:
+        corps(modele, donnees, champs_facultatifs=["police.reference"])
+    assert str(erreur.value) == (
+        "5 points à corriger : donnée absente : « souscripteur.profession » ; "
+        "champ obligatoire vide : « police.date_effet » (filtre date) ; "
+        "champ obligatoire vide : « doc.date_emission » (filtre dateheure) ; "
+        "champ obligatoire vide : « formules[1].taux_couverture » (filtre pct) ; "
+        "donnée absente : « formules[1].prime_ttc »"
+    )
+
+
+def test_donnees_manquantes_de_l_annexe_nommees_avec_celles_du_corps() -> None:
+    donnees = {"police": {}, "assures": [{"ordre": "1", "nom_prenoms": "X", "date_naissance": None}]}
+    with pytest.raises(ErreurFusion) as erreur:
+        corps(CP_ASSURES, donnees, annexes={"assures": ANNEXE_ASSURES}, listes_en_annexe=["assures"])
+    assert str(erreur.value) == "donnée absente : « police.numero »"  # corps et annexe : un seul message par champ
+
+
+def test_valeur_null_reste_none_dans_les_conditions() -> None:
+    modele = document(
+        "{% if police.nantissement %}gagé{% else %}libre{% endif %}",
+        "{% if police.nantissement is none %}aucun{% endif %} {% if police.nantissement == None %}égal{% endif %}",
+        "{% if souscripteur.email is none %}NON{% else %}OUI{% endif %} [{{ souscripteur.email | upper }}]",
+    )
+    texte = corps(modele, {"police": {"nantissement": None}, "souscripteur": {"email": ""}})
+    assert texte == "libre\naucun égal\nOUI []"
 
 
 def test_caracteres_speciaux_echappes() -> None:

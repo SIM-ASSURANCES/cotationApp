@@ -4,6 +4,16 @@ import { Prisma } from "@/generated/prisma/client";
 
 import type { DateIso } from "@/domaine/calcul/dates";
 import { peutAgir, peutLire } from "@/domaine/droits";
+import {
+  cleFormatNumero,
+  estPrefixeNumero,
+  FORMATS_NUMERO_DEFAUT,
+  formaterSelon,
+  LIBELLE_PREFIXE,
+  PREFIXES_NUMERO,
+  problemesFormatNumero,
+  type PrefixeNumero,
+} from "@/domaine/cotation/numerotation";
 import { CLE_FORMAT_NUMERO_POLICE, FORMAT_NUMERO_POLICE_DEFAUT, problemesFormatNumeroPolice } from "@/domaine/cotation/police";
 import { CLE_SOCIETE, cleImage, lireSociete, problemesSociete, type ImageSociete, type ParametresSociete } from "@/domaine/documents/societe";
 
@@ -105,4 +115,41 @@ export async function enregistrerFormatNumeroPolice(acteur: UtilisateurCourant, 
   const problemes = problemesFormatNumeroPolice(format.trim());
   if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
   await ajouter(acteur, CLE_FORMAT_NUMERO_POLICE, format.trim(), dateEffet, { formatNumeroPolice: format.trim(), avant: await lireFormatNumeroPolice(dateEffet), dateEffet }, adresseIp);
+}
+
+// ---------------------------------------------------------------- Formats des numéros de documents (session 4b, CDC §11.4)
+
+export type FormatNumeroLu = { prefixe: PrefixeNumero; libelle: string; enVigueur: string; exemple: string; historique: { valeur: string; dateEffet: DateIso; creePar: string; creeLe: Date }[] };
+
+/** Formats en vigueur des numéros COT, FAC, AV et REC, avec leur historique (écran Société). */
+export async function consulterFormatsNumero(acteur: UtilisateurCourant): Promise<FormatNumeroLu[]> {
+  await exigerParametrage(acteur, false);
+  const jour = aujourdhui();
+  const resultat: FormatNumeroLu[] = [];
+  for (const prefixe of PREFIXES_NUMERO) {
+    const lignes = await obtenirPrisma().parametre.findMany({ where: { cle: cleFormatNumero(prefixe) }, orderBy: { dateEffet: "desc" } });
+    const enVigueur = (await valeurEnVigueur(cleFormatNumero(prefixe), jour)) ?? FORMATS_NUMERO_DEFAUT[prefixe];
+    resultat.push({
+      prefixe,
+      libelle: LIBELLE_PREFIXE[prefixe],
+      enVigueur,
+      exemple: formaterSelon(enVigueur, jour, 1),
+      historique: lignes.map((l) => ({ valeur: l.valeur, dateEffet: l.dateEffet.toISOString().slice(0, 10), creePar: l.creePar, creeLe: l.creeLe })),
+    });
+  }
+  return resultat;
+}
+
+/**
+ * Nouveau format d'un type de numéro, à une date d'effet jamais rétroactive : historisé et journalisé (avant, après).
+ * Le compteur ne change pas : il reste annuel et continu, quel que soit le format (pas de trou, pas de remise à zéro).
+ */
+export async function enregistrerFormatNumero(acteur: UtilisateurCourant, prefixe: string, format: string, dateEffet: DateIso, adresseIp: string | null): Promise<void> {
+  await exigerParametrage(acteur, true);
+  if (!estPrefixeNumero(prefixe)) throw new ErreurMetier("Type de numéro inconnu.");
+  const propre = format.trim();
+  const problemes = problemesFormatNumero(propre);
+  if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
+  const avant = (await valeurEnVigueur(cleFormatNumero(prefixe), dateEffet)) ?? FORMATS_NUMERO_DEFAUT[prefixe];
+  await ajouter(acteur, cleFormatNumero(prefixe), propre, dateEffet, { formatNumero: prefixe, avant, apres: propre, dateEffet }, adresseIp);
 }

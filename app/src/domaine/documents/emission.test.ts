@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { calculer, type EntreeCalcul } from "../calcul/calcul";
+import { CHAMPS_FACULTATIFS } from "./dictionnaire";
 import { donneesDocument, type SourceDocument } from "./donnees";
 import { cheminStockage, masquerSouscripteur, problemesVisas, statutPublic } from "./emission";
 import { SOCIETE_DEFAUT, lireLignes, lireSociete, problemesSociete } from "./societe";
@@ -78,7 +79,7 @@ describe("données d'une cotation T1 (dictionnaire, montants du moteur)", () => 
     dateEffet: entreeT1.dateEffet,
     dateEcheance: entreeT1.dateEcheance,
     joursCouverts: r.joursCouverts,
-    formules: r.lignes.map((l, i) => ({ code: l.code, libelle: l.code, tauxCouverture: null, effectif: l.effectif, primeUnitaire: String(entreeT1.lignes[i].primeUnitaire), primeParAssure: t(l.primeParUnite), nette: t(l.arrondi.nette), accessoires: t(l.arrondi.accessoires), taxe: t(l.arrondi.taxe), ttc: t(l.arrondi.ttc) })),
+    formules: r.lignes.map((l, i) => ({ code: l.code, libelle: l.code, tauxCouverture: null, effectif: l.effectif, primeUnitaire: String(entreeT1.lignes[i].primeUnitaire), primeParAssure: t(l.ttcParUnite), nette: t(l.arrondi.nette), accessoires: t(l.arrondi.accessoires), taxe: t(l.arrondi.taxe), ttc: t(l.arrondi.ttc) })),
     totaux: { nette: t(r.totaux.arrondi.nette), accessoires: t(r.totaux.arrondi.accessoires), taxe: t(r.totaux.arrondi.taxe), ttc: t(r.totaux.arrondi.ttc) },
     taxe: { tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES" },
     echeances: [],
@@ -120,23 +121,27 @@ describe("données d'une cotation T1 (dictionnaire, montants du moteur)", () => 
     expect(d.police.type_contrat).toBe("GROUPE");
   });
 
+  it("liste des champs facultatifs envoyée au générateur (D19) : vides, ils s'écrivent vides même dans un filtre", () => {
+    expect([...CHAMPS_FACULTATIFS].sort()).toEqual(["doc.empreinte", "intermediaires", "police.nantissement", "police.police_mere", "police.reference"]);
+  });
+
   const assure = (ordre: number, formule: string) => ({ ordre, nom_prenoms: `ASSURÉ ${ordre}`, date_naissance: "" as const, sexe: "" as const, lien: "", formule });
   type Assures = { assures: { ordre: number; formule: string | null; prime?: string | null }[] };
 
-  it("assures[].prime : la prime de la formule de l'assuré, calculée par le moteur (T1 : Solo 93 581, Famille 252 658)", () => {
+  it("assures[].prime (H45) : le TTC d'une unité de la formule, calculé par le moteur (T1 : Solo 96 000, Famille 260 000)", () => {
     const d = donneesDocument({ ...source, assures: [assure(1, "SOLO"), assure(2, "FAMILLE"), assure(3, "SOLO")] }) as unknown as Assures;
 
     expect(d.assures.map((a) => [a.ordre, a.formule, a.prime])).toEqual([
-      [1, "SOLO", "93581"],
-      [2, "FAMILLE", "252658"],
-      [3, "SOLO", "93581"],
+      [1, "SOLO", "96000"],
+      [2, "FAMILLE", "260000"],
+      [3, "SOLO", "96000"],
     ]);
   });
 
   it("assures[].prime : vide (null) sans formule, pour une formule hors calcul et pour un adhérent incorporé après la liste initiale", () => {
     const d = donneesDocument({ ...source, assures: [assure(1, "SOLO"), assure(2, ""), assure(3, "INCONNUE"), assure(4, "SOLO")], ordresSansPrime: [4] }) as unknown as Assures;
 
-    expect(d.assures.map((a) => a.prime)).toEqual(["93581", null, null, null]);
+    expect(d.assures.map((a) => a.prime)).toEqual(["96000", null, null, null]);
   });
 
   it("assures[].prime : pas de prime sur un certificat d'adhésion (H36) ; un modèle qui l'utilise ne se génère pas", () => {

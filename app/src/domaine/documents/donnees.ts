@@ -7,7 +7,7 @@ import type { TypeDocument } from "./emission";
 import type { MentionsDocument, Societe } from "./societe";
 
 /**
- * Jeu de données d'un document (cotation, CP), dans les SEULS noms du dictionnaire (CDC §6.3).
+ * Jeu de données d'un document (cotation, CP, certificat, facture, avoir, reçu), dans les SEULS noms du dictionnaire (CDC §6.3).
  * Les montants viennent du moteur de calcul, déjà arrondis, en texte : rien n'est calculé ici, sauf
  * l'assiette de la taxe (somme de deux montants du moteur).
  *
@@ -23,7 +23,10 @@ export type FormuleSource = {
   tauxCouverture: string | null;
   effectif: number;
   primeUnitaire: string;
-  /** Prime d'un assuré de cette formule (d'une famille pour une formule « Famille »), calculée par le moteur : `primeParUnite`. */
+  /**
+   * Prime d'un assuré de cette formule (d'une famille pour une formule « Famille »), calculée par le moteur : TTC d'une unité
+   * (`ttcParUnite`, H45 : 96 000 pour le Solo de T1, 260 000 pour la Famille).
+   */
   primeParAssure: string;
   nette: string;
   accessoires: string;
@@ -67,6 +70,21 @@ export type SourceDocument = {
   typeContrat: string | null;
   /** doc.auteur_nom (D20) : nom de l'utilisateur qui a créé la cotation. */
   auteurNom: string;
+  /**
+   * Facture, avoir, reçu (session 4b, CDC §11, §12) : échéances avec leur statut Payé / Non payé, paiements, solde,
+   * facture d'origine, « Envoyé à », date de souscription de la police. Absent pour les autres documents.
+   */
+  facturation?: Facturation;
+};
+
+export type Facturation = {
+  echeances: { numero: number; date: DateIso; montant: string; statut: "Payé" | "Non payé" }[];
+  paiements: { numero: string; date: DateIso; montant: string; reference: string; canal: string; payeur: string; restantDu: string }[];
+  solde: { totalPaye: string; restantDu: string };
+  /** doc.facture_origine : facture annulée (avoir) ou réglée (reçu) ; null pour une facture. */
+  factureOrigine: string | null;
+  envoyeA: { nom: string; adresse: string } | null;
+  dateSouscription: DateIso;
 };
 
 /**
@@ -87,7 +105,9 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
   // Certificat d'adhésion (§10.2) : pas de prime, d'échéancier ni de solde (H36) ; ils sont non fournis, donc
   // absents, et un modèle de certificat qui les utilise ne se génère pas (le générateur nomme le champ).
   const certificat = s.type === "CERTIFICAT";
-  const baseTaxe = s.taxe.assiette === "NETTE" ? montant(s.totaux.nette) : montant(s.totaux.nette).plus(montant(s.totaux.accessoires));
+  const assiette = (t: { nette: string; accessoires: string }) => (s.taxe.assiette === "NETTE" ? montant(t.nette) : montant(t.nette).plus(montant(t.accessoires)));
+  const baseTaxe = assiette(s.totaux);
+  const fa = s.facturation;
   const donnees = {
     societe: s.societe,
     produit: {
@@ -137,11 +157,13 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
         ? NON_FOURNI
         : s.beneficiaires.map((b) => ({ ordre: b.ordre, nom_prenoms: b.nom_prenoms, lien: ou(b.lien), contact: ou(b.contact), quote_part: b.quote_part })),
     contacts_urgence: s.contactsUrgence === null ? NON_FOURNI : s.contactsUrgence.map((u) => ({ nom_prenoms: u.nom_prenoms, contact: u.contact })),
+    // « Envoyé à » (D23) : null, donc bloc masqué, s'il n'est pas saisi ou s'il est identique à « Facturé à ».
+    envoye_a: fa?.envoyeA ? { nom: fa.envoyeA.nom, adresse: fa.envoyeA.adresse } : null,
     risque: s.risque,
     police: {
       numero: s.policeNumero,
       reference: NON_FOURNI,
-      date_souscription: s.type === "COTATION" ? null : s.dateEmission,
+      date_souscription: fa ? fa.dateSouscription : s.type === "COTATION" ? null : s.dateEmission,
       date_effet: s.dateEffet,
       date_echeance: s.dateEcheance,
       duree_jours: s.joursCouverts,
@@ -160,6 +182,7 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
       accessoires: certificat ? NON_FOURNI : f.accessoires,
       taxe: certificat ? NON_FOURNI : f.taxe,
       ttc: certificat ? NON_FOURNI : f.ttc,
+      base_taxe: certificat ? NON_FOURNI : assiette(f).toFixed(),
     })),
     prime: certificat
       ? NON_FOURNI
@@ -173,9 +196,13 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
           forcee: s.forcee,
           motif_forcage: s.motifForcage,
         },
-    echeances: certificat ? NON_FOURNI : s.echeances.map((e) => ({ numero: e.numero, date: e.date, montant: e.montant, statut: "À payer" })),
-    paiements: [],
-    solde: certificat ? NON_FOURNI : { total_paye: "0", restant_du: s.totaux.ttc },
+    echeances: certificat
+      ? NON_FOURNI
+      : fa
+        ? fa.echeances.map((e) => ({ numero: e.numero, date: e.date, montant: e.montant, statut: e.statut }))
+        : s.echeances.map((e) => ({ numero: e.numero, date: e.date, montant: e.montant, statut: "À payer" })),
+    paiements: (fa?.paiements ?? []).map((p) => ({ numero: p.numero, date: p.date, montant: p.montant, reference: p.reference, canal: p.canal, restant_du: p.restantDu, payeur: p.payeur })),
+    solde: certificat ? NON_FOURNI : fa ? { total_paye: fa.solde.totalPaye, restant_du: fa.solde.restantDu } : { total_paye: "0", restant_du: s.totaux.ttc },
     doc: {
       type: s.type,
       numero: s.numero,
@@ -188,7 +215,7 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
       url_verification: s.urlVerification,
       // Un document ne peut pas contenir sa propre empreinte : elle est sur la page de vérification (H20).
       empreinte: NON_FOURNI,
-      facture_origine: null,
+      facture_origine: fa?.factureOrigine ?? null,
       auteur_nom: s.auteurNom,
     },
   };

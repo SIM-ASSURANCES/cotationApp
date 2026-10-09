@@ -14,7 +14,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 import { donneesDocument, type SourceDocument } from "@/domaine/documents/donnees";
-import { SOCIETE_DEFAUT } from "@/domaine/documents/societe";
 
 import { assurerBranche } from "./branches-test";
 import { obtenirConfig } from "./config";
@@ -25,8 +24,8 @@ import { generateur, remplacerGenerateur } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
 import { aujourdhui, creerProduit, creerVersion, initialiserBranches, initialiserTaxes, type TaxeDemarrage } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
-import { enregistrerSociete, lireImageSociete, lireParametresSociete } from "./societe";
-import { assurerSignature, PNG_REEL_1PX } from "./societe-test";
+import { lireImageSociete, lireParametresSociete } from "./societe";
+import { assurerSignature, assurerSocieteDeTest, PNG_REEL_1PX } from "./societe-test";
 import { remplacerStockage, stockage } from "./stockage";
 import type { UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
@@ -99,7 +98,7 @@ beforeAll(async () => {
   await assurerBranche("DECES");
 
   // Paramètres de la Société (inventés) : clause de réclamation et RCCM du CP ; vraie image PNG pour la signature de SIM.
-  await enregistrerSociete(technique, { ...SOCIETE_DEFAUT, societe: { ...SOCIETE_DEFAUT.societe, rccm: "CI-ABJ-0000-B-00000", email_reclamation: "reclamations@exemple.ci" } }, aujourdhui(), null);
+  await assurerSocieteDeTest(technique);
   await assurerSignature(technique, PNG_REEL_1PX);
 });
 

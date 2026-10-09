@@ -36,6 +36,7 @@ function Resume({ v }: { v: VersionProduit }) {
             <th className="p-1">Libellé</th>
             <th className="p-1">Prime unitaire</th>
             <th className="p-1">Accessoires</th>
+            <th className="p-1">Âges</th>
           </tr>
         </thead>
         <tbody>
@@ -47,6 +48,7 @@ function Resume({ v }: { v: VersionProduit }) {
               <td className="p-1">
                 {f.accessoireMode} {f.accessoireMode === "AUCUN" ? "" : net(f.accessoireValeur)}
               </td>
+              <td className="p-1">{f.ageMin == null && f.ageMax == null ? "–" : `${f.ageMin ?? 0} à ${f.ageMax ?? "…"} ans`}</td>
             </tr>
           ))}
         </tbody>
@@ -153,6 +155,8 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
                 primeUnitaire: net(f.primeUnitaire),
                 accessoireMode: f.accessoireMode,
                 accessoireValeur: net(f.accessoireValeur),
+                ageMin: f.ageMin == null ? "" : String(f.ageMin),
+                ageMax: f.ageMax == null ? "" : String(f.ageMax),
               }))}
             />
           </FormulaireAction>

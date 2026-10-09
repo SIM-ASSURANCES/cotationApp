@@ -2,7 +2,7 @@
 
 import type { EtatFormulaire } from "@/composants/types";
 import { IMAGES_SOCIETE, lireLignes, type ImageSociete, type ParametresSociete } from "@/domaine/documents/societe";
-import { enregistrerFormatNumeroPolice, enregistrerImageSociete, enregistrerSociete } from "@/serveur/societe";
+import { enregistrerFormatNumero, enregistrerFormatNumeroPolice, enregistrerImageSociete, enregistrerSociete } from "@/serveur/societe";
 
 import { champ, executerAction } from "../../executer";
 
@@ -41,4 +41,9 @@ export async function enregistrerUneImage(_e: EtatFormulaire, d: FormData): Prom
 /** Format du numéro de police (H10, H31) : historisé, journalisé. */
 export async function enregistrerLeFormatPolice(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
   return executerAction((acteur, ip) => enregistrerFormatNumeroPolice(acteur, champ(d, "format"), champ(d, "dateEffet"), ip), "Format du numéro de police enregistré.", "/parametrage/societe");
+}
+
+/** Format des numéros de cotation, facture, avoir, reçu (session 4b) : historisé, journalisé (avant, après). */
+export async function enregistrerLeFormatNumero(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
+  return executerAction((acteur, ip) => enregistrerFormatNumero(acteur, champ(d, "prefixe"), champ(d, "format"), champ(d, "dateEffet"), ip), "Format de numéro enregistré.", "/parametrage/societe");
 }

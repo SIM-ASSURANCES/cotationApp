@@ -84,6 +84,9 @@ class DemandeDocument(BaseModel):
     listes_en_annexe: list[str] = Field(
         default=[], description="Listes toujours renvoyées en annexe, même sous le seuil (police de groupe : adhérents)"
     )
+    champs_facultatifs: list[str] = Field(
+        default=[], description="Champs facultatifs du dictionnaire (D19, « police.reference ») : vides, ils s'écrivent vides même dans un filtre"
+    )
 
 
 class QrDemande(BaseModel):
@@ -121,6 +124,7 @@ def document_pdf(demande: DemandeDocument, parametres: Annotated[Parametres, Dep
             pieces_jointes=[_decoder(p, "pièce jointe") for p in demande.pieces_jointes],
             filigrane=demande.filigrane,
             listes_en_annexe=tuple(demande.listes_en_annexe),
+            champs_facultatifs=tuple(demande.champs_facultatifs),
         )
     except ErreurFusion as erreur:
         raise HTTPException(status_code=422, detail=str(erreur)) from None
@@ -175,8 +179,13 @@ class FichierZip(BaseModel):
     nom: str
 
 
+# 5 000 : un import en masse de 500 adhérents et plus (T8) tient dans une seule archive.
 class DemandeZip(BaseModel):
-    fichiers: list[FichierZip] = Field(min_length=1, max_length=500)
+    fichiers: list[FichierZip] = Field(min_length=1, max_length=5000)
+
+
+class DemandeZipStockee(DemandeZip):
+    chemin: str = Field(min_length=1, max_length=500)
 
 
 @router.post("/stockage/zip", summary="Archive ZIP de documents stockés", response_class=Response)
@@ -188,3 +197,18 @@ def zip_stockage(demande: DemandeZip, parametres: Annotated[Parametres, Depends(
     except stockage.Introuvable as erreur:
         raise HTTPException(status_code=404, detail=f"document introuvable dans le stockage : {erreur}") from None
     return Response(content=contenu, media_type="application/zip")
+
+
+@router.post("/stockage/zip/stocker", summary="Archive ZIP de documents stockés, écrite dans le stockage (409 si le chemin existe)")
+def zip_stocker(demande: DemandeZipStockee, parametres: Annotated[Parametres, Depends(obtenir_parametres)]) -> ReponseEcriture:
+    try:
+        empreinte, taille = stockage.zipper_et_stocker(
+            stockage.racine(parametres.dossier_sortie), [(f.chemin, f.nom) for f in demande.fichiers], demande.chemin
+        )
+    except stockage.CheminInvalide as erreur:
+        raise HTTPException(status_code=422, detail=str(erreur)) from None
+    except stockage.Introuvable as erreur:
+        raise HTTPException(status_code=404, detail=f"document introuvable dans le stockage : {erreur}") from None
+    except stockage.DejaStocke:
+        raise HTTPException(status_code=409, detail="un document est déjà stocké à ce chemin : il n'est jamais écrasé") from None
+    return ReponseEcriture(chemin=demande.chemin, empreinte=empreinte, taille=taille)

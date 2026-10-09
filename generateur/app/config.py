@@ -3,7 +3,7 @@
 Les valeurs viennent des variables d'environnement, puis du fichier generateur/.env.
 Elles sont validées au démarrage : une valeur manquante ou invalide arrête le
 service avec la liste des variables en faute. Aucune valeur par défaut
-silencieuse, à part les trois défauts documentés ci-dessous et dans .env.example.
+silencieuse, à part les quatre défauts documentés ci-dessous et dans .env.example.
 """
 
 from functools import lru_cache
@@ -35,6 +35,9 @@ class Parametres(BaseSettings):
 
     # Défauts documentés
     delai_conversion_s: int = Field(default=60, gt=0)
+    # Conversions LibreOffice simultanées (phase 5, T8), chacune avec son profil. VPS partagé avec le
+    # portail RH : défaut prudent.
+    conversions_simultanees: int = Field(default=2, ge=1, le=16)
     generateur_hote: str = Field(default="127.0.0.1", min_length=1)
     generateur_port: int = Field(default=8001, ge=1, le=65535)
 
@@ -65,6 +68,10 @@ def _message(erreur: dict[str, Any]) -> str:
             return str(contexte.get("error", erreur["msg"]))
         case "int_parsing":
             return "doit être un nombre entier"
+        case "greater_than_equal":
+            return f"doit être au moins {contexte['ge']}"
+        case "less_than_equal":
+            return f"doit être au plus {contexte['le']}"
         case _:
             return erreur["msg"]
 

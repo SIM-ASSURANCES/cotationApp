@@ -60,3 +60,13 @@ def test_variable_inconnue_dans_le_fichier_env_refusee(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigurationInvalide, match="GENERATEUR_SECRT : variable inconnue"):
         charger_parametres(_env_file=fichier_env)
+
+
+def test_conversions_simultanees_bornees() -> None:
+    # Phase 5 : 2 par défaut (VPS partagé avec le portail RH), de 1 à 16.
+    base = {"libreoffice_chemin": Path("/usr/bin/soffice").resolve(), "dossier_sortie": Path("/tmp").resolve(), "profil_libreoffice": Path("/tmp/p").resolve()}
+    assert charger_parametres(**SANS_FICHIER_ENV, **base).conversions_simultanees == 2
+    with pytest.raises(ConfigurationInvalide, match="CONVERSIONS_SIMULTANEES : doit être au moins 1"):
+        charger_parametres(**SANS_FICHIER_ENV, **base, conversions_simultanees=0)
+    with pytest.raises(ConfigurationInvalide, match="CONVERSIONS_SIMULTANEES : doit être au plus 16"):
+        charger_parametres(**SANS_FICHIER_ENV, **base, conversions_simultanees=17)

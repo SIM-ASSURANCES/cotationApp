@@ -1,6 +1,7 @@
 import "server-only";
 
 import { schemaAnalyse, type Analyse } from "@/domaine/documents/analyse";
+import { CHAMPS_FACULTATIFS } from "@/domaine/documents/dictionnaire";
 
 import { obtenirConfig } from "./config";
 import { ErreurMetier } from "./types";
@@ -41,6 +42,11 @@ export class ErreurGenerateur extends ErreurMetier {
   override name = "ErreurGenerateur";
 }
 
+/** Stockage en ajout seul : un fichier existe déjà à ce chemin (409). Ce n'est jamais une indisponibilité (T14). */
+export class ErreurDejaStocke extends ErreurGenerateur {
+  override name = "ErreurDejaStocke";
+}
+
 const DELAI_ANALYSE_MS = 60_000;
 const DELAI_PDF_MS = 180_000;
 
@@ -76,7 +82,8 @@ export async function appelerGenerateur(chemin: string, corps: unknown, delaiMs:
   if (reponse.status === 422 && detail) {
     throw new ErreurGenerateur(`Génération impossible : ${detail}.`);
   }
-  if ((reponse.status === 409 || reponse.status === 404) && detail) {
+  if (reponse.status === 409 && detail) throw new ErreurDejaStocke(`Stockage : ${detail}.`);
+  if (reponse.status === 404 && detail) {
     throw new ErreurGenerateur(`Stockage : ${detail}.`);
   }
   throw new ErreurGenerateur(
@@ -110,6 +117,7 @@ const clientHttp: ClientGenerateur = {
         pieces_jointes: (d.piecesJointes ?? []).map(base64),
         filigrane: d.filigrane ?? null,
         listes_en_annexe: d.listesEnAnnexe ?? [],
+        champs_facultatifs: CHAMPS_FACULTATIFS,
       },
       DELAI_PDF_MS,
     );

@@ -104,7 +104,7 @@ describe("bout en bout avec le vrai générateur", () => {
     donnees.souscripteur.date_naissance = null; // | date
     donnees.formules[0].taux_couverture = null; // | pct
     donnees.assures[1].date_naissance = ""; // | date
-    donnees.police.reference = null; // facultatif (D19) : jamais nommé
+    donnees.police.nantissement = null; // facultatif (D19) : jamais nommé
     const refus = await generateur()
       .genererPdf({ modele: fixture("cp_test.docx"), donnees, seuilListe: 10, sousModeles: { garanties: Object.fromEntries(donnees.formules.map((f) => [String(f.code), fixture("garanties_solo.docx")])) } })
       .catch((e: unknown) => e);
@@ -113,7 +113,7 @@ describe("bout en bout avec le vrai générateur", () => {
     expect(message).toContain("champ obligatoire vide : « souscripteur.date_naissance » (filtre date)");
     expect(message).toContain("champ obligatoire vide : « formules[0].taux_couverture » (filtre pct)");
     expect(message).toContain("champ obligatoire vide : « assures[1].date_naissance » (filtre date)");
-    expect(message).not.toContain("police.reference");
+    expect(message).not.toContain("police.nantissement");
   });
 
   it("CG : PDF produit à la publication, avec le visa", async () => {

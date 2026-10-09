@@ -172,7 +172,8 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
     risque: s.risque,
     police: {
       numero: s.policeNumero,
-      reference: NON_FOURNI,
+      // La référence de la police est son numéro (réponse de la Technique, D27 ; H46 fermée).
+      reference: s.policeNumero,
       date_souscription: fa ? fa.dateSouscription : s.type === "COTATION" ? null : s.dateEmission,
       date_effet: s.dateEffet,
       date_echeance: s.dateEcheance,

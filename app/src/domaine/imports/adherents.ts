@@ -1,12 +1,14 @@
 import { dateValide, type DateIso } from "../calcul/dates";
-import { normaliserNumeroPolice, problemesNumeroPolice } from "../cotation/police";
+import { normaliserNumeroPolice, numeroCertificatParDefaut, problemesNumeroCertificat } from "../cotation/police";
 import { SEXES, type Assure } from "../cotation/saisie";
 
 /**
  * Import en masse des adhérents d'une police mère (CDC §13, session 5a). Règles PURES : lecture d'une ligne de
  * fichier (cellules déjà extraites par le serveur), contrôles ligne par ligne, doublons. Chaque ligne valide devient
  * un adhérent incorporé et un certificat d'adhésion (§10.2). Les noms des colonnes sont ceux du dictionnaire (§6.3.2,
- * `assures[].*`), plus le numéro du certificat, SAISI (H37) : il vient du fichier.
+ * `assures[].*`), plus le numéro du certificat : dérivé de la police mère (racine, lettre, numéro personnel sur
+ * 5 chiffres), proposé d'après le numéro d'ordre de l'adhérent quand la colonne est vide, modifiable dans le fichier
+ * (session 6.0, D27, H60).
  */
 
 export type CleColonne = "numero_certificat" | "nom_prenoms" | "date_naissance" | "sexe" | "lien" | "formule";
@@ -15,7 +17,7 @@ export type Colonne = { cle: CleColonne; obligatoire: boolean; libelle: string; 
 
 /** Colonnes du fichier modèle, dans l'ordre (H60, H61). */
 export const COLONNES_IMPORT: readonly Colonne[] = [
-  { cle: "numero_certificat", obligatoire: true, libelle: "Numéro du certificat d'adhésion (attribué par SIM, H37)", format: "même format que les numéros de police, unique", exemple: "SCD-2026-000088-G00001" },
+  { cle: "numero_certificat", obligatoire: false, libelle: "Numéro du certificat d'adhésion (vide : racine de la police mère et numéro d'ordre de l'adhérent)", format: "racine de la police mère, G ou I, puis 5 chiffres (pas 00000), unique", exemple: "SCD-2026-000088-G00001" },
   { cle: "nom_prenoms", obligatoire: true, libelle: "Nom et prénoms de l'adhérent (assures[].nom_prenoms)", format: "texte, 300 caractères au plus", exemple: "KOFFI Ama Inventée" },
   { cle: "date_naissance", obligatoire: true, libelle: "Date de naissance (assures[].date_naissance)", format: "JJ/MM/AAAA, AAAA-MM-JJ ou cellule date d'Excel", exemple: "14/03/1988" },
   { cle: "sexe", obligatoire: false, libelle: "Sexe (assures[].sexe)", format: "M ou F, ou vide", exemple: "F" },
@@ -48,9 +50,12 @@ export type ContexteControle = {
   formulesPolice: readonly string[];
   /** Liste courante des adhérents de la police (doublons). */
   adherents: readonly Assure[];
-  /** Numéros déjà pris par une police ou un document émis, parmi ceux du fichier. */
+  /** Numéros déjà pris (police, document émis ou ligne d'un import confirmé), parmi ceux à contrôler. */
   numerosPris: ReadonlySet<string>;
-  formatNumero: string;
+  /** Numéro de la police mère : racine des numéros de certificat. */
+  numeroPolice: string;
+  /** Numéro d'ordre que recevra le premier adhérent incorporé (le plus grand jamais attribué + 1). */
+  prochainOrdre: number;
 };
 
 /** En-tête reconnu : nom de la colonne, sans casse ni accents, avec ou sans le préfixe « assures[]. ». */
@@ -106,9 +111,9 @@ function controlerLigne(l: LigneBrute, ctx: ContexteControle): LigneControlee {
 
   const numero = normaliserNumeroPolice(valeurs.numero_certificat);
   if (numero !== "") {
-    const problemes = problemesNumeroPolice(numero, ctx.formatNumero).map((m) => m.replace("Le numéro de police", "Le numéro du certificat"));
+    const problemes = problemesNumeroCertificat(numero, ctx.numeroPolice);
     for (const m of problemes) erreur("numero_certificat", m);
-    if (problemes.length === 0 && ctx.numerosPris.has(numero)) erreur("numero_certificat", `Le numéro « ${numero} » est déjà utilisé par une police ou un document.`);
+    if (problemes.length === 0 && ctx.numerosPris.has(numero)) erreur("numero_certificat", `Le numéro « ${numero} » est déjà utilisé par une police, un document ou un import en cours.`);
   }
 
   let naissance: DateIso | "" = "";
@@ -140,16 +145,22 @@ function controlerLigne(l: LigneBrute, ctx: ContexteControle): LigneControlee {
 /**
  * Contrôle de toutes les lignes (CDC §13) : chaque ligne seule, puis les doublons (H63) — dans le fichier (la
  * première occurrence VALIDE reste valide, les suivantes sont en erreur ; une ligne déjà en erreur ne compte pas) et
- * avec les adhérents de la liste courante.
+ * avec les adhérents de la liste courante — puis les numéros de certificat.
+ *
+ * Numéro vide : il est proposé d'après le numéro d'ordre que l'adhérent recevra. Seules les lignes valides sont
+ * incorporées, dans l'ordre du fichier : la n-ième ligne valide reçoit `prochainOrdre + n - 1`. Une ligne qui tombe en
+ * erreur décale les suivantes ; les numéros proposés sont donc recalculés jusqu'à ce qu'aucune nouvelle erreur
+ * n'apparaisse (chaque tour ajoute au moins une erreur : la boucle s'arrête). Le numéro retenu est écrit dans la
+ * ligne : c'est celui que l'écran de contrôle montre et que le certificat portera.
  */
 export function controlerLignes(lignes: readonly LigneBrute[], ctx: ContexteControle): LigneControlee[] {
   const resultat = lignes.map((l) => controlerLigne(l, ctx));
+  const saisis = new Map(resultat.map((l) => [l, l.donnees.numero_certificat]));
   const existants = new Map(ctx.adherents.map((a) => [clePersonne(a.nom_prenoms, a.date_naissance), a.ordre]));
   const personnes = new Map<string, number>();
-  const numeros = new Map<string, number>();
   for (const l of resultat) {
     if (l.erreurs.length > 0) continue;
-    const { nom_prenoms: nom, date_naissance: naissance, numero_certificat: numero } = l.donnees;
+    const { nom_prenoms: nom, date_naissance: naissance } = l.donnees;
     if (nom !== "" && dateValide(naissance)) {
       const cle = clePersonne(nom, naissance);
       const ordre = existants.get(cle);
@@ -157,11 +168,32 @@ export function controlerLignes(lignes: readonly LigneBrute[], ctx: ContexteCont
       else if (personnes.has(cle)) l.erreurs.push({ colonne: "nom_prenoms", valeur: nom, message: `Doublon de la ligne ${personnes.get(cle)} (même nom et même date de naissance).` });
       else personnes.set(cle, l.numero);
     }
-    if (numero !== "" && l.erreurs.length === 0) {
-      if (numeros.has(numero)) l.erreurs.push({ colonne: "numero_certificat", valeur: numero, message: `Numéro de certificat déjà donné à la ligne ${numeros.get(numero)}.` });
-      else numeros.set(numero, l.numero);
-    }
   }
+
+  for (;;) {
+    const valides = resultat.filter((l) => l.erreurs.length === 0);
+    const numeros = new Map<string, number>();
+    let nouvelle = false;
+    valides.forEach((l, i) => {
+      const saisi = saisis.get(l) ?? "";
+      const numero = saisi !== "" ? saisi : (numeroCertificatParDefaut(ctx.numeroPolice, ctx.prochainOrdre + i) ?? "");
+      l.donnees.numero_certificat = numero;
+      if (saisi === "" && numero === "") {
+        l.erreurs.push({ colonne: "numero_certificat", valeur: "", message: problemesNumeroCertificat("", ctx.numeroPolice)[0] ?? "Numéro du certificat impossible à proposer : saisissez-le." });
+      } else if (saisi === "" && ctx.numerosPris.has(numero)) {
+        l.erreurs.push({ colonne: "numero_certificat", valeur: numero, message: `Le numéro proposé « ${numero} » est déjà utilisé : saisissez un autre numéro dans le fichier.` });
+      } else if (numeros.has(numero)) {
+        l.erreurs.push({ colonne: "numero_certificat", valeur: numero, message: `Numéro de certificat déjà donné à la ligne ${numeros.get(numero)}.` });
+      } else {
+        numeros.set(numero, l.numero);
+        return;
+      }
+      nouvelle = true;
+    });
+    if (!nouvelle) break;
+  }
+  // Une ligne en erreur garde le numéro du fichier (vide s'il n'y en avait pas) : rien ne lui est proposé.
+  for (const l of resultat) if (l.erreurs.length > 0) l.donnees.numero_certificat = saisis.get(l) ?? "";
   return resultat;
 }
 

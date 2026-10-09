@@ -115,7 +115,7 @@ async function compte(identifiant: string): Promise<UtilisateurCourant> {
 const existants: Assure[] = [1, 2].map((i) => ({ ordre: i, nom_prenoms: `Existant ${i} Inventé`, date_naissance: "1980-01-0" + i, sexe: "M", lien: "Salarié", formule: "SOLO" }) as Assure);
 
 /** Police mère de groupe à deux adhérents, formules SOLO (18 à 65 ans) retenue, SENIOR non retenue. */
-async function policeDeGroupe(): Promise<{ policeId: number; numero: string; cotationId: number }> {
+async function policeDeGroupe(numeroMere = numero()): Promise<{ policeId: number; numero: string; cotationId: number }> {
   const saisie: SaisieCotation = {
     codeProduit: produitCode,
     clientId: null,
@@ -133,7 +133,7 @@ async function policeDeGroupe(): Promise<{ policeId: number; numero: string; cot
   };
   const cotationId = await creerBrouillon(commercial, saisie, null);
   await soumettre(commercial, cotationId, null);
-  const { numeroPolice } = await accepter(commercial, cotationId, ["SOLO"], numero(), null);
+  const { numeroPolice } = await accepter(commercial, cotationId, ["SOLO"], numeroMere, null);
   const police = await obtenirPrisma().police.findUniqueOrThrow({ where: { numero: numeroPolice } });
   return { policeId: police.id, numero: numeroPolice, cotationId };
 }
@@ -250,7 +250,11 @@ describe("fichier modèle et lecture du fichier", () => {
     expect(await lireFichierImport("a.csv", csv)).toEqual([
       { numero: 2, cellules: { numero_certificat: "TST-2026-000001-G00001", nom_prenoms: "Awa Inventée", date_naissance: "14/03/1988", sexe: "F", lien: "Salarié", formule: "SOLO" } },
     ]);
-    await expect(lireFichierImport("a.csv", texte("nom_prenoms;formule\nA;SOLO"))).rejects.toThrow(/Colonnes absentes .*numero_certificat, date_naissance, sexe, lien/);
+    await expect(lireFichierImport("a.csv", texte("nom_prenoms;formule\nA;SOLO"))).rejects.toThrow(/Colonnes absentes .*: date_naissance\. /);
+    // Colonnes facultatives absentes (numéro de certificat, sexe, lien) : acceptées, lues comme vides (session 6.0).
+    expect(await lireFichierImport("a.csv", texte("nom_prenoms;date_naissance;formule\nAwa Inventée;14/03/1988;SOLO"))).toEqual([
+      { numero: 2, cellules: { nom_prenoms: "Awa Inventée", date_naissance: "14/03/1988", formule: "SOLO" } },
+    ]);
     await expect(lireFichierImport("a.ods", texte("x"))).rejects.toThrow(/Format non pris en charge/);
   });
 });
@@ -304,6 +308,24 @@ describe("import en masse : contrôle, rapport, confirmation, traitement", () =>
     expect(new TextDecoder().decode(zip.contenu)).toBe(`PK ${n[0]}_CERTIFICAT_v1.pdf,${n[1]}_CERTIFICAT_v1.pdf`);
     const [termine] = await journal("IMPORT_TERMINE", "lot_import", lotId);
     expect(termine.apres).toMatchObject({ total: 5, produits: 2, enErreur: 3, enEchec: 0 });
+  });
+
+  it("colonne du numéro vide : le certificat prend la racine de la police mère et le numéro d'ordre de l'adhérent (session 6.0, D27)", async () => {
+    // Une police mère à elle seule sur sa racine, numéro de contrat en 00000 comme l'attribue SIM.
+    const racine = `TST-2026-${String((Number(SERIE) + 1) % 1_000_000).padStart(6, "0")}-G`;
+    const { policeId } = await policeDeGroupe(`${racine}00000`);
+    const contenu = await xlsx([
+      [null, "Adhérent Six Inventé", "14/03/1988", "F", "Salarié", "SOLO"],
+      [null, "Adhérent Sept Inventé", "31/02/1990", "M", "Salarié", "SOLO"], // date impossible : pas de numéro d'ordre
+      [`${racine}00777`, "Adhérent Huit Inventé", "14/03/1989", "M", "Salarié", "SOLO"],
+      [null, "Adhérent Neuf Inventé", "14/03/1987", "F", "Salarié", "SOLO"],
+    ]);
+    const lotId = await controlerImport(technique, policeId, "2026-07-01", { nom: "sans-numeros.xlsx", contenu }, null);
+    expect((await lireLot(technique, lotId))!).toMatchObject({ valides: 3, erreurs: 1 });
+    await confirmerImport(technique, lotId, null);
+    await jusqua(async () => (await lireLot(technique, lotId))!.statut === "TERMINE");
+    const docs = await obtenirPrisma().documentEmis.findMany({ where: { policeId, type: "CERTIFICAT" }, orderBy: { adherentOrdre: "asc" } });
+    expect(docs.map((d) => [d.adherentOrdre, d.numero])).toEqual([[3, `${racine}00003`], [4, `${racine}00777`], [5, `${racine}00005`]]);
   });
 
   it("le traitement est rejouable : relancé, ou interrompu après une émission, il ne crée aucun certificat en double", async () => {

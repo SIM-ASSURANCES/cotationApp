@@ -5,6 +5,7 @@ import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { LignesAssures } from "@/composants/LignesDynamiques";
 import { TachesPolice } from "@/composants/TachesPolice";
 import { LIBELLE_MOTIF_ADHERENTS } from "@/domaine/cotation/adherents";
+import { numeroCertificatParDefaut, racineCertificat } from "@/domaine/cotation/police";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { lireAdherents, policeDeCotation } from "@/serveur/adherents";
 import { listerLots } from "@/serveur/imports";
@@ -91,7 +92,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
         <section className="mb-8 max-w-3xl rounded border border-bordure p-4">
           <h2 className="mb-2 text-lg font-semibold">Import en masse (fichier Excel ou CSV)</h2>
           <p className="mb-3 text-sm text-zinc-700">
-            Une ligne par adhérent, avec le numéro de son certificat. Le fichier est d'abord <strong>contrôlé</strong> : rien n'est créé avant votre
+            Une ligne par adhérent. La colonne du numéro de certificat peut rester vide : le numéro proposé est alors la racine de la police mère suivie du numéro d'ordre de l'adhérent sur 5 chiffres. Le fichier est d'abord <strong>contrôlé</strong> : rien n'est créé avant votre
             confirmation sur l'écran de contrôle. Les lignes valides deviennent alors <strong>une seule</strong> incorporation, et un certificat
             d'adhésion est produit pour chacune, en tâche de fond.{" "}
             <a href={`/api/imports/modele?produit=${encodeURIComponent(produitCode)}`} className="text-sim-bleu underline">
@@ -149,7 +150,10 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
       {agit ? (
         <section className="mb-8 max-w-3xl rounded border border-bordure p-4">
           <h2 className="mb-2 text-lg font-semibold">Certificat d'adhésion (unitaire)</h2>
-          <p className="mb-3 text-sm text-zinc-700">Un certificat par adhérent, avec son propre numéro, attribué par SIM et saisi ici (le module ne le génère pas), et son propre QR code. Pour de nombreux adhérents : l'import en masse ci-dessus.</p>
+          <p className="mb-3 text-sm text-zinc-700">
+            Un certificat par adhérent, avec son propre numéro et son propre QR code. Le numéro reprend la racine de la police mère ({racineCertificat(vue.police.numero) ?? "aucune : le numéro de la police ne se termine pas par G ou I et 5 chiffres"}) suivie du
+            numéro personnel de l'adhérent sur 5 chiffres. Laissé vide, c'est son numéro d'ordre (proposé dans la liste) ; vous pouvez en saisir un autre. Pour de nombreux adhérents : l'import en masse ci-dessus.
+          </p>
           <FormulaireAction action={emettreLeCertificat} libelleBouton="Émettre le certificat" discret>
             <input type="hidden" name="cotationId" value={cotationId} />
             <input type="hidden" name="policeId" value={policeId} />
@@ -157,10 +161,10 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
               Adhérent
               <select name="ordre" required defaultValue="" className={entree}>
                 <option value="" disabled>— Choisir —</option>
-                {vue.courants.filter((a) => !vue.certificats[a.ordre]).map((a) => (<option key={a.ordre} value={a.ordre}>{a.ordre} — {a.nom_prenoms}</option>))}
+                {vue.courants.filter((a) => !vue.certificats[a.ordre]).map((a) => (<option key={a.ordre} value={a.ordre}>{a.ordre} — {a.nom_prenoms} (proposé : {numeroCertificatParDefaut(vue.police.numero, a.ordre) ?? "à saisir"})</option>))}
               </select>
             </label>
-            <Champ nom="numero" libelle="Numéro du certificat (même format que les polices)" autoComplete="off" />
+            <Champ nom="numero" libelle="Numéro du certificat (vide : numéro proposé)" autoComplete="off" requis={false} />
           </FormulaireAction>
         </section>
       ) : null}

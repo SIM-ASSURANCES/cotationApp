@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ChampNumeroPolice } from "@/composants/ChampNumeroPolice";
 import { ComplementsSouscripteur } from "@/composants/ComplementsSouscripteur";
 import { FormulaireAction } from "@/composants/FormulaireAction";
 import { LignesBeneficiaires, LignesContactsUrgence } from "@/composants/LignesDynamiques";
@@ -8,7 +9,7 @@ import { TachesPolice } from "@/composants/TachesPolice";
 import { formaterMontant, montant, type Montant } from "@/domaine/calcul/montant";
 import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
-import { FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
+import { avertissementNumeroContrat, FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
 import { LIBELLE_STATUT, peutAccepter, peutEtreValidee, peutModifier } from "@/domaine/cotation/statuts";
 import { LIBELLE_RAISON } from "@/domaine/cotation/validation";
 import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
@@ -88,6 +89,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         <p><strong>Paramétrage du produit du :</strong> {formatDate(c.versionDateEffet)}</p>
         <p><strong>Auteur :</strong> {c.auteurIdentifiant}</p>
         {c.numeroPolice ? <p><strong>Police créée :</strong> {c.numeroPolice}</p> : null}
+        {c.numeroPolice && avertissementNumeroContrat(c.numeroPolice) ? <p role="status" className="text-amber-800">{avertissementNumeroContrat(c.numeroPolice)}</p> : null}
         {c.numeroPolice && estContratDeGroupe(c.typeContrat) ? (
           <p><Link href={`/cotations/${c.id}/adherents`} className="text-sim-bleu underline">Adhérents, certificats d'adhésion et annexe des CP</Link></p>
         ) : null}
@@ -337,7 +339,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
               ))}
               <label className="mb-3 mt-3 block text-sm font-medium">
                 Numéro de police attribué par SIM (obligatoire)
-                <input name="numeroPolice" required className={entree} autoComplete="off" placeholder="SCD-2026-000088-G00000" />
+                <ChampNumeroPolice className={entree} />
                 <span className="mt-1 block text-xs font-normal text-zinc-600">
                   Format contrôlé : <code>{formatPolice}</code>
                   {formatPolice === FORMAT_NUMERO_POLICE_DEFAUT ? " (par défaut)" : ""}. Le module ne génère jamais ce numéro.

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 
 import type { EtatFormulaire } from "@/composants/types";
+import { avertissementNumeroContrat } from "@/domaine/cotation/police";
 import { accepter, creerBrouillon, modifierBrouillon, refuser, renvoyerEnBrouillon, soumettre, valider } from "@/serveur/cotations";
 import { emettreCotation, reediter, soumettreCp } from "@/serveur/documents";
 import { ErreurMetier, type UtilisateurCourant } from "@/serveur/types";
@@ -103,7 +104,16 @@ export async function accepterCotation(_e: EtatFormulaire, d: FormData): Promise
   const retenues = d.getAll("retenue").map(String);
   // Compléments saisis à la souscription (souscripteur, bénéficiaires, contacts d'urgence), repris de la cotation.
   const complements = { souscripteur: lireComplementsSouscripteur(d), beneficiaires: lireBeneficiaires(d), contactsUrgence: lireContactsUrgence(d) };
-  return executerAction(async (acteur, ip) => void (await accepter(acteur, id, retenues, champ(d, "numeroPolice"), ip, complements)), "Cotation acceptée : la police est créée.", `/cotations/${id}`);
+  return executerAction(
+    async (acteur, ip) => {
+      const { numeroPolice } = await accepter(acteur, id, retenues, champ(d, "numeroPolice"), ip, complements);
+      // Avertissement sans blocage (D27) : le numéro de contrat se termine normalement par 00000 après G ou I.
+      const avertissement = avertissementNumeroContrat(numeroPolice);
+      return avertissement ? [avertissement] : [];
+    },
+    "Cotation acceptée : la police est créée.",
+    `/cotations/${id}`,
+  );
 }
 
 export async function refuserCotation(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {

@@ -26,7 +26,7 @@
 
 - **T8 vert** : 500 lignes générées par le test (noms inventés), 12 erreurs de 12 types différents → rapport de 12 lignes, 488 certificats, ZIP de 488 PDF, une version de la liste. **Durée : 312 s (5 min 12 s)**, limite de 15 min, **4 processeurs**, `CONVERSIONS_SIMULTANEES=2` (noté dans recette.md). Pour comparer : 567 s avec une seule conversion à la fois.
 - **T14 vert** : panne simulée du stockage, puis retour, avec un vrai travailleur BullMQ (`import-masse.integration.test.ts`).
-- vitest : **282 unitaires** (266 avant), **157 d'intégration** (148 avant), **11 de bout en bout** (10 avant, dont T8). pytest : **173 verts** (169 avant). `typecheck`, `lint` et `next build` : verts.
+- vitest : **282 unitaires** (266 avant), **157 d'intégration** (148 avant), **11 de bout en bout** (10 avant ; le nouveau est T8). pytest : **173 verts** (169 avant). `typecheck`, `lint` et `next build` : verts.
 - **Non fait** : les écrans n'ont pas été essayés dans un navigateur ; rien n'a été lancé sous Windows ni avec Docker (Redis et le travailleur en particulier). **À lancer chez toi** : installer Redis (ou Memurai), renseigner `REDIS_URL`, puis `npm run test:e2e`, `pytest` et un import depuis l'écran avec `npm run travailleur` lancé.
 
 ## Écarts et points à connaître

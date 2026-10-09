@@ -541,11 +541,11 @@ export async function fichiersAssocies(ids: VersionsAssociees) {
 
 /** Version PUBLIÉE en vigueur à une date d'un modèle (choisi par son type et son produit, ou par son code). */
 export async function versionPublieeEnVigueur(
-  critere: { type: TypeModele; produitId: number | null } | { code: string },
+  critere: { type: TypeModele; produitId: number | null; niveauRelance?: number | null } | { code: string },
   date: DateIso,
 ): Promise<{ modele: { id: number; code: string; libelle: string; type: string }; version: { id: number; numero: number; visa: string | null; dateDocument: DateIso | null } } | null> {
   const modeles = await obtenirPrisma().modele.findMany({
-    where: "code" in critere ? { code: critere.code } : { type: critere.type, produitId: critere.produitId },
+    where: "code" in critere ? { code: critere.code } : { type: critere.type, produitId: critere.produitId, ...(critere.niveauRelance !== undefined ? { niveauRelance: critere.niveauRelance } : {}) },
     include: { versions: { select: { ...champsVersion, visa: true, dateDocument: true } } },
     orderBy: { id: "asc" },
   });

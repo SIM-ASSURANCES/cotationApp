@@ -85,6 +85,14 @@ export type Facturation = {
   factureOrigine: string | null;
   envoyeA: { nom: string; adresse: string } | null;
   dateSouscription: DateIso;
+  /**
+   * Avis d'échéance et relance (session 5b, D25) : l'échéance appelée et, pour une relance, son niveau. Absent pour
+   * les autres documents : `echeance_appelee.*` et `relance.*` y sont non fournis.
+   */
+  appel?: {
+    echeance: { numero: number; date: DateIso; montant: string; restantDu: string };
+    relance: { niveau: number; libelle: string; joursRetard: number } | null;
+  };
 };
 
 /**
@@ -203,6 +211,10 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
         : s.echeances.map((e) => ({ numero: e.numero, date: e.date, montant: e.montant, statut: "À payer" })),
     paiements: (fa?.paiements ?? []).map((p) => ({ numero: p.numero, date: p.date, montant: p.montant, reference: p.reference, canal: p.canal, restant_du: p.restantDu, payeur: p.payeur })),
     solde: certificat ? NON_FOURNI : fa ? { total_paye: fa.solde.totalPaye, restant_du: fa.solde.restantDu } : { total_paye: "0", restant_du: s.totaux.ttc },
+    echeance_appelee: fa?.appel
+      ? { numero: fa.appel.echeance.numero, date: fa.appel.echeance.date, montant: fa.appel.echeance.montant, restant_du: fa.appel.echeance.restantDu }
+      : NON_FOURNI,
+    relance: fa?.appel?.relance ? { niveau: fa.appel.relance.niveau, libelle: fa.appel.relance.libelle, jours_retard: fa.appel.relance.joursRetard } : NON_FOURNI,
     doc: {
       type: s.type,
       numero: s.numero,

@@ -159,7 +159,7 @@ L'import en masse et la reprise des écritures différées passent par une file 
 npm run travailleur
 ```
 
-Il affiche `[travailleur] démarré : 0 lot(s) et 0 écriture(s) différée(s) repris.` et reste au premier plan ; Ctrl+C l'arrête proprement. Sans lui, un import se contrôle et se confirme, mais ses certificats ne sont produits qu'à son démarrage. `npm run test:integration` et `npm run test:e2e` exigent aussi `REDIS_URL` (ils démarrent leur propre travailleur, le service n'a pas besoin d'être lancé).
+Il affiche `[travailleur] démarré : 0 lot(s) d'import, 0 lot(s) d'avis et de relances et 0 écriture(s) différée(s) repris.` et reste au premier plan ; Ctrl+C l'arrête proprement. Sans lui, un import se contrôle et se confirme, mais ses certificats ne sont produits qu'à son démarrage. `npm run test:integration` et `npm run test:e2e` exigent aussi `REDIS_URL` (ils démarrent leur propre travailleur, le service n'a pas besoin d'être lancé).
 
 ## 7. Messages normaux (ce ne sont pas des erreurs)
 

@@ -9,10 +9,10 @@ import { dateValide, type DateIso } from "../calcul/dates";
  * sur l'autre), {MM} le mois d'émission (facultatif), {NNNN} le compteur sur autant de chiffres que de N (obligatoire,
  * 3 à 8 N). Un compteur plus long que sa largeur s'écrit en entier : jamais tronqué.
  */
-export const PREFIXES_NUMERO = ["COT", "FAC", "AV", "REC"] as const;
+export const PREFIXES_NUMERO = ["COT", "FAC", "AV", "REC", "AVE", "REL"] as const;
 export type PrefixeNumero = (typeof PREFIXES_NUMERO)[number];
 
-export const LIBELLE_PREFIXE: Record<PrefixeNumero, string> = { COT: "Cotation", FAC: "Facture", AV: "Avoir", REC: "Reçu" };
+export const LIBELLE_PREFIXE: Record<PrefixeNumero, string> = { COT: "Cotation", FAC: "Facture", AV: "Avoir", REC: "Reçu", AVE: "Avis d'échéance", REL: "Relance" };
 
 /** Formats par défaut (CDC §11.4). */
 export const FORMATS_NUMERO_DEFAUT: Record<PrefixeNumero, string> = {
@@ -20,6 +20,9 @@ export const FORMATS_NUMERO_DEFAUT: Record<PrefixeNumero, string> = {
   FAC: "FAC-{AAAA}-{MM}-{NNNN}",
   AV: "AV-{AAAA}-{MM}-{NNNN}",
   REC: "REC-{AAAA}-{MM}-{NNNN}",
+  // Session 5b (H72) : avis d'échéance et relances, même forme que les autres documents.
+  AVE: "AVE-{AAAA}-{MM}-{NNNN}",
+  REL: "REL-{AAAA}-{MM}-{NNNN}",
 };
 
 /** Clé du paramètre historisé du format d'un type. */

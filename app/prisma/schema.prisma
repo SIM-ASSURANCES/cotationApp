@@ -598,6 +598,7 @@ model Facture {
   paiements        Paiement[]
   aProduire        DocumentAProduire[]
 
+  elementsLots     ElementLotEcheances[]
   @@index([policeId])
   @@index([statut])
   @@map("factures")
@@ -656,6 +657,10 @@ model DocumentAProduire {
   derniereErreur     String?       @map("derniere_erreur")
   documentId         Int?          @unique @map("document_id")
   produitLe          DateTime?     @map("produit_le")
+  /// Avis d'échéance ou relance (session 5b) : n° de l'échéance appelée de la facture.
+  echeanceNumero     Int?          @map("echeance_numero")
+  /// Relance : niveau (1 à 9). Un seul avis par échéance, une relance par (échéance, niveau) : index uniques partiels.
+  niveauRelance      Int?          @map("niveau_relance")
   facture            Facture?      @relation(fields: [factureId], references: [id], onDelete: Restrict)
   paiement           Paiement?     @relation(fields: [paiementId], references: [id], onDelete: Restrict)
   modeleVersion      ModeleVersion @relation(fields: [modeleVersionId], references: [id], onDelete: Restrict)
@@ -760,4 +765,40 @@ model TachePolice {
   @@unique([policeId, type, versionAdherents], map: "taches_police_unique")
   @@index([lotId])
   @@map("taches_police")
+}
+
+/// Lot de génération d'avis d'échéance et de relances (CDC §12, session 5b) : sélection dans la liste du jour, traitée par
+/// la file de tâches. EN_COURS puis TERMINE ; l'avancement se lit dans les éléments.
+model LotEcheances {
+  id         Int                   @id @default(autoincrement())
+  statut     String
+  /// Jour de la liste d'où vient la sélection.
+  dateListe  DateTime              @map("date_liste") @db.Date
+  creeParId  Int                   @map("cree_par_id")
+  creePar    String                @map("cree_par")
+  creeLe     DateTime              @default(now()) @map("cree_le")
+  debut      DateTime?
+  fin        DateTime?
+  elements   ElementLotEcheances[]
+
+  @@map("lots_echeances")
+}
+
+/// Élément d'un lot : un avis (AVIS_ECHEANCE) ou une relance (RELANCE, avec son niveau) pour une échéance d'une facture.
+/// A_FAIRE, puis PRODUIT, DEJA_PRODUIT, SANS_OBJET (payée, facture annulée, pas encore due) ou ECHEC.
+model ElementLotEcheances {
+  id             Int          @id @default(autoincrement())
+  lotId          Int          @map("lot_id")
+  type           String
+  factureId      Int          @map("facture_id")
+  echeanceNumero Int          @map("echeance_numero")
+  niveauRelance  Int?         @map("niveau_relance")
+  statut         String       @default("A_FAIRE")
+  numero         String?
+  message        String?
+  lot            LotEcheances @relation(fields: [lotId], references: [id], onDelete: Restrict)
+  facture        Facture      @relation(fields: [factureId], references: [id], onDelete: Restrict)
+
+  @@index([lotId])
+  @@map("lots_echeances_elements")
 }

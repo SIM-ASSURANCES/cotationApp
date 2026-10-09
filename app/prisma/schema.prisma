@@ -363,6 +363,8 @@ model Police {
   lots             LotImport[]
   /// Tâches de la police (H64) : pièces à émettre après un import en masse.
   taches           TachePolice[]
+  /// Avance de la police (session 6.0, H33, H47) : trop-perçus, reports, imputations, restitutions.
+  mouvementsAvance MouvementAvance[]
 
   @@map("polices")
 }
@@ -597,8 +599,13 @@ model Facture {
   annulees         Facture[]           @relation("Annulation")
   paiements        Paiement[]
   aProduire        DocumentAProduire[]
+  /// Facture annulée : ses sommes encaissées, reportées en avance sur la police (H47, session 6.0).
+  reports          MouvementAvance[]   @relation("ReportAnnulation")
+  /// Imputations d'avance reçues par cette facture (session 6.0).
+  imputations      MouvementAvance[]   @relation("Imputation")
 
-  elementsLots     ElementLotEcheances[]
+  elementsLots ElementLotEcheances[]
+
   @@index([policeId])
   @@index([statut])
   @@map("factures")
@@ -607,23 +614,63 @@ model Facture {
 /// Paiement d'une facture (CDC §12) : ajout seul. Chaque paiement a son reçu (REC-…, numéro attribué dans la même
 /// transaction) et entraîne une réédition de la facture (même numéro, version + 1, restant dû à jour).
 model Paiement {
-  id         Int                 @id @default(autoincrement())
-  factureId  Int                 @map("facture_id")
-  numeroRecu String              @unique @map("numero_recu")
-  date       DateTime            @db.Date
-  montant    Decimal             @db.Decimal(18, 2)
+  id               Int                 @id @default(autoincrement())
+  factureId        Int                 @map("facture_id")
+  numeroRecu       String              @unique @map("numero_recu")
+  date             DateTime            @db.Date
+  montant          Decimal             @db.Decimal(18, 2)
+  /// Trop-perçu (H33, session 6.0) : part du montant au-delà du restant dû, versée en avance sur la police.
+  excedent         Decimal             @default(0) @db.Decimal(18, 2)
   /// ESPECES, CHEQUE, VIREMENT ou MOBILE_MONEY.
-  canal      String
-  reference  String
-  payeur     String
-  creeParId  Int                 @map("cree_par_id")
-  creePar    String              @map("cree_par")
-  creeLe     DateTime            @default(now()) @map("cree_le")
-  facture    Facture             @relation(fields: [factureId], references: [id], onDelete: Restrict)
-  aProduire  DocumentAProduire[]
+  canal            String
+  reference        String
+  payeur           String
+  creeParId        Int                 @map("cree_par_id")
+  creePar          String              @map("cree_par")
+  creeLe           DateTime            @default(now()) @map("cree_le")
+  facture          Facture             @relation(fields: [factureId], references: [id], onDelete: Restrict)
+  aProduire        DocumentAProduire[]
+  mouvementsAvance MouvementAvance[]
 
   @@index([factureId])
   @@map("paiements")
+}
+
+/// Mouvement de l'avance d'une police (session 6.0, H33, H47), en ajout seul. Crédits : EXCEDENT (trop-perçu d'un paiement),
+/// REPORT (somme encaissée sur une facture annulée par un avoir). Débits : IMPUTATION (sur une facture émise de la même
+/// police), RESTITUTION (remboursement). Le solde n'est jamais négatif : la base le contrôle (déclencheur).
+model MouvementAvance {
+  id                  Int               @id @default(autoincrement())
+  policeId            Int               @map("police_id")
+  /// EXCEDENT, REPORT, IMPUTATION ou RESTITUTION.
+  type                String
+  montant             Decimal           @db.Decimal(18, 2)
+  date                DateTime          @db.Date
+  /// Paiement d'origine : celui qui a laissé l'excédent, ou celui dont la somme est reportée puis imputée.
+  paiementId          Int?              @map("paiement_id")
+  /// REPORT : facture annulée dont la somme vient.
+  factureAnnuleeId    Int?              @map("facture_annulee_id")
+  /// IMPUTATION : facture réglée par l'avance.
+  factureId           Int?              @map("facture_id")
+  /// IMPUTATION d'un report sur la facture de remplacement : le report imputé.
+  reportId            Int?              @map("report_id")
+  /// RESTITUTION : canal et référence du remboursement.
+  canal               String?
+  reference           String?
+  creeParId           Int               @map("cree_par_id")
+  creePar             String            @map("cree_par")
+  creeLe              DateTime          @default(now()) @map("cree_le")
+  police              Police            @relation(fields: [policeId], references: [id], onDelete: Restrict)
+  paiement            Paiement?         @relation(fields: [paiementId], references: [id], onDelete: Restrict)
+  factureAnnulee      Facture?          @relation("ReportAnnulation", fields: [factureAnnuleeId], references: [id], onDelete: Restrict)
+  facture             Facture?          @relation("Imputation", fields: [factureId], references: [id], onDelete: Restrict)
+  report              MouvementAvance?  @relation("ReportImpute", fields: [reportId], references: [id], onDelete: Restrict)
+  imputationsDuReport MouvementAvance[] @relation("ReportImpute")
+
+  @@index([policeId])
+  @@index([factureId])
+  @@index([factureAnnuleeId])
+  @@map("mouvements_avance")
 }
 
 /// Document à produire (session 4b, CDC §11.4) : facture, avoir ou reçu dont le numéro est déjà attribué. Tout est figé
@@ -770,16 +817,16 @@ model TachePolice {
 /// Lot de génération d'avis d'échéance et de relances (CDC §12, session 5b) : sélection dans la liste du jour, traitée par
 /// la file de tâches. EN_COURS puis TERMINE ; l'avancement se lit dans les éléments.
 model LotEcheances {
-  id         Int                   @id @default(autoincrement())
-  statut     String
+  id        Int                   @id @default(autoincrement())
+  statut    String
   /// Jour de la liste d'où vient la sélection.
-  dateListe  DateTime              @map("date_liste") @db.Date
-  creeParId  Int                   @map("cree_par_id")
-  creePar    String                @map("cree_par")
-  creeLe     DateTime              @default(now()) @map("cree_le")
-  debut      DateTime?
-  fin        DateTime?
-  elements   ElementLotEcheances[]
+  dateListe DateTime              @map("date_liste") @db.Date
+  creeParId Int                   @map("cree_par_id")
+  creePar   String                @map("cree_par")
+  creeLe    DateTime              @default(now()) @map("cree_le")
+  debut     DateTime?
+  fin       DateTime?
+  elements  ElementLotEcheances[]
 
   @@map("lots_echeances")
 }

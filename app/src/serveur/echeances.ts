@@ -16,11 +16,12 @@ import {
   type NiveauRelance,
   type ParametresRelance,
 } from "@/domaine/facturation/echeances";
-import { etatPaiements, nomFacture, type ContenuFacture } from "@/domaine/facturation/factures";
+import { etatPaiements, nomFacture, type ContenuFacture, type PaiementEnregistre } from "@/domaine/facturation/factures";
 
 import { dejaJournalise, journaliser, type ActeurAudit } from "./audit";
 import { niveauDuProfil } from "./droits";
-import { chargerPolice, contenuDe, donnees, facturation, modeleRetenu, paiementsDe, verrouiller } from "./factures";
+import { avanceDisponible, encaissementsDe, inclusionImputations, versEncaissements } from "./encaissements";
+import { chargerPolice, contenuDe, donnees, facturation, modeleRetenu, verrouiller } from "./factures";
 import { allouerNumero } from "./numerotation";
 import { aujourdhui } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
@@ -129,7 +130,7 @@ async function facturesAppelables(filtre: Prisma.FactureWhereInput = {}) {
   const prisma = obtenirPrisma();
   const factures = await prisma.facture.findMany({
     where: { ...filtre, statut: "EMISE", type: { not: "AVOIR" } },
-    include: { police: { select: { numero: true, cotationId: true } }, produit: { select: { code: true } }, paiements: { orderBy: { id: "asc" } } },
+    include: { police: { select: { numero: true, cotationId: true } }, produit: { select: { code: true } }, paiements: { orderBy: { id: "asc" } }, imputations: inclusionImputations },
     orderBy: { id: "asc" },
   });
   const produits = await prisma.documentAProduire.findMany({
@@ -139,10 +140,13 @@ async function facturesAppelables(filtre: Prisma.FactureWhereInput = {}) {
   return { factures, produits };
 }
 
-/** Échéances d'une facture et leur couverture : contenu figé + total payé (dans l'ordre, H49 ; terme unique, H67). */
-function echeancesDeLaFacture(f: { statut: string; type: string; contenu: unknown; ttc: { toFixed(): string } }, paiements: { montant: { toFixed(): string } }[]): EcheanceDue[] {
+/**
+ * Échéances d'une facture et leur couverture : contenu figé + total réglé (dans l'ordre, H49 ; terme unique, H67). Le total
+ * réglé compte la part des paiements hors excédent et les imputations d'avance, reports compris (session 6.0).
+ */
+function echeancesDeLaFacture(f: { statut: string; type: string; contenu: unknown; ttc: { toFixed(): string } }, encaissements: PaiementEnregistre[]): EcheanceDue[] {
   const contenu = f.contenu as unknown as ContenuFacture;
-  const etat = etatPaiements(f.ttc.toFixed(), contenu.echeances, paiements.map((p, i) => ({ numero: String(i), date: "", montant: p.montant.toFixed(), reference: "", canal: "ESPECES", payeur: "" })));
+  const etat = etatPaiements(f.ttc.toFixed(), contenu.echeances, encaissements);
   return echeancesDe({ statut: f.statut, type: f.type, dateEffet: contenu.dateEffet, ttc: f.ttc.toFixed(), echeances: contenu.echeances }, etat.totalPaye);
 }
 
@@ -167,7 +171,7 @@ async function calculerListe(date: DateIso): Promise<ListeDuJour> {
     const p = parametres.get(code)!;
     const contenu = f.contenu as unknown as ContenuFacture;
     const base = { factureId: f.id, factureNumero: f.numero, policeNumero: f.police.numero, cotationId: f.police.cotationId, produitCode: code, souscripteur: nomFacture(contenu.souscripteur) };
-    for (const e of echeancesDeLaFacture(f, f.paiements)) {
+    for (const e of echeancesDeLaFacture(f, versEncaissements(f.paiements, f.imputations))) {
       const deja = produits.filter((d) => d.factureId === f.id && d.echeanceNumero === e.numero);
       if (avisDu(e, p, date, deja.some((d) => d.type === "AVIS_ECHEANCE"))) liste.avis.push({ ...base, type: "AVIS_ECHEANCE", echeance: e, niveau: null, joursRetard: joursDeRetard(e, date) });
       const niveau = relanceDue(e, p, date, deja.filter((d) => d.type === "RELANCE").map((d) => d.niveauRelance ?? 0));
@@ -236,8 +240,8 @@ export async function genererAppel(acteur: UtilisateurCourant, a: Appel, adresse
         if (existant) return { statut: "DEJA_PRODUIT", numero: existant.numero };
         if (f.statut === "ANNULEE") return { statut: "SANS_OBJET", message: `La facture ${f.numero} est annulée par un avoir : plus d'avis ni de relance.` };
         if (!factureAppelable(f) || !f.numero) return { statut: "SANS_OBJET", message: "Seule une facture émise appelle des paiements." };
-        const paiements = await tx.paiement.findMany({ where: { factureId: f.id }, orderBy: { id: "asc" } });
-        const e = echeancesDeLaFacture(f, paiements).find((x) => x.numero === a.echeanceNumero);
+        const encaissements = await encaissementsDe(tx, f.id);
+        const e = echeancesDeLaFacture(f, encaissements).find((x) => x.numero === a.echeanceNumero);
         if (!e) throw new ErreurMetier(`La facture ${f.numero} n'a pas d'échéance n° ${a.echeanceNumero}.`);
         if (e.payee) return { statut: "SANS_OBJET", message: `L'échéance n° ${e.numero} de la facture ${f.numero} est payée : plus d'avis ni de relance.` };
         if (a.type === "AVIS_ECHEANCE" && !avisDu(e, p, date, false)) {
@@ -249,7 +253,8 @@ export async function genererAppel(acteur: UtilisateurCourant, a: Appel, adresse
 
         const police = (await chargerPolice(tx, f.policeId))!;
         const contenu = contenuDe(f);
-        const etat = etatPaiements(contenu.totaux.ttc, contenu.echeances, paiementsDe(paiements));
+        const etat = etatPaiements(contenu.totaux.ttc, contenu.echeances, encaissements);
+        const avance = await avanceDisponible(tx, f.policeId);
         const numero = await allouerNumero(tx, a.type === "AVIS_ECHEANCE" ? "AVE" : "REL", date);
         const appel = { echeance: { numero: e.numero, date: e.date, montant: e.montant, restantDu: e.restant }, relance: niveau ? { niveau: niveau.niveau, libelle: niveau.libelle, joursRetard: joursDeRetard(e, date) } : null };
         const idProduction = await figer(tx, {
@@ -268,7 +273,7 @@ export async function genererAppel(acteur: UtilisateurCourant, a: Appel, adresse
           parametresDate: depuisDate(f.versionDateEffet),
           modeleVersionId: modele.modeleVersionId,
           associes: { ...modele.associes, listesEnAnnexe: contenu.listesEnAnnexe },
-          donnees: (url) => donnees(a.type, numero, 1, date, contenu, police, commun, { ...facturation(contenu, etat, f.numero, etat.paiements), appel }, acteur.nom, url),
+          donnees: (url) => donnees(a.type, numero, 1, date, contenu, police, commun, { ...facturation(contenu, etat, f.numero, etat.paiements, avance), appel }, acteur.nom, url),
           emisPar: acteur.identifiant,
         });
         return { statut: "FIGE", numero, idProduction };

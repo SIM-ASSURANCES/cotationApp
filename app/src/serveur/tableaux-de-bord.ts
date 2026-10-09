@@ -83,7 +83,15 @@ export async function tableauDeBord(acteur: UtilisateurCourant, periode?: Partia
   // ------------------------------------------------ Facturation
   const factures = await prisma.facture.findMany({
     where: { numero: { not: null } },
-    select: { type: true, statut: true, ttc: true, contenu: true, dateEmission: true, paiements: { select: { montant: true } } },
+    select: {
+      type: true,
+      statut: true,
+      ttc: true,
+      contenu: true,
+      dateEmission: true,
+      paiements: { select: { montant: true, excedent: true } },
+      imputations: { where: { type: "IMPUTATION" }, select: { montant: true } },
+    },
   });
   const dansLaPeriode = factures.filter((f) => f.dateEmission !== null && depuisDate(f.dateEmission) >= p.debut && depuisDate(f.dateEmission) <= p.fin);
   const emis = somme(dansLaPeriode.filter((f) => f.type !== "AVOIR").map((f) => f.ttc.toFixed()));
@@ -93,7 +101,12 @@ export async function tableauDeBord(acteur: UtilisateurCourant, periode?: Partia
   const appelables = factures.filter((f) => factureAppelable(f));
   const echeances = appelables.flatMap((f) => {
     const contenu = f.contenu as unknown as ContenuFacture;
-    const paye = etatPaiements(f.ttc.toFixed(), [], f.paiements.map((x, i) => ({ numero: String(i), date: "", montant: x.montant.toFixed(), reference: "", canal: "ESPECES" as const, payeur: "" }))).totalPaye;
+    // Réglé = part des paiements hors excédent (H33) + imputations d'avance, reports compris (session 6.0).
+    const sommes = [
+      ...f.paiements.map((x) => ({ montant: x.montant.toFixed(), excedent: x.excedent.toFixed() })),
+      ...f.imputations.map((x) => ({ montant: x.montant.toFixed(), excedent: "0" })),
+    ];
+    const paye = etatPaiements(f.ttc.toFixed(), [], sommes.map((x, i) => ({ numero: String(i), date: "", reference: "", canal: "ESPECES" as const, payeur: "", ...x }))).totalPaye;
     return echeancesDe({ statut: f.statut, type: f.type, dateEffet: contenu.dateEffet, ttc: f.ttc.toFixed(), echeances: contenu.echeances }, paye);
   });
   const restantDu = somme(echeances.map((e) => e.restant));

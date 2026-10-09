@@ -9,7 +9,7 @@
  *
  * Normatif : uniquement les noms du CDC, plus `assures[].sexe` (D12), `doc.auteur_nom` (D20) et, pour les factures et
  * les reçus (D23), `envoye_a.*`, `formules[].base_taxe` et `paiements[].payeur` ; pour les avis d'échéance et les
- * relances (D25), `echeance_appelee.*` et `relance.*`.
+ * relances (D25), `echeance_appelee.*` et `relance.*` ; `solde.avance` (D28, session 6.0).
  * `risque.*` est ouvert : chaque produit y met ses propres champs (CDC §6.3, « extensible »).
  * Les champs des éléments de `societe.rib[]`, `societe.mobile_money[]` et `societe.recours[]` ne
  * sont pas nommés par le CDC : les noms retenus ici sont des hypothèses (decisions.md, D14).
@@ -181,6 +181,7 @@ export const CHAMPS: readonly Champ[] = [
   c("paiements[].payeur", "texte", "Payeur (extension D23)", "ENTREPRISE INVENTÉE", S3),
   c("solde.total_paye", "montant", "Total payé", "41000", S3),
   c("solde.restant_du", "montant", "Restant dû", "15847000", S3),
+  c("solde.avance", "montant", "Avance disponible de la police : trop-perçus et sommes reportées, non encore imputées ni restituées (extension D28) ; facture, reçu, avis et relance", "0", S3),
   // Session 5b (D25) : avis d'échéance et relances. Non fournis pour les autres documents.
   c("echeance_appelee", "objet", "Échéance appelée par un avis d'échéance ou une relance (extension D25)", undefined, S3),
   c("echeance_appelee.numero", "entier", "N° de l'échéance appelée", 2, S3),

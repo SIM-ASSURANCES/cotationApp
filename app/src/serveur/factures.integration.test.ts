@@ -26,9 +26,11 @@ import {
   emettreFacture,
   enregistrerPaiement,
   facturesDePolice,
+  imputerAvance,
   lireFacture,
   modifierFacture,
   relancerPdf,
+  restituerAvance,
 } from "./factures";
 import { remplacerGenerateur, type DemandePdf } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
@@ -294,7 +296,7 @@ describe("T2 : facture de groupe CGE-SN (4 échéances)", () => {
     expect(doc(d)).toMatchObject({ numero: r.numero, version: "v1", facture_origine: null });
     expect(d.donnees.envoye_a).toEqual({ nom: "Service comptable (inventé)", adresse: "Plateau, autre rue inventée" });
     expect(d.donnees.paiements).toEqual([]);
-    expect(d.donnees.solde).toEqual({ total_paye: "0", restant_du: "11592000" });
+    expect(d.donnees.solde).toEqual({ total_paye: "0", restant_du: "11592000", avance: "0" });
     // assures[].prime (H45) : TTC d'une unité de sa formule, 1 920 000 / 8 et 9 672 000 / 31.
     const primes = new Set((d.donnees.assures as { formule: string; prime: string }[]).map((a) => `${a.formule}:${a.prime}`));
     expect([...primes].sort()).toEqual(["FAMILLE:312000", "SOLO:240000"]);
@@ -335,12 +337,12 @@ describe("T3 : facture individuelle YAO (prorata), paiement de 41 000, reçu et 
     const recu = derniere("RECU");
     expect(doc(recu)).toMatchObject({ numero: pay.numeroRecu, facture_origine: r.numero });
     expect(recu.donnees.paiements).toEqual([expect.objectContaining({ numero: pay.numeroRecu, montant: "41000", canal: "Virement", restant_du: "81442", payeur: "YAO Koffi (inventé)" })]);
-    expect(recu.donnees.solde).toEqual({ total_paye: "41000", restant_du: "81442" });
+    expect(recu.donnees.solde).toEqual({ total_paye: "41000", restant_du: "81442", avance: "0" });
 
     const v2 = derniere("FACTURE");
     expect(doc(v2)).toMatchObject({ numero: r.numero, version: "v2", date_emission: doc(v1).date_emission });
     expect(doc(v2).url_verification).not.toBe(doc(v1).url_verification);
-    expect(v2.donnees.solde).toEqual({ total_paye: "41000", restant_du: "81442" });
+    expect(v2.donnees.solde).toEqual({ total_paye: "41000", restant_du: "81442", avance: "0" });
     expect(v2.donnees.prime).toEqual(v1.donnees.prime);
 
     const emis = await obtenirPrisma().documentEmis.findMany({ where: { numero: r.numero }, orderBy: { version: "asc" } });
@@ -349,22 +351,72 @@ describe("T3 : facture individuelle YAO (prorata), paiement de 41 000, reçu et 
     expect(emis[1].modeleVersionId).toBe(emis[0].modeleVersionId);
   });
 
-  it("trop-perçu refusé (H33) ; solde exact accepté ; plus rien à payer ensuite ; montant nul refusé", async () => {
+  it("trop-perçu accepté (H33, 09/10/2026) : l'excédent devient une avance, visible sur le reçu et la fiche de la police", async () => {
     const p = await policeT3();
     const id = await creerFactureAffaireNouvelle(technique, p.policeId, null, null);
     await emettreFacture(technique, id, null);
     const recusAvant = await obtenirPrisma().paiement.count();
-    await expect(enregistrerPaiement(comptable, id, paiement("122 443"), null)).rejects.toThrow(/Trop-perçu refusé \(H33\)/);
     await expect(enregistrerPaiement(comptable, id, paiement("0"), null)).rejects.toThrow(/supérieur à 0/);
     await expect(enregistrerPaiement(comptable, id, paiement("-5"), null)).rejects.toThrow(ErreurMetier);
     expect(await obtenirPrisma().paiement.count()).toBe(recusAvant);
-    expect((await enregistrerPaiement(comptable, id, paiement("122442", "ESPECES"), null)).restantDu).toBe("0");
-    await expect(enregistrerPaiement(comptable, id, paiement("1"), null)).rejects.toThrow(/Trop-perçu/);
-    // Filets de la base : paiements en ajout seul, jamais au-delà du TTC, même sans passer par l'application.
+
+    const r = await enregistrerPaiement(comptable, id, paiement("130 000"), null);
+    expect(r).toMatchObject({ restantDu: "0", excedent: "7558", avance: "7558" });
+    const recu = derniere("RECU");
+    // Le reçu porte le montant reçu en entier, et l'avance de la police.
+    expect(recu.donnees.paiements).toEqual([expect.objectContaining({ numero: r.numeroRecu, montant: "130000", restant_du: "0" })]);
+    expect(recu.donnees.solde).toEqual({ total_paye: "122442", restant_du: "0", avance: "7558" });
+    expect(derniere("FACTURE").donnees.solde).toEqual({ total_paye: "122442", restant_du: "0", avance: "7558" });
+
+    const vue = (await facturesDePolice(comptable, p.cotationId))!;
+    expect(vue.avance.disponible).toBe("7558");
+    expect(vue.avance.mouvements).toEqual([expect.objectContaining({ type: "EXCEDENT", credit: true, montant: "7558", facture: null, recu: r.numeroRecu })]);
+    const journal = await lireJournal({ action: "AVANCE_CREDITEE" });
+    expect(journal.lignes.some((l) => (l.apres as { recu?: string } | null)?.recu === r.numeroRecu)).toBe(true);
+
+    // Facture soldée : plus rien à y payer.
+    await expect(enregistrerPaiement(comptable, id, paiement("1"), null)).rejects.toThrow(/déjà soldée/);
+    expect((await lireFacture(comptable, id))!.actions.payer).toBe(false);
+
+    // Filets de la base : paiements en ajout seul ; une part réglée jamais au-delà du TTC ; un excédent seulement s'il solde.
     expect(await sql(`DELETE FROM paiements WHERE facture_id = ${id}`)).toMatch(/paiement/);
     expect(await sql(`UPDATE paiements SET montant = 1 WHERE facture_id = ${id}`)).toMatch(/paiement/);
-    expect(await sql(`INSERT INTO paiements (facture_id, numero_recu, date, montant, canal, reference, payeur, cree_par_id, cree_par) VALUES (${id}, 'REC-TEST-${id}', CURRENT_DATE, 1, 'ESPECES', '', 'x', ${comptable.id}, 'x')`)).toMatch(/trop-perçu|dépasse|TTC/i);
-    expect((await lireFacture(comptable, id))!.actions.payer).toBe(false);
+    expect(await sql(`INSERT INTO paiements (facture_id, numero_recu, date, montant, canal, reference, payeur, cree_par_id, cree_par) VALUES (${id}, 'REC-TEST-${id}', CURRENT_DATE, 1, 'ESPECES', '', 'x', ${comptable.id}, 'x')`)).toMatch(/trop-perçu non déclaré/);
+    // Avance : ajout seul, jamais négative.
+    expect(await sql(`DELETE FROM mouvements_avance WHERE police_id = ${p.policeId}`)).toMatch(/ajout seul/);
+    expect(await sql(`INSERT INTO mouvements_avance (police_id, type, montant, date, canal, reference, cree_par_id, cree_par) VALUES (${p.policeId}, 'RESTITUTION', 7559, CURRENT_DATE, 'ESPECES', '', ${comptable.id}, 'x')`)).toMatch(/avance insuffisante/);
+  });
+
+  it("avance : imputée sur une facture de la même police (rééditée), puis restituée ; jamais au-delà du disponible", async () => {
+    const p = await policeT2();
+    const an = await creerFactureAffaireNouvelle(technique, p.policeId, null, null);
+    await emettreFacture(technique, an, null);
+    // Renouvellement payé avec un trop-perçu de 1 000 000 F.
+    const ren = await creerFactureRenouvellement(technique, p.policeId, { lignes: null, nombreTranches: 1, envoyeA: null }, null);
+    await emettreFacture(technique, ren, null);
+    expect((await enregistrerPaiement(comptable, ren, paiement("12592000"), null)).avance).toBe("1000000");
+
+    const avant = (await lireFacture(comptable, an))!;
+    expect(avant.avance).toEqual({ disponible: "1000000", proposee: "1000000" });
+    expect(avant.actions.imputer).toBe(true);
+    await expect(imputerAvance(technique, an, "1000", null)).rejects.toThrow(ErreurAcces);
+    await expect(imputerAvance(comptable, an, "1000001", null)).rejects.toThrow(/dépasse l'avance disponible/);
+    const i = await imputerAvance(comptable, an, "600 000", null);
+    expect(i).toMatchObject({ restantDu: "10992000", avance: "400000" });
+    const v2 = derniere("FACTURE");
+    expect(doc(v2)).toMatchObject({ version: "v2" });
+    expect(v2.donnees.paiements).toEqual([expect.objectContaining({ numero: "", montant: "600000", canal: "Avance", restant_du: "10992000" })]);
+    expect((v2.donnees.echeances as { statut: string }[]).map((e) => e.statut)).toEqual(["Non payé", "Non payé", "Non payé", "Non payé"]);
+    expect(v2.donnees.solde).toEqual({ total_paye: "600000", restant_du: "10992000", avance: "400000" });
+
+    await expect(restituerAvance(comptable, p.policeId, { date: aujourdhui(), montant: "400001", canal: "VIREMENT", reference: "VIR-REMB-1" }, null)).rejects.toThrow(/dépasse l'avance/);
+    await expect(restituerAvance(comptable, p.policeId, { date: aujourdhui(), montant: "1000", canal: "VIREMENT", reference: "" }, null)).rejects.toThrow(/référence/);
+    expect(await restituerAvance(comptable, p.policeId, { date: aujourdhui(), montant: "400000", canal: "VIREMENT", reference: "VIR-REMB-1" }, null)).toEqual({ avance: "0" });
+    const vue = (await facturesDePolice(comptable, p.cotationId))!;
+    expect(vue.avance.mouvements.map((m) => [m.type, m.montant])).toEqual([["EXCEDENT", "1000000"], ["IMPUTATION", "600000"], ["RESTITUTION", "400000"]]);
+    expect((await lireFacture(comptable, an))!.actions.imputer).toBe(false);
+    const journal = await lireJournal({ action: "AVANCE_RESTITUEE" });
+    expect(journal.lignes.some((l) => (l.apres as { reference?: string } | null)?.reference === "VIR-REMB-1")).toBe(true);
   });
 
   it("droits : la Technique et le Commercial n'enregistrent pas de paiement ; le Commercial ne lit pas les factures", async () => {
@@ -387,7 +439,7 @@ describe("échéances payées dans l'ordre (H49)", () => {
     const v3 = derniere("FACTURE");
     expect(doc(v3).version).toBe("v3");
     expect((v3.donnees.echeances as { statut: string }[]).map((e) => e.statut)).toEqual(["Payé", "Non payé", "Non payé", "Non payé"]);
-    expect(v3.donnees.solde).toEqual({ total_paye: "4898000", restant_du: "6694000" });
+    expect(v3.donnees.solde).toEqual({ total_paye: "4898000", restant_du: "6694000", avance: "0" });
     expect((v3.donnees.paiements as { restant_du: string }[]).map((x) => x.restant_du)).toEqual(["8694000", "6694000"]);
   });
 });
@@ -445,12 +497,75 @@ describe("T4 : intangibilité, avoir puis nouvelle facture", () => {
     expect(numeroDe(n.numero)).toBe(numeroDe(dernierFac.numero!) + 1);
   });
 
-  it("avoir refusé sur une facture qui a reçu un paiement (H47)", async () => {
+  it("T4 sur T3 tel que le CDC l'écrit (H47, 09/10/2026) : facture YAO payée de 41 000, erreur, avoir, nouvelle facture qui reprend les 41 000", async () => {
     const p = await policeT3();
     const id = await creerFactureAffaireNouvelle(technique, p.policeId, null, null);
-    await emettreFacture(technique, id, null);
-    await enregistrerPaiement(comptable, id, paiement("1000"), null);
-    await expect(emettreAvoir(comptable, id, "Annulation demandée (test)", null)).rejects.toThrow(/H47/);
+    const f = await emettreFacture(technique, id, null);
+    if (f.statut !== "EMISE") throw new Error("attendu : émise");
+    const pay = await enregistrerPaiement(comptable, id, paiement("41 000"), null);
+    expect(pay.restantDu).toBe("81442");
+    const recu = await obtenirPrisma().documentEmis.findFirstOrThrow({ where: { numero: pay.numeroRecu } });
+
+    // Erreur constatée : avoir, malgré le paiement. La facture est conservée, « Annulée ».
+    expect((await lireFacture(comptable, id))!.actions.avoir).toBe(true);
+    const av = await emettreAvoir(comptable, id, "Erreur sur la facture (test T4)", null);
+    const annulee = (await lireFacture(comptable, id))!;
+    expect(annulee).toMatchObject({ statut: "ANNULEE", avoir: { numero: av.numero } });
+    expect(annulee.reports).toEqual([{ recu: pay.numeroRecu, date: aujourdhui(), montant: "41000" }]);
+    // Le reçu déjà émis reste valable, sans modification.
+    expect((await verifierJeton(recu.jeton))!.statut.libelle).not.toMatch(/Annulé/);
+    expect(await obtenirPrisma().documentEmis.count({ where: { numero: pay.numeroRecu } })).toBe(1);
+    // En attendant la nouvelle facture, la somme est en avance sur la police.
+    expect((await facturesDePolice(comptable, p.cotationId))!.avance.disponible).toBe("41000");
+
+    // Nouvelle facture : numérotée sans trou ; à son émission, les 41 000 sont repris (date, montant, référence d'origine).
+    const nouvelle = await creerFactureAffaireNouvelle(technique, p.policeId, null, null);
+    const n = await emettreFacture(technique, nouvelle, null);
+    if (n.statut !== "EMISE") throw new Error("attendu : émise");
+    expect(numeroDe(n.numero)).toBe(numeroDe(f.numero) + 1);
+    const v1 = derniere("FACTURE");
+    expect(doc(v1)).toMatchObject({ numero: n.numero, version: "v1" });
+    expect(v1.donnees.paiements).toEqual([
+      expect.objectContaining({ numero: pay.numeroRecu, date: aujourdhui(), montant: "41000", reference: "VIR-INVENTE-001", canal: "Virement", restant_du: "81442" }),
+    ]);
+    expect(v1.donnees.solde).toEqual({ total_paye: "41000", restant_du: "81442", avance: "0" });
+    const lue = (await lireFacture(comptable, nouvelle))!;
+    expect(lue.etat).toMatchObject({ totalPaye: "41000", restantDu: "81442" });
+    expect((await facturesDePolice(comptable, p.cotationId))!.avance.disponible).toBe("0");
+
+    // Journal : annulation et report de chaque paiement.
+    const annulations = await lireJournal({ action: "FACTURE_ANNULEE" });
+    expect(annulations.lignes.some((l) => (l.apres as { numero?: string } | null)?.numero === f.numero)).toBe(true);
+    const reports = await lireJournal({ action: "PAIEMENT_REPORTE" });
+    expect(reports.lignes.filter((l) => (l.apres as { factureAnnulee?: string } | null)?.factureAnnulee === f.numero).map((l) => (l.apres as { recu: string; montant: string })))
+      .toEqual([expect.objectContaining({ recu: pay.numeroRecu, montant: "41000" })]);
+    const imputes = await lireJournal({ action: "AVANCE_IMPUTEE" });
+    expect(imputes.lignes.some((l) => (l.apres as { facture?: string; origine?: string } | null)?.facture === n.numero)).toBe(true);
+
+    // Une deuxième correction reporte de nouveau les 41 000 (ils sont sur la nouvelle facture), sans double compte.
+    await emettreAvoir(comptable, nouvelle, "Deuxième erreur (test T4)", null);
+    expect((await facturesDePolice(comptable, p.cotationId))!.avance.disponible).toBe("41000");
+    const troisieme = await creerFactureAffaireNouvelle(technique, p.policeId, null, null);
+    await emettreFacture(technique, troisieme, null);
+    expect((await lireFacture(comptable, troisieme))!.etat).toMatchObject({ totalPaye: "41000", restantDu: "81442" });
+  });
+
+  it("paiements reportés supérieurs au TTC de la facture de remplacement : l'excédent reste en avance (H47, H33)", async () => {
+    const p = await policeT2();
+    const an = await creerFactureAffaireNouvelle(technique, p.policeId, null, null);
+    await emettreFacture(technique, an, null);
+    const ren = await creerFactureRenouvellement(technique, p.policeId, { lignes: null, nombreTranches: 1, envoyeA: null }, null);
+    await emettreFacture(technique, ren, null);
+    await enregistrerPaiement(comptable, ren, paiement("5000000"), null);
+    await emettreAvoir(comptable, ren, "Effectifs erronés (test)", null);
+    // Renouvellement corrigé : un seul Solo (TTC 240 000).
+    const corrige = await creerFactureRenouvellement(technique, p.policeId, { lignes: [{ codeFormule: "SOLO", effectif: 1 }], nombreTranches: 1, envoyeA: null }, null);
+    expect((await lireFacture(technique, corrige))!.remplace).toMatchObject({ id: ren });
+    await emettreFacture(technique, corrige, null);
+    const lu = (await lireFacture(comptable, corrige))!;
+    expect(lu.etat).toMatchObject({ totalPaye: "240000", restantDu: "0" });
+    expect(lu.avance.disponible).toBe("4760000");
+    expect(derniere("FACTURE").donnees.solde).toEqual({ total_paye: "240000", restant_du: "0", avance: "4760000" });
   });
 });
 

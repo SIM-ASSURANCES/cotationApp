@@ -13,7 +13,11 @@ import { donneesDocument, type Facturation, type SourceDocument } from "@/domain
 import { peutAgir, peutLire, type CodeAction, type CodeNiveau } from "@/domaine/droits";
 import {
   contenuAvoir,
+  controlerImputation,
   controlerPaiement,
+  controlerRestitution,
+  imputationProposee,
+  partReglee,
   envoyeARetenu,
   etatPaiements,
   LIBELLE_CANAL,
@@ -27,14 +31,15 @@ import {
   type ContenuFacture,
   type EnvoyeA,
   type EtatPaiements,
-  type PaiementEnregistre,
   type SaisiePaiement,
+  type SaisieRestitution,
   type StatutFacture,
   type TypeFacture,
 } from "@/domaine/facturation/factures";
 
 import { journaliser, type ActeurAudit } from "./audit";
 import { contexteProduit, montantsDu } from "./documents";
+import { avanceDisponible, encaissementsDe, inclusionImputations, versEncaissements } from "./encaissements";
 import { niveauDuProfil } from "./droits";
 import { modelesAssocies, versionPublieeEnVigueur } from "./modeles";
 import { allouerNumero } from "./numerotation";
@@ -107,8 +112,6 @@ export async function verrouiller(tx: Tx, factureId: number): Promise<LigneFactu
 
 export const contenuDe = (f: { contenu: unknown }) => f.contenu as unknown as ContenuFacture;
 
-export const paiementsDe = (lignes: { numeroRecu: string; date: Date; montant: { toFixed(): string }; reference: string; canal: string; payeur: string }[]): PaiementEnregistre[] =>
-  lignes.map((p) => ({ numero: p.numeroRecu, date: depuisDate(p.date), montant: p.montant.toFixed(), reference: p.reference, canal: p.canal as CanalPaiement, payeur: p.payeur }));
 
 const enDoublon = (erreur: unknown) => erreur instanceof Prisma.PrismaClientKnownRequestError && erreur.code === "P2002";
 
@@ -436,11 +439,13 @@ export function donnees(
   return donneesDocument(source);
 }
 
-export function facturation(contenu: ContenuFacture, etat: EtatPaiements, factureOrigine: string | null, paiements: EtatPaiements["paiements"]): Facturation {
+export function facturation(contenu: ContenuFacture, etat: EtatPaiements, factureOrigine: string | null, paiements: EtatPaiements["paiements"], avance?: string): Facturation {
   return {
     echeances: etat.echeances,
-    paiements: paiements.map((p) => ({ ...p, canal: LIBELLE_CANAL[p.canal] })),
+    // Le document ne nomme que les champs du dictionnaire : l'excédent reste dans l'avance (solde.avance).
+    paiements: paiements.map((p) => ({ numero: p.numero, date: p.date, montant: p.montant, reference: p.reference, canal: LIBELLE_CANAL[p.canal], payeur: p.payeur, restantDu: p.restantDu })),
     solde: { totalPaye: etat.totalPaye, restantDu: etat.restantDu },
+    ...(avance === undefined ? {} : { avance }),
     factureOrigine,
     envoyeA: contenu.envoyeA,
     dateSouscription: contenu.dateSouscription,
@@ -512,7 +517,10 @@ export async function emettreFacture(acteur: UtilisateurCourant, factureId: numb
     const contenu = contenuDe(f);
     const numero = await allouerNumero(tx, "FAC", date);
     await tx.facture.update({ where: { id: f.id }, data: { statut: "EMISE", numero, dateEmission: versDate(date), emiseParId: acteur.id, emisePar: acteur.identifiant, emiseLe: new Date() } });
-    const etat = etatPaiements(contenu.totaux.ttc, contenu.echeances, []);
+    // H47 (09/10/2026) : la facture qui remplace une facture annulée reprend ses paiements, déjà reportés en avance.
+    if (f.remplaceId) await imputerReports(tx, acteur, { id: f.id, numero, ttc: contenu.totaux.ttc, remplaceId: f.remplaceId, policeId: police.id }, adresseIp);
+    const etat = etatPaiements(contenu.totaux.ttc, contenu.echeances, await encaissementsDe(tx, f.id));
+    const avance = await avanceDisponible(tx, police.id);
     const idProduction = await figer(tx, {
       type: "FACTURE",
       numero,
@@ -527,7 +535,7 @@ export async function emettreFacture(acteur: UtilisateurCourant, factureId: numb
       parametresDate: depuisDate(f.versionDateEffet),
       modeleVersionId: modele.modeleVersionId,
       associes: { ...modele.associes, listesEnAnnexe: contenu.listesEnAnnexe },
-      donnees: (url) => donnees("FACTURE", numero, 1, date, contenu, police, commun, facturation(contenu, etat, null, []), acteur.nom, url),
+      donnees: (url) => donnees("FACTURE", numero, 1, date, contenu, police, commun, facturation(contenu, etat, null, etat.paiements, avance), acteur.nom, url),
       emisPar: acteur.identifiant,
     });
     await journaliser(
@@ -550,8 +558,10 @@ export async function emettreFacture(acteur: UtilisateurCourant, factureId: numb
 
 /**
  * Avoir d'annulation TOTALE d'une facture émise (H47) : montants de la facture en négatif, `doc.facture_origine`, motif
- * obligatoire. Dans la même transaction : numéro AV, facture d'origine ANNULÉE (une seule fois), tous ses documents émis
- * marqués « Annulée – avoir AV-… » (page de vérification). Refusé si la facture a déjà reçu des paiements (H47).
+ * obligatoire. Dans la même transaction : numéro AV, facture d'origine ANNULÉE (une seule fois, conservée), tous ses
+ * documents émis marqués « Annulée – avoir AV-… » (page de vérification). Facture payée en partie (réponse de la Technique
+ * du 09/10/2026) : chaque somme qui la réglait est REPORTÉE en avance sur la police ; la facture de remplacement la reprend
+ * à son émission. Les reçus déjà émis restent valables.
  */
 export async function emettreAvoir(acteur: UtilisateurCourant, factureId: number, motif: string, adresseIp: string | null): Promise<{ numero: string; avoirId: number; productions: IssueProduction[] }> {
   await exiger(acteur, "EMETTRE_AVOIR", "émission d'avoir");
@@ -566,9 +576,6 @@ export async function emettreAvoir(acteur: UtilisateurCourant, factureId: number
   const resultat = await prisma.$transaction(async (tx) => {
     const f = await verrouiller(tx, factureId);
     if (f.statut !== "EMISE" || !f.numero) throw new ErreurMetier(f.statut === "ANNULEE" ? "Cette facture est déjà annulée par un avoir." : "Seule une facture émise s'annule par un avoir ; un brouillon reste sans suite.");
-    if ((await tx.paiement.count({ where: { factureId } })) > 0) {
-      throw new ErreurMetier("Cette facture a déjà reçu des paiements : l'avoir n'est pas possible tant que le traitement des sommes encaissées n'est pas défini (H47, question à la Technique).");
-    }
     const police = (await chargerPolice(tx, f.policeId))!;
     const contenu = contenuAvoir(contenuDe(f));
     const numero = await allouerNumero(tx, "AV", date);
@@ -596,6 +603,7 @@ export async function emettreAvoir(acteur: UtilisateurCourant, factureId: number
       },
     });
     await tx.facture.update({ where: { id: f.id }, data: { statut: "ANNULEE", annuleeParId: avoir.id, annuleeLe: maintenant } });
+    await reporterEncaissements(tx, acteur, { id: f.id, numero: f.numero, policeId: f.policeId }, numero, adresseIp);
     await tx.documentEmis.updateMany({ where: { numero: f.numero, annuleParNumero: null }, data: { annuleParNumero: numero, annuleLe: maintenant } });
     // Avis d'échéance et relances de la facture (session 5b) : annulés avec elle (page de vérification, T12).
     await tx.documentEmis.updateMany({ where: { production: { is: { factureId: f.id, type: { in: ["AVIS_ECHEANCE", "RELANCE"] } } }, annuleParNumero: null }, data: { annuleParNumero: numero, annuleLe: maintenant } });
@@ -624,14 +632,69 @@ export async function emettreAvoir(acteur: UtilisateurCourant, factureId: number
   return { numero: resultat.numero, avoirId: resultat.avoirId, productions: [await produire(acteur, resultat.idProduction, adresseIp)] };
 }
 
+// ---------------------------------------------------------------- Report des sommes d'une facture annulée (H47)
+
+/**
+ * Avoir sur une facture payée en partie : chaque somme qui la réglait (part d'un paiement hors excédent, imputation d'avance)
+ * devient un REPORT en avance sur la police, dans l'ordre d'enregistrement, avec son paiement d'origine. Journalisé un par un.
+ */
+async function reporterEncaissements(tx: Tx, acteur: UtilisateurCourant, f: { id: number; numero: string; policeId: number }, numeroAvoir: string, adresseIp: string | null): Promise<void> {
+  const [paiements, imputations] = await Promise.all([
+    tx.paiement.findMany({ where: { factureId: f.id }, orderBy: { id: "asc" } }),
+    tx.mouvementAvance.findMany({ where: { factureId: f.id, type: "IMPUTATION" }, include: { paiement: { select: { numeroRecu: true } } }, orderBy: { id: "asc" } }),
+  ]);
+  const sommes = [
+    ...paiements.map((p) => ({ quand: p.creeLe.getTime(), montant: partReglee({ montant: p.montant.toFixed(), excedent: p.excedent.toFixed() }), date: p.date, paiementId: p.id as number | null, recu: p.numeroRecu as string | null })),
+    ...imputations.map((i) => ({ quand: i.creeLe.getTime(), montant: montant(i.montant.toFixed()), date: i.date, paiementId: i.paiementId, recu: i.paiement?.numeroRecu ?? null })),
+  ].sort((a, b) => a.quand - b.quand);
+  for (const somme of sommes) {
+    if (!somme.montant.greaterThan(0)) continue;
+    await tx.mouvementAvance.create({ data: { policeId: f.policeId, type: "REPORT", montant: somme.montant.toFixed(), date: somme.date, paiementId: somme.paiementId, factureAnnuleeId: f.id, creeParId: acteur.id, creePar: acteur.identifiant } });
+    await journaliser(
+      { acteur: auteur(acteur), action: "PAIEMENT_REPORTE", objetType: "facture", objetId: f.id, apres: { factureAnnulee: f.numero, avoir: numeroAvoir, recu: somme.recu, montant: somme.montant.toFixed(), date: depuisDate(somme.date), vers: "avance de la police, pour la facture de remplacement" }, adresseIp },
+      tx,
+    );
+  }
+}
+
+/**
+ * Émission de la facture qui remplace une facture annulée : les sommes reportées de celle-ci lui sont imputées, dans l'ordre,
+ * au plus son TTC et au plus l'avance encore disponible. L'excédent éventuel reste en avance (H33).
+ */
+async function imputerReports(tx: Tx, acteur: UtilisateurCourant, f: { id: number; numero: string; ttc: string; remplaceId: number; policeId: number }, adresseIp: string | null): Promise<void> {
+  const reports = await tx.mouvementAvance.findMany({ where: { type: "REPORT", factureAnnuleeId: f.remplaceId }, include: { paiement: { select: { numeroRecu: true } } }, orderBy: { id: "asc" } });
+  if (reports.length === 0) return;
+  const annulee = await tx.facture.findUnique({ where: { id: f.remplaceId }, select: { numero: true } });
+  let reste = montant(f.ttc);
+  let disponible = montant(await avanceDisponible(tx, f.policeId));
+  for (const r of reports) {
+    const candidats = [montant(r.montant.toFixed()), reste, disponible];
+    const m = candidats.reduce((a, b) => (b.lessThan(a) ? b : a));
+    if (!m.greaterThan(0)) break;
+    await tx.mouvementAvance.create({ data: { policeId: f.policeId, type: "IMPUTATION", montant: m.toFixed(), date: r.date, paiementId: r.paiementId, factureId: f.id, reportId: r.id, creeParId: acteur.id, creePar: acteur.identifiant } });
+    await journaliser(
+      { acteur: auteur(acteur), action: "AVANCE_IMPUTEE", objetType: "facture", objetId: f.id, apres: { facture: f.numero, origine: "REPORT", factureAnnulee: annulee?.numero ?? null, recu: r.paiement?.numeroRecu ?? null, montant: m.toFixed() }, adresseIp },
+      tx,
+    );
+    reste = reste.minus(m);
+    disponible = disponible.minus(m);
+  }
+}
+
 // ---------------------------------------------------------------- Paiements et reçus (CDC §12)
 
 /**
  * Enregistre un paiement (ajout seul) : contrôles du domaine (montant > 0 par l'analyseur unique, facture émise non
- * annulée, trop-perçu refusé : H33), numéro REC attribué dans la transaction, reçu figé, et nouvelle version de la facture
- * (même numéro, version + 1, échéances payées dans l'ordre, restant dû à jour) figée avec le MÊME modèle que la version 1.
+ * annulée), numéro REC attribué dans la transaction, reçu figé, et nouvelle version de la facture (même numéro, version + 1,
+ * échéances payées dans l'ordre, restant dû à jour) figée avec le MÊME modèle que la version 1. Trop-perçu accepté (H33,
+ * 09/10/2026) : la part au-delà du restant dû est l'excédent du paiement, crédité en avance sur la police (reçu : solde.avance).
  */
-export async function enregistrerPaiement(acteur: UtilisateurCourant, factureId: number, saisie: SaisiePaiement, adresseIp: string | null): Promise<{ numeroRecu: string; restantDu: string; productions: IssueProduction[] }> {
+export async function enregistrerPaiement(
+  acteur: UtilisateurCourant,
+  factureId: number,
+  saisie: SaisiePaiement,
+  adresseIp: string | null,
+): Promise<{ numeroRecu: string; restantDu: string; excedent: string; avance: string; productions: IssueProduction[] }> {
   await exiger(acteur, "ENREGISTRER_PAIEMENT", "enregistrement de paiement");
   const prisma = obtenirPrisma();
   const lue = await prisma.facture.findUnique({ where: { id: factureId } });
@@ -642,7 +705,7 @@ export async function enregistrerPaiement(acteur: UtilisateurCourant, factureId:
   const resultat = await prisma.$transaction(async (tx) => {
     const f = await verrouiller(tx, factureId);
     const contenu = contenuDe(f);
-    const avant = paiementsDe(await tx.paiement.findMany({ where: { factureId }, orderBy: { id: "asc" } }));
+    const avant = await encaissementsDe(tx, factureId);
     const etatAvant = etatPaiements(contenu.totaux.ttc, contenu.echeances, avant);
     const controle = controlerPaiement(saisie, { statut: f.statut as StatutFacture, type: f.type as TypeFacture, numero: f.numero, restantDu: etatAvant.restantDu }, date);
     if (controle.problemes.length > 0 || !controle.montant) throw new ErreurMetier(controle.problemes.join(" "));
@@ -656,9 +719,17 @@ export async function enregistrerPaiement(acteur: UtilisateurCourant, factureId:
     const numeroRecu = await allouerNumero(tx, "REC", date);
     const payeur = saisie.payeur.trim() || nomFacture(contenu.souscripteur); // H54 : par défaut, « Facturé à »
     const paiement = await tx.paiement.create({
-      data: { factureId, numeroRecu, date: versDate(saisie.date), montant: controle.montant, canal: saisie.canal, reference: saisie.reference.trim(), payeur, creeParId: acteur.id, creePar: acteur.identifiant },
+      data: { factureId, numeroRecu, date: versDate(saisie.date), montant: controle.montant, excedent: controle.excedent, canal: saisie.canal, reference: saisie.reference.trim(), payeur, creeParId: acteur.id, creePar: acteur.identifiant },
     });
-    const tous = [...avant, { numero: numeroRecu, date: saisie.date, montant: controle.montant, reference: saisie.reference.trim(), canal: saisie.canal as CanalPaiement, payeur }];
+    if (montant(controle.excedent).greaterThan(0)) {
+      await tx.mouvementAvance.create({ data: { policeId: police.id, type: "EXCEDENT", montant: controle.excedent, date: versDate(saisie.date), paiementId: paiement.id, creeParId: acteur.id, creePar: acteur.identifiant } });
+      await journaliser(
+        { acteur: auteur(acteur), action: "AVANCE_CREDITEE", objetType: "police", objetId: police.id, apres: { police: police.numero, origine: "TROP_PERCU", facture: f.numero, recu: numeroRecu, montant: controle.excedent }, adresseIp },
+        tx,
+      );
+    }
+    const avance = await avanceDisponible(tx, police.id);
+    const tous = [...avant, { numero: numeroRecu, date: saisie.date, montant: controle.montant, excedent: controle.excedent, reference: saisie.reference.trim(), canal: saisie.canal as CanalPaiement, payeur }];
     const etat = etatPaiements(contenu.totaux.ttc, contenu.echeances, tous);
     const commun4 = { produitCode: contenu.produit.code, policeNumero: police.numero, policeId: police.id, cotationId: police.cotationId, souscripteur: contenu.souscripteur, dateEmission: date, parametresDate: depuisDate(f.versionDateEffet), emisPar: acteur.identifiant };
 
@@ -673,7 +744,7 @@ export async function enregistrerPaiement(acteur: UtilisateurCourant, factureId:
       paiementId: paiement.id,
       modeleVersionId: modeleRecu.modeleVersionId,
       associes: modeleRecu.associes,
-      donnees: (url) => donnees("RECU", numeroRecu, 1, date, contenu, police, commun, facturation(contenu, etat, f.numero, cePaiement), acteur.nom, url),
+      donnees: (url) => donnees("RECU", numeroRecu, 1, date, contenu, police, commun, facturation(contenu, etat, f.numero, cePaiement, avance), acteur.nom, url),
     });
     // Facture rééditée : même numéro, version + 1, mêmes modèles que la version 1, paiements et restant dû à jour.
     const version = await prochaineVersion(tx, f.numero);
@@ -688,7 +759,7 @@ export async function enregistrerPaiement(acteur: UtilisateurCourant, factureId:
       dateEmission: depuisDate(v1.dateEmission),
       modeleVersionId: v1.modeleVersionId,
       associes: v1.versionsAssociees as unknown as AssociesFiges,
-      donnees: (url) => donnees("FACTURE", numeroFacture, version, depuisDate(v1.dateEmission), contenu, police, commun, facturation(contenu, etat, null, etat.paiements), acteur.nom, url),
+      donnees: (url) => donnees("FACTURE", numeroFacture, version, depuisDate(v1.dateEmission), contenu, police, commun, facturation(contenu, etat, null, etat.paiements, avance), acteur.nom, url),
     });
     await journaliser(
       {
@@ -696,16 +767,133 @@ export async function enregistrerPaiement(acteur: UtilisateurCourant, factureId:
         action: "PAIEMENT_ENREGISTRE",
         objetType: "facture",
         objetId: factureId,
-        apres: { facture: f.numero, recu: numeroRecu, montant: controle.montant, canal: saisie.canal, date: saisie.date, restantDu: etat.restantDu, versionFacture: version },
+        apres: { facture: f.numero, recu: numeroRecu, montant: controle.montant, excedent: controle.excedent, canal: saisie.canal, date: saisie.date, restantDu: etat.restantDu, versionFacture: version },
         adresseIp,
       },
       tx,
     );
-    return { numeroRecu, restantDu: etat.restantDu, ids: [idRecu, idFacture] };
+    return { numeroRecu, restantDu: etat.restantDu, excedent: controle.excedent, avance, ids: [idRecu, idFacture] };
   }, ATTENTE);
   const productions: IssueProduction[] = [];
   for (const id of resultat.ids) productions.push(await produire(acteur, id, adresseIp));
-  return { numeroRecu: resultat.numeroRecu, restantDu: resultat.restantDu, productions };
+  return { numeroRecu: resultat.numeroRecu, restantDu: resultat.restantDu, excedent: resultat.excedent, avance: resultat.avance, productions };
+}
+
+// ---------------------------------------------------------------- Avance sur police (H33, session 6.0)
+
+/**
+ * Impute l'avance de la police sur une facture émise et en cours, au plus son restant dû, après confirmation de l'utilisateur
+ * (proposée à l'émission ou au paiement de la facture suivante). Pas de reçu (aucune somme nouvelle) ; la facture est rééditée
+ * (même numéro, version + 1, mêmes modèles que la version 1) avec l'imputation dans ses paiements.
+ */
+export async function imputerAvance(acteur: UtilisateurCourant, factureId: number, saisi: string, adresseIp: string | null): Promise<{ restantDu: string; avance: string; productions: IssueProduction[] }> {
+  await exiger(acteur, "ENREGISTRER_PAIEMENT", "imputation d'une avance");
+  const prisma = obtenirPrisma();
+  const date = aujourdhui();
+  const commun = await lireParametresSociete(date);
+  const resultat = await prisma.$transaction(async (tx) => {
+    const f = await verrouiller(tx, factureId);
+    await tx.$queryRaw`SELECT id FROM polices WHERE id = ${f.policeId} FOR UPDATE`;
+    const contenu = contenuDe(f);
+    const avant = await encaissementsDe(tx, factureId);
+    const etatAvant = etatPaiements(contenu.totaux.ttc, contenu.echeances, avant);
+    const disponible = await avanceDisponible(tx, f.policeId);
+    const controle = controlerImputation(saisi, disponible, { statut: f.statut as StatutFacture, type: f.type as TypeFacture, restantDu: etatAvant.restantDu });
+    if (controle.problemes.length > 0 || !controle.montant || !f.numero) throw new ErreurMetier(controle.problemes.join(" "));
+    const v1 = await tx.documentAProduire.findUnique({ where: { numero_version: { numero: f.numero, version: 1 } } });
+    if (!v1) throw new ErreurMetier(`Version 1 de la facture ${f.numero} introuvable.`);
+    const police = (await chargerPolice(tx, f.policeId))!;
+    await tx.mouvementAvance.create({ data: { policeId: f.policeId, type: "IMPUTATION", montant: controle.montant, date: versDate(date), factureId, creeParId: acteur.id, creePar: acteur.identifiant } });
+    const encaisses = await encaissementsDe(tx, factureId);
+    const etat = etatPaiements(contenu.totaux.ttc, contenu.echeances, encaisses);
+    const avance = await avanceDisponible(tx, f.policeId);
+    const version = await prochaineVersion(tx, f.numero);
+    const numeroFacture = f.numero;
+    const idFacture = await figer(tx, {
+      type: "FACTURE",
+      numero: numeroFacture,
+      version,
+      factureId,
+      produitCode: contenu.produit.code,
+      policeNumero: police.numero,
+      policeId: police.id,
+      cotationId: police.cotationId,
+      souscripteur: contenu.souscripteur,
+      dateEmission: depuisDate(v1.dateEmission),
+      parametresDate: depuisDate(f.versionDateEffet),
+      modeleVersionId: v1.modeleVersionId,
+      associes: v1.versionsAssociees as unknown as AssociesFiges,
+      donnees: (url) => donnees("FACTURE", numeroFacture, version, depuisDate(v1.dateEmission), contenu, police, commun, facturation(contenu, etat, null, etat.paiements, avance), acteur.nom, url),
+      emisPar: acteur.identifiant,
+    });
+    await journaliser(
+      { acteur: auteur(acteur), action: "AVANCE_IMPUTEE", objetType: "facture", objetId: factureId, apres: { facture: f.numero, origine: "AVANCE", montant: controle.montant, restantDu: etat.restantDu, avanceRestante: avance, versionFacture: version }, adresseIp },
+      tx,
+    );
+    return { restantDu: etat.restantDu, avance, idFacture };
+  }, ATTENTE);
+  return { restantDu: resultat.restantDu, avance: resultat.avance, productions: [await produire(acteur, resultat.idFacture, adresseIp)] };
+}
+
+/** Restitue tout ou partie de l'avance d'une police : date, montant, canal, référence. Pas de nouveau document (H74). */
+export async function restituerAvance(acteur: UtilisateurCourant, policeId: number, saisie: SaisieRestitution, adresseIp: string | null): Promise<{ avance: string }> {
+  await exiger(acteur, "ENREGISTRER_PAIEMENT", "restitution d'une avance");
+  return obtenirPrisma().$transaction(async (tx) => {
+    const police = await tx.police.findUnique({ where: { id: policeId }, select: { id: true, numero: true } });
+    if (!police) throw new ErreurMetier("Police introuvable.");
+    await tx.$queryRaw`SELECT id FROM polices WHERE id = ${policeId} FOR UPDATE`;
+    const disponible = await avanceDisponible(tx, policeId);
+    const controle = controlerRestitution(saisie, disponible, aujourdhui());
+    if (controle.problemes.length > 0 || !controle.montant) throw new ErreurMetier(controle.problemes.join(" "));
+    await tx.mouvementAvance.create({
+      data: { policeId, type: "RESTITUTION", montant: controle.montant, date: versDate(saisie.date), canal: saisie.canal, reference: saisie.reference.trim(), creeParId: acteur.id, creePar: acteur.identifiant },
+    });
+    const avance = await avanceDisponible(tx, policeId);
+    await journaliser(
+      { acteur: auteur(acteur), action: "AVANCE_RESTITUEE", objetType: "police", objetId: policeId, apres: { police: police.numero, montant: controle.montant, date: saisie.date, canal: saisie.canal, reference: saisie.reference.trim(), avanceRestante: avance }, adresseIp },
+      tx,
+    );
+    return { avance };
+  });
+}
+
+export const LIBELLE_MOUVEMENT_AVANCE: Record<string, string> = {
+  EXCEDENT: "Trop-perçu",
+  REPORT: "Report (facture annulée)",
+  IMPUTATION: "Imputation sur facture",
+  RESTITUTION: "Restitution",
+};
+
+export type AvanceDePolice = {
+  disponible: string;
+  mouvements: { id: number; type: string; libelle: string; credit: boolean; date: DateIso; montant: string; facture: string | null; recu: string | null; canal: string | null; reference: string | null; par: string }[];
+};
+
+/** Avance d'une police et ses mouvements, du plus ancien au plus récent (fiche de la police). */
+export async function avanceDePolice(acteur: UtilisateurCourant, policeId: number): Promise<AvanceDePolice> {
+  await exigerLecture(acteur);
+  const prisma = obtenirPrisma();
+  const lignes = await prisma.mouvementAvance.findMany({
+    where: { policeId },
+    include: { paiement: { select: { numeroRecu: true } }, facture: { select: { numero: true } }, factureAnnulee: { select: { numero: true } } },
+    orderBy: { id: "asc" },
+  });
+  return {
+    disponible: await avanceDisponible(prisma, policeId),
+    mouvements: lignes.map((m) => ({
+      id: m.id,
+      type: m.type,
+      libelle: LIBELLE_MOUVEMENT_AVANCE[m.type] ?? m.type,
+      credit: m.type === "EXCEDENT" || m.type === "REPORT",
+      date: depuisDate(m.date),
+      montant: m.montant.toFixed(),
+      facture: m.facture?.numero ?? m.factureAnnulee?.numero ?? null,
+      recu: m.paiement?.numeroRecu ?? null,
+      canal: m.canal ? LIBELLE_CANAL[m.canal as CanalPaiement] : null,
+      reference: m.reference,
+      par: m.creePar,
+    })),
+  };
 }
 
 // ---------------------------------------------------------------- PDF en attente (CDC §11.4)
@@ -757,15 +945,25 @@ export type FactureLue = LigneFactureLue & {
   seuil: string | null;
   etat: EtatPaiements | null;
   documents: DocumentFacture[];
-  actions: { modifier: boolean; emettre: boolean; emettreSousSeuil: boolean; avoir: boolean; payer: boolean; relancer: boolean };
+  /** Avance disponible de la police (H33) et imputation proposée sur cette facture (0 : rien à proposer). */
+  avance: { disponible: string; proposee: string };
+  /** Facture annulée : sommes reportées en avance sur la police (H47). */
+  reports: { recu: string | null; date: DateIso; montant: string }[];
+  actions: { modifier: boolean; emettre: boolean; emettreSousSeuil: boolean; avoir: boolean; payer: boolean; imputer: boolean; relancer: boolean };
 };
 
-const inclusion = { police: { select: { numero: true, cotationId: true, souscripteur: true } }, produit: { select: { code: true } }, paiements: { orderBy: { id: "asc" as const } }, aProduire: { orderBy: [{ numero: "asc" as const }, { version: "asc" as const }] } };
+const inclusion = {
+  police: { select: { numero: true, cotationId: true, souscripteur: true } },
+  produit: { select: { code: true } },
+  paiements: { orderBy: { id: "asc" as const } },
+  imputations: inclusionImputations,
+  aProduire: { orderBy: [{ numero: "asc" as const }, { version: "asc" as const }] },
+};
 type FactureComplete = Prisma.FactureGetPayload<{ include: typeof inclusion }>;
 
 function ligne(f: FactureComplete): LigneFactureLue & { etat: EtatPaiements | null } {
   const contenu = contenuDe(f);
-  const etat = f.type !== "AVOIR" && (f.statut === "EMISE" || f.statut === "ANNULEE") ? etatPaiements(contenu.totaux.ttc, contenu.echeances, paiementsDe(f.paiements)) : null;
+  const etat = f.type !== "AVOIR" && (f.statut === "EMISE" || f.statut === "ANNULEE") ? etatPaiements(contenu.totaux.ttc, contenu.echeances, versEncaissements(f.paiements, f.imputations)) : null;
   return {
     id: f.id,
     type: f.type as TypeFacture,
@@ -825,6 +1023,9 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
     prisma.facture.findFirst({ where: { remplaceId: f.id }, select: { id: true, numero: true, statut: true }, orderBy: { id: "desc" } }),
   ]);
   const seuil = f.type === "AVOIR" ? null : await seuilDe(f.produitId, f.versionDateEffet);
+  const disponible = await avanceDisponible(prisma, f.policeId);
+  const proposee = base.etat && f.statut === "EMISE" && f.type !== "AVOIR" ? imputationProposee(disponible, base.etat.restantDu) : "0";
+  const reports = await prisma.mouvementAvance.findMany({ where: { type: "REPORT", factureAnnuleeId: f.id }, include: { paiement: { select: { numeroRecu: true } } }, orderBy: { id: "asc" } });
   const ouverte = f.statut === "BROUILLON" || f.statut === "A_VALIDER";
   const sousSeuil = ouverte && validationContratRequise(d.facture, f.ttc.toFixed(), seuil);
   return {
@@ -843,13 +1044,17 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
     emiseLe: f.emiseLe,
     seuil,
     documents: f.aProduire.map((p) => ({ numero: p.numero, version: p.version, type: p.type, statut: p.statut as DocumentFacture["statut"], documentId: p.documentId, tentatives: p.tentatives, derniereErreur: p.derniereErreur })),
+    avance: { disponible, proposee },
+    reports: reports.map((r) => ({ recu: r.paiement?.numeroRecu ?? null, date: depuisDate(r.date), montant: r.montant.toFixed() })),
     actions: {
       modifier: f.statut === "BROUILLON" && peutAgir(d.facture),
       // Le demandeur d'une validation ne l'émet pas lui-même ; une demande « À valider » ne se refait pas.
       emettre: ouverte && peutAgir(d.facture) && !(f.statut === "A_VALIDER" && (sousSeuil || f.demandeParId === acteur.id)),
       emettreSousSeuil: sousSeuil && f.statut === "BROUILLON",
-      avoir: f.type !== "AVOIR" && f.statut === "EMISE" && f.paiements.length === 0 && peutAgir(d.avoir),
+      // H47 (09/10/2026) : une facture payée en partie s'annule aussi ; ses sommes sont reportées.
+      avoir: f.type !== "AVOIR" && f.statut === "EMISE" && peutAgir(d.avoir),
       payer: f.type !== "AVOIR" && f.statut === "EMISE" && peutAgir(d.paiement) && base.etat !== null && montant(base.etat.restantDu).greaterThan(0),
+      imputer: montant(proposee).greaterThan(0) && peutAgir(d.paiement),
       relancer: base.pdfEnAttente > 0,
     },
   };
@@ -859,7 +1064,9 @@ export type FacturesDePolice = {
   police: { id: number; numero: string; cotationId: number; typeContrat: string | null; dateEffet: DateIso; dateEcheance: DateIso; souscripteur: string; cpEmises: boolean };
   factures: LigneFactureLue[];
   possibles: { affaireNouvelle: boolean; renouvellement: { dateEffet: DateIso; dateEcheance: DateIso } | null; avenants: { numero: number; dateEffet: DateIso; adherents: number }[] };
-  droits: { creer: boolean };
+  /** Avance de la police (H33, H47) : solde créditeur et mouvements. */
+  avance: AvanceDePolice;
+  droits: { creer: boolean; restituer: boolean };
 };
 
 /** Factures d'une police et factures qu'on peut encore y créer (écran de la cotation acceptée). */
@@ -892,6 +1099,7 @@ export async function facturesDePolice(acteur: UtilisateurCourant, cotationId: n
         .filter((v) => v.motif === "INCORPORATION" && !facturees.has(v.numero))
         .map((v) => ({ numero: v.numero, dateEffet: depuisDate(v.dateEffet), adherents: (v.concernes as unknown as number[]).length })),
     },
-    droits: { creer: peutAgir(d.facture) },
+    avance: await avanceDePolice(acteur, police.id),
+    droits: { creer: peutAgir(d.facture), restituer: peutAgir(d.paiement) },
   };
 }

@@ -73,6 +73,14 @@ export const ACTIONS_AUDIT = [
   "LISTE_ECHEANCES_ETABLIE",
   "LOT_ECHEANCES_CREE",
   "LOT_ECHEANCES_TERMINE",
+  // Session 6.0 : report des paiements d'une facture annulée (H47), avance sur police (H33), intermédiaires, tâches (H66)
+  "PAIEMENT_REPORTE",
+  "AVANCE_CREDITEE",
+  "AVANCE_IMPUTEE",
+  "AVANCE_RESTITUEE",
+  "INTERMEDIAIRE_CREE",
+  "INTERMEDIAIRE_MODIFIE",
+  "TACHE_FERMEE",
 ] as const;
 
 export type ActionAudit = (typeof ACTIONS_AUDIT)[number];

@@ -81,6 +81,8 @@ export type Facturation = {
   echeances: { numero: number; date: DateIso; montant: string; statut: "Payé" | "Non payé" }[];
   paiements: { numero: string; date: DateIso; montant: string; reference: string; canal: string; payeur: string; restantDu: string }[];
   solde: { totalPaye: string; restantDu: string };
+  /** solde.avance (D28) : avance disponible de la police au moment du document ; absent pour un avoir. */
+  avance?: string;
   /** doc.facture_origine : facture annulée (avoir) ou réglée (reçu) ; null pour une facture. */
   factureOrigine: string | null;
   envoyeA: { nom: string; adresse: string } | null;
@@ -210,7 +212,11 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
         ? fa.echeances.map((e) => ({ numero: e.numero, date: e.date, montant: e.montant, statut: e.statut }))
         : s.echeances.map((e) => ({ numero: e.numero, date: e.date, montant: e.montant, statut: "À payer" })),
     paiements: (fa?.paiements ?? []).map((p) => ({ numero: p.numero, date: p.date, montant: p.montant, reference: p.reference, canal: p.canal, restant_du: p.restantDu, payeur: p.payeur })),
-    solde: certificat ? NON_FOURNI : fa ? { total_paye: fa.solde.totalPaye, restant_du: fa.solde.restantDu } : { total_paye: "0", restant_du: s.totaux.ttc },
+    solde: certificat
+      ? NON_FOURNI
+      : fa
+        ? { total_paye: fa.solde.totalPaye, restant_du: fa.solde.restantDu, avance: fa.avance ?? NON_FOURNI }
+        : { total_paye: "0", restant_du: s.totaux.ttc, avance: NON_FOURNI },
     echeance_appelee: fa?.appel
       ? { numero: fa.appel.echeance.numero, date: fa.appel.echeance.date, montant: fa.appel.echeance.montant, restant_du: fa.appel.echeance.restantDu }
       : NON_FOURNI,

@@ -207,6 +207,23 @@ describe("cotation figée dès l'émission (CDC §4.1)", () => {
     await modifierBrouillon(commercial, id, saisie({ typeContrat: "FAMILLE", regimeTaxe: "GROUPE", nombreTranches: 1 }), null);
     expect((await lireCotation(commercial, id))!.regimeTaxe).toBe("GROUPE");
   });
+
+  it("le régime de taxe choisi est gardé à la soumission : une famille passée en régime Groupe reste en Groupe, au même taux (défaut de la 6.0 : la soumission le remplaçait par le régime proposé pour le type de contrat) ; T1 inchangé", async () => {
+    // Famille au régime Groupe (le seul taux du produit : 1,5 %), 15 888 000 F au brouillon.
+    const id = await creerBrouillon(commercial, saisie({ typeContrat: "FAMILLE", regimeTaxe: "GROUPE" }), null);
+    expect((await lireCotation(commercial, id))!.resultat.totaux.arrondi.ttc.toString()).toBe("15888000");
+    // La soumission reconstruit la saisie depuis la base : avant la correction, le régime Groupe redevenait Individuel (régime proposé pour une famille),
+    // sans taux en vigueur, et la soumission échouait ; avec un taux Individuel, elle aurait émis un TTC différent.
+    expect((await soumettre(commercial, id, null)).statut).toBe("EMISE");
+    const soumise = (await lireCotation(commercial, id))!;
+    expect(soumise).toMatchObject({ typeContrat: "FAMILLE", regimeTaxe: "GROUPE", statut: "EMISE" });
+    expect(soumise.resultat.totaux.arrondi.ttc.toString()).toBe("15888000");
+    // T1 (contrat de groupe, régime proposé) : les montants ne bougent pas d'un franc.
+    const t1 = (await lireCotation(commercial, await emise(commercial)))!;
+    expect(t1.regimeTaxe).toBe("GROUPE");
+    expect(t1.resultat.totaux.arrondi.ttc.toString()).toBe("15888000");
+    expect(t1.resultat.lignes.map((l) => l.arrondi.ttc.toString())).toEqual(["288000", "15600000"]);
+  });
 });
 
 describe("numérotation continue et sans trou (CDC §11.4)", () => {

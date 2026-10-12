@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ChampNumeroPolice } from "@/composants/ChampNumeroPolice";
@@ -7,6 +6,7 @@ import { FormulaireAction } from "@/composants/FormulaireAction";
 import { LignesBeneficiaires, LignesContactsUrgence } from "@/composants/LignesDynamiques";
 import { LignesComposition } from "@/composants/LignesComposition";
 import { TachesPolice } from "@/composants/TachesPolice";
+import { Bandeau, Carte, Champ, EnTetePage, LienBouton, ListeDefinitions, ListeDeroulante, PastilleStatut, Tableau, type ElementDefinition } from "@/composants/ui";
 import { formaterMontant, montant, type Montant } from "@/domaine/calcul/montant";
 import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
@@ -28,7 +28,7 @@ import { lireValidationContrat } from "@/serveur/validation-contrat";
 import { accepterCotation, composerPrime, emettreCpDeCotation, emettrePdfDeCotation, reediterDocument, refuserCotation, renvoyerCotation, soumettreCotation, validerCotation } from "../actions";
 
 const f = (m: Montant) => formaterMontant(m);
-const entree = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2";
+const formatDateHeure = (d: Date) => new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }).format(d);
 const formatDate = (iso: string | null) => (iso ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeZone: "UTC" }).format(new Date(`${iso}T00:00:00Z`)) : "—");
 
 export default async function PageCotation(props: PageProps<"/cotations/[id]">) {
@@ -69,334 +69,339 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
   const forcees = c.lignes.filter((l) => l.primeForcee !== null);
   const accessoiresSaisis = c.lignes.filter((l) => l.accessoireSaisi != null);
   const nom = c.souscripteur.type === "MORALE" ? c.souscripteur.raison_sociale : `${c.souscripteur.nom} ${c.souscripteur.prenoms}`.trim();
+  const titre = c.numero ?? `Brouillon n° ${c.id}`;
+
+  // Le Tableau n'a pas de pied : le total général est une dernière ligne repérée par `total` (rendue en gras).
+  type LignePrime = { cle: string; total: boolean; libelle: string; branche: string; effectif: string; nette: string; accessoires: string; taux: string; taxe: string; ttc: string; ttcParUnite: string };
+  const gras = (total: boolean, contenu: string) => (total ? <strong>{contenu}</strong> : contenu);
+  const totalGeneral: LignePrime = {
+    cle: "TOTAL", total: true, libelle: "Total général", branche: "", effectif: "", taux: "", ttcParUnite: "",
+    nette: f(x.totaux.arrondi.nette), accessoires: f(x.totaux.arrondi.accessoires), taxe: f(x.totaux.arrondi.taxe), ttc: f(x.totaux.arrondi.ttc),
+  };
+  const lignesGaranties: LignePrime[] = composition
+    ? [
+        ...x.lignes.map((l, i) => ({
+          cle: l.code, total: false, libelle: composition.lignes[i].libelle, branche: composition.lignes[i].branche, effectif: "",
+          nette: f(l.arrondi.nette), accessoires: f(l.arrondi.accessoires), taux: `${montant(composition.lignes[i].tauxPourcent).toString().replace(".", ",")} %`,
+          taxe: f(l.arrondi.taxe), ttc: f(l.arrondi.ttc), ttcParUnite: "",
+        })),
+        totalGeneral,
+      ]
+    : [];
+  const lignesFormules: LignePrime[] = [
+    ...[...x.lignes, ...(x.fraisFractionnement ? [x.fraisFractionnement] : [])].map((l) => ({
+      cle: l.code, total: false, libelle: c.libelles[l.code] ?? "Frais de fractionnement", branche: "",
+      effectif: l.code === "FRAIS_FRACTIONNEMENT" ? "—" : String(l.effectif),
+      nette: f(l.arrondi.nette), accessoires: f(l.arrondi.accessoires), taux: "", taxe: f(l.arrondi.taxe), ttc: f(l.arrondi.ttc),
+      ttcParUnite: l.code === "FRAIS_FRACTIONNEMENT" ? "—" : f(l.ttcParUnite),
+    })),
+    totalGeneral,
+  ];
+  // Échéancier : tranches puis ligne « Somme (= TTC) ».
+  const lignesEcheancier = c.echeancier
+    ? [
+        ...c.echeancier.map((t) => ({ cle: String(t.numero), total: false, numero: String(t.numero), date: formatDate(t.date), montant: f(t.montant) })),
+        {
+          cle: "SOMME", total: true, numero: "Somme (= TTC)", date: "",
+          montant: f(c.echeancier.reduce((s, t) => s.plus(t.montant), x.totaux.arrondi.ttc.minus(x.totaux.arrondi.ttc))),
+        },
+      ]
+    : [];
+
+  // Caractéristiques de la cotation (libellé : valeur) ; les lignes conditionnelles gardent leur condition d'origine.
+  const caracteristiques: ElementDefinition[] = [
+    { libelle: "Produit", valeur: `${c.produit.code} — ${c.produit.libelle}` },
+    { libelle: "Type de contrat", valeur: c.typeContrat ? LIBELLE_TYPE_CONTRAT[c.typeContrat] : "non renseigné (cotation antérieure)" },
+    { libelle: "Régime de taxe", valeur: c.regimeTaxe ? LIBELLE_REGIME_TAXE[c.regimeTaxe] : "non renseigné (cotation antérieure à la session 6.0 : taux choisi par le type de contrat)" },
+    { libelle: "Souscripteur", valeur: `${nom} (${c.souscripteur.type === "MORALE" ? "personne morale" : "personne physique"})` },
+    { libelle: "Période", valeur: `du ${formatDate(c.dateEffet)} au ${formatDate(c.dateEcheance)} (${x.joursCouverts} jours)` },
+    { libelle: "Établie le", valeur: formatDate(c.dateEtablissement) },
+    { libelle: "Valide jusqu'au", valeur: formatDate(c.dateValidite) },
+    { libelle: "Paramétrage du produit du", valeur: formatDate(c.versionDateEffet) },
+    { libelle: "Auteur", valeur: c.auteurIdentifiant },
+    { libelle: "Intermédiaire(s)", valeur: c.intermediaires.length > 0 ? c.intermediaires.map((i) => `${i.nom} (${i.code}, ${i.role})`).join(" ; ") : "aucun" },
+    ...(c.numeroPolice ? [{ libelle: "Police créée", valeur: c.numeroPolice }] : []),
+    ...(c.statut === "REFUSEE" ? [{ libelle: "Refus", valeur: `${c.motifRefusCode}${c.refusCommentaire ? ` — ${c.refusCommentaire}` : ""}` }] : []),
+  ];
+  const avertissementPolice = c.numeroPolice ? avertissementNumeroContrat(c.numeroPolice) : null;
+
+  // Informations complémentaires : seules les rubriques renseignées apparaissent.
+  const complements: ElementDefinition[] = [
+    ...(c.contactsUrgence && c.contactsUrgence.length > 0 ? [{ libelle: "Contacts d'urgence", valeur: c.contactsUrgence.map((u) => `${u.nom_prenoms} (${u.contact})`).join(" ; ") }] : []),
+    ...(Object.keys(c.risque).length > 0 ? [{ libelle: "Risque", valeur: Object.entries(c.risque).map(([k, v]) => `risque.${k} = ${v}`).join(" ; ") }] : []),
+  ];
 
   return (
-    <main>
-      <p className="mb-2 text-sm">
-        <Link href="/cotations" className="text-primary underline">
-          ← Cotations
-        </Link>
-      </p>
-      <div className="mb-2 flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold text-primary">{c.numero ?? `Brouillon n° ${c.id}`}</h1>
-        <span className="rounded bg-muted px-3 py-1 text-sm font-semibold">{LIBELLE_STATUT[c.statutEffectif]}</span>
-      </div>
+    <main className="space-y-6">
+      <EnTetePage titre={titre} filAriane={[{ libelle: "Cotations", href: "/cotations" }, { libelle: titre }]} actions={<PastilleStatut libelle={LIBELLE_STATUT[c.statutEffectif]} />} />
+
       {c.filigrane ? (
-        <p role="alert" className="mb-4 rounded border-2 border-danger bg-danger-bg p-3 text-center text-2xl font-bold tracking-widest text-danger">
-          {c.filigrane}
-        </p>
+        <Bandeau ton="danger" role="alert" className="justify-center">
+          <span className="text-2xl font-bold tracking-widest">{c.filigrane}</span>
+        </Bandeau>
       ) : null}
       {compositionVidee && aComposer ? (
-        <p role="status" className="mb-4 rounded border border-warning-border bg-warning-bg p-3 text-sm">
+        <Bandeau ton="avertissement" role="status">
           <strong>La composition de la prime a été vidée.</strong> La période, le régime de taxe ou le type de contrat a changé : les montants composés ne valaient que pour les conditions d&apos;origine
           (aucun prorata n&apos;est appliqué). La prime est de nouveau « À composer » ; l&apos;ancienne composition, avec son auteur et son motif, est gardée au journal.
-        </p>
+        </Bandeau>
       ) : null}
       {c.brouillonAFormulesSousGaranties ? (
-        <p role="alert" className="mb-4 rounded border border-warning-border bg-warning-bg p-3 text-sm">
+        <Bandeau ton="avertissement" role="alert">
           <strong>Brouillon à recréer.</strong> {MESSAGE_BROUILLON_A_FORMULES}.
-        </p>
+        </Bandeau>
       ) : null}
       <TachesPolice taches={taches} cotationId={c.id} chemin={`/cotations/${c.id}`} />
 
-      <section className="mb-6 grid max-w-4xl gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
-        <p><strong>Produit :</strong> {c.produit.code} — {c.produit.libelle}</p>
-        <p><strong>Type de contrat :</strong> {c.typeContrat ? LIBELLE_TYPE_CONTRAT[c.typeContrat] : "non renseigné (cotation antérieure)"}</p>
-        <p><strong>Régime de taxe :</strong> {c.regimeTaxe ? LIBELLE_REGIME_TAXE[c.regimeTaxe] : "non renseigné (cotation antérieure à la session 6.0 : taux choisi par le type de contrat)"}</p>
-        <p><strong>Souscripteur :</strong> {nom} ({c.souscripteur.type === "MORALE" ? "personne morale" : "personne physique"})</p>
-        <p><strong>Période :</strong> du {formatDate(c.dateEffet)} au {formatDate(c.dateEcheance)} ({x.joursCouverts} jours)</p>
-        <p><strong>Établie le :</strong> {formatDate(c.dateEtablissement)}</p>
-        <p><strong>Valide jusqu'au :</strong> {formatDate(c.dateValidite)}</p>
-        <p><strong>Paramétrage du produit du :</strong> {formatDate(c.versionDateEffet)}</p>
-        <p><strong>Auteur :</strong> {c.auteurIdentifiant}</p>
-        <p><strong>Intermédiaire(s) :</strong> {c.intermediaires.length > 0 ? c.intermediaires.map((i) => `${i.nom} (${i.code}, ${i.role})`).join(" ; ") : "aucun"}</p>
-        {c.numeroPolice ? <p><strong>Police créée :</strong> {c.numeroPolice}</p> : null}
-        {c.numeroPolice && avertissementNumeroContrat(c.numeroPolice) ? <p role="status" className="text-warning">{avertissementNumeroContrat(c.numeroPolice)}</p> : null}
-        {c.numeroPolice && estContratDeGroupe(c.typeContrat) ? (
-          <p><Link href={`/cotations/${c.id}/adherents`} className="text-primary underline">Adhérents, certificats d'adhésion et annexe des CP</Link></p>
+      <Carte titre="Caractéristiques">
+        <ListeDefinitions elements={caracteristiques} />
+        {avertissementPolice ? (
+          <Bandeau ton="avertissement" role="status" className="mt-4">
+            {avertissementPolice}
+          </Bandeau>
         ) : null}
         {c.numeroPolice ? (
-          <p><Link href={`/cotations/${c.id}/factures`} className="text-primary underline">Factures, avoirs et paiements de la police</Link></p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {estContratDeGroupe(c.typeContrat) ? <LienBouton href={`/cotations/${c.id}/adherents`}>Adhérents, certificats d'adhésion et annexe des CP</LienBouton> : null}
+            <LienBouton href={`/cotations/${c.id}/factures`}>Factures, avoirs et paiements de la police</LienBouton>
+          </div>
         ) : null}
-        {c.statut === "REFUSEE" ? <p><strong>Refus :</strong> {c.motifRefusCode}{c.refusCommentaire ? ` — ${c.refusCommentaire}` : ""}</p> : null}
-      </section>
+      </Carte>
 
       {c.raisonsValidation.length > 0 ? (
-        <p className="mb-4 rounded border border-warning-border bg-warning-bg p-3 text-sm">
+        <Bandeau ton="avertissement">
           <strong>Validation exigée :</strong> {c.raisonsValidation.map((r) => LIBELLE_RAISON[r]).join(", ")}.
-        </p>
+        </Bandeau>
       ) : null}
 
-      <h2 className="mb-2 text-lg font-semibold">Primes</h2>
-      {composition ? (
-        aComposer ? (
-          <p role="status" className="rounded border border-warning-border bg-warning-bg p-3 text-sm">
-            <strong>Prime à composer.</strong> Ce produit se tarife par garanties : la Technique doit composer la prime (une ligne par garantie souscrite) avant que la cotation puisse être soumise.
-          </p>
+      <Carte titre="Primes">
+        {composition ? (
+          aComposer ? (
+            <Bandeau ton="avertissement" role="status">
+              <strong>Prime à composer.</strong> Ce produit se tarife par garanties : la Technique doit composer la prime (une ligne par garantie souscrite) avant que la cotation puisse être soumise.
+            </Bandeau>
+          ) : (
+            <Tableau
+              legende="Primes par garantie"
+              lignes={lignesGaranties}
+              cleLigne={(l) => l.cle}
+              colonnes={[
+                { cle: "garantie", entete: "Garantie", className: "font-medium", rendu: (l) => gras(l.total, l.libelle) },
+                { cle: "branche", entete: "Branche", rendu: (l) => l.branche },
+                { cle: "nette", entete: "Prime nette (HT)", alignement: "droite", rendu: (l) => gras(l.total, l.nette) },
+                { cle: "accessoires", entete: "Accessoires", alignement: "droite", rendu: (l) => gras(l.total, l.accessoires) },
+                { cle: "taux", entete: "Taux", alignement: "droite", rendu: (l) => l.taux },
+                { cle: "taxe", entete: "Taxe", alignement: "droite", rendu: (l) => gras(l.total, l.taxe) },
+                { cle: "ttc", entete: "TTC", alignement: "droite", className: "font-semibold", rendu: (l) => gras(l.total, l.ttc) },
+              ]}
+            />
+          )
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[52rem] border-collapse text-sm">
-              <thead>
-                <tr className="bg-primary text-right text-primary-foreground">
-                  <th className="p-2 text-left">Garantie</th>
-                  <th className="p-2 text-left">Branche</th>
-                  <th className="p-2">Prime nette (HT)</th>
-                  <th className="p-2">Accessoires</th>
-                  <th className="p-2">Taux</th>
-                  <th className="p-2">Taxe</th>
-                  <th className="p-2">TTC</th>
-                </tr>
-              </thead>
-              <tbody>
-                {x.lignes.map((l, i) => (
-                  <tr key={l.code} className="border-b border-border text-right">
-                    <td className="p-2 text-left font-medium">{composition.lignes[i].libelle}</td>
-                    <td className="p-2 text-left">{composition.lignes[i].branche}</td>
-                    <td className="p-2 tabular-nums">{f(l.arrondi.nette)}</td>
-                    <td className="p-2 tabular-nums">{f(l.arrondi.accessoires)}</td>
-                    <td className="p-2 tabular-nums">{montant(composition.lignes[i].tauxPourcent).toString().replace(".", ",")} %</td>
-                    <td className="p-2 tabular-nums">{f(l.arrondi.taxe)}</td>
-                    <td className="p-2 font-semibold tabular-nums">{f(l.arrondi.ttc)}</td>
-                  </tr>
-                ))}
-                <tr className="bg-muted text-right font-semibold">
-                  <td className="p-2 text-left" colSpan={2}>Total général</td>
-                  <td className="p-2 tabular-nums">{f(x.totaux.arrondi.nette)}</td>
-                  <td className="p-2 tabular-nums">{f(x.totaux.arrondi.accessoires)}</td>
-                  <td className="p-2" />
-                  <td className="p-2 tabular-nums">{f(x.totaux.arrondi.taxe)}</td>
-                  <td className="p-2 tabular-nums">{f(x.totaux.arrondi.ttc)}</td>
-                </tr>
-              </tbody>
-            </table>
+          <Tableau
+            legende="Primes par formule"
+            lignes={lignesFormules}
+            cleLigne={(l) => l.cle}
+            colonnes={[
+              { cle: "formule", entete: "Formule", className: "font-medium", rendu: (l) => gras(l.total, l.libelle) },
+              { cle: "effectif", entete: "Effectif", alignement: "droite", rendu: (l) => l.effectif },
+              { cle: "nette", entete: "Prime nette (HT)", alignement: "droite", rendu: (l) => gras(l.total, l.nette) },
+              { cle: "accessoires", entete: "Accessoires", alignement: "droite", rendu: (l) => gras(l.total, l.accessoires) },
+              { cle: "taxe", entete: "Taxe", alignement: "droite", rendu: (l) => gras(l.total, l.taxe) },
+              { cle: "ttc", entete: "TTC", alignement: "droite", className: "font-semibold", rendu: (l) => gras(l.total, l.ttc) },
+              { cle: "unite", entete: "TTC par unité", alignement: "droite", rendu: (l) => l.ttcParUnite },
+            ]}
+          />
+        )}
+        {composition && !aComposer && composition.composePar ? (
+          <Bandeau ton="neutre" className="mt-3">
+            <strong>Prime composée par {composition.composePar}</strong>
+            {composition.composeLe ? ` le ${formatDateHeure(composition.composeLe)}` : ""}. Motif : {composition.motif}.{" "}
+            {peutModifier(c.statut)
+              ? "Brouillon : les taux de taxe sont résolus de nouveau à chaque modification et à la soumission (branche de chaque ligne, régime de taxe, date d'effet) ; ils sont figés à l'émission."
+              : "Les taux de taxe ont été résolus à la date d'effet de la police (branche de chaque ligne, régime de taxe de la cotation) et sont figés avec la cotation."}
+          </Bandeau>
+        ) : null}
+        {forcees.length > 0 ? (
+          <Bandeau ton="neutre" className="mt-3">
+            <strong>Prime forcée (information interne, non affichée au client) :</strong>{" "}
+            {forcees.map((l) => `${l.code} : tarif ${montant(l.primeTarif).toString()} → forcée ${montant(l.primeForcee!).toString()}`).join(" ; ")}. Motif : {c.motifForcage}.
+          </Bandeau>
+        ) : null}
+        {accessoiresSaisis.length > 0 ? (
+          <Bandeau ton="neutre" className="mt-3">
+            <strong>Accessoires modifiés dans la cotation :</strong>{" "}
+            {accessoiresSaisis.map((l) => `${l.code} : paramétrage ${montant(l.accessoireTarif ?? "0").toString()} → ${montant(l.accessoireSaisi!).toString()}`).join(" ; ")} (journalisé).
+          </Bandeau>
+        ) : null}
+        {c.echeancier ? (
+          <div className="mt-6 max-w-md">
+            <h3 className="mb-2 font-semibold">Échéancier ({c.echeancier.length} tranches)</h3>
+            <Tableau
+              legende="Échéancier"
+              lignes={lignesEcheancier}
+              cleLigne={(t) => t.cle}
+              colonnes={[
+                { cle: "numero", entete: "Tranche", rendu: (t) => gras(t.total, t.numero) },
+                { cle: "date", entete: "Date", rendu: (t) => t.date },
+                { cle: "montant", entete: "Montant", alignement: "droite", rendu: (t) => gras(t.total, t.montant) },
+              ]}
+            />
           </div>
-        )
-      ) : (
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[46rem] border-collapse text-sm">
-          <thead>
-            <tr className="bg-primary text-right text-primary-foreground">
-              <th className="p-2 text-left">Formule</th>
-              <th className="p-2">Effectif</th>
-              <th className="p-2">Prime nette (HT)</th>
-              <th className="p-2">Accessoires</th>
-              <th className="p-2">Taxe</th>
-              <th className="p-2">TTC</th>
-              <th className="p-2">TTC par unité</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...x.lignes, ...(x.fraisFractionnement ? [x.fraisFractionnement] : [])].map((l) => (
-              <tr key={l.code} className="border-b border-border text-right">
-                <td className="p-2 text-left font-medium">{c.libelles[l.code] ?? "Frais de fractionnement"}</td>
-                <td className="p-2">{l.code === "FRAIS_FRACTIONNEMENT" ? "—" : l.effectif}</td>
-                <td className="p-2">{f(l.arrondi.nette)}</td>
-                <td className="p-2">{f(l.arrondi.accessoires)}</td>
-                <td className="p-2">{f(l.arrondi.taxe)}</td>
-                <td className="p-2 font-semibold">{f(l.arrondi.ttc)}</td>
-                <td className="p-2">{l.code === "FRAIS_FRACTIONNEMENT" ? "—" : f(l.ttcParUnite)}</td>
-              </tr>
-            ))}
-            <tr className="bg-muted text-right font-semibold">
-              <td className="p-2 text-left">Total général</td>
-              <td className="p-2" />
-              <td className="p-2">{f(x.totaux.arrondi.nette)}</td>
-              <td className="p-2">{f(x.totaux.arrondi.accessoires)}</td>
-              <td className="p-2">{f(x.totaux.arrondi.taxe)}</td>
-              <td className="p-2">{f(x.totaux.arrondi.ttc)}</td>
-              <td className="p-2" />
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      )}
-      {composition && !aComposer && composition.composePar ? (
-        <p className="mt-3 rounded border border-border bg-muted p-3 text-sm">
-          <strong>Prime composée par {composition.composePar}</strong>
-          {composition.composeLe ? ` le ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }).format(composition.composeLe)}` : ""}. Motif : {composition.motif}.{" "}
-          {peutModifier(c.statut)
-            ? "Brouillon : les taux de taxe sont résolus de nouveau à chaque modification et à la soumission (branche de chaque ligne, régime de taxe, date d'effet) ; ils sont figés à l'émission."
-            : "Les taux de taxe ont été résolus à la date d'effet de la police (branche de chaque ligne, régime de taxe de la cotation) et sont figés avec la cotation."}
-        </p>
-      ) : null}
-      {forcees.length > 0 ? (
-        <p className="mt-3 rounded border border-border bg-muted p-3 text-sm">
-          <strong>Prime forcée (information interne, non affichée au client) :</strong>{" "}
-          {forcees.map((l) => `${l.code} : tarif ${montant(l.primeTarif).toString()} → forcée ${montant(l.primeForcee!).toString()}`).join(" ; ")}. Motif : {c.motifForcage}.
-        </p>
-      ) : null}
-      {accessoiresSaisis.length > 0 ? (
-        <p className="mt-3 rounded border border-border bg-muted p-3 text-sm">
-          <strong>Accessoires modifiés dans la cotation :</strong>{" "}
-          {accessoiresSaisis.map((l) => `${l.code} : paramétrage ${montant(l.accessoireTarif ?? "0").toString()} → ${montant(l.accessoireSaisi!).toString()}`).join(" ; ")} (journalisé).
-        </p>
-      ) : null}
-      {c.echeancier ? (
-        <div className="mt-4">
-          <h3 className="mb-2 font-semibold">Échéancier ({c.echeancier.length} tranches)</h3>
-          <table className="w-full max-w-md border-collapse text-sm">
-            <tbody>
-              {c.echeancier.map((t) => (
-                <tr key={t.numero} className="border-b border-border">
-                  <td className="p-2">{t.numero}</td>
-                  <td className="p-2">{formatDate(t.date)}</td>
-                  <td className="p-2 text-right">{f(t.montant)}</td>
-                </tr>
-              ))}
-              <tr className="bg-muted font-semibold">
-                <td className="p-2" colSpan={2}>Somme (= TTC)</td>
-                <td className="p-2 text-right">{f(c.echeancier.reduce((s, t) => s.plus(t.montant), x.totaux.arrondi.ttc.minus(x.totaux.arrondi.ttc)))}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      ) : null}
+        ) : null}
+      </Carte>
 
       {c.assures.length > 0 ? (
-        <div className="mt-6">
-          <h2 className="mb-2 text-lg font-semibold">Assurés</h2>
-          <table className="w-full max-w-3xl border-collapse text-sm">
-            <thead>
-              <tr className="text-left text-neutral"><th className="p-1">N°</th><th className="p-1">Nom et prénoms</th><th className="p-1">Naissance</th><th className="p-1">Sexe</th><th className="p-1">Lien</th><th className="p-1">Pièce d&apos;identité</th><th className="p-1">Formule</th></tr>
-            </thead>
-            <tbody>
-              {c.assures.map((a) => (
-                <tr key={a.ordre} className="border-t border-border">
-                  <td className="p-1">{a.ordre}</td><td className="p-1">{a.nom_prenoms}</td><td className="p-1">{a.date_naissance || "—"}</td><td className="p-1">{a.sexe || "—"}</td><td className="p-1">{a.lien || "—"}</td><td className="p-1">{a.num_identification || "—"}</td><td className="p-1">{a.formule || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Carte titre="Assurés">
+          <Tableau
+            legende="Assurés"
+            lignes={c.assures}
+            cleLigne={(a) => String(a.ordre)}
+            colonnes={[
+              { cle: "ordre", entete: "N°", rendu: (a) => a.ordre },
+              { cle: "nom", entete: "Nom et prénoms", rendu: (a) => a.nom_prenoms },
+              { cle: "naissance", entete: "Naissance", rendu: (a) => a.date_naissance || "—" },
+              { cle: "sexe", entete: "Sexe", rendu: (a) => a.sexe || "—" },
+              { cle: "lien", entete: "Lien", rendu: (a) => a.lien || "—" },
+              { cle: "identification", entete: "Pièce d'identité", rendu: (a) => a.num_identification || "—" },
+              { cle: "formule", entete: "Formule", rendu: (a) => a.formule || "—" },
+            ]}
+          />
+        </Carte>
       ) : null}
       {c.beneficiaires && c.beneficiaires.length > 0 ? (
-        <div className="mt-6">
-          <h2 className="mb-2 text-lg font-semibold">Bénéficiaires</h2>
-          <table className="w-full max-w-3xl border-collapse text-sm">
-            <thead>
-              <tr className="text-left text-neutral"><th className="p-1">N°</th><th className="p-1">Nom et prénoms</th><th className="p-1">Lien</th><th className="p-1">Contact</th><th className="p-1 text-right">Quote-part</th></tr>
-            </thead>
-            <tbody>
-              {c.beneficiaires.map((b) => (
-                <tr key={b.ordre} className="border-t border-border">
-                  <td className="p-1">{b.ordre}</td><td className="p-1">{b.nom_prenoms}</td><td className="p-1">{b.lien || "—"}</td><td className="p-1">{b.contact || "—"}</td><td className="p-1 text-right">{b.quote_part} %</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Carte titre="Bénéficiaires">
+          <Tableau
+            legende="Bénéficiaires"
+            lignes={c.beneficiaires}
+            cleLigne={(b) => String(b.ordre)}
+            colonnes={[
+              { cle: "ordre", entete: "N°", rendu: (b) => b.ordre },
+              { cle: "nom", entete: "Nom et prénoms", rendu: (b) => b.nom_prenoms },
+              { cle: "lien", entete: "Lien", rendu: (b) => b.lien || "—" },
+              { cle: "contact", entete: "Contact", rendu: (b) => b.contact || "—" },
+              { cle: "quote", entete: "Quote-part", alignement: "droite", rendu: (b) => `${b.quote_part} %` },
+            ]}
+          />
+        </Carte>
       ) : null}
-      {c.contactsUrgence && c.contactsUrgence.length > 0 ? (
-        <p className="mt-4 text-sm">
-          <strong>Contacts d'urgence :</strong> {c.contactsUrgence.map((u) => `${u.nom_prenoms} (${u.contact})`).join(" ; ")}
-        </p>
-      ) : null}
-      {Object.keys(c.risque).length > 0 ? (
-        <p className="mt-4 text-sm">
-          <strong>Risque :</strong> {Object.entries(c.risque).map(([k, v]) => `risque.${k} = ${v}`).join(" ; ")}
-        </p>
+      {complements.length > 0 ? (
+        <Carte titre="Informations complémentaires">
+          <ListeDefinitions elements={complements} colonnes={1} />
+        </Carte>
       ) : null}
 
-      <section className="mt-8 grid max-w-3xl gap-6">
-        <div className="rounded border border-border p-4">
-          <h2 className="mb-2 font-semibold">Documents PDF</h2>
-          <div className="mb-3 flex flex-wrap items-end gap-4">
-            {aComposer ? null : (
-              <a href={`/api/cotations/${c.id}/apercu`} target="_blank" className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
-                Aperçu PDF (filigrane « APERÇU »)
-              </a>
-            )}
-            {emise && pdfCotation.length === 0 && agit ? (
-              <FormulaireAction action={emettrePdfDeCotation} libelleBouton="Émettre le PDF de la cotation" discret>
-                <input type="hidden" name="id" value={c.id} />
-              </FormulaireAction>
-            ) : null}
-            {c.numeroPolice && pdfCp.length === 0 && peutAgir(niveauContrat) && !(etatContrat?.requise && etatContrat.validation?.statut === "A_VALIDER") ? (
-              <FormulaireAction
-                action={emettreCpDeCotation}
-                libelleBouton={
-                  etatContrat?.requise
-                    ? `Demander la validation du contrat (police ${c.numeroPolice})`
-                    : etatContrat?.validation?.statut === "A_VALIDER"
-                      ? `Valider et émettre les conditions particulières (police ${c.numeroPolice})`
-                      : `Émettre les conditions particulières (police ${c.numeroPolice})`
-                }
-                discret
-              >
-                <input type="hidden" name="id" value={c.id} />
-              </FormulaireAction>
-            ) : null}
-          </div>
-          {pdfCp.length === 0 && etatContrat?.validation?.statut === "A_VALIDER" ? (
-            <p role="status" className="mb-3 rounded border border-warning-border bg-warning-bg p-2 text-sm">
-              <strong>Contrat à valider.</strong> Son TTC ({formaterMontant(montant(etatContrat.ttc))} F) dépasse le seuil du produit ({formaterMontant(montant(etatContrat.validation.seuil))} F) ; demandé par {etatContrat.validation.demandeePar} le{" "}
-              {new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }).format(etatContrat.validation.demandeeLe)}. Un profil habilité qui n'est pas le demandeur doit l'émettre.
-            </p>
-          ) : null}
-          {documents.length > 0 ? (
-            <table className="w-full border-collapse text-sm">
-              <tbody>
-                {documents.map((d) => (
-                  <tr key={d.id} className="border-b border-border">
-                    <td className="p-1">
-                      {d.libelleType} {d.numero} v{d.version}
-                      {d.filigrane ? ` (${d.filigrane})` : ""}
-                    </td>
-                    <td className="p-1">{d.dateEmission}</td>
-                    <td className="p-1">{d.statut.libelle}</td>
-                    <td className="p-1">
-                      <a href={`/api/documents/${d.id}`} className="text-primary underline">PDF</a>
-                    </td>
-                    <td className="p-1 font-mono text-xs" title="Empreinte SHA-256">{d.empreinte.slice(0, 16)}…</td>
-                    <td className="p-1">
-                      {d.version === derniere(d.numero) && (d.type === "CP" ? peutAgir(niveauContrat) : agit) ? (
-                        <FormulaireAction action={reediterDocument} libelleBouton="Rééditer" discret>
-                          <input type="hidden" name="id" value={c.id} />
-                          <input type="hidden" name="documentId" value={d.id} />
-                        </FormulaireAction>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="text-sm text-neutral">
-              {emise ? "Aucun PDF émis pour l'instant." : "Le PDF définitif (numéro, QR code) est émis avec la cotation ; avant, seul l'aperçu est possible."}
-            </p>
+      <Carte titre="Documents PDF">
+        <div className="mb-3 flex flex-wrap items-end gap-4">
+          {aComposer ? null : (
+            // Route d'API (PDF) : pas de préchargement, qui ferait générer l'aperçu pour rien.
+            <LienBouton href={`/api/cotations/${c.id}/apercu`} target="_blank" prefetch={false}>
+              Aperçu PDF (filigrane « APERÇU »)
+            </LienBouton>
           )}
-        </div>
-
-        {peutComposer ? (
-          <div className="rounded border border-border p-4">
-            <FormulaireAction action={composerPrime} libelleBouton={aComposer ? "Enregistrer la composition" : "Recomposer la prime"}>
+          {emise && pdfCotation.length === 0 && agit ? (
+            <FormulaireAction action={emettrePdfDeCotation} libelleBouton="Émettre le PDF de la cotation" discret>
               <input type="hidden" name="id" value={c.id} />
-              <h2 className="mb-1 font-semibold">{aComposer ? "Composer la prime" : "Recomposer la prime"}</h2>
-              <p className="mb-3 text-sm text-neutral">
-                Saisissez, pour chaque garantie souscrite (et chaque surprime ou majoration, qui est une ligne comme une autre), la prime nette et les accessoires
-                calculés dans le simulateur de la Technique. Le module résout le taux de taxe de la branche de chaque ligne (régime de taxe de la cotation, date d&apos;effet),
-                calcule la taxe, arrondit selon la règle du produit et totalise. Aucun prorata n&apos;est appliqué : les montants sont ceux de la période du contrat.
-                Le motif est obligatoire et la composition est journalisée ; vous ne pourrez pas valider cette cotation.
-              </p>
+            </FormulaireAction>
+          ) : null}
+          {c.numeroPolice && pdfCp.length === 0 && peutAgir(niveauContrat) && !(etatContrat?.requise && etatContrat.validation?.statut === "A_VALIDER") ? (
+            <FormulaireAction
+              action={emettreCpDeCotation}
+              libelleBouton={
+                etatContrat?.requise
+                  ? `Demander la validation du contrat (police ${c.numeroPolice})`
+                  : etatContrat?.validation?.statut === "A_VALIDER"
+                    ? `Valider et émettre les conditions particulières (police ${c.numeroPolice})`
+                    : `Émettre les conditions particulières (police ${c.numeroPolice})`
+              }
+              discret
+            >
+              <input type="hidden" name="id" value={c.id} />
+            </FormulaireAction>
+          ) : null}
+        </div>
+        {pdfCp.length === 0 && etatContrat?.validation?.statut === "A_VALIDER" ? (
+          <Bandeau ton="avertissement" role="status" className="mb-3">
+            <strong>Contrat à valider.</strong> Son TTC ({formaterMontant(montant(etatContrat.ttc))} F) dépasse le seuil du produit ({formaterMontant(montant(etatContrat.validation.seuil))} F) ; demandé par {etatContrat.validation.demandeePar} le{" "}
+            {formatDateHeure(etatContrat.validation.demandeeLe)}. Un profil habilité qui n'est pas le demandeur doit l'émettre.
+          </Bandeau>
+        ) : null}
+        {documents.length > 0 ? (
+          <Tableau
+            legende="Documents PDF de la cotation"
+            lignes={documents}
+            cleLigne={(d) => String(d.id)}
+            colonnes={[
+              { cle: "document", entete: "Document", rendu: (d) => `${d.libelleType} ${d.numero} v${d.version}${d.filigrane ? ` (${d.filigrane})` : ""}` },
+              { cle: "date", entete: "Émis le", rendu: (d) => d.dateEmission },
+              { cle: "statut", entete: "Statut", rendu: (d) => <PastilleStatut libelle={d.statut.libelle} /> },
+              {
+                cle: "pdf",
+                entete: "Fichier",
+                rendu: (d) => (
+                  <a href={`/api/documents/${d.id}`} className="text-primary underline">
+                    PDF
+                  </a>
+                ),
+              },
+              {
+                cle: "empreinte",
+                entete: "Empreinte",
+                rendu: (d) => (
+                  <span className="font-mono text-xs" title="Empreinte SHA-256">
+                    {d.empreinte.slice(0, 16)}…
+                  </span>
+                ),
+              },
+              {
+                cle: "action",
+                entete: "Action",
+                rendu: (d) =>
+                  d.version === derniere(d.numero) && (d.type === "CP" ? peutAgir(niveauContrat) : agit) ? (
+                    <FormulaireAction action={reediterDocument} libelleBouton="Rééditer" discret>
+                      <input type="hidden" name="id" value={c.id} />
+                      <input type="hidden" name="documentId" value={d.id} />
+                    </FormulaireAction>
+                  ) : null,
+              },
+            ]}
+          />
+        ) : (
+          <p className="text-sm text-neutral">
+            {emise ? "Aucun PDF émis pour l'instant." : "Le PDF définitif (numéro, QR code) est émis avec la cotation ; avant, seul l'aperçu est possible."}
+          </p>
+        )}
+      </Carte>
+
+      {peutComposer ? (
+        <Carte
+          titre={aComposer ? "Composer la prime" : "Recomposer la prime"}
+          description="Saisissez, pour chaque garantie souscrite (et chaque surprime ou majoration, qui est une ligne comme une autre), la prime nette et les accessoires calculés dans le simulateur de la Technique. Le module résout le taux de taxe de la branche de chaque ligne (régime de taxe de la cotation, date d'effet), calcule la taxe, arrondit selon la règle du produit et totalise. Aucun prorata n'est appliqué : les montants sont ceux de la période du contrat. Le motif est obligatoire et la composition est journalisée ; vous ne pourrez pas valider cette cotation."
+        >
+          <FormulaireAction action={composerPrime} libelleBouton={aComposer ? "Enregistrer la composition" : "Recomposer la prime"}>
+            <input type="hidden" name="id" value={c.id} />
+            <div className="mb-4">
               <LignesComposition
                 initiales={(composition?.lignes ?? []).map((l) => ({ libelle: l.libelle, branche: l.branche, primeNette: montant(l.primeNette).toString(), accessoires: montant(l.accessoires).toString() }))}
                 garanties={c.garantiesDuProduit}
                 branches={branchesActives.map((b) => ({ code: b.code, libelle: b.libelle }))}
                 saisieLibre={c.garantiesSaisieLibre}
               />
-              <label className="mb-3 block max-w-2xl text-sm font-medium">
-                Motif de la composition (obligatoire)
-                <input name="motif" required minLength={3} maxLength={500} className={entree} autoComplete="off" />
-              </label>
-            </FormulaireAction>
-          </div>
-        ) : null}
+            </div>
+            <div className="mb-4 max-w-2xl">
+              <Champ label="Motif de la composition (obligatoire)" name="motif" required minLength={3} maxLength={500} autoComplete="off" />
+            </div>
+          </FormulaireAction>
+        </Carte>
+      ) : null}
 
-        {peutModifier(c.statut) && agit && !c.brouillonAFormulesSousGaranties ? (
-          <div className="flex flex-wrap items-start gap-4 rounded border border-border p-4">
-            <Link href={`/cotations/${c.id}/modifier`} className="rounded border border-primary px-4 py-2 font-semibold text-primary hover:bg-muted">Modifier le brouillon</Link>
+      {peutModifier(c.statut) && agit && !c.brouillonAFormulesSousGaranties ? (
+        <Carte>
+          <div className="flex flex-col items-start gap-4 sm:flex-row">
+            <LienBouton href={`/cotations/${c.id}/modifier`}>Modifier le brouillon</LienBouton>
             {aComposer ? (
-              <p role="status" className="text-sm text-neutral">La prime n&apos;est pas encore composée : la soumission (et l&apos;aperçu PDF) sont impossibles tant que la Technique ne l&apos;a pas composée.</p>
+              <Bandeau ton="info" role="status" className="w-full min-w-0 sm:w-auto sm:flex-1">
+                La prime n&apos;est pas encore composée : la soumission (et l&apos;aperçu PDF) sont impossibles tant que la Technique ne l&apos;a pas composée.
+              </Bandeau>
             ) : (
               <FormulaireAction action={soumettreCotation} libelleBouton="Soumettre (émettre)">
                 <input type="hidden" name="id" value={c.id} />
@@ -408,89 +413,82 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
               </FormulaireAction>
             )}
           </div>
-        ) : null}
+        </Carte>
+      ) : null}
 
-        {peutEtreValidee(c.statut) ? (
-          <div className="rounded border border-border p-4">
-            <h2 className="mb-2 font-semibold">Cotation à valider</h2>
-            {estContributeur ? (
-              <p className="mb-3 text-sm">
-                Vous avez {estAuteur ? "créé" : "modifié"} cette cotation : un autre valideur (profil Technique) doit la valider.{estAuteur ? " Vous pouvez la renvoyer en brouillon pour la modifier." : ""}
-              </p>
-            ) : null}
-            {peutValider(niveauValidation) && !estContributeur ? (
-              <FormulaireAction action={validerCotation} libelleBouton="Valider et émettre" className="mb-4">
-                <input type="hidden" name="id" value={c.id} />
-              </FormulaireAction>
-            ) : null}
-            {estAuteur || peutValider(niveauValidation) ? (
-              <FormulaireAction action={renvoyerCotation} libelleBouton="Renvoyer en brouillon" discret>
-                <input type="hidden" name="id" value={c.id} />
-                <label className="mb-3 block text-sm font-medium">
-                  {estAuteur ? "Commentaire (facultatif)" : "Motif du renvoi (obligatoire)"}
-                  <input name="commentaire" className={entree} autoComplete="off" />
-                </label>
-              </FormulaireAction>
-            ) : (
-              <p className="text-sm text-neutral">En attente de validation.</p>
-            )}
-          </div>
-        ) : null}
-
-        {peutAccepter(c.statutEffectif) && agit ? (
-          <div className="grid gap-6 rounded border border-border p-4 sm:grid-cols-2">
-            <FormulaireAction action={accepterCotation} libelleBouton="Accepter et créer la police" className="sm:col-span-2">
+      {peutEtreValidee(c.statut) ? (
+        <Carte titre="Cotation à valider">
+          {estContributeur ? (
+            <Bandeau ton="info" className="mb-3">
+              Vous avez {estAuteur ? "créé" : "modifié"} cette cotation : un autre valideur (profil Technique) doit la valider.{estAuteur ? " Vous pouvez la renvoyer en brouillon pour la modifier." : ""}
+            </Bandeau>
+          ) : null}
+          {peutValider(niveauValidation) && !estContributeur ? (
+            <FormulaireAction action={validerCotation} libelleBouton="Valider et émettre" className="mb-4">
               <input type="hidden" name="id" value={c.id} />
-              <h2 className="mb-2 font-semibold">Le client accepte</h2>
+            </FormulaireAction>
+          ) : null}
+          {estAuteur || peutValider(niveauValidation) ? (
+            <FormulaireAction action={renvoyerCotation} libelleBouton="Renvoyer en brouillon" discret>
+              <input type="hidden" name="id" value={c.id} />
+              <div className="mb-3 max-w-md">
+                <Champ label={estAuteur ? "Commentaire (facultatif)" : "Motif du renvoi (obligatoire)"} name="commentaire" autoComplete="off" />
+              </div>
+            </FormulaireAction>
+          ) : (
+            <p className="text-sm text-neutral">En attente de validation.</p>
+          )}
+        </Carte>
+      ) : null}
+
+      {peutAccepter(c.statutEffectif) && agit ? (
+        <>
+          <Carte titre="Le client accepte">
+            <FormulaireAction action={accepterCotation} libelleBouton="Accepter et créer la police">
+              <input type="hidden" name="id" value={c.id} />
               {composition ? (
                 <p className="mb-2 text-sm text-neutral">La prime composée est acceptée en entier : elle est reprise telle quelle dans la police, sans nouveau calcul.</p>
               ) : (
                 <>
                   <p className="mb-2 text-sm text-neutral">Formule(s) retenue(s) :</p>
                   {c.lignes.map((l) => (
-                    <label key={l.code} className="mb-1 flex items-center gap-2 text-sm">
-                      <input type="checkbox" name="retenue" value={l.code} defaultChecked /> {c.libelles[l.code] ?? l.code}
+                    <label key={l.code} className="mb-1 flex min-h-10 items-center gap-2 text-sm sm:min-h-0">
+                      <input type="checkbox" name="retenue" value={l.code} defaultChecked className="size-4 accent-primary" /> {c.libelles[l.code] ?? l.code}
                     </label>
                   ))}
                 </>
               )}
-              <label className="mb-3 mt-3 block text-sm font-medium">
-                Numéro de police attribué par SIM (obligatoire)
-                <ChampNumeroPolice className={entree} />
-                <span className="mt-1 block text-xs font-normal text-neutral">
-                  Format contrôlé : <code>{formatPolice}</code>
-                  {formatPolice === FORMAT_NUMERO_POLICE_DEFAUT ? " (par défaut)" : ""}. Le module ne génère jamais ce numéro.
-                </span>
-              </label>
+              <div className="mb-3 mt-3 max-w-2xl">
+                <ChampNumeroPolice label="Numéro de police attribué par SIM (obligatoire)">
+                  <p className="text-xs text-neutral">
+                    Format contrôlé : <code>{formatPolice}</code>
+                    {formatPolice === FORMAT_NUMERO_POLICE_DEFAUT ? " (par défaut)" : ""}. Le module ne génère jamais ce numéro.
+                  </p>
+                </ChampNumeroPolice>
+              </div>
               <p className="mb-2 mt-4 text-sm font-semibold">À compléter à la souscription (repris de la cotation, modifiable)</p>
               <ComplementsSouscripteur valeurs={c.souscripteur} />
               <p className="mb-1 text-sm font-medium">Bénéficiaires (la somme des quotes-parts fait 100 %)</p>
               <LignesBeneficiaires initiales={(c.beneficiaires ?? []).map((b) => ({ nom: b.nom_prenoms, lien: b.lien, contact: b.contact, quote: b.quote_part }))} />
-              <p className="mb-1 text-sm font-medium">Contacts d'urgence</p>
+              <p className="mb-1 mt-4 text-sm font-medium">Contacts d'urgence</p>
               <LignesContactsUrgence initiales={(c.contactsUrgence ?? []).map((u) => ({ nom: u.nom_prenoms, contact: u.contact }))} />
             </FormulaireAction>
+          </Carte>
+          <Carte titre="Le client refuse">
             <FormulaireAction action={refuserCotation} libelleBouton="Enregistrer le refus" discret>
               <input type="hidden" name="id" value={c.id} />
-              <h2 className="mb-2 font-semibold">Le client refuse</h2>
-              <label className="mb-3 block text-sm font-medium">
-                Motif (obligatoire)
-                <select name="motif" defaultValue="" className={entree} required>
-                  <option value="" disabled>— Choisir —</option>
-                  {motifs.map((m) => (<option key={m.code} value={m.code}>{m.libelle}</option>))}
-                </select>
-              </label>
-              <label className="mb-3 block text-sm font-medium">
-                Commentaire
-                <input name="commentaire" className={entree} autoComplete="off" />
-              </label>
+              <div className="mb-3 max-w-md">
+                <ListeDeroulante label="Motif (obligatoire)" name="motif" required defaultValue="" invite="— Choisir —" options={motifs.map((m) => ({ valeur: m.code, libelle: m.libelle }))} />
+              </div>
+              <div className="mb-3 max-w-md">
+                <Champ label="Commentaire" name="commentaire" autoComplete="off" />
+              </div>
             </FormulaireAction>
-          </div>
-        ) : null}
+          </Carte>
+        </>
+      ) : null}
 
-        {c.statutEffectif === "EXPIREE" ? (
-          <p className="rounded border border-danger-border bg-danger-bg p-3 text-sm">Cotation expirée : elle ne peut plus être acceptée ni transformée en police. Créez une nouvelle cotation.</p>
-        ) : null}
-      </section>
+      {c.statutEffectif === "EXPIREE" ? <Bandeau ton="danger">Cotation expirée : elle ne peut plus être acceptée ni transformée en police. Créez une nouvelle cotation.</Bandeau> : null}
     </main>
   );
 }

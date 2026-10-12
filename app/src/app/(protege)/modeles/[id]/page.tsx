@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
+import { Bandeau, Bouton, Carte, Champ as ChampSaisie, EnTetePage, EtatVide, ListeDefinitions, classesBouton } from "@/composants/ui";
 import { REGLES } from "@/domaine/documents/modeles";
 import { lireModele } from "@/serveur/modeles";
 import { aujourdhui } from "@/serveur/parametrage";
@@ -9,6 +9,7 @@ import { exigerUtilisateur } from "@/serveur/session";
 import { ErreurAcces } from "@/serveur/types";
 
 import { deposerUneVersion, publierUneVersion, renvoyerUneVersion, soumettreUneVersion } from "../actions";
+import { PastilleVersion } from "../pastille-version";
 
 const formatMoment = (d: Date | null) => (d ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short", timeZone: "UTC" }).format(d) : "—");
 const taille = (octets: number) => (octets >= 1024 * 1024 ? `${(octets / 1024 / 1024).toFixed(1)} Mo` : `${Math.ceil(octets / 1024)} Ko`);
@@ -28,74 +29,78 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
   const jour = aujourdhui();
 
   return (
-    <main>
-      <p className="mb-2 text-sm">
-        <Link href="/modeles" className="text-primary underline">
-          ← Modèles Word
-        </Link>
-      </p>
-      <h1 className="mb-1 text-2xl font-semibold text-primary">
-        {m.code} <span className="text-base font-normal text-neutral">— {m.libelle}</span>
-      </h1>
-      <p className="mb-6 text-sm text-neutral">
-        {m.libelleType}
-        {m.precision ? ` : ${m.precision}` : ""} · {m.produitCode ? `produit ${m.produitCode}` : "commun à tous les produits"} ·{" "}
-        {m.enVigueur ? `version en vigueur : v${m.enVigueur.numero}` : "aucune version en vigueur"}
-        {regle.fixe ? " · document fixe : converti une seule fois en PDF, à la publication" : ""}
-      </p>
+    <main className="space-y-6">
+      <EnTetePage
+        filAriane={[{ libelle: "Modèles Word", href: "/modeles" }, { libelle: m.code }]}
+        titre={`${m.code} — ${m.libelle}`}
+        sousTitre={`${m.libelleType}${m.precision ? ` : ${m.precision}` : ""} · ${m.produitCode ? `produit ${m.produitCode}` : "commun à tous les produits"} · ${
+          m.enVigueur ? `version en vigueur : v${m.enVigueur.numero}` : "aucune version en vigueur"
+        }${regle.fixe ? " · document fixe : converti une seule fois en PDF, à la publication" : ""}`}
+      />
 
-      <h2 className="mb-2 text-lg font-semibold">Versions</h2>
-      {m.versions.length === 0 ? <p className="mb-6 text-sm text-neutral">Aucune version déposée.</p> : null}
-      <div className="mb-8 space-y-4">
+      <section className="space-y-4">
+        <h2 className="text-lg font-bold text-foreground">Versions</h2>
+        {m.versions.length === 0 ? <EtatVide message="Aucune version déposée." compact /> : null}
         {m.versions.map((v) => (
-          <article key={v.id} className="rounded border border-border p-4">
-            <div className="mb-2 flex flex-wrap items-center gap-3">
-              <h3 className="text-base font-semibold">Version {v.numero}</h3>
-              <span className="rounded bg-muted px-2 py-0.5 text-sm font-semibold">{v.libelleStatut}</span>
-              <span className="text-sm text-neutral">date d'effet {v.dateEffet}</span>
+          <Carte key={v.id} className="space-y-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <h3 className="text-base font-semibold text-foreground">Version {v.numero}</h3>
+              <PastilleVersion statut={v.statut} libelle={v.libelleStatut} />
+              <span className="text-sm text-muted-foreground">date d'effet {v.dateEffet}</span>
             </div>
-            <dl className="mb-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-              <div><dt className="inline font-medium">Commentaire : </dt><dd className="inline">{v.commentaire}</dd></div>
-              <div><dt className="inline font-medium">Fichier : </dt><dd className="inline">{v.nomFichier} ({taille(v.taille)})</dd></div>
-              <div><dt className="inline font-medium">Déposé : </dt><dd className="inline">{formatMoment(v.deposeLe)} par {v.auteur}</dd></div>
-              <div><dt className="inline font-medium">Publié : </dt><dd className="inline">{v.publieLe ? `${formatMoment(v.publieLe)} par ${v.valideur}` : "—"}</dd></div>
-              {v.visa ? <div><dt className="inline font-medium">Visa : </dt><dd className="inline">{v.visa}{v.dateDocument ? ` du ${v.dateDocument}` : ""}</dd></div> : null}
-              <div className="sm:col-span-2"><dt className="inline font-medium">Empreinte SHA-256 : </dt><dd className="inline break-all font-mono text-xs">{v.empreinte}</dd></div>
-            </dl>
-            {v.motifRenvoi ? <p className="mb-2 text-sm text-danger"><strong>Renvoyé en brouillon :</strong> {v.motifRenvoi}</p> : null}
+            <ListeDefinitions
+              elements={[
+                { libelle: "Commentaire", valeur: v.commentaire },
+                { libelle: "Fichier", valeur: `${v.nomFichier} (${taille(v.taille)})` },
+                { libelle: "Déposé", valeur: `${formatMoment(v.deposeLe)} par ${v.auteur}` },
+                { libelle: "Publié", valeur: v.publieLe ? `${formatMoment(v.publieLe)} par ${v.valideur}` : "—" },
+                ...(v.visa ? [{ libelle: "Visa", valeur: `${v.visa}${v.dateDocument ? ` du ${v.dateDocument}` : ""}` }] : []),
+              ]}
+            />
+            <ListeDefinitions colonnes={1} elements={[{ libelle: "Empreinte SHA-256", valeur: <span className="break-all font-mono text-xs">{v.empreinte}</span> }]} />
+            {v.motifRenvoi ? (
+              <Bandeau ton="danger">
+                <strong>Renvoyé en brouillon :</strong> {v.motifRenvoi}
+              </Bandeau>
+            ) : null}
             {v.avertissements.length > 0 ? (
-              <ul className="mb-3 list-disc pl-5 text-sm text-warning">
-                {v.avertissements.map((a, i) => (
-                  <li key={i}>{a.message}{a.emplacement ? ` — ${a.emplacement}` : ""}</li>
-                ))}
-              </ul>
+              <Bandeau ton="avertissement">
+                <ul className="list-disc pl-5">
+                  {v.avertissements.map((a, i) => (
+                    <li key={i}>
+                      {a.message}
+                      {a.emplacement ? ` — ${a.emplacement}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </Bandeau>
             ) : null}
             {v.champsUtilises.length > 0 ? (
-              <details className="mb-3 text-sm">
+              <details className="text-sm">
                 <summary className="cursor-pointer text-primary">Champs utilisés ({v.champsUtilises.length})</summary>
-                <p className="mt-1 font-mono text-xs">{v.champsUtilises.join(", ")}</p>
+                <p className="mt-1 break-words font-mono text-xs text-foreground">{v.champsUtilises.join(", ")}</p>
               </details>
             ) : null}
 
-            <div className="flex flex-wrap items-end gap-4">
-              <a href={`/api/modeles/versions/${v.id}/fichier`} className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
+            <div className="flex flex-wrap items-end gap-3">
+              {/* Liens natifs <a> (pas next/link) : un téléchargement ne doit pas passer par la navigation du routeur. */}
+              <a href={`/api/modeles/versions/${v.id}/fichier`} className={classesBouton("secondaire")}>
                 Télécharger le .docx
               </a>
               {v.aUnPdf ? (
-                <a href={`/api/modeles/versions/${v.id}/pdf`} className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
+                <a href={`/api/modeles/versions/${v.id}/pdf`} className={classesBouton("secondaire")}>
                   PDF publié
                 </a>
               ) : null}
-              <form action={`/api/modeles/versions/${v.id}/apercu`} method="get" target="_blank" className="flex items-end gap-2">
+              <form action={`/api/modeles/versions/${v.id}/apercu`} method="get" target="_blank" className="flex flex-wrap items-end gap-3">
                 {regle.fixe ? null : (
-                  <label className="text-sm">
-                    Assurés fictifs
-                    <input name="assures" type="number" min={0} max={200} defaultValue={2} className="ml-2 w-20 rounded border border-border px-2 py-1" />
-                  </label>
+                  <div className="w-36">
+                    <ChampSaisie label="Assurés fictifs" name="assures" type="number" min={0} max={200} defaultValue={2} />
+                  </div>
                 )}
-                <button type="submit" className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
+                <Bouton type="submit" variante="secondaire">
                   Aperçu PDF (données fictives)
-                </button>
+                </Bouton>
               </form>
               {v.peutSoumettre ? (
                 <FormulaireAction action={soumettreUneVersion} libelleBouton="Soumettre pour publication" discret>
@@ -106,7 +111,7 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
             </div>
 
             {v.peutPublier ? (
-              <div className="mt-4 grid gap-4 rounded border border-border bg-surface p-3 sm:grid-cols-2">
+              <div className="grid gap-6 border-t border-border pt-4 sm:grid-cols-2">
                 <FormulaireAction action={publierUneVersion} libelleBouton="Publier">
                   <input type="hidden" name="versionId" value={v.id} />
                   <input type="hidden" name="modeleId" value={m.id} />
@@ -119,23 +124,28 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
                 </FormulaireAction>
               </div>
             ) : null}
-          </article>
+          </Carte>
         ))}
-      </div>
+      </section>
 
       {m.droits.deposer ? (
-        <section className="max-w-2xl rounded border border-border bg-surface p-5">
-          <h2 className="mb-1 text-lg font-semibold">Déposer une nouvelle version</h2>
-          <p className="mb-4 text-sm text-neutral">
-            Le fichier est contrôlé avant d'être enregistré (balises du dictionnaire, blocs bien fermés, champs Word, balises coupées…).
-            En cas de refus, rien n'est enregistré : chaque problème est indiqué avec son emplacement dans le Word.
-          </p>
+        <Carte
+          className="max-w-2xl"
+          titre="Déposer une nouvelle version"
+          description="Le fichier est contrôlé avant d'être enregistré (balises du dictionnaire, blocs bien fermés, champs Word, balises coupées…). En cas de refus, rien n'est enregistré : chaque problème est indiqué avec son emplacement dans le Word."
+        >
           <FormulaireAction action={deposerUneVersion} libelleBouton="Contrôler et déposer">
             <input type="hidden" name="modeleId" value={m.id} />
-            <label className="mb-4 block text-sm font-medium">
-              Fichier Word (.docx, 15 Mo au plus)
-              <input name="fichier" type="file" required accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="mt-1 block w-full text-base" />
-            </label>
+            <div className="mb-4">
+              <ChampSaisie
+                label="Fichier Word (.docx, 15 Mo au plus)"
+                name="fichier"
+                type="file"
+                required
+                accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                className="file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1 file:text-sm file:font-medium file:text-foreground"
+              />
+            </div>
             <Champ nom="commentaire" libelle="Commentaire de modification" autoComplete="off" />
             <Champ nom="dateEffet" libelle="Date d'effet proposée (AAAA-MM-JJ ; fixée à la publication)" valeur={jour} autoComplete="off" />
             {regle.fixe ? (
@@ -145,7 +155,7 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
               </>
             ) : null}
           </FormulaireAction>
-        </section>
+        </Carte>
       ) : null}
     </main>
   );

@@ -2,11 +2,15 @@
 
 import { useState } from "react";
 
+import { Bouton, Champ, ListeDeroulante } from "@/composants/ui";
+
 export type LigneComposition = { libelle: string; branche: string; primeNette: string; accessoires: string };
 
 const vide = (branche = ""): LigneComposition => ({ libelle: "", branche, primeNette: "", accessoires: "0" });
 
-const entree = "w-full rounded border border-border bg-surface px-2 py-1";
+// Tableau manuel (cellules = champs) aux classes du composant Tableau. Pas de zébrure : un champ teinté ne doit pas reposer sur un fond bg-muted.
+const ENTETE = "border-b border-border bg-muted px-3 py-2 font-medium text-neutral";
+const CELLULE = "border-b border-border px-2 py-1.5 align-top";
 
 /**
  * Lignes de prime d'une cotation composée par la Technique (session 6.2b) : une ligne par garantie souscrite, surprime ou majoration.
@@ -37,7 +41,7 @@ export function LignesComposition({
     );
 
   return (
-    <div className="mb-4 overflow-x-auto">
+    <div className="space-y-3">
       {garanties.length > 0 ? (
         <datalist id="garanties-du-produit">
           {garanties.map((g) => (
@@ -45,50 +49,52 @@ export function LignesComposition({
           ))}
         </datalist>
       ) : null}
-      <table className="w-full min-w-[52rem] border-collapse text-sm">
-        <thead>
-          <tr className="bg-primary text-left text-primary-foreground">
-            <th className="p-2">Garantie {saisieLibre ? "" : "(liste du produit)"}</th>
-            <th className="p-2">Branche fiscale</th>
-            <th className="p-2">Prime nette HT</th>
-            <th className="p-2">Accessoires</th>
-            <th className="p-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {lignes.map((l, i) => (
-            <tr key={i} className="border-b border-border align-top">
-              <td className="p-1">
-                <input name="ligne_libelle" value={l.libelle} onChange={(e) => changerLibelle(i, e.target.value)} list={garanties.length > 0 ? "garanties-du-produit" : undefined} aria-label="Libellé de la garantie" className={entree} required />
-              </td>
-              <td className="p-1">
-                <select name="ligne_branche" value={l.branche} onChange={(e) => modifier(i, "branche", e.target.value)} aria-label="Branche fiscale de la ligne" className={entree} required>
-                  <option value="">— Choisir —</option>
-                  {branches.map((b) => (
-                    <option key={b.code} value={b.code}>
-                      {b.code} — {b.libelle}
-                    </option>
-                  ))}
-                </select>
-              </td>
-              <td className="p-1">
-                <input name="ligne_nette" value={l.primeNette} onChange={(e) => modifier(i, "primeNette", e.target.value)} aria-label="Prime nette" inputMode="decimal" className={entree} required />
-              </td>
-              <td className="p-1">
-                <input name="ligne_accessoires" value={l.accessoires} onChange={(e) => modifier(i, "accessoires", e.target.value)} aria-label="Accessoires" inputMode="decimal" className={entree} required />
-              </td>
-              <td className="p-1">
-                <button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} disabled={lignes.length === 1} className="rounded border border-border px-2 py-1 disabled:opacity-40">
-                  Retirer
-                </button>
-              </td>
+      <div className="relative overflow-x-auto rounded-md border border-border shadow-elevated">
+        <table className="w-full min-w-[52rem] border-separate border-spacing-0 text-sm">
+          <thead>
+            <tr>
+              <th scope="col" className={`${ENTETE} text-left`}>Garantie {saisieLibre ? "" : "(liste du produit)"}</th>
+              <th scope="col" className={`${ENTETE} text-left`}>Branche fiscale</th>
+              <th scope="col" className={`${ENTETE} text-right`}>Prime nette HT</th>
+              <th scope="col" className={`${ENTETE} text-right`}>Accessoires</th>
+              <th scope="col" className={ENTETE}><span className="sr-only">Actions</span></th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <button type="button" onClick={() => setLignes((x) => [...x, vide()])} className="mt-2 rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
+          </thead>
+          <tbody className="bg-surface [&>tr:last-child>td]:border-b-0">
+            {lignes.map((l, i) => (
+              <tr key={i}>
+                <td className={CELLULE}>
+                  <Champ name="ligne_libelle" value={l.libelle} onChange={(e) => changerLibelle(i, e.target.value)} list={garanties.length > 0 ? "garanties-du-produit" : undefined} aria-label="Libellé de la garantie" required />
+                </td>
+                <td className={CELLULE}>
+                  <ListeDeroulante
+                    name="ligne_branche"
+                    value={l.branche}
+                    onChange={(e) => modifier(i, "branche", e.target.value)}
+                    aria-label="Branche fiscale de la ligne"
+                    required
+                    options={[{ valeur: "", libelle: "— Choisir —" }, ...branches.map((b) => ({ valeur: b.code, libelle: `${b.code} — ${b.libelle}` }))]}
+                  />
+                </td>
+                <td className={CELLULE}>
+                  <Champ name="ligne_nette" value={l.primeNette} onChange={(e) => modifier(i, "primeNette", e.target.value)} aria-label="Prime nette" inputMode="decimal" className="text-right tabular-nums" required />
+                </td>
+                <td className={CELLULE}>
+                  <Champ name="ligne_accessoires" value={l.accessoires} onChange={(e) => modifier(i, "accessoires", e.target.value)} aria-label="Accessoires" inputMode="decimal" className="text-right tabular-nums" required />
+                </td>
+                <td className={CELLULE}>
+                  <Bouton variante="secondaire" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} disabled={lignes.length === 1}>
+                    Retirer
+                  </Bouton>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Bouton variante="secondaire" onClick={() => setLignes((x) => [...x, vide()])}>
         + Ajouter une ligne (garantie, surprime, majoration)
-      </button>
+      </Bouton>
     </div>
   );
 }

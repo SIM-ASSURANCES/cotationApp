@@ -1,5 +1,4 @@
-import Link from "next/link";
-
+import { Bouton, Carte, EnTetePage, LienBouton, ListeDeroulante, Tableau } from "@/composants/ui";
 import { ACTIONS_AUDIT } from "@/domaine/audit";
 import { peutLire } from "@/domaine/droits";
 import { lireJournal } from "@/serveur/audit";
@@ -24,69 +23,50 @@ export default async function PageAudit(props: PageProps<"/admin/audit">) {
   const lienSuivant = suivant ? `/admin/audit?${new URLSearchParams({ ...(actionConnue ? { action: actionConnue } : {}), avant: suivant })}` : null;
 
   return (
-    <main>
-      <h1 className="mb-2 text-2xl font-semibold text-primary">Journal d'audit</h1>
-      <p className="mb-4 max-w-3xl text-sm text-neutral">
-        Lecture seule : le journal ne peut être ni modifié ni effacé, y compris par l'application.
-      </p>
-      <form method="get" className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-        <label>
-          Action{" "}
-          <select name="action" defaultValue={actionConnue ?? ""} className="rounded border border-border bg-surface px-2 py-1">
-            <option value="">Toutes</option>
-            {ACTIONS_AUDIT.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit" className="rounded border border-primary px-3 py-1 font-medium text-primary hover:bg-muted">
-          Filtrer
-        </button>
-      </form>
+    <main className="space-y-6">
+      <EnTetePage titre="Journal d'audit" sousTitre="Lecture seule : le journal ne peut être ni modifié ni effacé, y compris par l'application." />
+      <Carte>
+        <form method="get" className="flex flex-wrap items-end gap-3">
+          <div className="w-full sm:w-72">
+            <ListeDeroulante
+              label="Action"
+              name="action"
+              defaultValue={actionConnue ?? ""}
+              options={[{ valeur: "", libelle: "Toutes" }, ...ACTIONS_AUDIT.map((a) => ({ valeur: a, libelle: a }))]}
+            />
+          </div>
+          <Bouton type="submit" variante="secondaire">
+            Filtrer
+          </Bouton>
+        </form>
+      </Carte>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[60rem] border-collapse text-sm">
-          <thead>
-            <tr className="bg-primary text-left text-primary-foreground">
-              <th className="p-2">Date</th>
-              <th className="p-2">Utilisateur</th>
-              <th className="p-2">Action</th>
-              <th className="p-2">Objet</th>
-              <th className="p-2">Avant → après</th>
-              <th className="p-2">Adresse</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lignes.map((l) => (
-              <tr key={l.id} className="border-b border-border align-top">
-                <td className="p-2 whitespace-nowrap">{formatDate.format(l.horodatage)}</td>
-                <td className="p-2">{l.utilisateur ?? "—"}</td>
-                <td className="p-2 font-medium">{l.action}</td>
-                <td className="p-2">{l.objet ?? "—"}</td>
-                <td className="p-2 font-mono text-xs break-all">
-                  {l.avant || l.apres ? `${l.avant ? JSON.stringify(l.avant) : "∅"} → ${l.apres ? JSON.stringify(l.apres) : "∅"}` : "—"}
-                </td>
-                <td className="p-2">{l.adresseIp ?? "—"}</td>
-              </tr>
-            ))}
-            {lignes.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="p-4 text-center text-neutral">
-                  Aucune entrée.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+      <Tableau
+        legende="Journal d'audit"
+        lignes={lignes}
+        cleLigne={(l) => String(l.id)}
+        messageVide="Aucune entrée."
+        colonnes={[
+          { cle: "date", entete: "Date", rendu: (l) => <span className="whitespace-nowrap">{formatDate.format(l.horodatage)}</span> },
+          { cle: "utilisateur", entete: "Utilisateur", rendu: (l) => l.utilisateur ?? "—" },
+          { cle: "action", entete: "Action", rendu: (l) => <span className="font-medium">{l.action}</span> },
+          { cle: "objet", entete: "Objet", rendu: (l) => l.objet ?? "—" },
+          {
+            cle: "changement",
+            entete: "Avant → après",
+            rendu: (l) => (
+              <span className="break-all font-mono text-xs">
+                {l.avant || l.apres ? `${l.avant ? JSON.stringify(l.avant) : "∅"} → ${l.apres ? JSON.stringify(l.apres) : "∅"}` : "—"}
+              </span>
+            ),
+          },
+          { cle: "adresse", entete: "Adresse", rendu: (l) => l.adresseIp ?? "—" },
+        ]}
+      />
       {lienSuivant ? (
-        <p className="mt-4">
-          <Link href={lienSuivant} className="font-medium text-primary underline">
-            Entrées plus anciennes →
-          </Link>
-        </p>
+        <div>
+          <LienBouton href={lienSuivant}>Entrées plus anciennes →</LienBouton>
+        </div>
       ) : null}
     </main>
   );

@@ -1,4 +1,5 @@
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
+import { Bandeau, Carte, EnTetePage } from "@/composants/ui";
 import { MOT_DE_PASSE_LONGUEUR_MIN } from "@/domaine/securite";
 import { exigerUtilisateur } from "@/serveur/session";
 
@@ -7,25 +8,23 @@ import { changerSonMotDePasse } from "./actions";
 export default async function MonCompte() {
   const utilisateur = await exigerUtilisateur({ autoriserChangementMotDePasse: true });
   return (
-    <main className="max-w-md">
-      <h1 className="mb-1 text-2xl font-semibold text-primary">Mon compte</h1>
-      <p className="mb-6 text-sm text-neutral">
-        {utilisateur.nom} ({utilisateur.identifiant}), profil {utilisateur.libelleProfil}.
-      </p>
+    <main className="space-y-6">
+      <EnTetePage titre="Mon compte" sousTitre={`${utilisateur.nom} (${utilisateur.identifiant}), profil ${utilisateur.libelleProfil}.`} />
       {utilisateur.doitChangerMotDePasse ? (
-        <p role="status" className="mb-4 rounded border border-primary-border bg-muted p-3 text-sm">
+        <Bandeau ton="info" role="status" className="max-w-md">
           Votre mot de passe a été défini par un administrateur : choisissez-en un nouveau pour continuer.
-        </p>
+        </Bandeau>
       ) : null}
-      <h2 className="mb-3 text-lg font-semibold">Changer de mot de passe</h2>
-      <FormulaireAction action={changerSonMotDePasse} libelleBouton="Enregistrer">
-        <Champ nom="actuel" libelle="Mot de passe actuel" type="password" autoComplete="current-password" />
-        <Champ nom="nouveau" libelle="Nouveau mot de passe" type="password" autoComplete="new-password" />
-        <Champ nom="confirmation" libelle="Confirmation" type="password" autoComplete="new-password" />
-        <p className="mb-4 text-xs text-neutral">
-          Au moins {MOT_DE_PASSE_LONGUEUR_MIN} caractères : une phrase de passe courte à retenir, sans votre identifiant.
-        </p>
-      </FormulaireAction>
+      <Carte titre="Changer de mot de passe" className="max-w-md">
+        <FormulaireAction action={changerSonMotDePasse} libelleBouton="Enregistrer">
+          <Champ nom="actuel" libelle="Mot de passe actuel" type="password" autoComplete="current-password" />
+          <Champ nom="nouveau" libelle="Nouveau mot de passe" type="password" autoComplete="new-password" />
+          <Champ nom="confirmation" libelle="Confirmation" type="password" autoComplete="new-password" />
+          <p className="mb-4 text-xs text-muted-foreground">
+            Au moins {MOT_DE_PASSE_LONGUEUR_MIN} caractères : une phrase de passe courte à retenir, sans votre identifiant.
+          </p>
+        </FormulaireAction>
+      </Carte>
     </main>
   );
 }

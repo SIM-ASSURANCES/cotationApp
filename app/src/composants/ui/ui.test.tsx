@@ -3,7 +3,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { Bouton, Carte, CarteIndicateur, Champ, ChampFormulaire, EnTetePage, EtatVide, FondDeMarque, Icone, ListeDeroulante, Pastille, Tableau, ZoneTexte } from "./index";
+import { Bandeau, Bouton, Carte, CarteIndicateur, Champ, ChampFormulaire, classesBouton, EnTetePage, EtatVide, FondDeMarque, Icone, LienBouton, ListeDefinitions, ListeDeroulante, Pastille, PastilleStatut, Tableau, tonDuStatut, ZoneTexte } from "./index";
 import { TRACES_PICTOGRAMME } from "./pictogramme";
 
 const rendre = (element: React.ReactElement) => renderToStaticMarkup(element);
@@ -163,5 +163,59 @@ describe("FondDeMarque, Icone", () => {
       expect(html, nom).toContain('aria-hidden="true"');
       expect(html, nom).toMatch(/<(path|rect|circle|ellipse)/);
     }
+  });
+});
+
+describe("refonte V2 : table unique statut → ton, lien-bouton, bandeau, liste de définitions, carte titrée", () => {
+  it("tonDuStatut : la table de la consigne, un statut inconnu est neutre", () => {
+    const attendu: Record<string, string> = {
+      Brouillon: "neutre", "À valider": "avertissement", Émise: "principal", Acceptée: "succes", Refusée: "danger", Expirée: "neutre",
+      Annulée: "danger", Payé: "succes", "Partiellement payé": "avertissement", "Non payé": "danger", "PDF en attente": "avertissement", Publié: "succes", Soumis: "info",
+    };
+    for (const [libelle, ton] of Object.entries(attendu)) expect(tonDuStatut(libelle), libelle).toBe(ton);
+    expect(tonDuStatut("Abandonnée")).toBe("neutre");
+    expect(tonDuStatut("Statut jamais vu")).toBe("neutre");
+  });
+
+  it("PastilleStatut : le libellé reste écrit (le ton ne porte jamais le sens seul) ; le ton vient de la table", () => {
+    const html = rendre(<PastilleStatut libelle="Non payé" />);
+    expect(html).toContain(">Non payé<");
+    expect(html).toBe(rendre(<Pastille ton="danger">Non payé</Pastille>));
+    expect(rendre(<PastilleStatut libelle="Émise">Émise le 12/10</PastilleStatut>)).toContain("Émise le 12/10");
+  });
+
+  it("LienBouton : un lien (pas un bouton) qui a les classes de la variante demandée", () => {
+    const html = rendre(<LienBouton href="/cotations/1" variante="principal">Ouvrir</LienBouton>);
+    expect(html).toContain("<a ");
+    expect(html).toContain('href="/cotations/1"');
+    expect(html).toContain(classesBouton("principal"));
+    expect(rendre(<LienBouton href="/x">Ok</LienBouton>)).toContain(classesBouton("secondaire"));
+  });
+
+  it("Bandeau : icône décorative, texte écrit, rôle choisi par l'appelant", () => {
+    const html = rendre(<Bandeau ton="danger" role="alert" titre="Refusé">Le motif est obligatoire.</Bandeau>);
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Refusé");
+    expect(html).toContain("Le motif est obligatoire.");
+    expect(html).toContain('aria-hidden="true"');
+    expect(rendre(<Bandeau>Simple</Bandeau>)).not.toContain("role=");
+  });
+
+  it("ListeDefinitions : une paire libellé / valeur par élément, « — » pour une valeur vide", () => {
+    const html = rendre(<ListeDefinitions elements={[{ libelle: "Police", valeur: "DEM-1" }, { libelle: "Émise le", valeur: null }, { libelle: "Vide", valeur: "" }]} />);
+    expect(html).toContain("<dl");
+    expect(html).toContain("<dt");
+    expect(html).toContain("Police :");
+    expect(html).toContain(">DEM-1<");
+    expect(html.match(/>—</g)).toHaveLength(2);
+  });
+
+  it("Carte titrée : un h2 et une description ; la zone d'action irréversible porte la bordure danger", () => {
+    const html = rendre(<Carte titre="Annuler par un avoir" description="Irréversible." ton="danger">corps</Carte>);
+    expect(html).toContain("<h2");
+    expect(html).toContain("Annuler par un avoir");
+    expect(html).toContain("Irréversible.");
+    expect(html).toContain("border-danger-border");
+    expect(rendre(<Carte>x</Carte>)).not.toContain("<h2");
   });
 });

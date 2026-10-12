@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { LignesFormules } from "@/composants/LignesFormules";
+import { Bandeau, Carte, EnTetePage, EtatVide, LienBouton, ListeDeroulante, Tableau, ZoneTexte, type ColonneTableau } from "@/composants/ui";
 import { NIVEAUX_ARRONDI } from "@/domaine/calcul/calcul";
 import { PRECISIONS, SENS_ARRONDI, montant } from "@/domaine/calcul/montant";
 import { MODES_TARIFICATION } from "@/domaine/calcul/parametrage";
@@ -13,19 +13,31 @@ import { exigerDroit } from "@/serveur/session";
 
 import { ajouterUneVersion } from "./actions";
 
-const select = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2";
 const LIBELLE_SENS = { PROCHE: "Au plus proche", SUPERIEUR: "Au supérieur", INFERIEUR: "À l'inférieur" } as const;
 const LIBELLE_NIVEAU = { LIGNE: "Chaque ligne", TOTAL: "Total seulement" } as const;
 const LIBELLE_MODE = { FORMULE: "Par formule (calcul automatique)", GARANTIES: "Par garanties (prime composée par la Technique, calcul automatique refusé)" } as const;
+/** Intertitre d'un bloc à l'intérieur d'une carte de formulaire. */
+const SOUS_TITRE = "mb-1 text-base font-bold text-foreground";
+const CASE = "size-4 accent-primary";
 
 /** Décimal en texte sans zéros inutiles (« 3000.000000 » devient « 3000 »). */
 const net = (texte: string) => montant(texte).toString();
 
+type Formule = VersionProduit["formules"][number];
+
+const COLONNES_FORMULES: ColonneTableau<Formule>[] = [
+  { cle: "code", entete: "Formule", rendu: (f) => <span className="font-medium">{f.code}</span> },
+  { cle: "libelle", entete: "Libellé", rendu: (f) => f.libelle },
+  { cle: "prime", entete: "Prime unitaire", alignement: "droite", rendu: (f) => net(f.primeUnitaire) },
+  { cle: "accessoires", entete: "Accessoires", rendu: (f) => `${f.accessoireMode} ${f.accessoireMode === "AUCUN" ? "" : net(f.accessoireValeur)}` },
+  { cle: "ages", entete: "Âges", rendu: (f) => (f.ageMin == null && f.ageMax == null ? "–" : `${f.ageMin ?? 0} à ${f.ageMax ?? "…"} ans`) },
+];
+
 function Resume({ v }: { v: VersionProduit }) {
   return (
-    <section className="mb-4 rounded border border-border p-4 text-sm">
-      <h3 className="mb-2 font-semibold">Version en vigueur depuis le {v.dateEffet}</h3>
-      <p className="mb-2 text-neutral">
+    <Carte>
+      <h3 className="mb-2 text-base font-bold text-foreground">Version en vigueur depuis le {v.dateEffet}</h3>
+      <p className="mb-3 text-sm text-muted-foreground">
         Tarification : {LIBELLE_MODE[v.modeTarification] ?? v.modeTarification}
         {v.garanties && v.garanties.length > 0 ? ` — garanties : ${v.garanties.map((g) => (g.branche ? `${g.libelle} (${g.branche})` : g.libelle)).join(", ")}${v.garantiesSaisieLibre === false ? " ; saisie libre interdite" : ""}` : ""} ·{" "}
         Arrondi : {v.arrondi.precision} F, {LIBELLE_SENS[v.arrondi.sens].toLowerCase()}, {LIBELLE_NIVEAU[v.arrondi.niveau].toLowerCase()} · Prorata {v.prorata.actif ? "actif" : "inactif"}
@@ -33,31 +45,11 @@ function Resume({ v }: { v: VersionProduit }) {
         {net(v.fractionnement.frais) !== "0" ? `, frais ${net(v.fractionnement.frais)}` : ""} · Validité {v.cotation.validiteMois} mois
         {v.seuilValidationTtc ? ` · Double validation au-delà de ${net(v.seuilValidationTtc)} F TTC` : ""}
       </p>
-      <table className="w-full max-w-3xl border-collapse">
-        <thead>
-          <tr className="text-left text-neutral">
-            <th className="p-1">Formule</th>
-            <th className="p-1">Libellé</th>
-            <th className="p-1">Prime unitaire</th>
-            <th className="p-1">Accessoires</th>
-            <th className="p-1">Âges</th>
-          </tr>
-        </thead>
-        <tbody>
-          {v.formules.map((f) => (
-            <tr key={f.code} className="border-t border-border">
-              <td className="p-1 font-medium">{f.code}</td>
-              <td className="p-1">{f.libelle}</td>
-              <td className="p-1">{net(f.primeUnitaire)}</td>
-              <td className="p-1">
-                {f.accessoireMode} {f.accessoireMode === "AUCUN" ? "" : net(f.accessoireValeur)}
-              </td>
-              <td className="p-1">{f.ageMin == null && f.ageMax == null ? "–" : `${f.ageMin ?? 0} à ${f.ageMax ?? "…"} ans`}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+      {/* Une version « Par garanties » n'a pas de formule (6.2b) : pas de tableau vide à lire. */}
+      {v.formules.length > 0 || v.modeTarification !== "GARANTIES" ? (
+        <Tableau colonnes={COLONNES_FORMULES} lignes={v.formules} cleLigne={(f) => f.code} messageVide="Aucune formule." legende={`Formules de la version du ${v.dateEffet}`} />
+      ) : null}
+    </Carte>
   );
 }
 
@@ -73,30 +65,29 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
   const base = versions[0]; // la plus récente : point de départ de la nouvelle version
 
   return (
-    <main>
-      <p className="mb-2 text-sm">
-        <Link href="/parametrage/produits" className="text-primary underline">
-          ← Produits
-        </Link>
-      </p>
-      <h1 className="mb-1 text-2xl font-semibold text-primary">
-        {produit.code} <span className="font-normal text-neutral">— {produit.libelle}</span>
-      </h1>
-      <p className="mb-6 text-sm text-neutral">
-        Gamme {produit.gamme} · branche fiscale {produit.branche}. Le calcul utilise la version en vigueur à la date du document.
-      </p>
-      <p className="mb-6 text-sm">
-        <Link href={`/parametrage/produits/${produit.code}/relances`} className="text-primary underline">Avis d&apos;échéance et relances de ce produit</Link> (délai J-x, niveaux de relance)
-      </p>
+    <main className="space-y-6">
+      <EnTetePage
+        filAriane={[{ libelle: "Produits", href: "/parametrage/produits" }, { libelle: produit.code }]}
+        titre={`${produit.code} — ${produit.libelle}`}
+        sousTitre={`Gamme ${produit.gamme} · branche fiscale ${produit.branche}. Le calcul utilise la version en vigueur à la date du document.`}
+        actions={
+          <LienBouton href={`/parametrage/produits/${produit.code}/relances`} title="Délai J-x, niveaux de relance">
+            Avis d&apos;échéance et relances de ce produit
+          </LienBouton>
+        }
+      />
 
       {peutAgir(niveau) ? (
-        <section className="mb-8 rounded border border-border bg-surface p-5">
-          <h2 className="mb-1 text-lg font-semibold">Ajouter une version</h2>
-          <p className="mb-4 text-sm text-neutral">
-            Une version en vigueur ne se modifie jamais : on en ajoute une avec sa date d'effet
-            {base ? ", pré-remplie avec la dernière version" : ""}. Les primes unitaires se saisissent avec leurs décimales.
-          </p>
-          <p className="mb-4 text-sm text-neutral">
+        <Carte
+          titre="Ajouter une version"
+          description={
+            <>
+              Une version en vigueur ne se modifie jamais : on en ajoute une avec sa date d'effet
+              {base ? ", pré-remplie avec la dernière version" : ""}. Les primes unitaires se saisissent avec leurs décimales.
+            </>
+          }
+        >
+          <p className="mb-4 text-sm text-muted-foreground">
             Un produit tarifé par garanties (SECURPRO, SECURHOME, SECURHOME +, RELAXACCIDENTS) a son mode « Par garanties » dès sa première version : une
             version « Par formule » plus ancienne resterait en vigueur, et calculée, pour tout document daté avant la date d&apos;effet de la suivante.
             Une version « Par garanties » ne calcule rien : la prime est composée par la Technique, garantie par garantie, sur chaque cotation. Elle n&apos;a besoin d&apos;aucune
@@ -106,49 +97,41 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
             <input type="hidden" name="codeProduit" value={produit.code} />
             <div className="mb-4 grid max-w-4xl gap-x-6 sm:grid-cols-2">
               <Champ nom="dateEffet" libelle="Date d'effet (AAAA-MM-JJ)" autoComplete="off" />
-              <label className="mb-4 block text-sm font-medium">
-                Mode de tarification
-                <select name="modeTarification" defaultValue={base?.modeTarification ?? "FORMULE"} className={select}>
-                  {MODES_TARIFICATION.map((m) => (
-                    <option key={m} value={m}>
-                      {LIBELLE_MODE[m]}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="mb-4">
+                <ListeDeroulante
+                  label="Mode de tarification"
+                  name="modeTarification"
+                  defaultValue={base?.modeTarification ?? "FORMULE"}
+                  options={MODES_TARIFICATION.map((m) => ({ valeur: m, libelle: LIBELLE_MODE[m] }))}
+                />
+              </div>
               <Champ nom="primeMinimale" libelle="Prime minimale (facultative)" requis={false} valeur={base?.prorata.primeMinimale ? net(base.prorata.primeMinimale) : ""} autoComplete="off" />
-              <label className="mb-4 block text-sm font-medium">
-                Précision d'arrondi (F)
-                <select name="precision" defaultValue={String(base?.arrondi.precision ?? 1)} className={select}>
-                  {PRECISIONS.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="mb-4 block text-sm font-medium">
-                Sens d'arrondi
-                <select name="sens" defaultValue={base?.arrondi.sens ?? "PROCHE"} className={select}>
-                  {SENS_ARRONDI.map((s) => (
-                    <option key={s} value={s}>
-                      {LIBELLE_SENS[s]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="mb-4 block text-sm font-medium">
-                Niveau d'arrondi
-                <select name="niveau" defaultValue={base?.arrondi.niveau ?? "LIGNE"} className={select}>
-                  {NIVEAUX_ARRONDI.map((n) => (
-                    <option key={n} value={n}>
-                      {LIBELLE_NIVEAU[n]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="mb-4 flex items-center gap-2 text-sm font-medium">
-                <input type="checkbox" name="prorataActif" defaultChecked={base?.prorata.actif ?? true} /> Prorata temporis actif (jours inclus / 365)
+              <div className="mb-4">
+                <ListeDeroulante
+                  label="Précision d'arrondi (F)"
+                  name="precision"
+                  defaultValue={String(base?.arrondi.precision ?? 1)}
+                  options={PRECISIONS.map((p) => ({ valeur: String(p), libelle: String(p) }))}
+                />
+              </div>
+              <div className="mb-4">
+                <ListeDeroulante
+                  label="Sens d'arrondi"
+                  name="sens"
+                  defaultValue={base?.arrondi.sens ?? "PROCHE"}
+                  options={SENS_ARRONDI.map((s) => ({ valeur: s, libelle: LIBELLE_SENS[s] }))}
+                />
+              </div>
+              <div className="mb-4">
+                <ListeDeroulante
+                  label="Niveau d'arrondi"
+                  name="niveau"
+                  defaultValue={base?.arrondi.niveau ?? "LIGNE"}
+                  options={NIVEAUX_ARRONDI.map((n) => ({ valeur: n, libelle: LIBELLE_NIVEAU[n] }))}
+                />
+              </div>
+              <label className="mb-4 flex min-h-10 items-center gap-2 text-sm font-medium lg:min-h-0">
+                <input type="checkbox" name="prorataActif" defaultChecked={base?.prorata.actif ?? true} className={CASE} /> Prorata temporis actif (jours inclus / 365)
               </label>
               <Champ nom="tranchesMax" libelle="Nombre maximal de tranches (1 à 12)" valeur={String(base?.fractionnement.tranchesMax ?? 1)} autoComplete="off" />
               <Champ nom="repartition" libelle="Répartition en % (ex. 40 ; 30 ; 30), vide = tranches égales" requis={false} valeur={base?.fractionnement.repartitionPourcent?.join(" ; ") ?? ""} autoComplete="off" />
@@ -158,29 +141,28 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
               <Champ nom="formulesMax" libelle="Formules comparées au plus" valeur={String(base?.cotation.formulesMax ?? 3)} autoComplete="off" />
               <Champ nom="seuil" libelle="Seuil de TTC pour la double validation (facultatif)" requis={false} valeur={base?.seuilValidationTtc ? net(base.seuilValidationTtc) : ""} autoComplete="off" />
             </div>
-            <h3 className="mb-1 font-semibold">Garanties du produit (mode « Par garanties » seulement)</h3>
-            <p className="mb-2 text-sm text-neutral">
+            <h3 className={SOUS_TITRE}>Garanties du produit (mode « Par garanties » seulement)</h3>
+            <p className="mb-2 text-sm text-muted-foreground">
               Une garantie par ligne : « Libellé » ou « Libellé ; BRANCHE » (la branche fiscale est alors proposée sur la ligne de prime). Elles servent de suggestions à la
               composition de la prime. Aucune formule n&apos;est nécessaire dans ce mode.
             </p>
             <div className="mb-4 max-w-4xl">
               <input type="hidden" name="garantiesPresentes" value="1" />
-              <label className="mb-2 block text-sm font-medium">
-                Garanties
-                <textarea
+              <div className="mb-2">
+                <ZoneTexte
+                  label="Garanties"
                   name="garanties"
                   rows={6}
                   defaultValue={(base?.garanties ?? []).map((g) => (g.branche ? `${g.libelle} ; ${g.branche}` : g.libelle)).join("\n")}
-                  className={select}
                   placeholder={"Incendie ; INCENDIE\nVol ; IARD"}
                 />
-              </label>
-              <label className="flex items-center gap-2 text-sm font-medium">
-                <input type="checkbox" name="garantiesSaisieLibre" defaultChecked={base?.garantiesSaisieLibre ?? true} /> Saisie libre autorisée (décochée : seuls les libellés de la liste sont acceptés)
+              </div>
+              <label className="flex min-h-10 items-center gap-2 text-sm font-medium lg:min-h-0">
+                <input type="checkbox" name="garantiesSaisieLibre" defaultChecked={base?.garantiesSaisieLibre ?? true} className={CASE} /> Saisie libre autorisée (décochée : seuls les libellés de la liste sont acceptés)
               </label>
             </div>
-            <h3 className="mb-1 font-semibold">Références contractuelles (CDC §7)</h3>
-            <p className="mb-2 text-sm text-neutral">
+            <h3 className={SOUS_TITRE}>Références contractuelles (CDC §7)</h3>
+            <p className="mb-2 text-sm text-muted-foreground">
               Modèles de conditions générales et spéciales joints au contrat (codes de la bibliothèque « Modèles Word ») et visas cités
               dans les CP. À l'émission, le visa doit être celui des CG jointes, sinon l'émission est refusée.
             </p>
@@ -190,7 +172,7 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
               <Champ nom="csModeleCode" libelle="Code du modèle de CS (facultatif)" requis={false} valeur={base?.references?.csModeleCode ?? ""} autoComplete="off" />
               <Champ nom="csVisa" libelle="Visa des CS" requis={false} valeur={base?.references?.csVisa ?? ""} autoComplete="off" />
             </div>
-            <h3 className="mb-2 font-semibold">Formules</h3>
+            <h3 className="mb-2 text-base font-bold text-foreground">Formules</h3>
             <LignesFormules
               initiales={(base?.formules ?? []).map((f) => ({
                 code: f.code,
@@ -204,17 +186,19 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
               }))}
             />
           </FormulaireAction>
-        </section>
+        </Carte>
       ) : (
-        <p className="mb-6 rounded border border-border bg-muted p-3 text-sm">Consultation seule.</p>
+        <Bandeau ton="neutre">Consultation seule.</Bandeau>
       )}
 
-      <h2 className="mb-3 text-lg font-semibold">Historique des versions</h2>
-      {versions.length === 0 ? (
-        <p className="text-sm text-neutral">Aucune version : ce produit ne peut pas encore être calculé.</p>
-      ) : (
-        versions.map((v) => <Resume key={v.id} v={v} />)
-      )}
+      <section className="space-y-4">
+        <h2 className="text-lg font-bold text-foreground">Historique des versions</h2>
+        {versions.length === 0 ? (
+          <EtatVide message="Aucune version : ce produit ne peut pas encore être calculé." />
+        ) : (
+          versions.map((v) => <Resume key={v.id} v={v} />)
+        )}
+      </section>
     </main>
   );
 }

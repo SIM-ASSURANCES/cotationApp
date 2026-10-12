@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { FormulaireAction } from "@/composants/FormulaireAction";
+import { Bouton, Carte, EnTetePage, PastilleStatut, Tableau, type ColonneTableau } from "@/composants/ui";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { peutAgir } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
@@ -14,39 +15,54 @@ import { genererDepuisLaListe } from "./actions";
 const f = (m: string) => formaterMontant(montant(m));
 const valeur = (e: ElementListe) => `${e.type}|${e.factureId}|${e.echeance.numero}|${e.niveau?.niveau ?? 0}`;
 
-function Tableau({ lignes, agit, relances }: { lignes: ElementListe[]; agit: boolean; relances: boolean }) {
-  if (lignes.length === 0) return <p className="mb-6 text-sm">Rien à produire.</p>;
-  return (
-    <div className="mb-6 overflow-x-auto">
-      <table className="w-full min-w-[56rem] border-collapse text-sm">
-        <thead>
-          <tr className="bg-primary text-left text-primary-foreground">
-            {agit ? <th className="p-2">Lot</th> : null}
-            <th className="p-2">Facture</th><th className="p-2">Police</th><th className="p-2">Souscripteur</th><th className="p-2">Échéance</th><th className="p-2">Date</th>
-            <th className="p-2 text-right">Montant</th><th className="p-2 text-right">Reste dû</th>
-            {relances ? <><th className="p-2">Retard</th><th className="p-2">Niveau</th></> : <th className="p-2">Dans</th>}
-            {agit ? <th className="p-2" /> : null}
-          </tr>
-        </thead>
-        <tbody>
-          {lignes.map((e) => (
-            <tr key={valeur(e)} className="border-b border-border">
-              {agit ? <td className="p-2"><input type="checkbox" name="selection" value={valeur(e)} defaultChecked aria-label={`Inclure ${e.factureNumero} échéance ${e.echeance.numero} dans le lot`} /></td> : null}
-              <td className="p-2"><Link href={`/factures/${e.factureId}`} className="text-primary underline">{e.factureNumero}</Link></td>
-              <td className="p-2">{e.policeNumero}</td><td className="p-2">{e.souscripteur}</td><td className="p-2">n° {e.echeance.numero}</td><td className="p-2">{e.echeance.date}</td>
-              <td className="p-2 text-right">{f(e.echeance.montant)}</td><td className="p-2 text-right">{f(e.echeance.restant)}</td>
-              {relances ? <><td className="p-2">{e.joursRetard} j</td><td className="p-2">{e.niveau?.niveau} — {e.niveau?.libelle}</td></> : <td className="p-2">{-e.joursRetard} j</td>}
-              {agit ? (
-                <td className="p-2">
-                  <button type="submit" name="un" value={valeur(e)} className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">Générer</button>
-                </td>
-              ) : null}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+/**
+ * Liste des avis ou des relances à produire. Les cellules portent des cases à cocher et des boutons d'envoi : ce sont ceux du
+ * formulaire parent (FormulaireAction), le `Tableau` ne fait que les loger.
+ */
+function TableauAProduire({ lignes, agit, relances, legende }: { lignes: ElementListe[]; agit: boolean; relances: boolean; legende: string }) {
+  const colonnes: ColonneTableau<ElementListe>[] = [
+    ...(agit
+      ? [
+          {
+            cle: "lot",
+            entete: "Lot",
+            // La case reste une vraie case native ; l'étiquette l'entoure pour offrir une cible tactile de 40 px sous lg.
+            rendu: (e: ElementListe) => (
+              <label className="grid size-10 place-items-center lg:size-auto">
+                <input type="checkbox" name="selection" value={valeur(e)} defaultChecked className="size-4 accent-primary" aria-label={`Inclure ${e.factureNumero} échéance ${e.echeance.numero} dans le lot`} />
+              </label>
+            ),
+          },
+        ]
+      : []),
+    { cle: "facture", entete: "Facture", rendu: (e) => <Link href={`/factures/${e.factureId}`} className="text-primary underline">{e.factureNumero}</Link> },
+    { cle: "police", entete: "Police", rendu: (e) => e.policeNumero },
+    { cle: "souscripteur", entete: "Souscripteur", rendu: (e) => e.souscripteur },
+    { cle: "echeance", entete: "Échéance", rendu: (e) => `n° ${e.echeance.numero}` },
+    { cle: "date", entete: "Date", rendu: (e) => e.echeance.date },
+    { cle: "montant", entete: "Montant", alignement: "droite", rendu: (e) => f(e.echeance.montant) },
+    { cle: "reste", entete: "Reste dû", alignement: "droite", rendu: (e) => f(e.echeance.restant) },
+    ...(relances
+      ? [
+          { cle: "retard", entete: "Retard", rendu: (e: ElementListe) => `${e.joursRetard} j` },
+          { cle: "niveau", entete: "Niveau", rendu: (e: ElementListe) => `${e.niveau?.niveau} — ${e.niveau?.libelle}` },
+        ]
+      : [{ cle: "dans", entete: "Dans", rendu: (e: ElementListe) => `${-e.joursRetard} j` }]),
+    ...(agit
+      ? [
+          {
+            cle: "action",
+            entete: "Action",
+            rendu: (e: ElementListe) => (
+              <Bouton type="submit" variante="secondaire" name="un" value={valeur(e)} className="py-1">
+                Générer
+              </Bouton>
+            ),
+          },
+        ]
+      : []),
+  ];
+  return <Tableau colonnes={colonnes} lignes={lignes} cleLigne={valeur} messageVide="Rien à produire." legende={legende} />;
 }
 
 /** Liste du jour (CDC §12) : avis d'échéance (J-x) et relances (J+x) à produire, recalculée depuis la base à chaque affichage. */
@@ -63,33 +79,42 @@ export default async function PageEcheances() {
   const total = liste.avis.length + liste.relances.length;
 
   return (
-    <main>
-      <h1 className="mb-1 text-2xl font-semibold text-primary">Avis d&apos;échéance et relances du {liste.date}</h1>
-      <p className="mb-6 text-sm text-neutral">
-        Échéances non payées des factures émises et non annulées, selon les délais de chaque produit (Produits → Avis et relances). Une échéance payée,
-        ou dont la facture est annulée par un avoir, ne produit plus rien : c&apos;est vérifié aussi au moment de la génération. Un seul avis par
-        échéance, une seule relance par niveau. Aucun envoi automatique : les PDF se téléchargent depuis « Documents émis ».
-      </p>
+    <main className="space-y-6">
+      <EnTetePage
+        titre={`Avis d'échéance et relances du ${liste.date}`}
+        sousTitre={
+          "Échéances non payées des factures émises et non annulées, selon les délais de chaque produit (Produits → Avis et relances). Une échéance payée, " +
+          "ou dont la facture est annulée par un avoir, ne produit plus rien : c'est vérifié aussi au moment de la génération. Un seul avis par " +
+          "échéance, une seule relance par niveau. Aucun envoi automatique : les PDF se téléchargent depuis « Documents émis »."
+        }
+      />
       <FormulaireAction action={genererDepuisLaListe} libelleBouton={`Générer par lot les ${total} lignes cochées`}>
-        <h2 className="mb-2 text-lg font-semibold">Avis d&apos;échéance à produire ({liste.avis.length})</h2>
-        <Tableau lignes={liste.avis} agit={agit} relances={false} />
-        <h2 className="mb-2 text-lg font-semibold">Relances à produire ({liste.relances.length})</h2>
-        <Tableau lignes={liste.relances} agit={agit} relances />
-        {!agit || total === 0 ? <p className="mb-2 text-sm text-neutral">{agit ? "Rien à générer aujourd'hui." : "Consultation seule."}</p> : null}
+        <div className="mb-4 space-y-6">
+          <Carte titre={`Avis d'échéance à produire (${liste.avis.length})`}>
+            <TableauAProduire lignes={liste.avis} agit={agit} relances={false} legende="Avis d'échéance à produire" />
+          </Carte>
+          <Carte titre={`Relances à produire (${liste.relances.length})`}>
+            <TableauAProduire lignes={liste.relances} agit={agit} relances legende="Relances à produire" />
+          </Carte>
+          {!agit || total === 0 ? <p className="text-sm text-neutral">{agit ? "Rien à générer aujourd'hui." : "Consultation seule."}</p> : null}
+        </div>
       </FormulaireAction>
 
-      <h2 className="mb-2 mt-8 text-lg font-semibold">Derniers lots</h2>
-      {lots.length === 0 ? (
-        <p className="text-sm">Aucun lot pour l&apos;instant.</p>
-      ) : (
-        <ul className="list-disc pl-5 text-sm">
-          {lots.map((l) => (
-            <li key={l.id}>
-              <Link href={`/echeances/lots/${l.id}`} className="text-primary underline">Lot n° {l.id}</Link> du {l.dateListe}, {l.total} document(s), {l.statut === "TERMINE" ? "terminé" : "en cours"}, par {l.creePar}
-            </li>
-          ))}
-        </ul>
-      )}
+      <Carte titre="Derniers lots">
+        <Tableau
+          colonnes={[
+            { cle: "lot", entete: "Lot", rendu: (l) => <Link href={`/echeances/lots/${l.id}`} className="text-primary underline">Lot n° {l.id}</Link> },
+            { cle: "liste", entete: "Liste du", rendu: (l) => l.dateListe },
+            { cle: "documents", entete: "Documents", alignement: "droite", rendu: (l) => l.total },
+            { cle: "etat", entete: "État", rendu: (l) => <PastilleStatut libelle={l.statut === "TERMINE" ? "Terminé" : "En cours"} /> },
+            { cle: "par", entete: "Lancé par", rendu: (l) => l.creePar },
+          ]}
+          lignes={lots}
+          cleLigne={(l) => String(l.id)}
+          messageVide="Aucun lot pour l'instant."
+          legende="Derniers lots d'avis et de relances"
+        />
+      </Carte>
     </main>
   );
 }

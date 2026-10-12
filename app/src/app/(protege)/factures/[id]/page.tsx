@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import type { ReactNode } from "react";
 
 import { AvertissementsReports } from "@/composants/AvertissementsReports";
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
+import { Bandeau, Carte, Champ as ChampSaisie, EnTetePage, ListeDefinitions, ListeDeroulante, PastilleStatut, Tableau, type ColonneTableau, type ElementDefinition } from "@/composants/ui";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { CANAUX_PAIEMENT, LIBELLE_CANAL, LONGUEUR_MIN_MOTIF_ABANDON, LONGUEUR_MIN_MOTIF_AVOIR } from "@/domaine/facturation/factures";
 import { aujourdhui } from "@/serveur/parametrage";
@@ -13,7 +15,14 @@ import { ErreurAcces } from "@/serveur/types";
 import { abandonnerLaFacture, emettreLAvoir, emettreLaFacture, enregistrerLePaiement, imputerLAvance, modifierLaFacture, relancerLesPdf } from "../actions";
 
 const f = (m: string) => formaterMontant(montant(m));
-const entree = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2";
+
+/** Ligne des tableaux de montants : les lignes de détail, puis une ligne « Total » (en gras, sans zébrure propre). */
+type LigneMontant = { cle: string; total: boolean };
+type LigneGarantie = LigneMontant & { libelle: string; branche: string; nette: string; accessoires: string; taux: string; taxe: string; ttc: string };
+type LigneFormule = LigneMontant & { libelle: string; effectif: number | null; nette: string; accessoires: string; taxe: string; ttc: string };
+
+/** Contenu d'une cellule de tableau de montants : en gras sur la ligne « Total ». */
+const cellule = (ligne: LigneMontant, contenu: ReactNode) => <span className={ligne.total ? "font-semibold" : undefined}>{contenu}</span>;
 
 export default async function PageFacture(props: PageProps<"/factures/[id]">) {
   const { id } = await props.params;
@@ -31,242 +40,284 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
   const titre = x.numero ?? `Brouillon n° ${x.id}`;
   const avoir = x.type === "AVOIR";
 
+  // Fiche d'en-tête : les lignes conditionnelles gardent exactement la condition d'affichage d'avant la refonte.
+  const fiche: ElementDefinition[] = [
+    {
+      libelle: "Statut",
+      valeur: (
+        <>
+          <PastilleStatut libelle={x.libelleStatut} />
+          {x.avoir ? <> par l&apos;avoir <Link href={`/factures/${x.avoir.id}`} className="text-primary underline">{x.avoir.numero}</Link></> : null}
+        </>
+      ),
+    },
+    { libelle: "Police", valeur: `${x.policeNumero} (${x.produitCode})` },
+    { libelle: "Facturé à", valeur: `${x.souscripteur}${c.souscripteur.adresse ? `, ${c.souscripteur.adresse}` : ""}` },
+    { libelle: "Envoyé à", valeur: c.envoyeA ? `${c.envoyeA.nom}, ${c.envoyeA.adresse}` : "— (identique ou non saisi : bloc masqué)" },
+    { libelle: "Période", valeur: `du ${c.dateEffet} au ${c.dateEcheance} (${c.joursCouverts} jours)` },
+    { libelle: "Émise le", valeur: `${x.dateEmission ?? "—"}${x.emisePar ? ` par ${x.emisePar}` : ""}` },
+    { libelle: "Préparée par", valeur: x.creePar },
+    ...(x.factureOrigine ? [{ libelle: "Facture annulée", valeur: <Link href={`/factures/${x.factureOrigine.id}`} className="text-primary underline">{x.factureOrigine.numero}</Link> }] : []),
+    ...(x.motif ? [{ libelle: "Motif de l'avoir", valeur: x.motif }] : []),
+    ...(x.remplace ? [{ libelle: "Remplace", valeur: <><Link href={`/factures/${x.remplace.id}`} className="text-primary underline">{x.remplace.numero}</Link> (annulée)</> }] : []),
+    ...(x.remplacante
+      ? [{ libelle: "Remplacée par", valeur: <><Link href={`/factures/${x.remplacante.id}`} className="text-primary underline">{x.remplacante.numero ?? "brouillon"}</Link> ({x.remplacante.statut})</> }]
+      : []),
+  ];
+
+  const modeGaranties = Boolean(c.garanties && c.garanties.length > 0);
+  const lignesGaranties: LigneGarantie[] = (c.garanties ?? []).map((g, i) => ({
+    cle: `g${i}`,
+    total: false,
+    libelle: g.libelle,
+    branche: g.branche,
+    nette: g.nette,
+    accessoires: g.accessoires,
+    taux: `${montant(g.tauxTaxe).toString().replace(".", ",")} %`,
+    taxe: g.taxe,
+    ttc: g.ttc,
+  }));
+  if (modeGaranties) lignesGaranties.push({ cle: "total", total: true, libelle: "Total", branche: "", nette: c.totaux.nette, accessoires: c.totaux.accessoires, taux: "", taxe: c.totaux.taxe, ttc: c.totaux.ttc });
+  const colonnesGaranties: ColonneTableau<LigneGarantie>[] = [
+    { cle: "garantie", entete: "Garantie", rendu: (l) => cellule(l, l.libelle) },
+    { cle: "branche", entete: "Branche", rendu: (l) => cellule(l, l.branche) },
+    { cle: "nette", entete: "Prime nette (HT)", alignement: "droite", rendu: (l) => cellule(l, f(l.nette)) },
+    { cle: "accessoires", entete: "Accessoires", alignement: "droite", rendu: (l) => cellule(l, f(l.accessoires)) },
+    { cle: "taux", entete: "Taux", alignement: "droite", rendu: (l) => cellule(l, l.taux) },
+    { cle: "taxe", entete: "Taxe", alignement: "droite", rendu: (l) => cellule(l, f(l.taxe)) },
+    { cle: "ttc", entete: "TTC", alignement: "droite", rendu: (l) => cellule(l, f(l.ttc)) },
+  ];
+
+  const lignesFormules: LigneFormule[] = [
+    ...c.formules.map((l) => ({ cle: l.code, total: false, libelle: l.libelle, effectif: l.effectif, nette: l.nette, accessoires: l.accessoires, taxe: l.taxe, ttc: l.ttc })),
+    { cle: "total", total: true, libelle: "Total", effectif: null, nette: c.totaux.nette, accessoires: c.totaux.accessoires, taxe: c.totaux.taxe, ttc: c.totaux.ttc },
+  ];
+  const colonnesFormules: ColonneTableau<LigneFormule>[] = [
+    { cle: "formule", entete: "Formule", rendu: (l) => cellule(l, l.libelle) },
+    { cle: "effectif", entete: "Effectif", alignement: "droite", rendu: (l) => cellule(l, l.effectif) },
+    { cle: "nette", entete: "Prime nette (HT)", alignement: "droite", rendu: (l) => cellule(l, f(l.nette)) },
+    { cle: "accessoires", entete: "Accessoires", alignement: "droite", rendu: (l) => cellule(l, f(l.accessoires)) },
+    { cle: "taxe", entete: `Taxe (${c.taxe.tauxPourcent !== null ? `${c.taxe.tauxPourcent} %` : "plusieurs taux"})`, alignement: "droite", rendu: (l) => cellule(l, f(l.taxe)) },
+    { cle: "ttc", entete: "TTC", alignement: "droite", rendu: (l) => cellule(l, f(l.ttc)) },
+  ];
+
+  type Echeance = NonNullable<typeof x.etat>["echeances"][number];
+  const colonnesEcheances: ColonneTableau<Echeance>[] = [
+    { cle: "numero", entete: "Échéance", rendu: (e) => e.numero },
+    { cle: "date", entete: "Date", rendu: (e) => e.date },
+    { cle: "montant", entete: "Montant", alignement: "droite", rendu: (e) => f(e.montant) },
+    { cle: "paye", entete: "Payé", alignement: "droite", rendu: (e) => f(e.paye) },
+    { cle: "restant", entete: "Restant", alignement: "droite", rendu: (e) => f(e.restant) },
+    { cle: "statut", entete: "Statut", rendu: (e) => <PastilleStatut libelle={e.statut} /> },
+  ];
+
+  // L'indice sert de clé : une imputation d'avance n'a ni reçu, et peut partager date et montant avec un autre paiement.
+  type Paiement = NonNullable<typeof x.etat>["paiements"][number];
+  const lignesPaiements = (x.etat?.paiements ?? []).map((p, i) => ({ p, i }));
+  const colonnesPaiements: ColonneTableau<{ p: Paiement; i: number }>[] = [
+    { cle: "recu", entete: "Reçu", rendu: ({ p }) => p.numero || "—" },
+    { cle: "date", entete: "Date", rendu: ({ p }) => p.date },
+    {
+      cle: "montant",
+      entete: "Montant",
+      alignement: "droite",
+      rendu: ({ p }) => (
+        <>
+          {f(p.montant)}
+          {p.excedent && montant(p.excedent).greaterThan(0) ? <span className="block text-xs text-neutral">dont {f(p.excedent)} F en avance</span> : null}
+        </>
+      ),
+    },
+    { cle: "canal", entete: "Canal", rendu: ({ p }) => LIBELLE_CANAL[p.canal] },
+    { cle: "reference", entete: "Référence", rendu: ({ p }) => p.reference || "—" },
+    { cle: "payeur", entete: "Payeur", rendu: ({ p }) => p.payeur || "—" },
+    { cle: "restantApres", entete: "Restant dû après", alignement: "droite", rendu: ({ p }) => f(p.restantDu) },
+  ];
+
+  type DocumentFacture = (typeof x.documents)[number];
+  const colonnesDocuments: ColonneTableau<DocumentFacture>[] = [
+    { cle: "document", entete: "Document", rendu: (d) => `${d.type === "RECU" ? "Reçu" : d.type === "AVOIR" ? "Avoir" : "Facture"} ${d.numero}` },
+    { cle: "version", entete: "Version", rendu: (d) => `v${d.version}` },
+    {
+      cle: "fichier",
+      entete: "Fichier",
+      rendu: (d) => (d.documentId ? <a href={`/api/documents/${d.documentId}`} className="text-primary underline">télécharger le PDF</a> : <PastilleStatut libelle="PDF en attente" />),
+    },
+  ];
+
   return (
-    <main>
-      <p className="mb-2 text-sm">
-        <Link href={`/cotations/${x.cotationId}/factures`} className="text-primary underline">← Factures de la police {x.policeNumero}</Link>
-      </p>
-      <h1 className="mb-1 text-2xl font-semibold text-primary">{x.libelleType} {titre}</h1>
-      <p className="mb-4 text-sm"><strong>Statut :</strong> {x.libelleStatut}{x.avoir ? <> par l'avoir <Link href={`/factures/${x.avoir.id}`} className="text-primary underline">{x.avoir.numero}</Link></> : null}</p>
+    <main className="space-y-6">
+      <EnTetePage
+        titre={`${x.libelleType} ${titre}`}
+        filAriane={[{ libelle: `Factures de la police ${x.policeNumero}`, href: `/cotations/${x.cotationId}/factures` }, { libelle: titre }]}
+      />
 
-      {x.abandon ? (
-        <p role="status" className="mb-4 rounded border border-border bg-muted p-3 text-sm">
-          <strong>Brouillon abandonné</strong> par {x.abandon.par} le {new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }).format(x.abandon.le)}. Motif : {x.abandon.motif}. L&apos;abandon est définitif et aucun numéro n&apos;a été consommé ;
-          une nouvelle facture peut être préparée pour la même période.
-        </p>
-      ) : null}
-      {x.statut === "A_VALIDER" ? (
-        <p className="mb-4 rounded border border-warning-border bg-warning-bg p-3 text-sm">
-          <strong>À valider :</strong> TTC {f(x.ttc)} F au-dessus du seuil du produit ({x.seuil ? f(x.seuil) : "?"} F). Demande de {x.demandePar}. Un profil habilité, autre que le demandeur, émet la facture (CDC §4.1).
-        </p>
-      ) : null}
-      {x.pdfEnAttente > 0 ? (
-        <div className="mb-4 rounded border border-warning-border bg-warning-bg p-3 text-sm">
-          <p className="mb-2"><strong>PDF en attente :</strong> le numéro est attribué et la facture est {avoir ? "émise" : x.libelleStatut.toLowerCase()} ; seul le fichier PDF reste à produire, à l'identique.</p>
-          <ul className="mb-2 list-disc pl-5">
-            {x.documents.filter((d) => d.statut === "EN_ATTENTE").map((d) => <li key={`${d.numero}-${d.version}`}>{d.numero} version {d.version} : {d.tentatives} essai(s), {d.derniereErreur ?? "pas encore tenté"}</li>)}
-          </ul>
-          <FormulaireAction action={relancerLesPdf} libelleBouton="Relancer la production des PDF">{cache}</FormulaireAction>
+      {x.abandon || x.statut === "A_VALIDER" || x.pdfEnAttente > 0 ? (
+        <div className="space-y-4">
+          {x.abandon ? (
+            <Bandeau ton="neutre" role="status">
+              <strong>Brouillon abandonné</strong> par {x.abandon.par} le {new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }).format(x.abandon.le)}. Motif : {x.abandon.motif}. L&apos;abandon est définitif et aucun numéro n&apos;a été consommé ;
+              une nouvelle facture peut être préparée pour la même période.
+            </Bandeau>
+          ) : null}
+          {x.statut === "A_VALIDER" ? (
+            <Bandeau ton="avertissement">
+              <strong>À valider :</strong> TTC {f(x.ttc)} F au-dessus du seuil du produit ({x.seuil ? f(x.seuil) : "?"} F). Demande de {x.demandePar}. Un profil habilité, autre que le demandeur, émet la facture (CDC §4.1).
+            </Bandeau>
+          ) : null}
+          {x.pdfEnAttente > 0 ? (
+            <Bandeau ton="avertissement">
+              <p className="mb-2"><strong>PDF en attente :</strong> le numéro est attribué et la facture est {avoir ? "émise" : x.libelleStatut.toLowerCase()} ; seul le fichier PDF reste à produire, à l&apos;identique.</p>
+              <ul className="mb-2 list-disc pl-5">
+                {x.documents.filter((d) => d.statut === "EN_ATTENTE").map((d) => <li key={`${d.numero}-${d.version}`}>{d.numero} version {d.version} : {d.tentatives} essai(s), {d.derniereErreur ?? "pas encore tenté"}</li>)}
+              </ul>
+              <FormulaireAction action={relancerLesPdf} libelleBouton="Relancer la production des PDF">{cache}</FormulaireAction>
+            </Bandeau>
+          ) : null}
         </div>
       ) : null}
 
-      <section className="mb-6 grid max-w-4xl gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
-        <p><strong>Police :</strong> {x.policeNumero} ({x.produitCode})</p>
-        <p><strong>Facturé à :</strong> {x.souscripteur}{c.souscripteur.adresse ? `, ${c.souscripteur.adresse}` : ""}</p>
-        <p><strong>Envoyé à :</strong> {c.envoyeA ? `${c.envoyeA.nom}, ${c.envoyeA.adresse}` : "— (identique ou non saisi : bloc masqué)"}</p>
-        <p><strong>Période :</strong> du {c.dateEffet} au {c.dateEcheance} ({c.joursCouverts} jours)</p>
-        <p><strong>Émise le :</strong> {x.dateEmission ?? "—"}{x.emisePar ? ` par ${x.emisePar}` : ""}</p>
-        <p><strong>Préparée par :</strong> {x.creePar}</p>
-        {x.factureOrigine ? <p><strong>Facture annulée :</strong> <Link href={`/factures/${x.factureOrigine.id}`} className="text-primary underline">{x.factureOrigine.numero}</Link></p> : null}
-        {x.motif ? <p><strong>Motif de l'avoir :</strong> {x.motif}</p> : null}
-        {x.remplace ? <p><strong>Remplace :</strong> <Link href={`/factures/${x.remplace.id}`} className="text-primary underline">{x.remplace.numero}</Link> (annulée)</p> : null}
-        {x.remplacante ? <p><strong>Remplacée par :</strong> <Link href={`/factures/${x.remplacante.id}`} className="text-primary underline">{x.remplacante.numero ?? "brouillon"}</Link> ({x.remplacante.statut})</p> : null}
-      </section>
+      <Carte>
+        <ListeDefinitions elements={fiche} />
+      </Carte>
 
-      <h2 className="mb-2 text-lg font-semibold">Montants (moteur de calcul)</h2>
-      {c.garanties && c.garanties.length > 0 ? (
-        <div className="mb-6 overflow-x-auto">
-          <table className="w-full min-w-[52rem] border-collapse text-sm">
-            <thead>
-              <tr className="bg-primary text-right text-primary-foreground"><th className="p-2 text-left">Garantie</th><th className="p-2 text-left">Branche</th><th className="p-2">Prime nette (HT)</th><th className="p-2">Accessoires</th><th className="p-2">Taux</th><th className="p-2">Taxe</th><th className="p-2">TTC</th></tr>
-            </thead>
-            <tbody>
-              {c.garanties.map((g, i) => (
-                <tr key={i} className="border-b border-border text-right">
-                  <td className="p-2 text-left">{g.libelle}</td><td className="p-2 text-left">{g.branche}</td><td className="p-2 tabular-nums">{f(g.nette)}</td><td className="p-2 tabular-nums">{f(g.accessoires)}</td><td className="p-2 tabular-nums">{montant(g.tauxTaxe).toString().replace(".", ",")} %</td><td className="p-2 tabular-nums">{f(g.taxe)}</td><td className="p-2 tabular-nums">{f(g.ttc)}</td>
-                </tr>
-              ))}
-              <tr className="text-right font-semibold">
-                <td className="p-2 text-left">Total</td><td className="p-2" /><td className="p-2 tabular-nums">{f(c.totaux.nette)}</td><td className="p-2 tabular-nums">{f(c.totaux.accessoires)}</td><td className="p-2" /><td className="p-2 tabular-nums">{f(c.totaux.taxe)}</td><td className="p-2 tabular-nums">{f(c.totaux.ttc)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      ) : (
-      <div className="mb-6 overflow-x-auto">
-        <table className="w-full min-w-[46rem] border-collapse text-sm">
-          <thead>
-            <tr className="bg-primary text-right text-primary-foreground"><th className="p-2 text-left">Formule</th><th className="p-2">Effectif</th><th className="p-2">Prime nette (HT)</th><th className="p-2">Accessoires</th><th className="p-2">Taxe ({c.taxe.tauxPourcent !== null ? `${c.taxe.tauxPourcent} %` : "plusieurs taux"})</th><th className="p-2">TTC</th></tr>
-          </thead>
-          <tbody>
-            {c.formules.map((l) => (
-              <tr key={l.code} className="border-b border-border text-right">
-                <td className="p-2 text-left">{l.libelle}</td><td className="p-2">{l.effectif}</td><td className="p-2">{f(l.nette)}</td><td className="p-2">{f(l.accessoires)}</td><td className="p-2">{f(l.taxe)}</td><td className="p-2">{f(l.ttc)}</td>
-              </tr>
-            ))}
-            <tr className="text-right font-semibold">
-              <td className="p-2 text-left">Total</td><td className="p-2" /><td className="p-2">{f(c.totaux.nette)}</td><td className="p-2">{f(c.totaux.accessoires)}</td><td className="p-2">{f(c.totaux.taxe)}</td><td className="p-2">{f(c.totaux.ttc)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      )}
+      <Carte titre="Montants (moteur de calcul)">
+        {modeGaranties ? (
+          <Tableau colonnes={colonnesGaranties} lignes={lignesGaranties} cleLigne={(l) => l.cle} legende="Montants par garantie" />
+        ) : (
+          <Tableau colonnes={colonnesFormules} lignes={lignesFormules} cleLigne={(l) => l.cle} legende="Montants par formule" />
+        )}
+      </Carte>
 
       {x.etat ? (
-        <section className="mb-6 max-w-4xl">
-          <h2 className="mb-2 text-lg font-semibold">Échéances et paiements</h2>
-          <p className="mb-2 text-sm">
-            <strong>Payé :</strong> {f(x.etat.totalPaye)} F — <strong>Restant dû :</strong> {f(x.etat.restantDu)} F
-            {montant(x.avance.disponible).greaterThan(0) ? <> — <strong>Avance de la police :</strong> {f(x.avance.disponible)} F (<Link href={`/cotations/${x.cotationId}/factures#avance`} className="text-primary underline">détail</Link>)</> : null}
-          </p>
-          {x.etat.echeances.length > 0 ? (
-            <table className="mb-3 w-full border-collapse text-sm">
-              <thead><tr className="text-left text-neutral"><th className="p-1">Échéance</th><th className="p-1">Date</th><th className="p-1 text-right">Montant</th><th className="p-1 text-right">Payé</th><th className="p-1 text-right">Restant</th><th className="p-1">Statut</th></tr></thead>
-              <tbody>{x.etat.echeances.map((e) => <tr key={e.numero} className="border-t border-border"><td className="p-1">{e.numero}</td><td className="p-1">{e.date}</td><td className="p-1 text-right">{f(e.montant)}</td><td className="p-1 text-right">{f(e.paye)}</td><td className="p-1 text-right">{f(e.restant)}</td><td className="p-1">{e.statut}</td></tr>)}</tbody>
-            </table>
-          ) : null}
-          {x.etat.paiements.length > 0 ? (
-            <table className="w-full border-collapse text-sm">
-              <thead><tr className="text-left text-neutral"><th className="p-1">Reçu</th><th className="p-1">Date</th><th className="p-1 text-right">Montant</th><th className="p-1">Canal</th><th className="p-1">Référence</th><th className="p-1">Payeur</th><th className="p-1 text-right">Restant dû après</th></tr></thead>
-              <tbody>
-                {x.etat.paiements.map((p, i) => (
-                  <tr key={i} className="border-t border-border">
-                    <td className="p-1">{p.numero || "—"}</td>
-                    <td className="p-1">{p.date}</td>
-                    <td className="p-1 text-right">{f(p.montant)}{p.excedent && montant(p.excedent).greaterThan(0) ? <span className="block text-xs text-neutral">dont {f(p.excedent)} F en avance</span> : null}</td>
-                    <td className="p-1">{LIBELLE_CANAL[p.canal]}</td>
-                    <td className="p-1">{p.reference || "—"}</td>
-                    <td className="p-1">{p.payeur || "—"}</td>
-                    <td className="p-1 text-right">{f(p.restantDu)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : <p className="text-sm text-neutral">Aucun paiement.</p>}
-          {x.remplace ? <p className="mt-2 text-sm text-neutral">Les paiements de la facture annulée {x.remplace.numero} sont repris ici à l&apos;émission (leurs reçus restent valables).</p> : null}
-          {x.reports.length > 0 ? (
-            <p className="mt-2 text-sm text-neutral">
-              Sommes reportées en avance sur la police à l&apos;annulation : {x.reports.map((r) => `${f(r.montant)} F (${r.recu ?? "avance"}, ${r.date})`).join(" ; ")}. La facture de remplacement les reprend à son émission.
+        <Carte titre="Échéances et paiements">
+          <div className="space-y-4">
+            <p className="text-sm">
+              <strong>Payé :</strong> {f(x.etat.totalPaye)} F — <strong>Restant dû :</strong> {f(x.etat.restantDu)} F
+              {montant(x.avance.disponible).greaterThan(0) ? <> — <strong>Avance de la police :</strong> {f(x.avance.disponible)} F (<Link href={`/cotations/${x.cotationId}/factures#avance`} className="text-primary underline">détail</Link>)</> : null}
             </p>
-          ) : null}
-        </section>
+            {x.etat.echeances.length > 0 ? <Tableau colonnes={colonnesEcheances} lignes={x.etat.echeances} cleLigne={(e) => String(e.numero)} legende="Échéances" /> : null}
+            <Tableau colonnes={colonnesPaiements} lignes={lignesPaiements} cleLigne={({ i }) => String(i)} messageVide="Aucun paiement." legende="Paiements" />
+            {x.remplace ? <p className="text-sm text-neutral">Les paiements de la facture annulée {x.remplace.numero} sont repris ici à l&apos;émission (leurs reçus restent valables).</p> : null}
+            {x.reports.length > 0 ? (
+              <p className="text-sm text-neutral">
+                Sommes reportées en avance sur la police à l&apos;annulation : {x.reports.map((r) => `${f(r.montant)} F (${r.recu ?? "avance"}, ${r.date})`).join(" ; ")}. La facture de remplacement les reprend à son émission.
+              </p>
+            ) : null}
+          </div>
+        </Carte>
       ) : null}
 
       {x.documents.length > 0 ? (
-        <section className="mb-6 max-w-4xl">
-          <h2 className="mb-2 text-lg font-semibold">Documents</h2>
-          <ul className="list-disc pl-5 text-sm">
-            {x.documents.map((d) => (
-              <li key={`${d.numero}-${d.version}`}>
-                {d.type === "RECU" ? "Reçu" : d.type === "AVOIR" ? "Avoir" : "Facture"} {d.numero} v{d.version} : {d.documentId ? <a href={`/api/documents/${d.documentId}`} className="text-primary underline">télécharger le PDF</a> : "PDF en attente"}
-              </li>
-            ))}
-          </ul>
-        </section>
+        <Carte titre="Documents">
+          <Tableau colonnes={colonnesDocuments} lignes={x.documents} cleLigne={(d) => `${d.numero}-${d.version}`} legende="Documents de la facture" />
+        </Carte>
       ) : null}
 
-      <section className="grid max-w-3xl gap-6">
+      <div className="grid max-w-3xl gap-6">
         {x.actions.modifier ? (
-          <div className="rounded border border-border p-4">
-            <h2 className="mb-2 text-lg font-semibold">Modifier le brouillon</h2>
+          <Carte titre="Modifier le brouillon">
             <FormulaireAction action={modifierLaFacture} libelleBouton="Enregistrer" discret>
               {cache}
               <div className="mb-3 grid gap-3 sm:grid-cols-2">
-                <label className="block text-sm">« Envoyé à » : destinataire<input name="envoyeNom" defaultValue={c.envoyeA?.nom ?? ""} className={entree} /></label>
-                <label className="block text-sm">Adresse<input name="envoyeAdresse" defaultValue={c.envoyeA?.adresse ?? ""} className={entree} /></label>
+                <ChampSaisie label="« Envoyé à » : destinataire" name="envoyeNom" defaultValue={c.envoyeA?.nom ?? ""} />
+                <ChampSaisie label="Adresse" name="envoyeAdresse" defaultValue={c.envoyeA?.adresse ?? ""} />
               </div>
               {x.type === "RENOUVELLEMENT" ? (
                 <>
                   {c.formules.map((l) => (
-                    <label key={l.code} className="mb-2 block text-sm">
-                      Effectif {l.libelle}
+                    <div key={l.code} className="mb-2">
                       <input type="hidden" name="formule_code" value={l.code} />
-                      <input name="formule_effectif" type="number" min={1} defaultValue={l.effectif} className={entree} />
-                    </label>
+                      <ChampSaisie label={`Effectif ${l.libelle}`} name="formule_effectif" type="number" min={1} defaultValue={l.effectif} />
+                    </div>
                   ))}
-                  <label className="mb-3 block text-sm">Nombre de tranches<input name="nombreTranches" type="number" min={1} defaultValue={Math.max(1, c.echeances.length)} className={entree} /></label>
+                  <div className="mb-3">
+                    <ChampSaisie label="Nombre de tranches" name="nombreTranches" type="number" min={1} defaultValue={Math.max(1, c.echeances.length)} />
+                  </div>
                 </>
               ) : null}
             </FormulaireAction>
-          </div>
+          </Carte>
         ) : null}
 
         {x.actions.abandonner ? (
-          <div className="rounded border border-border p-4">
-            <h2 className="mb-2 text-lg font-semibold">Abandonner le brouillon</h2>
-            <p className="mb-3 text-sm text-neutral">
-              Le brouillon passe au statut « Abandonnée », définitivement : aucun numéro n&apos;est consommé, la place de la facture se libère (une nouvelle facture peut être préparée pour la même
-              période). Le motif est obligatoire ({LONGUEUR_MIN_MOTIF_ABANDON} caractères au moins) et l&apos;abandon est journalisé.
-            </p>
+          <Carte
+            titre="Abandonner le brouillon"
+            description={
+              <>
+                Le brouillon passe au statut « Abandonnée », définitivement : aucun numéro n&apos;est consommé, la place de la facture se libère (une nouvelle facture peut être préparée pour la même
+                période). Le motif est obligatoire ({LONGUEUR_MIN_MOTIF_ABANDON} caractères au moins) et l&apos;abandon est journalisé.
+              </>
+            }
+          >
             <FormulaireAction action={abandonnerLaFacture} libelleBouton="Abandonner le brouillon" discret>
               {cache}
               <Champ nom="motif" libelle="Motif de l'abandon (obligatoire)" autoComplete="off" />
             </FormulaireAction>
-          </div>
+          </Carte>
         ) : null}
 
         {x.actions.emettre ? (
-          <div className="rounded border border-border p-4">
-            <h2 className="mb-2 text-lg font-semibold">Émettre</h2>
-            <p className="mb-3 text-sm text-neutral">
-              {x.actions.emettreSousSeuil
+          <Carte
+            titre="Émettre"
+            description={
+              x.actions.emettreSousSeuil
                 ? `Le TTC dépasse le seuil du produit (${x.seuil ? f(x.seuil) : "?"} F) : votre demande passera « À valider ».`
-                : "Le numéro FAC est attribué maintenant ; la facture ne se modifiera plus."}
-            </p>
+                : "Le numéro FAC est attribué maintenant ; la facture ne se modifiera plus."
+            }
+          >
             <FormulaireAction action={emettreLaFacture} libelleBouton={x.actions.emettreSousSeuil ? "Demander la validation" : "Émettre la facture"}>{cache}</FormulaireAction>
-          </div>
+          </Carte>
         ) : null}
 
         {x.actions.payer ? (
-          <div className="rounded border border-border p-4">
-            <h2 className="mb-2 text-lg font-semibold">Enregistrer un paiement</h2>
-            <p className="mb-3 text-sm text-neutral">Un reçu REC est produit, et la facture est rééditée (version suivante, restant dû à jour). Un montant supérieur au restant dû est accepté : l&apos;excédent devient une avance sur la police (H33), visible sur le reçu.</p>
+          <Carte
+            titre="Enregistrer un paiement"
+            description="Un reçu REC est produit, et la facture est rééditée (version suivante, restant dû à jour). Un montant supérieur au restant dû est accepté : l'excédent devient une avance sur la police (H33), visible sur le reçu."
+          >
             <FormulaireAction action={enregistrerLePaiement} libelleBouton="Enregistrer le paiement">
               {cache}
               <div className="grid gap-x-4 sm:grid-cols-2">
                 <Champ nom="date" libelle="Date (AAAA-MM-JJ)" valeur={aujourdhui()} autoComplete="off" />
                 <Champ nom="montant" libelle={`Montant (restant dû : ${x.etat ? f(x.etat.restantDu) : "?"} F)`} autoComplete="off" />
-                <label className="mb-4 block text-sm font-medium">Canal
-                  <select name="canal" required defaultValue="" className={entree}>
-                    <option value="" disabled>— Choisir —</option>
-                    {CANAUX_PAIEMENT.map((k) => <option key={k} value={k}>{LIBELLE_CANAL[k]}</option>)}
-                  </select>
-                </label>
+                <div className="mb-4">
+                  <ListeDeroulante label="Canal" name="canal" required invite="— Choisir —" options={CANAUX_PAIEMENT.map((k) => ({ valeur: k, libelle: LIBELLE_CANAL[k] }))} />
+                </div>
                 <Champ nom="reference" libelle="Référence (obligatoire sauf espèces)" requis={false} autoComplete="off" />
                 <Champ nom="payeur" libelle="Payeur (par défaut : Facturé à)" requis={false} autoComplete="off" />
               </div>
             </FormulaireAction>
-          </div>
+          </Carte>
         ) : null}
 
         {x.actions.imputer ? (
-          <div className="rounded border border-border p-4">
-            <h2 className="mb-2 text-lg font-semibold">Imputer l&apos;avance de la police</h2>
-            <p className="mb-3 text-sm text-neutral">
-              Avance disponible : {f(x.avance.disponible)} F ; restant dû : {x.etat ? f(x.etat.restantDu) : "?"} F. L&apos;imputation apparaît dans les paiements de la facture (rééditée, version suivante) ; aucun reçu n&apos;est produit.
-            </p>
+          <Carte
+            titre="Imputer l'avance de la police"
+            description={`Avance disponible : ${f(x.avance.disponible)} F ; restant dû : ${x.etat ? f(x.etat.restantDu) : "?"} F. L'imputation apparaît dans les paiements de la facture (rééditée, version suivante) ; aucun reçu n'est produit.`}
+          >
             <AvertissementsReports reports={x.avance.reportsEnAttente} />
             <FormulaireAction action={imputerLAvance} libelleBouton="Imputer l'avance">
               {cache}
               <Champ nom="montant" libelle="Montant à imputer" valeur={x.avance.proposee} autoComplete="off" />
             </FormulaireAction>
-          </div>
+          </Carte>
         ) : null}
 
         {x.actions.avoir ? (
-          <div className="rounded border border-danger-border p-4">
-            <h2 className="mb-2 text-lg font-semibold">Annuler par un avoir</h2>
-            <p className="mb-3 text-sm text-neutral">
-              Avoir AV de la totalité de la facture (montants négatifs). La facture devient « Annulée – avoir AV-… », y compris sur sa page de vérification, et reste conservée. Pour corriger : avoir, puis nouvelle facture depuis la police.
-              {x.etat && montant(x.etat.totalPaye).greaterThan(0) ? ` Les ${f(x.etat.totalPaye)} F déjà payés sont reportés : la nouvelle facture les reprendra (les reçus restent valables).` : ""}
-            </p>
+          <Carte
+            ton="danger"
+            titre="Annuler par un avoir"
+            description={`Avoir AV de la totalité de la facture (montants négatifs). La facture devient « Annulée – avoir AV-… », y compris sur sa page de vérification, et reste conservée. Pour corriger : avoir, puis nouvelle facture depuis la police.${
+              x.etat && montant(x.etat.totalPaye).greaterThan(0) ? ` Les ${f(x.etat.totalPaye)} F déjà payés sont reportés : la nouvelle facture les reprendra (les reçus restent valables).` : ""
+            }`}
+          >
             <FormulaireAction action={emettreLAvoir} libelleBouton="Émettre l'avoir">
               {cache}
               <Champ nom="motif" libelle={`Motif (${LONGUEUR_MIN_MOTIF_AVOIR} caractères au moins)`} autoComplete="off" />
             </FormulaireAction>
-          </div>
+          </Carte>
         ) : null}
-      </section>
+      </div>
     </main>
   );
 }

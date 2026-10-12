@@ -1,14 +1,27 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { Bouton, Carte, Champ, EnTetePage, ListeDeroulante, PastilleStatut, Tableau, type ColonneTableau } from "@/composants/ui";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { LIBELLE_STATUT_FACTURE, STATUTS_FACTURE } from "@/domaine/facturation/factures";
-import { listerFactures } from "@/serveur/factures";
+import { listerFactures, type LigneFactureLue } from "@/serveur/factures";
 import { exigerUtilisateur } from "@/serveur/session";
 import { ErreurAcces } from "@/serveur/types";
 
 const f = (m: string) => formaterMontant(montant(m));
-const entree = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2";
+
+const COLONNES: ColonneTableau<LigneFactureLue>[] = [
+  { cle: "numero", entete: "Numéro", rendu: (x) => <Link href={`/factures/${x.id}`} className="text-primary underline">{x.numero ?? `Brouillon n° ${x.id}`}</Link> },
+  { cle: "type", entete: "Type", rendu: (x) => x.libelleType },
+  { cle: "statut", entete: "Statut", rendu: (x) => <PastilleStatut libelle={x.libelleStatut} /> },
+  { cle: "police", entete: "Police", rendu: (x) => <Link href={`/cotations/${x.cotationId}/factures`} className="text-primary underline">{x.policeNumero}</Link> },
+  { cle: "souscripteur", entete: "Souscripteur", rendu: (x) => x.souscripteur },
+  { cle: "emission", entete: "Émise le", rendu: (x) => x.dateEmission ?? "—" },
+  { cle: "ttc", entete: "TTC", alignement: "droite", rendu: (x) => f(x.ttc) },
+  { cle: "restant", entete: "Restant dû", alignement: "droite", rendu: (x) => (x.restantDu === null ? "—" : f(x.restantDu)) },
+  // Le libellé du PDF en attente est celui d'avant la refonte ; la pastille suit la table unique des statuts.
+  { cle: "pdf", entete: "PDF", rendu: (x) => (x.pdfEnAttente > 0 ? <PastilleStatut libelle="PDF en attente">En attente</PastilleStatut> : x.numero ? "Produit" : "—") },
+];
 
 export default async function PageFactures(props: PageProps<"/factures">) {
   const params = await props.searchParams;
@@ -24,45 +37,27 @@ export default async function PageFactures(props: PageProps<"/factures">) {
   }
 
   return (
-    <main>
-      <h1 className="mb-1 text-2xl font-semibold text-primary">Factures et avoirs</h1>
-      <p className="mb-4 text-sm text-neutral">Une facture se prépare depuis la police (fiche de la cotation acceptée, lien « Factures »). Les 200 plus récentes.</p>
-      <form className="mb-6 grid max-w-4xl gap-3 sm:grid-cols-4" method="get">
-        <label className="text-sm">Statut
-          <select name="statut" defaultValue={filtres.statut} className={entree}>
-            <option value="">Tous</option>
-            {STATUTS_FACTURE.map((s) => <option key={s} value={s}>{LIBELLE_STATUT_FACTURE[s]}</option>)}
-          </select>
-        </label>
-        <label className="text-sm">Numéro<input name="numero" defaultValue={filtres.numero} className={entree} /></label>
-        <label className="text-sm">Police<input name="police" defaultValue={filtres.police} className={entree} /></label>
-        <div className="flex items-end"><button className="rounded bg-primary px-4 py-2 font-semibold text-primary-foreground">Filtrer</button></div>
-      </form>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[56rem] border-collapse text-sm">
-          <thead>
-            <tr className="bg-primary text-left text-primary-foreground">
-              <th className="p-2">Numéro</th><th className="p-2">Type</th><th className="p-2">Statut</th><th className="p-2">Police</th><th className="p-2">Souscripteur</th><th className="p-2">Émise le</th><th className="p-2 text-right">TTC</th><th className="p-2 text-right">Restant dû</th><th className="p-2">PDF</th>
-            </tr>
-          </thead>
-          <tbody>
-            {lignes.map((x) => (
-              <tr key={x.id} className="border-b border-border">
-                <td className="p-2"><Link href={`/factures/${x.id}`} className="text-primary underline">{x.numero ?? `Brouillon n° ${x.id}`}</Link></td>
-                <td className="p-2">{x.libelleType}</td>
-                <td className="p-2">{x.libelleStatut}</td>
-                <td className="p-2"><Link href={`/cotations/${x.cotationId}/factures`} className="underline">{x.policeNumero}</Link></td>
-                <td className="p-2">{x.souscripteur}</td>
-                <td className="p-2">{x.dateEmission ?? "—"}</td>
-                <td className="p-2 text-right">{f(x.ttc)}</td>
-                <td className="p-2 text-right">{x.restantDu === null ? "—" : f(x.restantDu)}</td>
-                <td className="p-2">{x.pdfEnAttente > 0 ? <strong className="text-warning">En attente</strong> : x.numero ? "Produit" : "—"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {lignes.length === 0 ? <p className="mt-3 text-sm text-neutral">Aucune facture.</p> : null}
-      </div>
+    <main className="space-y-6">
+      <EnTetePage
+        titre="Factures et avoirs"
+        sousTitre="Une facture se prépare depuis la police (fiche de la cotation acceptée, lien « Factures »). Les 200 plus récentes."
+      />
+      <Carte>
+        <form className="grid max-w-4xl gap-3 sm:grid-cols-4 sm:items-end" method="get">
+          <ListeDeroulante
+            label="Statut"
+            name="statut"
+            defaultValue={filtres.statut}
+            options={[{ valeur: "", libelle: "Tous" }, ...STATUTS_FACTURE.map((s) => ({ valeur: s, libelle: LIBELLE_STATUT_FACTURE[s] }))]}
+          />
+          <Champ label="Numéro" name="numero" defaultValue={filtres.numero} />
+          <Champ label="Police" name="police" defaultValue={filtres.police} />
+          <div>
+            <Bouton type="submit">Filtrer</Bouton>
+          </div>
+        </form>
+      </Carte>
+      <Tableau colonnes={COLONNES} lignes={lignes} cleLigne={(x) => String(x.id)} messageVide="Aucune facture." legende="Factures et avoirs" />
     </main>
   );
 }

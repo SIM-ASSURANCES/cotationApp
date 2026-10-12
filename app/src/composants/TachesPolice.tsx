@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { fermerLaTache } from "@/app/(protege)/taches/actions";
+import { Bandeau } from "@/composants/ui";
 import type { TacheLue } from "@/domaine/imports/taches";
 
 import { Champ, FormulaireAction } from "./FormulaireAction";
@@ -14,26 +15,31 @@ export function TachesPolice({ taches, cotationId, chemin }: { taches: TacheLue[
   if (taches.length === 0) return null;
   const lien = (t: TacheLue) => (t.type === "CP_A_EMETTRE" ? `/cotations/${cotationId}/adherents` : `/cotations/${cotationId}/factures`);
   return (
-    <section role="status" aria-label="Tâches de la police" className="mb-6 max-w-4xl rounded border border-warning-border bg-warning-bg p-3 text-sm">
-      <h2 className="mb-1 font-semibold">À faire sur cette police</h2>
-      <ul className="list-disc pl-5">
-        {taches.map((t) => (
-          <li key={t.id} className="mb-2">
-            <Link href={lien(t)} className="text-primary underline">{t.libelle}</Link> — liste des adhérents version {t.versionAdherents} (import du{" "}
-            {new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeZone: "UTC" }).format(t.creeLe)} par {t.creePar})
-            {t.fermable ? (
-              <details className="mt-1">
-                <summary className="cursor-pointer text-neutral">Fermer sans émettre la pièce</summary>
-                <FormulaireAction action={fermerLaTache} libelleBouton="Fermer la tâche" discret>
-                  <input type="hidden" name="tacheId" value={t.id} />
-                  <input type="hidden" name="retour" value={chemin} />
-                  <Champ nom="motif" libelle="Motif (obligatoire, ex. « pas de facturation »)" autoComplete="off" />
-                </FormulaireAction>
-              </details>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-    </section>
+    <div className="max-w-4xl">
+      <Bandeau ton="avertissement" role="status">
+        <h2 className="mb-1 font-semibold">À faire sur cette police</h2>
+        <ul className="list-disc pl-5">
+          {taches.map((t) => (
+            <li key={t.id} className="mb-2">
+              <Link href={lien(t)} className="text-primary underline">{t.libelle}</Link> — liste des adhérents version {t.versionAdherents} (import du{" "}
+              {new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeZone: "UTC" }).format(t.creeLe)} par {t.creePar})
+              {t.fermable ? (
+                <details className="mt-1">
+                  <summary className="cursor-pointer text-neutral">Fermer sans émettre la pièce</summary>
+                  {/* Les champs ont un fond teinté : ils vont dans un panneau blanc, jamais directement sur le fond du bandeau. */}
+                  <div className="mt-2 rounded-md border border-border bg-surface p-3 text-foreground">
+                    <FormulaireAction action={fermerLaTache} libelleBouton="Fermer la tâche" discret>
+                      <input type="hidden" name="tacheId" value={t.id} />
+                      <input type="hidden" name="retour" value={chemin} />
+                      <Champ nom="motif" libelle="Motif (obligatoire, ex. « pas de facturation »)" autoComplete="off" />
+                    </FormulaireAction>
+                  </div>
+                </details>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </Bandeau>
+    </div>
   );
 }

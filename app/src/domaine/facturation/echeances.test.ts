@@ -1,24 +1,44 @@
 // Session 5b : avis d'échéance et relances (CDC §12), règles pures. Données inventées.
 import { describe, expect, it } from "vitest";
 
-import { avisDu, echeancesDe, factureAppelable, PARAMETRES_RELANCE_DEFAUT, problemesParametresRelance, relanceDue } from "./echeances";
+import { avisDu, echeancesDe, factureAppelable, PARAMETRES_RELANCE_DEFAUT, problemesParametresRelance, relanceDue, repartirEcheances } from "./echeances";
 
 const facture = { statut: "EMISE", type: "AFFAIRE_NOUVELLE", dateEffet: "2026-01-01", ttc: "11592000", echeances: [1, 2, 3, 4].map((n) => ({ numero: n, date: `2026-${String(1 + (n - 1) * 3).padStart(2, "0")}-01`, montant: "2898000" })) };
 
 describe("échéances d'une facture", () => {
   it("paiements imputés dans l'ordre : payée seulement si couverte en entier (H49)", () => {
     const e = echeancesDe(facture, "4898000");
-    expect(e.map((x) => [x.numero, x.paye, x.restant, x.payee])).toEqual([
-      [1, "2898000", "0", true],
-      [2, "2000000", "898000", false],
-      [3, "0", "2898000", false],
-      [4, "0", "2898000", false],
+    expect(e.map((x) => [x.numero, x.paye, x.restant, x.payee, x.statut])).toEqual([
+      [1, "2898000", "0", true, "Payé"],
+      [2, "2000000", "898000", false, "Partiellement payé"],
+      [3, "0", "2898000", false, "Non payé"],
+      [4, "0", "2898000", false, "Non payé"],
     ]);
+  });
+
+  it("session 6.1 : 4 × 25 111 (TTC 100 444), 50 000 payés : l'échéance 2 est « Partiellement payé », 222 restant", () => {
+    const quatre = [1, 2, 3, 4].map((n) => ({ numero: n, date: `2026-${String(n * 3).padStart(2, "0")}-01`, montant: "25111" }));
+    const e = repartirEcheances(quatre, "50000");
+    expect(e.map((x) => [x.statut, x.paye, x.restant])).toEqual([
+      ["Payé", "25111", "0"],
+      ["Partiellement payé", "24889", "222"],
+      ["Non payé", "0", "25111"],
+      ["Non payé", "0", "25111"],
+    ]);
+    // Le restant dû de la facture (50 444) est la somme des restants des échéances.
+    expect(e.reduce((t, x) => t + Number(x.restant), 0)).toBe(50444);
+  });
+
+  it("une échéance exactement couverte est « Payé », une somme nulle ou négative ne couvre rien", () => {
+    const deux = [{ numero: 1, date: "2026-01-01", montant: "100" }, { numero: 2, date: "2026-02-01", montant: "100" }];
+    expect(repartirEcheances(deux, "100").map((x) => x.statut)).toEqual(["Payé", "Non payé"]);
+    expect(repartirEcheances(deux, "0").map((x) => x.statut)).toEqual(["Non payé", "Non payé"]);
+    expect(repartirEcheances(deux, "200").map((x) => x.statut)).toEqual(["Payé", "Payé"]);
   });
 
   it("facture sans échéancier : une seule échéance, le terme, TTC entier à la date d'effet (H67)", () => {
     expect(echeancesDe({ ...facture, echeances: [], dateEffet: "2026-07-22", ttc: "122442" }, "41000")).toEqual([
-      { numero: 1, date: "2026-07-22", montant: "122442", paye: "41000", restant: "81442", payee: false },
+      { numero: 1, date: "2026-07-22", montant: "122442", paye: "41000", restant: "81442", payee: false, statut: "Partiellement payé" },
     ]);
   });
 

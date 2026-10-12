@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { AvertissementsReports } from "@/composants/AvertissementsReports";
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { CANAUX_PAIEMENT, LIBELLE_CANAL } from "@/domaine/facturation/factures";
@@ -111,6 +112,7 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
           <div className="rounded border border-bordure p-4">
             <h3 className="mb-2 font-semibold">Restituer l&apos;avance</h3>
             <p className="mb-3 text-sm text-zinc-700">Remboursement au client, tracé au journal. Aucun document n&apos;est produit.</p>
+            <AvertissementsReports reports={vue.avance.reportsEnAttente} />
             <FormulaireAction action={restituerLAvance} libelleBouton="Enregistrer la restitution">
               <input type="hidden" name="policeId" value={police.id} />
               <input type="hidden" name="cotationId" value={police.cotationId} />

@@ -3,6 +3,7 @@ import { analyserMontant, ErreurCalcul, montant, ZERO, type Montant } from "../c
 import type { Assure, Souscripteur } from "../cotation/saisie";
 import type { IntermediaireDocument } from "../intermediaires";
 import type { FormuleSource } from "../documents/donnees";
+import { repartirEcheances, type EcheanceDue } from "./echeances";
 
 /**
  * Factures, avoirs, paiements et reçus (CDC §11, §12, session 4b). Règles pures : aucun montant n'est calculé ici en
@@ -152,8 +153,11 @@ export const partReglee = (p: Pick<PaiementEnregistre, "montant" | "excedent">):
 export type EtatPaiements = {
   totalPaye: string;
   restantDu: string;
-  /** Échéances avec leur statut : payées DANS L'ORDRE, une échéance n'est « Payé » que couverte en entier (H49). */
-  echeances: { numero: number; date: DateIso; montant: string; statut: "Payé" | "Non payé" }[];
+  /**
+   * Échéances avec leur statut, par la règle unique `repartirEcheances` (payées DANS L'ORDRE, H49) : « Payé » couverte en
+   * entier, « Partiellement payé » couverte en partie, « Non payé » sinon (session 6.1). Vide si la facture n'a pas d'échéancier.
+   */
+  echeances: Pick<EcheanceDue, "numero" | "date" | "montant" | "paye" | "restant" | "statut">[];
   /** Paiements dans l'ordre d'enregistrement, avec le restant dû après chacun. */
   paiements: (PaiementEnregistre & { restantDu: string })[];
 };
@@ -164,11 +168,7 @@ export function etatPaiements(ttc: string, echeances: ContenuFacture["echeances"
     cumule = cumule.plus(partReglee(p));
     return { ...p, restantDu: montant(ttc).minus(cumule).toFixed() };
   });
-  let couvert: Montant = ZERO;
-  const etat = echeances.map((e) => {
-    couvert = couvert.plus(montant(e.montant));
-    return { ...e, statut: (cumule.greaterThanOrEqualTo(couvert) ? "Payé" : "Non payé") as "Payé" | "Non payé" };
-  });
+  const etat = repartirEcheances(echeances, cumule.toFixed()).map(({ numero, date, montant: du, paye, restant, statut }) => ({ numero, date, montant: du, paye, restant, statut }));
   return { totalPaye: cumule.toFixed(), restantDu: montant(ttc).minus(cumule).toFixed(), echeances: etat, paiements: liste };
 }
 
@@ -244,6 +244,13 @@ export function controlerImputation(saisi: string, disponible: string, facture: 
   if (facture.type === "AVOIR" || facture.statut !== "EMISE") return { problemes: ["L'avance ne s'impute que sur une facture émise et en cours."], montant: null };
   return montantDebit(saisi, disponible, { valeur: facture.restantDu, message: `L'imputation ne peut pas dépasser le restant dû de la facture (${montant(facture.restantDu).toFixed()} F).` });
 }
+
+/**
+ * Avertissement d'une somme reportée d'une facture annulée tant que sa facture de remplacement n'est pas émise (H73, option a,
+ * session 6.1) : ces sommes ne sont PAS réservées à cette facture, elles peuvent être imputées ailleurs ou restituées. Le message
+ * prévient l'utilisateur sur les écrans d'imputation et de restitution ; il ne bloque rien.
+ */
+export const avertissementReport = (numeroFactureAnnulee: string): string => `Provient de la facture annulée ${numeroFactureAnnulee}, en attente de sa facture de remplacement`;
 
 /** Imputation proposée : le plus petit de l'avance disponible et du restant dû (0 : rien à proposer). */
 export function imputationProposee(disponible: string, restantDu: string): string {

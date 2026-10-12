@@ -7,7 +7,9 @@ import { DecimalMontant, montant, ZERO, type Montant } from "../calcul/montant";
  *
  * Une ÉCHÉANCE est une tranche d'une facture émise (échéancier de la facture) ; une facture sans échéancier a une seule
  * échéance, son terme : le TTC entier, dû à la date d'effet de la facture (H67). Les paiements couvrent les échéances
- * DANS L'ORDRE (H49) : une échéance n'est payée que couverte en entier.
+ * DANS L'ORDRE (H49) : une échéance n'est « Payé » que couverte en entier ; couverte en partie, elle est « Partiellement
+ * payé » (session 6.1). `repartirEcheances` est l'UNIQUE règle de cette répartition : l'écran de la facture, les données
+ * du PDF, les avis, les relances et le tableau de bord l'appellent tous.
  */
 
 // ------------------------------------------------------------------ Paramètres (par produit, historisés)
@@ -60,6 +62,9 @@ export type FactureAppelable = {
   echeances: readonly { numero: number; date: DateIso; montant: string }[];
 };
 
+/** Statut d'une échéance (`echeances[].statut`). */
+export type StatutEcheance = "Payé" | "Partiellement payé" | "Non payé";
+
 export type EcheanceDue = {
   numero: number;
   date: DateIso;
@@ -69,22 +74,33 @@ export type EcheanceDue = {
   /** Reste à payer sur CETTE échéance. */
   restant: string;
   payee: boolean;
+  statut: StatutEcheance;
 };
 
 /** Une facture appelle des paiements : émise (numéro attribué), pas annulée par un avoir, pas un avoir. */
 export const factureAppelable = (f: Pick<FactureAppelable, "statut" | "type">): boolean => f.statut === "EMISE" && f.type !== "AVOIR";
 
-/** Échéances d'une facture et leur couverture par le total payé (H49 : dans l'ordre ; H67 : terme unique sans échéancier). */
-export function echeancesDe(f: FactureAppelable, totalPaye: string): EcheanceDue[] {
-  const liste = f.echeances.length > 0 ? f.echeances : [{ numero: 1, date: f.dateEffet, montant: f.ttc }];
+/**
+ * Répartition d'une somme réglée sur des échéances, DANS L'ORDRE (H49) : chaque échéance reçoit au plus son montant, le
+ * surplus passe à la suivante. La somme réglée est celle de la facture : paiements hors excédent (H33), imputations
+ * d'avance et sommes reportées (session 6.0) comptent comme des paiements.
+ */
+export function repartirEcheances(echeances: readonly { numero: number; date: DateIso; montant: string }[], totalPaye: string): EcheanceDue[] {
   let reste: Montant = montant(totalPaye);
-  return liste.map((e) => {
+  return echeances.map((e) => {
     const du = montant(e.montant);
     const couvert = DecimalMontant.min(du, DecimalMontant.max(ZERO, reste));
     reste = reste.minus(couvert);
     const restant = du.minus(couvert);
-    return { numero: e.numero, date: e.date, montant: du.toFixed(), paye: couvert.toFixed(), restant: restant.toFixed(), payee: !restant.greaterThan(0) };
+    const payee = !restant.greaterThan(0);
+    const statut: StatutEcheance = payee ? "Payé" : couvert.greaterThan(0) ? "Partiellement payé" : "Non payé";
+    return { numero: e.numero, date: e.date, montant: du.toFixed(), paye: couvert.toFixed(), restant: restant.toFixed(), payee, statut };
   });
+}
+
+/** Échéances d'une facture et leur couverture par le total payé (H49 : dans l'ordre ; H67 : terme unique sans échéancier). */
+export function echeancesDe(f: FactureAppelable, totalPaye: string): EcheanceDue[] {
+  return repartirEcheances(f.echeances.length > 0 ? f.echeances : [{ numero: 1, date: f.dateEffet, montant: f.ttc }], totalPaye);
 }
 
 // ------------------------------------------------------------------ Avis d'échéance (J-x)

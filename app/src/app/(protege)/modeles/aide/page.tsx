@@ -74,6 +74,13 @@ export default async function PageAide() {
             <code className={code}>{"{{ f.base_taxe | montant }}"}</code> ; dans celui des paiements, la personne qui a payé :{" "}
             <code className={code}>{"{{ p.payeur }}"}</code>.
           </li>
+          <li>
+            Avis d&apos;échéance et relances (extension D25) : l&apos;échéance appelée s&apos;écrit{" "}
+            <code className={code}>{"{{ echeance_appelee.date | date }}"}</code> et{" "}
+            <code className={code}>{"{{ echeance_appelee.restant_du | montant }}"}</code> ; une relance dispose en plus de{" "}
+            <code className={code}>{"{{ relance.libelle }}"}</code> et <code className={code}>{"{{ relance.jours_retard }}"}</code>. Un modèle de
+            relance par niveau (1, 2, 3…), du produit ou commun. Ces champs ne sont pas fournis aux autres documents.
+          </li>
           <li>Polices : utilisez celles installées sur le générateur (Calibri, Tahoma, Arial, Times New Roman, MS Gothic…). Une autre police fait l'objet d'un avertissement au dépôt : la mise en page pourrait différer de Word.</li>
         </ul>
       </section>

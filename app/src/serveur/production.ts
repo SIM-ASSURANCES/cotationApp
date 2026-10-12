@@ -17,7 +17,7 @@ import { differerEcriture, programmerReprise, tenterEcriture } from "./stockage"
 import type { UtilisateurCourant } from "./types";
 
 /**
- * Documents à produire (session 4b, CDC §11.4) : facture, avoir, reçu.
+ * Documents à produire (session 4b, CDC §11.4) : facture, avoir, reçu ; avis d'échéance et relance (session 5b, CDC §12).
  *
  * 1. Dans la transaction de l'émission (ou du paiement), `figer` enregistre TOUT ce qu'il faut pour écrire le document :
  *    numéro (déjà attribué par le compteur, dans la même transaction), version, jeton du QR code, données complètes,
@@ -32,7 +32,7 @@ const depuisDate = (d: Date): DateIso => d.toISOString().slice(0, 10);
 const sha256 = (octets: Uint8Array) => createHash("sha256").update(octets).digest("hex");
 const auteur = (u: UtilisateurCourant): ActeurAudit => ({ id: u.id, identifiant: u.identifiant });
 
-export type TypeAProduire = Extract<TypeDocument, "FACTURE" | "AVOIR" | "RECU">;
+export type TypeAProduire = Extract<TypeDocument, "FACTURE" | "AVOIR" | "RECU" | "AVIS_ECHEANCE" | "RELANCE">;
 
 /** Versions des modèles associés, et listes toujours renvoyées en annexe (facture de groupe). */
 export type AssociesFiges = VersionsAssociees & { listesEnAnnexe: string[] };
@@ -43,6 +43,9 @@ export type AFiger = {
   version: number;
   factureId: number;
   paiementId?: number | null;
+  /** Avis d'échéance et relance (session 5b) : échéance appelée et niveau ; uniques en base. */
+  echeanceNumero?: number | null;
+  niveauRelance?: number | null;
   produitCode: string;
   policeNumero: string;
   policeId: number;
@@ -68,6 +71,8 @@ export async function figer(tx: Prisma.TransactionClient, a: AFiger): Promise<nu
       jeton,
       factureId: a.factureId,
       paiementId: a.paiementId ?? null,
+      echeanceNumero: a.echeanceNumero ?? null,
+      niveauRelance: a.niveauRelance ?? null,
       produitCode: a.produitCode,
       policeNumero: a.policeNumero,
       policeId: a.policeId,
@@ -163,10 +168,11 @@ export async function produire(acteur: UtilisateurCourant, id: number, adresseIp
           emisPar: p.emisPar,
         },
       });
-      // Facture annulée par un avoir pendant que son PDF était en attente : le document naît annulé (T12).
+      // Facture annulée par un avoir pendant que son PDF était en attente : le document naît annulé (T12) ; de même
+      // pour un avis d'échéance ou une relance de cette facture (session 5b).
       const facture = p.factureId ? await tx.facture.findUnique({ where: { id: p.factureId }, select: { statut: true, annuleeLe: true, annuleePar: { select: { numero: true } } } }) : null;
       const document =
-        p.type === "FACTURE" && facture?.statut === "ANNULEE" && facture.annuleePar?.numero
+        (p.type === "FACTURE" || p.type === "AVIS_ECHEANCE" || p.type === "RELANCE") && facture?.statut === "ANNULEE" && facture.annuleePar?.numero
           ? await tx.documentEmis.update({ where: { id: cree.id }, data: { annuleParNumero: facture.annuleePar.numero, annuleLe: facture.annuleeLe ?? new Date() } })
           : cree;
       await tx.documentAProduire.update({ where: { id }, data: { statut: "PRODUIT", documentId: cree.id, produitLe: new Date(), derniereErreur: null } });

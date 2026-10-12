@@ -88,3 +88,8 @@ export async function lireJournal(options: {
     suivant: lignes.length > TAILLE_PAGE ? page[page.length - 1].id.toString() : null,
   };
 }
+
+/** Une action a-t-elle déjà été journalisée pour cet objet ? (tâche quotidienne rejouée : une seule trace par jour) */
+export async function dejaJournalise(action: ActionAudit, objetType: string, objetId: string): Promise<boolean> {
+  return (await obtenirPrisma().journalAudit.count({ where: { action, objetType, objetId } })) > 0;
+}

@@ -93,21 +93,21 @@ async function exigerLecture(acteur: UtilisateurCourant) {
 
 // ---------------------------------------------------------------- Chargements
 
-const chargerPolice = (client: Tx, policeId: number) =>
+export const chargerPolice = (client: Tx, policeId: number) =>
   client.police.findUnique({ where: { id: policeId }, include: { adherents: { orderBy: { numero: "asc" } }, cotation: { select: { produitId: true, versionDateEffet: true } } } });
 type PoliceChargee = NonNullable<Awaited<ReturnType<typeof chargerPolice>>>;
 
 /** Verrou de la ligne de la facture jusqu'à la fin de la transaction : deux émissions, deux paiements passent l'un après l'autre. */
-async function verrouiller(tx: Tx, factureId: number): Promise<LigneFacture> {
+export async function verrouiller(tx: Tx, factureId: number): Promise<LigneFacture> {
   await tx.$queryRaw`SELECT id FROM factures WHERE id = ${factureId} FOR UPDATE`;
   const f = await tx.facture.findUnique({ where: { id: factureId } });
   if (!f) throw new ErreurMetier("Facture introuvable.");
   return f;
 }
 
-const contenuDe = (f: { contenu: unknown }) => f.contenu as unknown as ContenuFacture;
+export const contenuDe = (f: { contenu: unknown }) => f.contenu as unknown as ContenuFacture;
 
-const paiementsDe = (lignes: { numeroRecu: string; date: Date; montant: { toFixed(): string }; reference: string; canal: string; payeur: string }[]): PaiementEnregistre[] =>
+export const paiementsDe = (lignes: { numeroRecu: string; date: Date; montant: { toFixed(): string }; reference: string; canal: string; payeur: string }[]): PaiementEnregistre[] =>
   lignes.map((p) => ({ numero: p.numeroRecu, date: depuisDate(p.date), montant: p.montant.toFixed(), reference: p.reference, canal: p.canal as CanalPaiement, payeur: p.payeur }));
 
 const enDoublon = (erreur: unknown) => erreur instanceof Prisma.PrismaClientKnownRequestError && erreur.code === "P2002";
@@ -388,7 +388,7 @@ export async function modifierFacture(acteur: UtilisateurCourant, factureId: num
 
 type Commun = Awaited<ReturnType<typeof lireParametresSociete>>;
 
-function donnees(
+export function donnees(
   type: TypeAProduire,
   numero: string,
   version: number,
@@ -436,7 +436,7 @@ function donnees(
   return donneesDocument(source);
 }
 
-function facturation(contenu: ContenuFacture, etat: EtatPaiements, factureOrigine: string | null, paiements: EtatPaiements["paiements"]): Facturation {
+export function facturation(contenu: ContenuFacture, etat: EtatPaiements, factureOrigine: string | null, paiements: EtatPaiements["paiements"]): Facturation {
   return {
     echeances: etat.echeances,
     paiements: paiements.map((p) => ({ ...p, canal: LIBELLE_CANAL[p.canal] })),
@@ -451,10 +451,13 @@ function facturation(contenu: ContenuFacture, etat: EtatPaiements, factureOrigin
  * Modèle publié en vigueur pour le type : celui du produit, sinon le modèle commun (sans produit). Choisi AVANT
  * d'attribuer le numéro : sans modèle, l'émission est refusée et aucun numéro n'est consommé.
  */
-async function modeleRetenu(type: "FACTURE" | "AVOIR" | "RECU", produitId: number, date: DateIso): Promise<{ modeleVersionId: number; associes: AssociesFiges }> {
-  const retenu = (await versionPublieeEnVigueur({ type, produitId }, date)) ?? (await versionPublieeEnVigueur({ type, produitId: null }, date));
+export async function modeleRetenu(type: TypeAProduire, produitId: number, date: DateIso, niveauRelance: number | null = null): Promise<{ modeleVersionId: number; associes: AssociesFiges }> {
+  // Relance : le modèle de SON niveau (H16 : un modèle par niveau), du produit sinon commun.
+  const niveau = type === "RELANCE" ? { niveauRelance } : {};
+  const retenu = (await versionPublieeEnVigueur({ type, produitId, ...niveau }, date)) ?? (await versionPublieeEnVigueur({ type, produitId: null, ...niveau }, date));
   if (!retenu) {
-    throw new ErreurMetier(`Aucun modèle de ${{ FACTURE: "facture", AVOIR: "avoir", RECU: "reçu" }[type]} publié et en vigueur (ni pour le produit, ni commun) : déposez-le et faites-le publier (Modèles Word). Aucun numéro n'a été consommé.`);
+    const quoi = { FACTURE: "facture", AVOIR: "avoir", RECU: "reçu", AVIS_ECHEANCE: "avis d'échéance", RELANCE: `relance de niveau ${niveauRelance}` }[type];
+    throw new ErreurMetier(`Aucun modèle de ${quoi} publié et en vigueur (ni pour le produit, ni commun) : déposez-le et faites-le publier (Modèles Word). Aucun numéro n'a été consommé.`);
   }
   const { ids } = await modelesAssocies(produitId, date, false);
   return { modeleVersionId: retenu.version.id, associes: { ...ids, listesEnAnnexe: [] } };
@@ -594,6 +597,8 @@ export async function emettreAvoir(acteur: UtilisateurCourant, factureId: number
     });
     await tx.facture.update({ where: { id: f.id }, data: { statut: "ANNULEE", annuleeParId: avoir.id, annuleeLe: maintenant } });
     await tx.documentEmis.updateMany({ where: { numero: f.numero, annuleParNumero: null }, data: { annuleParNumero: numero, annuleLe: maintenant } });
+    // Avis d'échéance et relances de la facture (session 5b) : annulés avec elle (page de vérification, T12).
+    await tx.documentEmis.updateMany({ where: { production: { is: { factureId: f.id, type: { in: ["AVIS_ECHEANCE", "RELANCE"] } } }, annuleParNumero: null }, data: { annuleParNumero: numero, annuleLe: maintenant } });
     const etat = { totalPaye: "0", restantDu: "0", echeances: [], paiements: [] };
     const idProduction = await figer(tx, {
       type: "AVOIR",

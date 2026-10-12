@@ -31,7 +31,7 @@ import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 const versDate = (iso: DateIso) => new Date(`${iso}T00:00:00.000Z`);
 const TAILLE_MAX_IMAGE = 2 * 1024 * 1024;
 
-async function valeurEnVigueur(cle: string, date: DateIso): Promise<string | null> {
+export async function valeurEnVigueur(cle: string, date: DateIso): Promise<string | null> {
   const ligne = await obtenirPrisma().parametre.findFirst({ where: { cle, dateEffet: { lte: versDate(date) } }, orderBy: { dateEffet: "desc" } });
   return ligne?.valeur ?? null;
 }
@@ -59,7 +59,8 @@ export async function consulterSociete(acteur: UtilisateurCourant): Promise<{ pa
   };
 }
 
-async function ajouter(acteur: UtilisateurCourant, cle: string, valeur: string, dateEffet: DateIso, apres: Prisma.InputJsonValue, adresseIp: string | null): Promise<void> {
+/** Ajoute une valeur historisée d'un paramètre (date d'effet jamais passée), journalisée dans la même transaction. */
+export async function ajouterParametre(acteur: UtilisateurCourant, cle: string, valeur: string, dateEffet: DateIso, apres: Prisma.InputJsonValue, adresseIp: string | null): Promise<void> {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dateEffet) || dateEffet < aujourdhui()) {
     throw new ErreurMetier("Date d'effet invalide ou passée : un paramètre ne se modifie jamais rétroactivement.");
   }
@@ -80,7 +81,7 @@ export async function enregistrerSociete(acteur: UtilisateurCourant, parametres:
   await exigerParametrage(acteur, true);
   const problemes = problemesSociete(parametres);
   if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
-  await ajouter(acteur, CLE_SOCIETE, JSON.stringify(parametres), dateEffet, { ...parametres, dateEffet } as unknown as Prisma.InputJsonValue, adresseIp);
+  await ajouterParametre(acteur, CLE_SOCIETE, JSON.stringify(parametres), dateEffet, { ...parametres, dateEffet } as unknown as Prisma.InputJsonValue, adresseIp);
 }
 
 export async function enregistrerImageSociete(acteur: UtilisateurCourant, nom: ImageSociete, png: Uint8Array, dateEffet: DateIso, adresseIp: string | null): Promise<void> {
@@ -89,7 +90,7 @@ export async function enregistrerImageSociete(acteur: UtilisateurCourant, nom: I
   if (png.byteLength === 0 || png.byteLength > TAILLE_MAX_IMAGE || !signature.every((o, i) => png[i] === o)) {
     throw new ErreurMetier("Image PNG de 2 Mo au plus attendue.");
   }
-  await ajouter(acteur, cleImage(nom), Buffer.from(png).toString("base64"), dateEffet, { image: nom, octets: png.byteLength, dateEffet }, adresseIp);
+  await ajouterParametre(acteur, cleImage(nom), Buffer.from(png).toString("base64"), dateEffet, { image: nom, octets: png.byteLength, dateEffet }, adresseIp);
 }
 
 // ---------------------------------------------------------------- Format du numéro de police (H10, H31)
@@ -114,14 +115,14 @@ export async function enregistrerFormatNumeroPolice(acteur: UtilisateurCourant, 
   await exigerParametrage(acteur, true);
   const problemes = problemesFormatNumeroPolice(format.trim());
   if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
-  await ajouter(acteur, CLE_FORMAT_NUMERO_POLICE, format.trim(), dateEffet, { formatNumeroPolice: format.trim(), avant: await lireFormatNumeroPolice(dateEffet), dateEffet }, adresseIp);
+  await ajouterParametre(acteur, CLE_FORMAT_NUMERO_POLICE, format.trim(), dateEffet, { formatNumeroPolice: format.trim(), avant: await lireFormatNumeroPolice(dateEffet), dateEffet }, adresseIp);
 }
 
 // ---------------------------------------------------------------- Formats des numéros de documents (session 4b, CDC §11.4)
 
 export type FormatNumeroLu = { prefixe: PrefixeNumero; libelle: string; enVigueur: string; exemple: string; historique: { valeur: string; dateEffet: DateIso; creePar: string; creeLe: Date }[] };
 
-/** Formats en vigueur des numéros COT, FAC, AV et REC, avec leur historique (écran Société). */
+/** Formats en vigueur des numéros COT, FAC, AV, REC, AVE et REL, avec leur historique (écran Société). */
 export async function consulterFormatsNumero(acteur: UtilisateurCourant): Promise<FormatNumeroLu[]> {
   await exigerParametrage(acteur, false);
   const jour = aujourdhui();
@@ -151,5 +152,5 @@ export async function enregistrerFormatNumero(acteur: UtilisateurCourant, prefix
   const problemes = problemesFormatNumero(propre);
   if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
   const avant = (await valeurEnVigueur(cleFormatNumero(prefixe), dateEffet)) ?? FORMATS_NUMERO_DEFAUT[prefixe];
-  await ajouter(acteur, cleFormatNumero(prefixe), propre, dateEffet, { formatNumero: prefixe, avant, apres: propre, dateEffet }, adresseIp);
+  await ajouterParametre(acteur, cleFormatNumero(prefixe), propre, dateEffet, { formatNumero: prefixe, avant, apres: propre, dateEffet }, adresseIp);
 }

@@ -81,6 +81,9 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
       <p className="mb-6 text-sm text-zinc-700">
         Gamme {produit.gamme} · branche fiscale {produit.branche}. Le calcul utilise la version en vigueur à la date du document.
       </p>
+      <p className="mb-6 text-sm">
+        <Link href={`/parametrage/produits/${produit.code}/relances`} className="text-sim-bleu underline">Avis d&apos;échéance et relances de ce produit</Link> (délai J-x, niveaux de relance)
+      </p>
 
       {peutAgir(niveau) ? (
         <section className="mb-8 rounded border border-bordure bg-surface p-5">

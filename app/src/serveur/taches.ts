@@ -7,10 +7,12 @@ import { ErreurMetier } from "./types";
 
 /**
  * File de tâches (CDC §15.1, décision D24) : BullMQ sur le Redis du Docker Compose. L'application ENFILE ; le service
- * `travailleur` (scripts/travailleur.mts, même image, même code serveur/) EXÉCUTE. Deux files :
+ * `travailleur` (scripts/travailleur.mts, même image, même code serveur/) EXÉCUTE. Quatre files :
  *   - « imports » : traitement d'un lot d'import en masse (un lot à la fois ; le lot convertit lui-même
  *     CONVERSIONS_SIMULTANEES certificats en parallèle) ;
- *   - « stockage » : reprise des écritures différées (T14), avec des délais croissants.
+ *   - « stockage » : reprise des écritures différées (T14), avec des délais croissants ;
+ *   - « echeances » : lot d'avis d'échéance et de relances (session 5b) ;
+ *   - « quotidien » : tâche planifiée chaque matin qui établit la liste du jour des avis et relances (session 5b).
  *
  * Une tâche est REJOUABLE sans effet de bord : son identifiant est stable (« lot-12 », « ecriture-345 ») et son
  * traitement ne refait que ce qui manque (un certificat par adhérent, garanti par la base ; une ligne d'écriture
@@ -19,6 +21,11 @@ import { ErreurMetier } from "./types";
 
 export const FILE_IMPORTS = "imports";
 export const FILE_STOCKAGE = "stockage";
+export const FILE_ECHEANCES = "echeances";
+export const FILE_QUOTIDIEN = "quotidien";
+
+/** Liste du jour des avis et relances : chaque matin à 6 h, heure d'Abidjan (UTC). */
+export const PLANIFICATION_LISTE = { pattern: "0 6 * * *", tz: "Africa/Abidjan" };
 
 /** Reprise des écritures différées : 1er essai après 30 s, puis délai doublé à chaque échec (≈ 17 h au 12e). */
 export const REPRISE = { tentatives: 12, delaiMs: 30_000 };
@@ -54,6 +61,16 @@ const commun: JobsOptions = { removeOnComplete: true, removeOnFail: true };
 /** Traitement d'un lot d'import confirmé (une seule tâche par lot à la fois : identifiant stable). */
 export async function enfilerLot(lotId: number): Promise<void> {
   await file(FILE_IMPORTS).add("lot", { lotId }, { ...commun, jobId: `lot-${lotId}`, attempts: 3, backoff: { type: "exponential", delay: 60_000 } });
+}
+
+/** Lot d'avis et de relances (identifiant stable : enfiler deux fois ne crée qu'une tâche). */
+export async function enfilerLotEcheances(lotId: number): Promise<void> {
+  await file(FILE_ECHEANCES).add("lot", { lotId }, { ...commun, jobId: `echeances-${lotId}`, attempts: 3, backoff: { type: "exponential", delay: 60_000 } });
+}
+
+/** Planifie (ou met à jour) la tâche quotidienne de la liste du jour : une seule planification, quel que soit le nombre de démarrages. */
+export async function planifierListeDuJour(): Promise<void> {
+  await file(FILE_QUOTIDIEN).upsertJobScheduler("liste-echeances", PLANIFICATION_LISTE, { name: "liste", data: {}, opts: { removeOnComplete: true, removeOnFail: true } });
 }
 
 /**

@@ -38,6 +38,10 @@ export default async function LayoutProtege({ children }: LayoutProps<"/">) {
     if (lectureDocuments.slice(2).some(peutLire)) {
       liens.push({ href: "/factures", libelle: "Factures" });
     }
+    // Avis d'échéance et relances (CDC §12) : droit « Émettre une facture » (H21).
+    if (peutLire(lectureDocuments[2])) {
+      liens.push({ href: "/echeances", libelle: "Échéances" });
+    }
     if (lectureDocuments.some(peutLire)) {
       liens.push({ href: "/documents", libelle: "Documents émis" });
     }
@@ -53,6 +57,9 @@ export default async function LayoutProtege({ children }: LayoutProps<"/">) {
     }
     if (await niveauDuProfil(utilisateur.profil, "GERER_UTILISATEURS").then((n) => n === "OUI")) {
       liens.push({ href: "/admin/utilisateurs", libelle: "Utilisateurs" }, { href: "/admin/droits", libelle: "Droits" }, { href: "/admin/stockage", libelle: "Stockage" });
+    }
+    if (await niveauDuProfil(utilisateur.profil, "CONSULTER_TABLEAUX_DE_BORD").then(peutLire)) {
+      liens.push({ href: "/tableaux-de-bord", libelle: "Tableaux de bord" });
     }
     if (await niveauDuProfil(utilisateur.profil, "CONSULTER_AUDIT").then(peutLire)) {
       liens.push({ href: "/admin/audit", libelle: "Journal d'audit" });

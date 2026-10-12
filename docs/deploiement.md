@@ -12,7 +12,7 @@ Décision D5 (05/10/2026) : l'application est déployée sur un **VPS Linux** av
 | `generateur` | FastAPI + LibreOffice + polices | réseau Docker uniquement (`http://generateur:8001`) |
 | `postgres` | Base de données | réseau Docker uniquement |
 | `redis` | File de tâches BullMQ (D24) : imports en masse, reprise des écritures différées | réseau Docker uniquement |
-| `travailleur` | Exécute les tâches de la file (même image que `outils`, `npm run travailleur`) : certificats des imports en masse, écriture des documents quand le stockage revient (T14) | — (aucun port) |
+| `travailleur` | Exécute les tâches de la file (même image que `outils`, `npm run travailleur`) : certificats des imports en masse, écriture des documents quand le stockage revient (T14), lots d'avis et de relances et liste du jour chaque matin à 6 h (session 5b) | — (aucun port) |
 | `outils` | Applique les migrations puis s'arrête ; sert aux scripts d'installation | — |
 
 Volumes persistants : `donnees_postgres`, `donnees_redis`, `documents` (documents émis et profil LibreOffice).
@@ -54,10 +54,12 @@ curl -s http://127.0.0.1:3000/api/sante             # {"statut":"ok","base":"ok"
 curl -s -o /dev/null -w "%{http_code}\n" https://<domaine>/api/documents    # 401 : les routes sont protégées
 docker compose exec generateur python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8001/sante').read().decode())"
                                                     # "libreoffice_trouve": true, "polices_manquantes": []
-docker compose logs travailleur | tail -3           # « [travailleur] démarré : 0 lot(s) et 0 écriture(s) différée(s) repris. »
+docker compose logs travailleur | tail -3           # « [travailleur] démarré : 0 lot(s) d'import, 0 lot(s) d'avis et de relances et 0 écriture(s) différée(s) repris. »
 ```
 
 **Travailleur et file de tâches (session 5a, D24)** : sans le service `travailleur`, un import en masse se contrôle et se confirme, mais ses certificats ne sont pas produits ; il les produit dès qu'il redémarre (les tâches sont conservées dans Redis, et le travailleur reprend aussi au démarrage tout lot confirmé non terminé). `CONVERSIONS_SIMULTANEES` (2 par défaut) règle le nombre de conversions LibreOffice en parallèle, pour le générateur et le travailleur : autour du nombre de processeurs moins un. Durée mesurée de T8 : docs/recette.md.
+
+**Avis d'échéance et relances (session 5b, D25)** : le travailleur planifie lui-même, une seule fois quel que soit le nombre de redémarrages, la liste du jour (file `quotidien`, chaque matin à 6 h, heure d'Abidjan). Elle n'émet aucun document : elle trace la liste au journal. Les avis et relances sélectionnés sur l'écran « Échéances » passent par la file `echeances` ; sans travailleur, le lot attend et reprend à son démarrage. La génération d'une seule ligne n'a pas besoin du travailleur.
 
 **Stockage indisponible (T14)** : un document émis pendant une panne du stockage reste émis ; son PDF est gardé en base (« en attente d'écriture »), l'Admin système voit un bandeau et l'écran « Stockage », et le travailleur retente l'écriture avec des délais croissants (30 s, puis doublés, 12 essais, environ 17 h). Après les 12 essais, ou si le travailleur était arrêté : bouton « Relancer maintenant » de l'écran « Stockage ».
 

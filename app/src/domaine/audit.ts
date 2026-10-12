@@ -69,6 +69,10 @@ export const ACTIONS_AUDIT = [
   "IMPORT_ABANDONNE",
   "IMPORT_CONFIRME",
   "IMPORT_TERMINE",
+  // Session 5b : avis d'échéance et relances (CDC §12) ; chaque document produit est DOCUMENT_EMIS
+  "LISTE_ECHEANCES_ETABLIE",
+  "LOT_ECHEANCES_CREE",
+  "LOT_ECHEANCES_TERMINE",
 ] as const;
 
 export type ActionAudit = (typeof ACTIONS_AUDIT)[number];

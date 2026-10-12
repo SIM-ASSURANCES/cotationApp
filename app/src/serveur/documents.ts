@@ -32,7 +32,7 @@ import { obtenirConfig } from "./config";
 import { niveauDuProfil } from "./droits";
 import { generateur, type ImagePng } from "./generateur";
 import { fichiersAssocies, lireSeuilListe, modelesAssocies, versionPublieeEnVigueur, type VersionsAssociees } from "./modeles";
-import { aujourdhui } from "./parametrage";
+import { aujourdhui, exigerCalculAutomatique } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { lireImageSociete, lireParametresSociete } from "./societe";
 import { differerEcriture, ecrituresDifferees, lireDocumentEmis, programmerReprise, stockage, tenterEcriture } from "./stockage";
@@ -88,6 +88,8 @@ async function exigerSurType(acteur: UtilisateurCourant, type: TypeDocument, ecr
 export type ContexteProduit = {
   produit: { id: number; code: string; libelle: string; gamme: string; branche: string };
   versionDateEffet: DateIso;
+  /** Mode de tarification de la version figée : seul FORMULE a des montants issus du moteur (session 6.2a). */
+  modeTarification: string;
   formules: Map<string, { libelle: string; tauxCouverture: string | null }>;
   references: { cgModeleCode: string | null; cgVisa: string | null; csModeleCode: string | null; csVisa: string | null };
 };
@@ -100,6 +102,7 @@ export async function contexteProduit(produitId: number, versionDateEffet: Date)
   return {
     produit: { id: version.produit.id, code: version.produit.code, libelle: version.produit.libelle, gamme: version.produit.gamme, branche: version.produit.branche },
     versionDateEffet: depuisDate(versionDateEffet),
+    modeTarification: version.modeTarification,
     formules: new Map(version.formules.map((f) => [f.code, { libelle: f.libelle, tauxCouverture: f.tauxCouverture ? f.tauxCouverture.toFixed() : null }])),
     references: { cgModeleCode: version.cgModeleCode, cgVisa: version.cgVisa, csModeleCode: version.csModeleCode, csVisa: version.csVisa },
   };
@@ -107,6 +110,8 @@ export async function contexteProduit(produitId: number, versionDateEffet: Date)
 
 /** Montants du moteur (recalculés à l'identique depuis l'entrée figée), formule par formule. */
 export function montantsDu(entree: EntreeCalcul, contexte: ContexteProduit) {
+  // Aucun document, aucune facture ne reprend des montants du moteur pour un produit tarifé par garanties (session 6.2a).
+  exigerCalculAutomatique(contexte.modeTarification);
   const resultat = calculer(entree);
   const t = (m: { toFixed(): string }) => m.toFixed();
   const formules: FormuleSource[] = resultat.lignes.map((l, i) => ({

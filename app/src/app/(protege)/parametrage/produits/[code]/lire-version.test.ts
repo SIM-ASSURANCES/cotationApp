@@ -60,4 +60,16 @@ describe("lireVersion : formulaire -> version saisie", () => {
     expect(problemes).toContain("date d'effet");
     expect(problemes).toContain("100");
   });
+
+  it("session 6.2a : le mode de tarification est FORMULE quand le champ manque, GARANTIES quand il est choisi, et une valeur inconnue est signalée", () => {
+    expect(lireVersion(formulaireBeni()).modeTarification).toBe("FORMULE");
+    expect(lireVersion(formulaireBeni({ modeTarification: "FORMULE" })).modeTarification).toBe("FORMULE");
+
+    const garanties = lireVersion(formulaireBeni({ modeTarification: "GARANTIES" }));
+    expect(garanties.modeTarification).toBe("GARANTIES");
+    expect(problemesVersion(garanties)).toEqual([]);
+
+    const inconnu = lireVersion(formulaireBeni({ modeTarification: "AU_HASARD" }));
+    expect(problemesVersion(inconnu).join(" | ")).toContain("mode de tarification");
+  });
 });

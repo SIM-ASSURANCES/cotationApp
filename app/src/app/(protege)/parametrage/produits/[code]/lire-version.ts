@@ -1,6 +1,6 @@
 import { NIVEAUX_ARRONDI, type ModeAccessoire, type NiveauArrondi } from "@/domaine/calcul/calcul";
 import { SENS_ARRONDI, normaliserMontantSaisi, type Precision, type SensArrondi } from "@/domaine/calcul/montant";
-import type { VersionSaisie } from "@/domaine/calcul/parametrage";
+import { MODES_TARIFICATION, type ModeTarification, type VersionSaisie } from "@/domaine/calcul/parametrage";
 
 const champ = (donnees: FormData, nom: string): string => String(donnees.get(nom) ?? "").trim();
 const champOuNull = (donnees: FormData, nom: string): string | null => champ(donnees, nom) || null;
@@ -45,6 +45,8 @@ export function lireVersion(donnees: FormData): VersionSaisie {
     },
     cotation: { validiteMois: Number(champ(donnees, "validiteMois")), formulesMax: Number(champ(donnees, "formulesMax")) },
     seuilValidationTtc: mOuNull(champOuNull(donnees, "seuil")),
+    // Champ absent : FORMULE (le comportement d'avant la 6.2a) ; valeur inconnue : refusée avec un message par la validation.
+    modeTarification: parmi<ModeTarification>(champ(donnees, "modeTarification") || "FORMULE", MODES_TARIFICATION),
     references: {
       cgModeleCode: champOuNull(donnees, "cgModeleCode")?.toUpperCase() ?? null,
       cgVisa: champOuNull(donnees, "cgVisa"),

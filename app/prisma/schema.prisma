@@ -212,6 +212,10 @@ model ProduitVersion {
   validiteMois                Int       @default(3) @map("validite_mois")
   formulesMax                 Int       @default(3) @map("formules_max")
   seuilValidationTtc          Decimal?  @map("seuil_validation_ttc") @db.Decimal(18, 6)
+  /// Mode de tarification (session 6.2a) : FORMULE (prime unitaire × effectif, calcul automatique) ou GARANTIES (prime
+  /// composée par la Technique ; le calcul automatique est refusé). Une version ne se modifie pas : la CHECK de la base
+  /// n'admet que ces deux valeurs, et tout ce qui n'est pas exactement FORMULE est refusé par le code (jamais l'inverse).
+  modeTarification            String    @default("FORMULE") @map("mode_tarification")
   /// Références contractuelles (CDC §7) : code du modèle de CG (et de CS) joint au contrat, et visa
   /// cité dans les CP. À l'assemblage, ce visa doit être celui des CG jointes (contrôle bloquant, §6.8).
   cgModeleCode                String?   @map("cg_modele_code")

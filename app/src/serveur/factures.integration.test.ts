@@ -8,7 +8,7 @@ process.env.URL_PUBLIQUE = "https://documents.exemple.ci";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import type { VersionSaisie } from "@/domaine/calcul/parametrage";
+import { MESSAGE_TARIFICATION_PAR_GARANTIES, type VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Analyse } from "@/domaine/documents/analyse";
 import type { Assure } from "@/domaine/cotation/saisie";
 
@@ -34,7 +34,7 @@ import {
 } from "./factures";
 import { remplacerGenerateur, type DemandePdf } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
-import { aujourdhui, creerProduit, creerTaxe, creerVersion } from "./parametrage";
+import { aujourdhui, creerProduit, creerTaxe, creerVersion, listerVersions } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { assurerSignature } from "./societe-test";
 import { consulterFormatsNumero, enregistrerFormatNumero } from "./societe";
@@ -753,5 +753,79 @@ describe("formats des numéros (paramétrables, historisés, journalisés)", () 
     const j = (await lireJournal({ action: "PARAMETRE_MODIFIE" })).lignes.find((l) => l.objet === "parametre numerotation.format.REC")!;
     // « avant » : le format en vigueur à cette date (le défaut, ou celui d'une exécution précédente sur la même base de test).
     expect(j.apres).toMatchObject({ formatNumero: "REC", avant: expect.stringMatching(/\{AAAA\}/), apres: "RC/{AAAA}/{NNNNNN}", dateEffet: date });
+  });
+});
+
+describe("session 6.2a : un produit tarifé par garanties ne produit aucune facture calculée", () => {
+  it("le renouvellement (création, recalcul, émission) est refusé dès que la version en vigueur à sa date d'effet est en mode GARANTIES ; l'affaire nouvelle d'une police figée reste facturable (T10)", async () => {
+    const code = CODE("SW");
+    const branche = await assurerBranche(`SANTE_${code}`);
+    await creerTaxe(technique, { branche, typeContrat: "INDIVIDUEL", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
+    await creerProduit(technique, { code, libelle: "Bascule en garanties (test)", gamme: "RELAX", branche }, null);
+    // Mêmes conditions générales que les autres produits du fichier (l'émission des CP exige le visa des CG jointes).
+    const references = (await listerVersions(technique, produitIndividuel))!.versions[0].references;
+    await creerVersion(
+      technique,
+      code,
+      {
+        dateEffet: "2020-01-01",
+        references,
+        arrondi: { precision: 1, sens: "PROCHE", niveau: "LIGNE", composanteAbsorbante: "TAXE" },
+        prorata: { actif: true, primeMinimale: null },
+        fractionnement: { tranchesMax: 1, repartitionPourcent: null, decalagesMois: null, frais: "0" },
+        cotation: { validiteMois: 3, formulesMax: 3 },
+        seuilValidationTtc: null,
+        formules: [{ code: "F", libelle: "Formule unique", tauxCouverture: null, primeUnitaire: "100000", accessoireMode: "AUCUN", accessoireValeur: "0" }],
+      },
+      null,
+    );
+    await publier("CP", code, analyse(CONTENU_CP));
+    const saisieSw = {
+      codeProduit: code,
+      typeContrat: "INDIVIDUEL" as const,
+      souscripteur: { type: "PHYSIQUE" as const, nom: "ZADI", prenoms: "Awa (inventée)", raison_sociale: "", telephone: "0700000000", email: "", adresse: "Cocody, rue inventée" },
+      dateEffet: "2026-01-01",
+      dateEcheance: "2026-12-31",
+      nombreTranches: 1,
+      lignes: [{ codeFormule: "F", effectif: 1 }],
+      assures: [],
+    };
+    // Deux polices acceptées sous la version à la formule, CP émises. Le renouvellement de A se prépare avant la bascule (100 000 + taxe 1,5 % = 101 500).
+    const [a, b] = [await police(saisieSw, ["F"]), await police(saisieSw, ["F"])];
+    const anA = await creerFactureAffaireNouvelle(technique, a.policeId, null, null);
+    expect((await emettreFacture(technique, anA, null)).statut).toBe("EMISE");
+    const renA = await creerFactureRenouvellement(technique, a.policeId, { lignes: null, nombreTranches: 1, envoyeA: null }, null);
+    expect((await lireFacture(technique, renA))!.ttc).toBe("101500");
+
+    // La Technique passe le produit en GARANTIES à compter du 01/01/2027, date d'effet des renouvellements.
+    await creerVersion(
+      technique,
+      code,
+      {
+        dateEffet: "2027-01-01",
+        modeTarification: "GARANTIES",
+        arrondi: { precision: 1, sens: "PROCHE", niveau: "LIGNE", composanteAbsorbante: "TAXE" },
+        prorata: { actif: true, primeMinimale: null },
+        fractionnement: { tranchesMax: 1, repartitionPourcent: null, decalagesMois: null, frais: "0" },
+        cotation: { validiteMois: 3, formulesMax: 3 },
+        seuilValidationTtc: null,
+        formules: [{ code: "F", libelle: "Formule de forme (sans tarif)", tauxCouverture: null, primeUnitaire: "0", accessoireMode: "AUCUN", accessoireValeur: "0" }],
+      },
+      null,
+    );
+
+    // T10 : la police B, figée sous la version à la formule, se facture et s'émet encore (101 500, montants de sa cotation).
+    const anB = await creerFactureAffaireNouvelle(technique, b.policeId, null, null);
+    expect((await emettreFacture(technique, anB, null)).statut).toBe("EMISE");
+    expect((await lireFacture(technique, anB))!).toMatchObject({ statut: "EMISE", ttc: "101500" });
+
+    // Le renouvellement de B ne se crée plus ; le brouillon de A ne se recalcule plus et ne s'émet plus.
+    await expect(creerFactureRenouvellement(technique, b.policeId, { lignes: null, nombreTranches: 1, envoyeA: null }, null)).rejects.toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
+    expect(await obtenirPrisma().facture.count({ where: { policeId: b.policeId, type: "RENOUVELLEMENT" } })).toBe(0);
+    await expect(modifierFacture(technique, renA, { lignes: [{ codeFormule: "F", effectif: 2 }], nombreTranches: 1, envoyeA: null }, null)).rejects.toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
+    await expect(emettreFacture(technique, renA, null)).rejects.toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
+    const restee = (await lireFacture(technique, renA))!;
+    expect(restee).toMatchObject({ statut: "BROUILLON", ttc: "101500" });
+    expect(restee.numero).toBeNull();
   });
 });

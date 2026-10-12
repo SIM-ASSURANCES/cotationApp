@@ -53,6 +53,8 @@ import {
   aujourdhui,
   construireEntree,
   executerCalcul,
+  exigerCalculAutomatique,
+  exigerCalculAutomatiqueEnVigueur,
   resoudreContexte,
   type LigneDemande,
   type VersionProduit,
@@ -395,6 +397,10 @@ async function emettre(tx: Tx, acteur: UtilisateurCourant, cotation: CotationCha
   const version = await tx.produitVersion.findUniqueOrThrow({
     where: { produitId_dateEffet: { produitId: cotation.produitId, dateEffet: cotation.versionDateEffet } },
   });
+  // Session 6.2a : rien ne s'émet pour un produit tarifé par garanties. Deux contrôles : la version figée de la cotation (ceinture, aucun chemin
+  // de l'application n'y mène) et la version EN VIGUEUR aujourd'hui (une cotation « À valider » d'avant la bascule ne s'émet plus).
+  exigerCalculAutomatique(version.modeTarification);
+  await exigerCalculAutomatiqueEnVigueur(tx, cotation.produitId, aujourdhuiIso);
   const numero = await allouerNumero(tx, "COT", aujourdhuiIso);
   await tx.cotation.update({
     where: { id: cotation.id },

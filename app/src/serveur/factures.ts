@@ -44,7 +44,7 @@ import { niveauDuProfil } from "./droits";
 import { versIntermediairesDocument } from "./intermediaires";
 import { modelesAssocies, versionPublieeEnVigueur } from "./modeles";
 import { allouerNumero } from "./numerotation";
-import { aujourdhui, construireEntree, executerCalcul, resoudreContexte } from "./parametrage";
+import { aujourdhui, construireEntree, executerCalcul, exigerCalculAutomatiqueEnVigueur, resoudreContexte } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { figer, produire, produireEnAttente, prochaineVersion, type AssociesFiges, type IssueProduction, type TypeAProduire } from "./production";
 import { lireParametresSociete } from "./societe";
@@ -496,6 +496,9 @@ export async function emettreFacture(acteur: UtilisateurCourant, factureId: numb
   const lue = await prisma.facture.findUnique({ where: { id: factureId } });
   if (!lue || lue.type === "AVOIR") throw new ErreurMetier("Facture introuvable.");
   if (lue.statut !== "BROUILLON" && lue.statut !== "A_VALIDER") throw new ErreurMetier(`Cette facture est déjà ${LIBELLE_STATUT_FACTURE[lue.statut as StatutFacture].toLowerCase()} (${lue.numero}).`);
+  // Session 6.2a : un renouvellement prépare des montants au tarif en vigueur à sa date d'effet ; si ce produit est passé en GARANTIES entre-temps,
+  // il ne s'émet plus (ni lui, ni la demande de validation). Affaire nouvelle et avenant viennent de la police, figée avec sa version (T10).
+  if (lue.type === "RENOUVELLEMENT") await exigerCalculAutomatiqueEnVigueur(prisma, lue.produitId, depuisDate(lue.dateEffet));
 
   const ttc = lue.ttc.toFixed();
   const seuil = await seuilDe(lue.produitId, lue.versionDateEffet);

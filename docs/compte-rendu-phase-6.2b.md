@@ -42,6 +42,19 @@ Cas des instructions couverts, chiffres inventés posés à la main :
 - **Abandon** : motif obligatoire, droits, journal, définitif (même en SQL), aucun trou dans la numérotation, place libérée, renouvellement bloqué par la 6.2a abandonné.
 - **Non-régression** : T1, T2, T3, T4 et les suites existantes passent ; le test T6 de bout en bout a été réécrit (voir Écarts).
 
+## Revue contradictoire et corrections
+
+Relecteurs indépendants par axe, puis un sceptique par constat : **46 constats confirmés** (plusieurs doublons). Tous traités sauf H98 (décision de Thierry). Les principaux, par ordre de gravité :
+
+- **Échéancier périmé** (défaut préexistant, exposé par la recomposition) : `undefined` voulait dire « ne pas toucher » ; repasser à une tranche laissait les tranches d'avant, qui ne sommaient plus au TTC, sur la fiche et sur le PDF de la cotation. Corrigé et testé.
+- **Course entre écritures** : aucune écriture du brouillon ne verrouillait la ligne ; une soumission pouvait écrire par-dessus une composition faite entre-temps. Verrou de ligne sur la modification, la composition, la soumission, la validation et le renvoi ; test avec une vraie transaction concurrente (échoue sans le verrou).
+- **Conversion silencieuse** : l'écran de modification d'un brouillon à formules, sur un produit passé « par garanties », le convertissait en brouillon « à composer » (formules et forçage perdus). Refusé, la fiche explique.
+- **Import en masse** impossible sur une police composée (colonne « formule » obligatoire) ; **abandon** d'une demande « À valider » par un tiers ; **modèle de facture** qui exigeait `prime.taux_taxe` même pour un produit multi-taux ; documents numérotés sortis avec un modèle sans détail des garanties.
+- Écrans : formule d'assuré proposée puis refusée, boutons qui échouent à coup sûr (aperçu et soumission d'une prime « à composer », renouvellement et avenant), liste sans « À composer », bandeau « taux figés » faux pour un brouillon.
+- Tests : l'invariant aléatoire était vrai par construction (remplacé par un **oracle entier indépendant**, 1 440 compositions) ; date d'effet, règle d'arrondi, assiette « nette seule », reliquat, séparation des tâches de l'auteur, gardes de cohérence, T10 jusqu'à la CP et à la facture, gardes SQL de l'abandon, bornes, droits par défaut.
+- Documentation : affirmations fausses du guide de mise en production (incorporation « refusée » : elle ne l'est pas, elle n'est simplement pas facturée ; droit de publication ; essai en production), `migrations.test.ts` (désormais épinglé jusqu'à la 6.2a), « trois modèles de test », recette, README.
+- Au passage : la liste de choix des formules du fichier modèle d'import était posée sur une colonne écrite en dur (la mauvaise : elle portait la pièce d'identité) ; la lettre se déduit maintenant de l'ordre des colonnes.
+
 ## Défaut trouvé et corrigé en passant
 
 À la **soumission** d'un brouillon, le **régime de taxe choisi** sur la cotation (session 6.0) était remplacé par le régime proposé pour son type de contrat : une famille cotée au régime Groupe repassait en Individuel, donc à un autre taux. Sans correction, une composition faite à 1,5 % aurait été recalculée à 4 % à la soumission. Corrigé (la saisie reconstruite reprend le régime enregistré) et testé. Il touche aussi les cotations à la formule : leur TTC ne change que dans ce cas (régime modifié à la main), vers le régime que l'utilisateur avait choisi.
@@ -54,6 +67,8 @@ Cas des instructions couverts, chiffres inventés posés à la main :
 - **H91** : pas de frais de fractionnement automatiques en mode par garanties (taux de taxe ambigu) ; ils se saisissent comme une ligne de prime.
 - **T6 de bout en bout** : l'IARD n'est plus à taux mixte ; le test vérifie maintenant qu'un produit IARD par garanties se compose (27 308 F) et qu'un produit à la formule sur une branche à taux mixte reste refusé.
 - **Taux de l'incendie** : 12,5 % reste **provisoire** (date d'effet à confirmer par la Technique, D27).
+- **H98 (à décider)** : un brouillon composé dont le Commercial change la période, le régime, le type de contrat ou les tranches **garde sa composition** ; le journal trace maintenant les dates et les tranches, mais une prime composée pour un an peut être émise pour deux, sous le seuil, sans revue de la Technique. Faut-il la vider dans ce cas ?
+- H99 (abandon d'une demande « À valider » : son demandeur ou un profil qui peut décider), H100 (import en masse d'une police composée : colonne « formule » vide), H101 (modèles de cotation, CP et facture d'un produit par garanties : ils citent `garanties_souscrites[]`) : voir D32.
 - H89, H92 à H97 : voir D32.
 
 ## Non vérifié
@@ -62,8 +77,8 @@ Les écrans (formulaire « Composer la prime », tableau des garanties, abandon 
 
 ## Pour Thierry : essai de la 6.2b
 
-1. `npm run migrate:deploy` puis `npm run initialiser` (branche INCENDIE, IARD à 7,25 %, droit « Composer une prime »).
+1. `npm run migrate:deploy` puis `npm run initialiser` : sur une **base neuve**, ils créent la branche INCENDIE à 12,5 %, IARD à 7,25 % et le droit « Composer une prime ». Sur une **base déjà installée**, `initialiser` n'écrase rien : ajouter à la main, dans l'écran « Taxes », une ligne IARD à 7,25 % (l'ancienne est à taux mixte) et renommer la branche IARD dans l'écran « Branches » ([deploiement.md](deploiement.md#après-linstallation--produits-à-paramétrer-par-la-technique-d31-d32)).
 2. Avec un compte Technique : créer un produit de test en mode « Par garanties » (liste de garanties facultative), puis, avec un compte Commercial, une cotation de ce produit : la prime est « à composer ». Avec la Technique : « Composer la prime » (motif obligatoire). Soumettre ; au-dessus du seuil, vérifier que ni le composeur ni l'auteur ne peuvent valider.
-3. Accepter, émettre les CP et la facture : une ligne par garantie avec son taux.
+3. Accepter, émettre les CP et la facture : une ligne par garantie avec son taux. Les modèles de cotation, de CP et de facture du produit doivent citer `garanties_souscrites[]` (sinon l'émission est refusée) ; les trois modèles de test sont dans `generateur/tests/fixtures/`.
 4. Abandonner un brouillon de facture : motif, puis refaire la facture.
-5. Trancher **H90** (renouvellement d'une police à garanties) et confirmer le taux de l'incendie.
+5. Trancher **H90** (renouvellement d'une police à garanties ; l'incorporation d'adhérents reste possible mais n'est pas facturée), **H98** (vider la composition quand le Commercial change la période ?) et confirmer le taux de l'incendie.

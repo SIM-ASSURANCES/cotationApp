@@ -23,6 +23,8 @@ Phases livrées, regroupées par lot du CDC (§17). Chaque phase a son compte re
 | Corrections | 6.0 | Réponses de la Technique : avoir sur facture payée, avance (trop-perçu), régime de taxe, numéros de certificat, intermédiaires, tâches d'import |
 | Corrections | 6.1 | Échéances payées en partie (statut « Partiellement payé »), avertissement sur les avances d'une facture annulée, script et guide de balisage des modèles réels |
 | Refonte visuelle | V1 | Apparence du portail RH : tokens, bibliothèque d'interface, coquille (barre latérale, barre du haut), connexion et page publique de vérification (D30) |
+| Tarification par garanties | 6.2a | Mode de tarification d'une version de produit (`FORMULE` ou `GARANTIES`) : en mode `GARANTIES`, aucun montant automatique, le calcul est refusé (D31) |
+| Tarification par garanties | 6.2b | Composition manuelle de la prime par garantie (droit « Composer une prime », taxe par ligne selon sa branche, INCENDIE à 12,5 % et IARD à 7,25 %), `garanties_souscrites[]` dans les documents, abandon d'un brouillon de facture (D32). **Branche `phase-6.2b`, non fusionnée** |
 
 Cas de test du CDC (§16) :
 
@@ -50,13 +52,14 @@ Ce qui a été vérifié dans le navigateur : [docs/recette-manuelle.md](docs/re
 - Validation des cotations, des contrats et des factures par la Technique seule ; la Direction Générale ne valide pas ([D21](docs/decisions.md#d21--choix-de-mise-en-œuvre-de-la-session-40-à-valider-par-thierry), H44, H56).
 - Comptabilité en « Lecture » sur le paramétrage : la valeur « Proposition » est retirée (D21).
 - Droit « Consulter les tableaux de bord », ajouté au tableau des droits du CDC §4 ([D25](docs/decisions.md#d25--avis-déchéance-relances-tableaux-de-bord-session-5b)).
+- Droit « Composer une prime », ajouté au tableau des droits du CDC §4 (Technique : Oui, les autres profils sans accès ; [D32](docs/decisions.md#d32--décisions-de-thierry-du-12102026-composition-manuelle-de-la-prime-et-abandon-dun-brouillon-session-62b)) ; statut de facture « Abandonnée » (abandon d'un brouillon, H87).
 - Dossier partagé réseau remplacé par un volume persistant sur le VPS ([D11](docs/decisions.md#d11--plus-de-dossier-partagé--stockage-sur-volume-persistant)) ; T14 adapté en conséquence.
 - File de tâches BullMQ au lieu de Celery/RQ, cité en exemple par le CDC ([D24](docs/decisions.md#d24--file-de-tâches-bullmq-import-en-masse-stockage-indisponible-session-5a)).
 - Âges limites ajoutés au paramétrage des formules (H62) ; référentiel des intermédiaires (D28).
 
 ## Hypothèses ouvertes
 
-18 sujets restent en attente (hypothèses H… à faire confirmer, questions au superviseur) : voir la section « Décisions en attente » de [docs/decisions.md](docs/decisions.md#décisions-en-attente).
+20 sujets restent en attente (hypothèses H… à faire confirmer, questions au superviseur) : voir la section « Décisions en attente » de [docs/decisions.md](docs/decisions.md#décisions-en-attente).
 
 ## Architecture
 

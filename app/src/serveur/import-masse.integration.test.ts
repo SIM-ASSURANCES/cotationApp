@@ -245,6 +245,17 @@ describe("fichier modèle et lecture du fichier", () => {
     expect(textes.join("\n")).toMatch(/SOLO,18 à 65 ans/);
   });
 
+  it("les listes de choix du modèle sont posées sur la bonne colonne : sexe sur « sexe », formules sur « formule » (jamais sur la pièce d'identité)", async () => {
+    const m = await modeleImport(technique, produitCode);
+    const feuille = (await lireXlsx(m.contenu)).getWorksheet("Adhérents")!;
+    const colonne = (cle: string) => (feuille.getRow(1).values as unknown[]).slice(1).indexOf(cle) + 1;
+    const liste = (cle: string) => feuille.getRow(3).getCell(colonne(cle)).dataValidation?.formulae;
+    expect(liste("sexe")).toEqual(['"M,F"']);
+    expect(liste("formule")?.[0]).toMatch(/SOLO/);
+    expect(liste("num_identification")).toBeUndefined();
+    expect(liste("nom_prenoms")).toBeUndefined();
+  });
+
   it("CSV (point-virgule, BOM) lu comme un .xlsx ; colonnes manquantes refusées", async () => {
     const csv = texte("﻿numero_certificat;nom_prenoms;date_naissance;sexe;lien;formule\nTST-2026-000001-G00001;Awa Inventée;14/03/1988;F;Salarié;SOLO\n\n");
     expect(await lireFichierImport("a.csv", csv)).toEqual([

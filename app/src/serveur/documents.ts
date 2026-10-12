@@ -33,7 +33,7 @@ import { versIntermediairesDocument } from "./intermediaires";
 import { obtenirConfig } from "./config";
 import { niveauDuProfil } from "./droits";
 import { generateur, type ImagePng } from "./generateur";
-import { fichiersAssocies, lireSeuilListe, modelesAssocies, versionPublieeEnVigueur, type VersionsAssociees } from "./modeles";
+import { exigerDetailDesGaranties, fichiersAssocies, lireSeuilListe, modelesAssocies, versionPublieeEnVigueur, type VersionsAssociees } from "./modeles";
 import { aujourdhui, exigerCalculAutomatique, exigerComposition, MESSAGE_NON_COMPOSEE } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { lireImageSociete, lireParametresSociete } from "./societe";
@@ -341,13 +341,16 @@ export function versLu(d: LigneDocument): DocumentLu {
   };
 }
 
-async function modeleEnVigueur(type: "COTATION" | "CP" | "CERTIFICAT", produitId: number, produitCode: string, date: DateIso) {
+async function modeleEnVigueur(type: "COTATION" | "CP" | "CERTIFICAT", produitId: number, produitCode: string, date: DateIso, donnees: DonneesCalcul | null = null) {
   const retenu = await versionPublieeEnVigueur({ type, produitId }, date);
   if (!retenu) {
     throw new ErreurMetier(`Aucun modèle de ${{ COTATION: "cotation", CP: "conditions particulières", CERTIFICAT: "certificat d'adhésion" }[type]} publié et en vigueur pour le produit ${produitCode} : déposez-le et faites-le publier (Modèles Word).`);
   }
   const v = await obtenirPrisma().modeleVersion.findUniqueOrThrow({ where: { id: retenu.version.id }, select: { id: true, fichier: true, analyse: true } });
-  return { versionId: v.id, fichier: v.fichier, champs: ((v.analyse as { champs?: string[] }).champs ?? []) as string[] };
+  const champs = ((v.analyse as { champs?: string[] }).champs ?? []) as string[];
+  // Produit par garanties (6.2b) : cotation et CP détaillent les garanties ; le certificat d'adhésion n'a pas de prime (H36).
+  if (type !== "CERTIFICAT" && donnees !== null) exigerDetailDesGaranties(type === "CP" ? "conditions particulières" : "cotation", champs, estComposition(donnees) && donnees.lignes.length > 0);
+  return { versionId: v.id, fichier: v.fichier, champs };
 }
 
 /** CG et CS du produit, publiées et en vigueur ; visas vérifiés (contrôle bloquant, §6.8). */
@@ -451,7 +454,7 @@ export async function emettreCotation(acteur: UtilisateurCourant, cotationId: nu
   }
   const date = c.dateEtablissement ? depuisDate(c.dateEtablissement) : aujourdhui();
   const contexte = await contexteProduit(c.produitId, c.versionDateEffet);
-  const modele = await modeleEnVigueur("COTATION", c.produitId, c.produit.code, date);
+  const modele = await modeleEnVigueur("COTATION", c.produitId, c.produit.code, date, c.donneesCalcul as unknown as DonneesCalcul);
   const associes = await modelesAssocies(c.produitId, date, false);
   const commun = await sourceCommune(contexte, date);
   const citees = await citationsCotation(contexte, date);
@@ -486,7 +489,7 @@ export async function apercuCotation(acteur: UtilisateurCourant, cotationId: num
   const c = await chargerCotation(cotationId);
   const date = aujourdhui();
   const contexte = await contexteProduit(c.produitId, c.versionDateEffet);
-  const modele = await modeleEnVigueur("COTATION", c.produitId, c.produit.code, date);
+  const modele = await modeleEnVigueur("COTATION", c.produitId, c.produit.code, date, c.donneesCalcul as unknown as DonneesCalcul);
   const associes = await modelesAssocies(c.produitId, date, false);
   const commun = await sourceCommune(contexte, date);
   const citees = await citationsCotation(contexte, date);
@@ -538,7 +541,7 @@ const derniereVersionAdherents = (police: PoliceChargee): number | null => (poli
 async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<Production> {
   const date = aujourdhui();
   const contexte = await contexteProduit(c.produitId, c.versionDateEffet);
-  const modele = await modeleEnVigueur("CP", c.produitId, c.produit.code, date);
+  const modele = await modeleEnVigueur("CP", c.produitId, c.produit.code, date, police.donneesCalcul as unknown as DonneesCalcul);
   const associes = await modelesAssocies(c.produitId, date, false);
   const commun = await sourceCommune(contexte, date);
   const pieces = await piecesContractuelles(contexte, date, true);

@@ -45,7 +45,7 @@ import { contexteProduit, montantsDu } from "./documents";
 import { avanceDisponible, encaissementsDe, inclusionImputations, reportsEnAttente, versEncaissements, type ReportEnAttente } from "./encaissements";
 import { niveauDuProfil } from "./droits";
 import { versIntermediairesDocument } from "./intermediaires";
-import { modelesAssocies, versionPublieeEnVigueur } from "./modeles";
+import { exigerDetailDesGaranties, modelesAssocies, versionPublieeEnVigueur } from "./modeles";
 import { allouerNumero } from "./numerotation";
 import { aujourdhui, construireEntree, executerCalcul, exigerCalculAutomatiqueEnVigueur, resoudreContexte, resoudreVersion } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
@@ -580,15 +580,11 @@ export async function emettreFacture(acteur: UtilisateurCourant, factureId: numb
 
   const date = aujourdhui();
   const modele = await modeleRetenu("FACTURE", lue.produitId, date);
-  // Session 6.2b : la facture d'un produit par garanties se détaille garantie par garantie. Un modèle (par exemple le modèle commun, fait pour
-  // les produits à la formule) qui ne cite aucun champ `garanties_souscrites[]` produirait un document numéroté sans détail ni taux : refusé
-  // AVANT l'attribution du numéro, comme l'absence de modèle.
+  // Session 6.2b : la facture d'un produit par garanties se détaille garantie par garantie : refus AVANT l'attribution du numéro si le modèle retenu
+  // (celui du produit, sinon le modèle commun, fait pour les produits à la formule) ne cite aucun champ `garanties_souscrites[]`.
   if ((contenuDe(lue).garanties ?? []).length > 0) {
     const { analyse } = await prisma.modeleVersion.findUniqueOrThrow({ where: { id: modele.modeleVersionId }, select: { analyse: true } });
-    const champs = ((analyse as unknown as { champs?: string[] }).champs ?? []).filter((c) => c.startsWith("garanties_souscrites"));
-    if (champs.length === 0) {
-      throw new ErreurMetier("Le modèle de facture retenu ne détaille pas les garanties (aucun champ garanties_souscrites[]) : déposez et faites publier le modèle de facture de ce produit. Aucun numéro n'a été consommé.");
-    }
+    exigerDetailDesGaranties("facture", (analyse as unknown as { champs?: string[] }).champs ?? [], true, "Aucun numéro n'a été consommé.");
   }
   const commun = await lireParametresSociete(date);
   const resultat = await prisma.$transaction(async (tx) => {

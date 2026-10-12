@@ -1,7 +1,7 @@
 // Session 4a, bout en bout (npm run test:e2e) : vraie base de test, VRAI générateur, VRAI stockage.
 //  - T5 : SECURVIE (branche DECES, taxe 0 %), 3 bénéficiaires, garanties issues du sous-modèle, visa du CP = visa des CG.
 //  - T6 : VOL (branche IARD), cases à cocher, date d'émission dynamique. Test du DOCUMENT SEUL, avec des montants
-//    de fixture : l'application refuse de calculer une cotation IARD (produit en mode GARANTIES, D31 ; à la formule, taux mixte : H32).
+//    de fixture : l'application ne calcule pas une cotation IARD (produit par garanties : la prime se compose, 6.2b ; un produit à la formule sur une branche à taux mixte reste refusé).
 // Modèles Word de test : generateur/tests/fixtures/ (données inventées).
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -90,7 +90,7 @@ beforeAll(async () => {
   };
   [technique, dg, commercial] = [await nouveau("TECHNIQUE"), await nouveau("DIRECTION_GENERALE"), await nouveau("COMMERCIAL")];
 
-  // Les VRAIES données de démarrage : branches et taux de la loi (DECES à 0 %, IARD à taux mixte).
+  // Les VRAIES données de démarrage : branches et taux de la loi (DECES à 0 %, INCENDIE à 12,5 %, IARD à 7,25 %).
   const branches = JSON.parse(readFileSync(join(DONNEES, "branches.json"), "utf8")) as { lignes: { code: string; libelle: string }[] };
   const taux = JSON.parse(readFileSync(join(DONNEES, "taxes-loi.json"), "utf8")) as { lignes: TaxeDemarrage[] };
   await initialiserBranches(branches.lignes);

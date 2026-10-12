@@ -220,10 +220,16 @@ describe("GARANTIES : aucun montant automatique", () => {
 
     await expect(soumettre(commercial, brouillon, null)).rejects.toThrow(MESSAGE_BROUILLON_A_FORMULES);
     await expect(modifierBrouillon(commercial, brouillon, saisie(code), null)).rejects.toThrow(MESSAGE_BROUILLON_A_FORMULES);
+    // L'écran de modification d'un produit passé « par garanties » n'envoie plus de formule ni de forçage (H89) : le refus ne dépend pas du
+    // contenu de la saisie, mais de la nature de ce qui est enregistré. Le brouillon n'est jamais converti en silence en brouillon « à composer ».
+    await expect(modifierBrouillon(commercial, brouillon, saisieGaranties(code), null)).rejects.toThrow(MESSAGE_BROUILLON_A_FORMULES);
     await expect(creerBrouillon(commercial, saisie(code), null)).rejects.toThrow(MESSAGE_BROUILLON_A_FORMULES);
     const apres = (await lireCotation(commercial, brouillon))!;
     expect(apres.statut).toBe("BROUILLON");
     expect(apres.numero).toBeNull();
+    expect(apres.composition).toBeNull();
+    expect(apres.lignes.length).toBeGreaterThan(0); // les formules préparées sont intactes
+    expect(apres.brouillonAFormulesSousGaranties).toBe(true); // la fiche l'explique et ne propose plus de le modifier ni de le soumettre
 
     // T10 : la cotation émise sous l'ancienne version garde ses montants et son acceptation reste possible.
     const figee = (await lireCotation(commercial, emise))!;

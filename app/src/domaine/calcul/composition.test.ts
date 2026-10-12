@@ -96,7 +96,52 @@ describe("invariant : nette + accessoires + taxe = TTC, par ligne et au total, p
       return s / 4294967296;
     };
   }
-  it("72 règles × 20 compositions aléatoires de 1 à 6 lignes", () => {
+  /**
+   * Oracle INDÉPENDANT du moteur : arithmétique entière en BigInt (aucun Decimal), montants en centimes et taux en centièmes de pour cent.
+   * Taxe exacte d'une ligne en francs = base_c × taux_100 / 1 000 000 ; un montant exact N / D (en francs) s'arrondit à `precision` francs.
+   */
+  const centimes = (texte: string): bigint => {
+    const [entier, fraction = ""] = texte.split(".");
+    return BigInt(entier) * BigInt(100) + BigInt(fraction.padEnd(2, "0").slice(0, 2));
+  };
+  const centiemes = (texte: string): bigint => centimes(texte); // « 7.25 » → 725
+  const arrondiEntier = (n: bigint, d: bigint, precision: number, sens: string): bigint => {
+    const p = BigInt(precision);
+    const dp = d * p;
+    const q = sens === "INFERIEUR" ? n / dp : sens === "SUPERIEUR" ? (n + dp - BigInt(1)) / dp : (BigInt(2) * n + dp) / (BigInt(2) * dp); // positifs : division entière = plancher
+    return q * p;
+  };
+  const oracle = (lignes: LigneComposee[], regle: RegleArrondi) => {
+    const exactes = lignes.map((l) => {
+      const nette = centimes(l.primeNette);
+      const accessoires = centimes(l.accessoires);
+      const base = l.assiette === "NETTE_ACCESSOIRES" ? nette + accessoires : nette;
+      return { nette, accessoires, taxe: base * centiemes(l.tauxPourcent) }; // nette et accessoires sur 100, taxe sur 1 000 000
+    });
+    const arrondi = (e: { nette: bigint; accessoires: bigint; taxe: bigint }) => {
+      const nette = arrondiEntier(e.nette, BigInt(100), regle.precision, regle.sens);
+      const accessoires = arrondiEntier(e.accessoires, BigInt(100), regle.precision, regle.sens);
+      const taxe = arrondiEntier(e.taxe, BigInt(1000000), regle.precision, regle.sens);
+      return { nette, accessoires, taxe, ttc: nette + accessoires + taxe };
+    };
+    const parLigne = exactes.map(arrondi);
+    const total =
+      regle.niveau === "LIGNE"
+        ? parLigne.reduce((s, l) => ({ nette: s.nette + l.nette, accessoires: s.accessoires + l.accessoires, taxe: s.taxe + l.taxe, ttc: s.ttc + l.ttc }), { nette: BigInt(0), accessoires: BigInt(0), taxe: BigInt(0), ttc: BigInt(0) })
+        : arrondi(exactes.reduce((s, e) => ({ nette: s.nette + e.nette, accessoires: s.accessoires + e.accessoires, taxe: s.taxe + e.taxe }), { nette: BigInt(0), accessoires: BigInt(0), taxe: BigInt(0) }));
+    return { parLigne, total };
+  };
+  const enTexte = (a: { nette: bigint; accessoires: bigint; taxe: bigint; ttc: bigint }) => [a.nette, a.accessoires, a.taxe, a.ttc].map(String);
+  const depuisMoteur = (c: { nette: { toFixed(): string }; accessoires: { toFixed(): string }; taxe: { toFixed(): string }; ttc: { toFixed(): string } }) => [c.nette, c.accessoires, c.taxe, c.ttc].map((m) => m.toFixed());
+
+  it("l'oracle entier retrouve à la main les chiffres de l'énoncé (garde-fou de l'oracle lui-même)", () => {
+    const o = oracle(IARD, PROCHE);
+    expect(o.parLigne.map(enTexte)).toEqual([["10000", "2500", "1563", "14063"], ["9850", "2500", "895", "13245"], ["6000", "2500", "616", "9116"]]);
+    expect(enTexte(o.total)).toEqual(["25850", "7500", "3074", "36424"]);
+    expect(enTexte(oracle(IARD, { precision: 100, sens: "SUPERIEUR", niveau: "TOTAL", composanteAbsorbante: "TAXE" }).total)).toEqual(["25900", "7500", "3100", "36500"]);
+  });
+
+  it("72 règles × 20 compositions aléatoires de 1 à 6 lignes : le moteur donne les mêmes montants que l'oracle entier, par ligne et au total", () => {
     const alea = aleatoire(62);
     const entre = (min: number, max: number) => min + Math.floor(alea() * (max - min + 1));
     const texte = (maxEntier: number) => `${entre(1, maxEntier)}.${String(entre(0, 99)).padStart(2, "0")}`;
@@ -107,11 +152,14 @@ describe("invariant : nette + accessoires + taxe = TTC, par ligne et au total, p
         const lignes = Array.from({ length: entre(1, 6) }, (_, i) =>
           ligne(`Garantie ${i + 1}`, "IARD", texte(900000), alea() < 0.3 ? "0" : texte(20000), tauxPossibles[entre(0, 4)], alea() < 0.2 ? "NETTE" : "NETTE_ACCESSOIRES"),
         );
-        const r = composer(entree(lignes, { precision, sens, niveau, composanteAbsorbante }));
-        for (const l of r.lignes) expect(l.arrondi.ttc.eq(l.arrondi.nette.plus(l.arrondi.accessoires).plus(l.arrondi.taxe))).toBe(true);
-        const a = r.totaux.arrondi;
-        expect(a.ttc.eq(a.nette.plus(a.accessoires).plus(a.taxe))).toBe(true);
-        if (niveau === "LIGNE") expect(a.ttc.eq(r.lignes.reduce((s, l) => s.plus(l.arrondi.ttc), a.ttc.minus(a.ttc)))).toBe(true);
+        const regle = { precision, sens, niveau, composanteAbsorbante };
+        const r = composer(entree(lignes, regle));
+        const attendu = oracle(lignes, regle);
+        expect(r.lignes.map((l) => depuisMoteur(l.arrondi))).toEqual(attendu.parLigne.map(enTexte));
+        expect(depuisMoteur(r.totaux.arrondi)).toEqual(enTexte(attendu.total));
+        // Et l'invariant du CDC §8.1, vérifié sur les chiffres de l'oracle (non sur ceux du moteur) : TTC = nette + accessoires + taxe.
+        for (const l of attendu.parLigne) expect(l.ttc).toBe(l.nette + l.accessoires + l.taxe);
+        expect(attendu.total.ttc).toBe(attendu.total.nette + attendu.total.accessoires + attendu.total.taxe);
         verifiees++;
       }
     }
@@ -174,6 +222,15 @@ describe("validation de la saisie des lignes de prime", () => {
     expect(messages({ accessoires: "-1" })).toContain("Ligne 2 (accessoires) : un montant négatif n'est pas accepté");
     expect(messages({ primeNette: "1.234,5" })).toContain("Ligne 2 (prime nette) : Montant invalide");
     expect(messages({ accessoires: "" })).toContain("Ligne 2 (accessoires) : Montant invalide");
+  });
+  it("bornes exactes : 30 lignes et un libellé de 100 caractères sont acceptés, 31 lignes et 101 caractères refusés", () => {
+    expect(problemesLignesDePrime(Array.from({ length: MAX_LIGNES_DE_PRIME }, () => ok))).toEqual([]);
+    expect(MAX_LIGNES_DE_PRIME).toBe(30);
+    expect(problemesLignesDePrime([{ ...ok, libelle: "x".repeat(100) }])).toEqual([]);
+    expect(problemesLignesDePrime([{ ...ok, libelle: "x".repeat(101) }])).toHaveLength(1);
+    // Une branche de 30 caractères (code valide) passe, de 31 non.
+    expect(problemesLignesDePrime([{ ...ok, branche: "A".repeat(30) }])).toEqual([]);
+    expect(problemesLignesDePrime([{ ...ok, branche: "A".repeat(31) }])).toHaveLength(1);
   });
   it("libellé obligatoire et borné, branche en code valide, 30 lignes au plus", () => {
     expect(problemesLignesDePrime([{ ...ok, libelle: "  " }]).join()).toContain("le libellé de la garantie est obligatoire");

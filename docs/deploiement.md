@@ -86,13 +86,16 @@ Puis, dans un navigateur : connexion, page « Journal d'audit » (la connexion y
 
 Ordre à suivre, après `docker compose run --rm outils npm run initialiser` (qui crée les branches et les taux de démarrage, dont **INCENDIE à 12,5 %** et **IARD à 7,25 %**) :
 
-1. **Taxes** : vérifier, dans l'écran « Taxes », les taux de chaque branche utilisée par les lignes de prime (INCENDIE, IARD, IA, DECES…). Une installation faite **avant** la session 6.2b a gardé une ligne IARD « taux mixte » (jamais modifiée par `initialiser`, car un taux déjà paramétré n'est jamais écrasé) : ajouter une nouvelle ligne IARD à 7,25 %, avec sa date d'effet ; l'ancienne ligne est clôturée la veille.
+1. **Branches et taxes** (installation faite **avant** la session 6.2b) : `initialiser` n'écrase jamais ce qui existe déjà.
+   - Dans l'écran « Taxes », la branche IARD a gardé sa ligne « taux mixte » : ajouter une nouvelle ligne IARD à 7,25 %, avec sa date d'effet (l'ancienne ligne est clôturée la veille).
+   - Dans l'écran « Branches », IARD a gardé son ancien libellé « Incendie, accidents et risques divers (IARD) » alors que INCENDIE existe maintenant à côté : le renommer (« Autres dommages aux biens (IARD) ») pour qu'on ne les confonde pas.
+   - Vérifier, pour finir, les taux de chaque branche utilisée par les lignes de prime (INCENDIE, IARD, IA, DECES…).
 2. **Produit** : créer le produit (code, libellé, gamme, branche principale), puis sa première version avec le mode « Par garanties », la liste des garanties du produit (facultative) et ses références contractuelles (CG).
-3. **Modèles Word** : déposer et publier les modèles de CP et de facture du produit, avec la boucle `garanties_souscrites` (aide à la rédaction des modèles).
+3. **Modèles Word**, **déposés par la Technique** puis **publiés par la Direction Générale** (la Technique ne publie pas) : pour chaque produit, le modèle de **cotation**, celui des **conditions particulières**, celui de la **facture** et, pour un contrat de groupe, le **certificat d'adhésion** (sans prime). Cotation, CP et facture citent la boucle `garanties_souscrites` (guide de balisage) ; sans elle, leur émission est refusée. Sans modèle de facture propre au produit, c'est le modèle commun qui serait retenu : il ne détaille pas les garanties, et la facture est refusée avant tout numéro.
 4. **Droits** : le droit « Composer une prime » est « Oui » pour le profil Technique et sans accès pour les autres ; il se règle dans l'écran des droits de l'Admin système.
-5. Faire une cotation de test complète (création, composition, émission, acceptation, CP, facture) avant d'ouvrir le produit aux Commerciaux.
+5. **Essai** : le faire de préférence dans un environnement de recette ([recette.md](recette.md)). Une cotation de test émise en production consomme de **vrais numéros** (cotation, police, facture) et laisse des documents émis **intangibles** : n'en faire que sur décision de Thierry, avec un souscripteur de test sans équivoque.
 
-Le **renouvellement** et l'**incorporation d'adhérents** d'une police à garanties ne sont pas encore gérés (D32, H90) : ils sont refusés avec un message explicite.
+Le **renouvellement** et la **facturation de l'incorporation d'adhérents** d'une police à garanties ne sont pas encore gérés (D32, H90) : la facture de renouvellement et la facture d'avenant sont refusées avec un message explicite, et l'écran de la police ne les propose pas. **L'incorporation elle-même reste possible** (les adhérents sont ajoutés à la liste, sans formule) mais elle n'est **ni facturée ni accompagnée d'une prime** : la tâche « Facture d'avenant à émettre » qu'elle crée ne peut pas être exécutée tant que Thierry n'a pas tranché H90. Ne pas incorporer d'adhérents dans une police à garanties avant cette décision.
 
 ## 5. Mise à jour
 

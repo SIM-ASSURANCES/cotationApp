@@ -4,14 +4,16 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { Prisma } from "@/generated/prisma/client";
 
-import { calculer, type EntreeCalcul } from "@/domaine/calcul/calcul";
+import { calculer } from "@/domaine/calcul/calcul";
+import { composer, estComposition, tauxUnique, type DonneesCalcul } from "@/domaine/calcul/composition";
+import { ZERO as ZERO_MONTANT } from "@/domaine/calcul/montant";
 import type { DateIso } from "@/domaine/calcul/dates";
 import { dateAdhesion, estContratDeGroupe, type VersionAdherents } from "@/domaine/cotation/adherents";
 import { normaliserNumeroPolice, numeroCertificatParDefaut, problemesNumeroCertificat } from "@/domaine/cotation/police";
 import type { Assure, Beneficiaire, ContactUrgence, Risque, Souscripteur } from "@/domaine/cotation/saisie";
 import { ecartEnJours } from "@/domaine/calcul/dates";
 import { statutEffectif, type StatutCotation } from "@/domaine/cotation/statuts";
-import { donneesDocument, type FormuleSource, type SourceDocument } from "@/domaine/documents/donnees";
+import { donneesDocument, type FormuleSource, type GarantieSource, type SourceDocument } from "@/domaine/documents/donnees";
 import {
   DOCUMENTS,
   cheminStockage,
@@ -31,8 +33,8 @@ import { versIntermediairesDocument } from "./intermediaires";
 import { obtenirConfig } from "./config";
 import { niveauDuProfil } from "./droits";
 import { generateur, type ImagePng } from "./generateur";
-import { fichiersAssocies, lireSeuilListe, modelesAssocies, versionPublieeEnVigueur, type VersionsAssociees } from "./modeles";
-import { aujourdhui, exigerCalculAutomatique } from "./parametrage";
+import { exigerDetailDesGaranties, fichiersAssocies, lireSeuilListe, modelesAssocies, versionPublieeEnVigueur, type VersionsAssociees } from "./modeles";
+import { aujourdhui, exigerCalculAutomatique, exigerComposition, MESSAGE_NON_COMPOSEE } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { lireImageSociete, lireParametresSociete } from "./societe";
 import { differerEcriture, ecrituresDifferees, lireDocumentEmis, programmerReprise, stockage, tenterEcriture } from "./stockage";
@@ -108,12 +110,39 @@ export async function contexteProduit(produitId: number, versionDateEffet: Date)
   };
 }
 
-/** Montants du moteur (recalculés à l'identique depuis l'entrée figée), formule par formule. */
-export function montantsDu(entree: EntreeCalcul, contexte: ContexteProduit) {
+/**
+ * Montants d'un calcul figé (recalculés à l'identique depuis l'entrée figée) : formule par formule pour un calcul automatique, garantie par
+ * garantie pour une composition manuelle (session 6.2b). Passage de la création des factures d'affaire nouvelle, de renouvellement et
+ * d'avenant, des CP et du PDF de cotation. La nature du calcul doit correspondre au mode de la version (sessions 6.2a et 6.2b).
+ */
+export function montantsDu(donnees: DonneesCalcul, contexte: ContexteProduit) {
+  const t = (m: { toFixed(): string }) => m.toFixed();
+  if (estComposition(donnees)) {
+    exigerComposition(contexte.modeTarification);
+    if (donnees.lignes.length === 0) throw new ErreurMetier(MESSAGE_NON_COMPOSEE);
+    const resultat = composer(donnees);
+    let base = ZERO_MONTANT;
+    const garanties: GarantieSource[] = resultat.lignes.map((l, i) => {
+      const ligne = donnees.lignes[i];
+      const baseLigne = ligne.assiette === "NETTE_ACCESSOIRES" ? l.arrondi.nette.plus(l.arrondi.accessoires) : l.arrondi.nette;
+      base = base.plus(baseLigne);
+      return { libelle: ligne.libelle, branche: ligne.branche, nette: t(l.arrondi.nette), accessoires: t(l.arrondi.accessoires), tauxTaxe: ligne.tauxPourcent, taxe: t(l.arrondi.taxe), ttc: t(l.arrondi.ttc), baseTaxe: t(baseLigne) };
+    });
+    const a = resultat.totaux.arrondi;
+    const assiettes = new Set(donnees.lignes.map((l) => l.assiette));
+    return {
+      resultat,
+      formules: [] as FormuleSource[],
+      garanties,
+      totaux: { nette: t(a.nette), accessoires: t(a.accessoires), taxe: t(a.taxe), ttc: t(a.ttc), baseTaxe: t(base) },
+      // `prime.taux_taxe` : rempli quand un seul taux s'applique, vide (null) quand il y en a plusieurs.
+      taxe: { tauxPourcent: tauxUnique(donnees.lignes), assiette: assiettes.size === 1 ? [...assiettes][0] : "NETTE_ACCESSOIRES" },
+    };
+  }
   // Aucun document, aucune facture ne reprend des montants du moteur pour un produit tarifé par garanties (session 6.2a).
   exigerCalculAutomatique(contexte.modeTarification);
+  const entree = donnees;
   const resultat = calculer(entree);
-  const t = (m: { toFixed(): string }) => m.toFixed();
   const formules: FormuleSource[] = resultat.lignes.map((l, i) => ({
     code: l.code,
     libelle: contexte.formules.get(l.code)?.libelle ?? l.code,
@@ -131,8 +160,9 @@ export function montantsDu(entree: EntreeCalcul, contexte: ContexteProduit) {
   return {
     resultat,
     formules,
-    totaux: { nette: t(a.nette), accessoires: t(a.accessoires), taxe: t(a.taxe), ttc: t(a.ttc) },
-    taxe: { tauxPourcent: String(entree.parametres.taxe.tauxPourcent), assiette: entree.parametres.taxe.assiette },
+    garanties: [] as GarantieSource[],
+    totaux: { nette: t(a.nette), accessoires: t(a.accessoires), taxe: t(a.taxe), ttc: t(a.ttc) } as { nette: string; accessoires: string; taxe: string; ttc: string; baseTaxe?: string },
+    taxe: { tauxPourcent: String(entree.parametres.taxe.tauxPourcent) as string | null, assiette: entree.parametres.taxe.assiette as string },
   };
 }
 
@@ -311,13 +341,16 @@ export function versLu(d: LigneDocument): DocumentLu {
   };
 }
 
-async function modeleEnVigueur(type: "COTATION" | "CP" | "CERTIFICAT", produitId: number, produitCode: string, date: DateIso) {
+async function modeleEnVigueur(type: "COTATION" | "CP" | "CERTIFICAT", produitId: number, produitCode: string, date: DateIso, donnees: DonneesCalcul | null = null) {
   const retenu = await versionPublieeEnVigueur({ type, produitId }, date);
   if (!retenu) {
     throw new ErreurMetier(`Aucun modèle de ${{ COTATION: "cotation", CP: "conditions particulières", CERTIFICAT: "certificat d'adhésion" }[type]} publié et en vigueur pour le produit ${produitCode} : déposez-le et faites-le publier (Modèles Word).`);
   }
   const v = await obtenirPrisma().modeleVersion.findUniqueOrThrow({ where: { id: retenu.version.id }, select: { id: true, fichier: true, analyse: true } });
-  return { versionId: v.id, fichier: v.fichier, champs: ((v.analyse as { champs?: string[] }).champs ?? []) as string[] };
+  const champs = ((v.analyse as { champs?: string[] }).champs ?? []) as string[];
+  // Produit par garanties (6.2b) : cotation et CP détaillent les garanties ; le certificat d'adhésion n'a pas de prime (H36).
+  if (type !== "CERTIFICAT" && donnees !== null) exigerDetailDesGaranties(type === "CP" ? "conditions particulières" : "cotation", champs, estComposition(donnees) && donnees.lignes.length > 0);
+  return { versionId: v.id, fichier: v.fichier, champs };
 }
 
 /** CG et CS du produit, publiées et en vigueur ; visas vérifiés (contrôle bloquant, §6.8). */
@@ -364,7 +397,7 @@ function sourceDeCotation(
   version: number,
   url: string | null,
 ): SourceDocument {
-  const m = montantsDu(c.donneesCalcul as unknown as EntreeCalcul, contexte);
+  const m = montantsDu(c.donneesCalcul as unknown as DonneesCalcul, contexte);
   return {
     type: "COTATION",
     numero,
@@ -387,6 +420,7 @@ function sourceDeCotation(
     dateEcheance: depuisDate(c.dateEcheance),
     joursCouverts: m.resultat.joursCouverts,
     formules: m.formules,
+    garanties: m.garanties,
     totaux: m.totaux,
     taxe: m.taxe,
     echeances: echeances(c.echeancier),
@@ -420,7 +454,7 @@ export async function emettreCotation(acteur: UtilisateurCourant, cotationId: nu
   }
   const date = c.dateEtablissement ? depuisDate(c.dateEtablissement) : aujourdhui();
   const contexte = await contexteProduit(c.produitId, c.versionDateEffet);
-  const modele = await modeleEnVigueur("COTATION", c.produitId, c.produit.code, date);
+  const modele = await modeleEnVigueur("COTATION", c.produitId, c.produit.code, date, c.donneesCalcul as unknown as DonneesCalcul);
   const associes = await modelesAssocies(c.produitId, date, false);
   const commun = await sourceCommune(contexte, date);
   const citees = await citationsCotation(contexte, date);
@@ -455,7 +489,7 @@ export async function apercuCotation(acteur: UtilisateurCourant, cotationId: num
   const c = await chargerCotation(cotationId);
   const date = aujourdhui();
   const contexte = await contexteProduit(c.produitId, c.versionDateEffet);
-  const modele = await modeleEnVigueur("COTATION", c.produitId, c.produit.code, date);
+  const modele = await modeleEnVigueur("COTATION", c.produitId, c.produit.code, date, c.donneesCalcul as unknown as DonneesCalcul);
   const associes = await modelesAssocies(c.produitId, date, false);
   const commun = await sourceCommune(contexte, date);
   const citees = await citationsCotation(contexte, date);
@@ -507,11 +541,11 @@ const derniereVersionAdherents = (police: PoliceChargee): number | null => (poli
 async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<Production> {
   const date = aujourdhui();
   const contexte = await contexteProduit(c.produitId, c.versionDateEffet);
-  const modele = await modeleEnVigueur("CP", c.produitId, c.produit.code, date);
+  const modele = await modeleEnVigueur("CP", c.produitId, c.produit.code, date, police.donneesCalcul as unknown as DonneesCalcul);
   const associes = await modelesAssocies(c.produitId, date, false);
   const commun = await sourceCommune(contexte, date);
   const pieces = await piecesContractuelles(contexte, date, true);
-  const m = montantsDu(police.donneesCalcul as unknown as EntreeCalcul, contexte);
+  const m = montantsDu(police.donneesCalcul as unknown as DonneesCalcul, contexte);
   const groupe = estContratDeGroupe(police.typeContrat);
   const source = (version: number, url: string): SourceDocument => ({
     type: "CP",
@@ -535,6 +569,7 @@ async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<
     dateEcheance: depuisDate(police.dateEcheance),
     joursCouverts: m.resultat.joursCouverts,
     formules: m.formules,
+    garanties: m.garanties,
     totaux: m.totaux,
     taxe: m.taxe,
     echeances: echeances(police.echeancier),

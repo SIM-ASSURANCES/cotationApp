@@ -49,6 +49,8 @@ export type ContexteControle = {
   formulesProduit: ReadonlyMap<string, FormuleImport>;
   /** Formules retenues dans la police : seules celles-ci peuvent être choisies. */
   formulesPolice: readonly string[];
+  /** Police dont la prime a été composée par garanties (session 6.2b) : aucune formule, la colonne reste vide (et n'est pas acceptée remplie). */
+  sansFormule?: boolean;
   /** Liste courante des adhérents de la police (doublons). */
   adherents: readonly Assure[];
   /** Numéros déjà pris (police, document émis ou ligne d'un import confirmé), parmi ceux à contrôler. */
@@ -104,7 +106,7 @@ function controlerLigne(l: LigneBrute, ctx: ContexteControle): LigneControlee {
   const erreur = (colonne: CleColonne, message: string) => erreurs.push({ colonne, valeur: valeurs[colonne], message });
 
   for (const c of COLONNES_IMPORT) {
-    if (c.obligatoire && valeurs[c.cle] === "") erreur(c.cle, "Champ obligatoire vide.");
+    if (c.obligatoire && valeurs[c.cle] === "" && !(c.cle === "formule" && ctx.sansFormule)) erreur(c.cle, "Champ obligatoire vide.");
   }
   for (const cle of ["nom_prenoms", "lien"] as const) {
     if (valeurs[cle].length > 300) erreur(cle, "Texte trop long (300 caractères au plus).");
@@ -130,7 +132,9 @@ function controlerLigne(l: LigneBrute, ctx: ContexteControle): LigneControlee {
   if (sexe !== "" && !(SEXES as readonly string[]).includes(sexe)) erreur("sexe", "Sexe invalide : M, F ou vide.");
 
   const formule = valeurs.formule.toUpperCase();
-  if (formule !== "") {
+  if (ctx.sansFormule) {
+    if (formule !== "") erreur("formule", `Cette police est tarifée par garanties : un adhérent n'a pas de formule (« ${formule} » refusée), laissez la colonne vide.`);
+  } else if (formule !== "") {
     const parametree = ctx.formulesProduit.get(formule);
     if (!parametree) erreur("formule", `Formule « ${formule} » inconnue pour ce produit.`);
     else if (!ctx.formulesPolice.includes(formule)) erreur("formule", `Formule « ${formule} » non retenue dans la police (formules de la police : ${ctx.formulesPolice.join(", ")}).`);

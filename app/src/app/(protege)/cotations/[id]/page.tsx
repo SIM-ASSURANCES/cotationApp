@@ -5,15 +5,18 @@ import { ChampNumeroPolice } from "@/composants/ChampNumeroPolice";
 import { ComplementsSouscripteur } from "@/composants/ComplementsSouscripteur";
 import { FormulaireAction } from "@/composants/FormulaireAction";
 import { LignesBeneficiaires, LignesContactsUrgence } from "@/composants/LignesDynamiques";
+import { LignesComposition } from "@/composants/LignesComposition";
 import { TachesPolice } from "@/composants/TachesPolice";
 import { formaterMontant, montant, type Montant } from "@/domaine/calcul/montant";
 import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
 import { avertissementNumeroContrat, FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
+import { MESSAGE_BROUILLON_A_FORMULES } from "@/domaine/calcul/parametrage";
 import { LIBELLE_STATUT, peutAccepter, peutEtreValidee, peutModifier } from "@/domaine/cotation/statuts";
 import { LIBELLE_RAISON } from "@/domaine/cotation/validation";
 import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
 import { listerMotifsRefus } from "@/serveur/clients";
+import { listerBranches } from "@/serveur/parametrage";
 import { lireCotation } from "@/serveur/cotations";
 import { documentsDe } from "@/serveur/documents";
 import { niveauDuProfil } from "@/serveur/droits";
@@ -22,7 +25,7 @@ import { exigerDroit } from "@/serveur/session";
 import { tachesDeCotation } from "@/serveur/taches-police";
 import { lireValidationContrat } from "@/serveur/validation-contrat";
 
-import { accepterCotation, emettreCpDeCotation, emettrePdfDeCotation, reediterDocument, refuserCotation, renvoyerCotation, soumettreCotation, validerCotation } from "../actions";
+import { accepterCotation, composerPrime, emettreCpDeCotation, emettrePdfDeCotation, reediterDocument, refuserCotation, renvoyerCotation, soumettreCotation, validerCotation } from "../actions";
 
 const f = (m: Montant) => formaterMontant(m);
 const entree = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2";
@@ -36,9 +39,10 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
     notFound();
   }
 
-  const [niveauCotation, niveauValidation, niveauContrat, motifs, documents, formatPolice] = await Promise.all([
+  const [niveauCotation, niveauValidation, niveauComposition, niveauContrat, motifs, documents, formatPolice] = await Promise.all([
     niveauDuProfil(utilisateur.profil, "CREER_COTATION"),
     niveauDuProfil(utilisateur.profil, "VALIDER_COTATION"),
+    niveauDuProfil(utilisateur.profil, "COMPOSER_PRIME"),
     niveauDuProfil(utilisateur.profil, "EMETTRE_CONTRAT"),
     listerMotifsRefus(),
     documentsDe(utilisateur, { cotationId: c.id }),
@@ -55,6 +59,11 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
   // H9 : qui a créé ou modifié la cotation ne la valide pas.
   const estContributeur = estAuteur || c.contributeurs.includes(utilisateur.id);
   const agit = peutAgir(niveauCotation);
+  // Produit tarifé par garanties (session 6.2b) : la prime se compose, elle ne se calcule pas.
+  const composition = c.composition;
+  const aComposer = composition !== null && composition.lignes.length === 0;
+  const peutComposer = composition !== null && peutModifier(c.statut) && peutAgir(niveauComposition);
+  const branchesActives = peutComposer ? (await listerBranches(utilisateur)).filter((b) => b.actif) : [];
   const x = c.resultat;
   const forcees = c.lignes.filter((l) => l.primeForcee !== null);
   const accessoiresSaisis = c.lignes.filter((l) => l.accessoireSaisi != null);
@@ -74,6 +83,11 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
       {c.filigrane ? (
         <p role="alert" className="mb-4 rounded border-2 border-danger bg-danger-bg p-3 text-center text-2xl font-bold tracking-widest text-danger">
           {c.filigrane}
+        </p>
+      ) : null}
+      {c.brouillonAFormulesSousGaranties ? (
+        <p role="alert" className="mb-4 rounded border border-warning-border bg-warning-bg p-3 text-sm">
+          <strong>Brouillon à recréer.</strong> {MESSAGE_BROUILLON_A_FORMULES}.
         </p>
       ) : null}
       <TachesPolice taches={taches} cotationId={c.id} chemin={`/cotations/${c.id}`} />
@@ -107,6 +121,50 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
       ) : null}
 
       <h2 className="mb-2 text-lg font-semibold">Primes</h2>
+      {composition ? (
+        aComposer ? (
+          <p role="status" className="rounded border border-warning-border bg-warning-bg p-3 text-sm">
+            <strong>Prime à composer.</strong> Ce produit se tarife par garanties : la Technique doit composer la prime (une ligne par garantie souscrite) avant que la cotation puisse être soumise.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[52rem] border-collapse text-sm">
+              <thead>
+                <tr className="bg-primary text-right text-primary-foreground">
+                  <th className="p-2 text-left">Garantie</th>
+                  <th className="p-2 text-left">Branche</th>
+                  <th className="p-2">Prime nette (HT)</th>
+                  <th className="p-2">Accessoires</th>
+                  <th className="p-2">Taux</th>
+                  <th className="p-2">Taxe</th>
+                  <th className="p-2">TTC</th>
+                </tr>
+              </thead>
+              <tbody>
+                {x.lignes.map((l, i) => (
+                  <tr key={l.code} className="border-b border-border text-right">
+                    <td className="p-2 text-left font-medium">{composition.lignes[i].libelle}</td>
+                    <td className="p-2 text-left">{composition.lignes[i].branche}</td>
+                    <td className="p-2 tabular-nums">{f(l.arrondi.nette)}</td>
+                    <td className="p-2 tabular-nums">{f(l.arrondi.accessoires)}</td>
+                    <td className="p-2 tabular-nums">{montant(composition.lignes[i].tauxPourcent).toString().replace(".", ",")} %</td>
+                    <td className="p-2 tabular-nums">{f(l.arrondi.taxe)}</td>
+                    <td className="p-2 font-semibold tabular-nums">{f(l.arrondi.ttc)}</td>
+                  </tr>
+                ))}
+                <tr className="bg-muted text-right font-semibold">
+                  <td className="p-2 text-left" colSpan={2}>Total général</td>
+                  <td className="p-2 tabular-nums">{f(x.totaux.arrondi.nette)}</td>
+                  <td className="p-2 tabular-nums">{f(x.totaux.arrondi.accessoires)}</td>
+                  <td className="p-2" />
+                  <td className="p-2 tabular-nums">{f(x.totaux.arrondi.taxe)}</td>
+                  <td className="p-2 tabular-nums">{f(x.totaux.arrondi.ttc)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )
+      ) : (
       <div className="overflow-x-auto">
         <table className="w-full min-w-[46rem] border-collapse text-sm">
           <thead>
@@ -144,6 +202,16 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           </tbody>
         </table>
       </div>
+      )}
+      {composition && !aComposer && composition.composePar ? (
+        <p className="mt-3 rounded border border-border bg-muted p-3 text-sm">
+          <strong>Prime composée par {composition.composePar}</strong>
+          {composition.composeLe ? ` le ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }).format(composition.composeLe)}` : ""}. Motif : {composition.motif}.{" "}
+          {peutModifier(c.statut)
+            ? "Brouillon : les taux de taxe sont résolus de nouveau à chaque modification et à la soumission (branche de chaque ligne, régime de taxe, date d'effet) ; ils sont figés à l'émission."
+            : "Les taux de taxe ont été résolus à la date d'effet de la police (branche de chaque ligne, régime de taxe de la cotation) et sont figés avec la cotation."}
+        </p>
+      ) : null}
       {forcees.length > 0 ? (
         <p className="mt-3 rounded border border-border bg-muted p-3 text-sm">
           <strong>Prime forcée (information interne, non affichée au client) :</strong>{" "}
@@ -226,9 +294,11 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         <div className="rounded border border-border p-4">
           <h2 className="mb-2 font-semibold">Documents PDF</h2>
           <div className="mb-3 flex flex-wrap items-end gap-4">
-            <a href={`/api/cotations/${c.id}/apercu`} target="_blank" className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
-              Aperçu PDF (filigrane « APERÇU »)
-            </a>
+            {aComposer ? null : (
+              <a href={`/api/cotations/${c.id}/apercu`} target="_blank" className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
+                Aperçu PDF (filigrane « APERÇU »)
+              </a>
+            )}
             {emise && pdfCotation.length === 0 && agit ? (
               <FormulaireAction action={emettrePdfDeCotation} libelleBouton="Émettre le PDF de la cotation" discret>
                 <input type="hidden" name="id" value={c.id} />
@@ -290,13 +360,46 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           )}
         </div>
 
-        {peutModifier(c.statut) && agit ? (
+        {peutComposer ? (
+          <div className="rounded border border-border p-4">
+            <FormulaireAction action={composerPrime} libelleBouton={aComposer ? "Enregistrer la composition" : "Recomposer la prime"}>
+              <input type="hidden" name="id" value={c.id} />
+              <h2 className="mb-1 font-semibold">{aComposer ? "Composer la prime" : "Recomposer la prime"}</h2>
+              <p className="mb-3 text-sm text-neutral">
+                Saisissez, pour chaque garantie souscrite (et chaque surprime ou majoration, qui est une ligne comme une autre), la prime nette et les accessoires
+                calculés dans le simulateur de la Technique. Le module résout le taux de taxe de la branche de chaque ligne (régime de taxe de la cotation, date d&apos;effet),
+                calcule la taxe, arrondit selon la règle du produit et totalise. Aucun prorata n&apos;est appliqué : les montants sont ceux de la période du contrat.
+                Le motif est obligatoire et la composition est journalisée ; vous ne pourrez pas valider cette cotation.
+              </p>
+              <LignesComposition
+                initiales={(composition?.lignes ?? []).map((l) => ({ libelle: l.libelle, branche: l.branche, primeNette: montant(l.primeNette).toString(), accessoires: montant(l.accessoires).toString() }))}
+                garanties={c.garantiesDuProduit}
+                branches={branchesActives.map((b) => ({ code: b.code, libelle: b.libelle }))}
+                saisieLibre={c.garantiesSaisieLibre}
+              />
+              <label className="mb-3 block max-w-2xl text-sm font-medium">
+                Motif de la composition (obligatoire)
+                <input name="motif" required minLength={3} maxLength={500} className={entree} autoComplete="off" />
+              </label>
+            </FormulaireAction>
+          </div>
+        ) : null}
+
+        {peutModifier(c.statut) && agit && !c.brouillonAFormulesSousGaranties ? (
           <div className="flex flex-wrap items-start gap-4 rounded border border-border p-4">
             <Link href={`/cotations/${c.id}/modifier`} className="rounded border border-primary px-4 py-2 font-semibold text-primary hover:bg-muted">Modifier le brouillon</Link>
-            <FormulaireAction action={soumettreCotation} libelleBouton="Soumettre (émettre)">
-              <input type="hidden" name="id" value={c.id} />
-              <p className="mb-2 text-sm text-neutral">Le calcul est refait avec les paramètres du jour. Sous le seuil et sans forçage, la cotation est émise tout de suite ; sinon elle passe « À valider ».</p>
-            </FormulaireAction>
+            {aComposer ? (
+              <p role="status" className="text-sm text-neutral">La prime n&apos;est pas encore composée : la soumission (et l&apos;aperçu PDF) sont impossibles tant que la Technique ne l&apos;a pas composée.</p>
+            ) : (
+              <FormulaireAction action={soumettreCotation} libelleBouton="Soumettre (émettre)">
+                <input type="hidden" name="id" value={c.id} />
+                <p className="mb-2 text-sm text-neutral">
+                  {composition
+                    ? "Les taux de taxe sont résolus de nouveau avec les paramètres du jour (les montants saisis ne changent pas). Sous le seuil, la cotation est émise tout de suite ; sinon elle passe « À valider »."
+                    : "Le calcul est refait avec les paramètres du jour. Sous le seuil et sans forçage, la cotation est émise tout de suite ; sinon elle passe « À valider »."}
+                </p>
+              </FormulaireAction>
+            )}
           </div>
         ) : null}
 
@@ -332,12 +435,18 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
             <FormulaireAction action={accepterCotation} libelleBouton="Accepter et créer la police" className="sm:col-span-2">
               <input type="hidden" name="id" value={c.id} />
               <h2 className="mb-2 font-semibold">Le client accepte</h2>
-              <p className="mb-2 text-sm text-neutral">Formule(s) retenue(s) :</p>
-              {c.lignes.map((l) => (
-                <label key={l.code} className="mb-1 flex items-center gap-2 text-sm">
-                  <input type="checkbox" name="retenue" value={l.code} defaultChecked /> {c.libelles[l.code] ?? l.code}
-                </label>
-              ))}
+              {composition ? (
+                <p className="mb-2 text-sm text-neutral">La prime composée est acceptée en entier : elle est reprise telle quelle dans la police, sans nouveau calcul.</p>
+              ) : (
+                <>
+                  <p className="mb-2 text-sm text-neutral">Formule(s) retenue(s) :</p>
+                  {c.lignes.map((l) => (
+                    <label key={l.code} className="mb-1 flex items-center gap-2 text-sm">
+                      <input type="checkbox" name="retenue" value={l.code} defaultChecked /> {c.libelles[l.code] ?? l.code}
+                    </label>
+                  ))}
+                </>
+              )}
               <label className="mb-3 mt-3 block text-sm font-medium">
                 Numéro de police attribué par SIM (obligatoire)
                 <ChampNumeroPolice className={entree} />

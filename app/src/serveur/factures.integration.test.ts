@@ -8,17 +8,18 @@ process.env.URL_PUBLIQUE = "https://documents.exemple.ci";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { MESSAGE_TARIFICATION_PAR_GARANTIES, type VersionSaisie } from "@/domaine/calcul/parametrage";
+import { MESSAGE_AVENANT_GARANTIES, MESSAGE_RENOUVELLEMENT_GARANTIES, MESSAGE_TARIFICATION_PAR_GARANTIES, type VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Analyse } from "@/domaine/documents/analyse";
 import type { Assure } from "@/domaine/cotation/saisie";
 
 import { incorporerAdherents } from "./adherents";
 import { lireJournal } from "./audit";
 import { assurerBranche } from "./branches-test";
-import { accepter, creerBrouillon, soumettre, valider, type SaisieCotation } from "./cotations";
+import { accepter, composerLaPrime, creerBrouillon, soumettre, valider, type SaisieCotation } from "./cotations";
 import { emettreCp, verifierJeton } from "./documents";
 import { initialiserProfilsEtDroits } from "./droits";
 import {
+  abandonnerFacture,
   creerFactureAffaireNouvelle,
   creerFactureAvenant,
   creerFactureRenouvellement,
@@ -820,12 +821,348 @@ describe("session 6.2a : un produit tarifé par garanties ne produit aucune fact
     expect((await lireFacture(technique, anB))!).toMatchObject({ statut: "EMISE", ttc: "101500" });
 
     // Le renouvellement de B ne se crée plus ; le brouillon de A ne se recalcule plus et ne s'émet plus.
-    await expect(creerFactureRenouvellement(technique, b.policeId, { lignes: null, nombreTranches: 1, envoyeA: null }, null)).rejects.toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
+    await expect(creerFactureRenouvellement(technique, b.policeId, { lignes: null, nombreTranches: 1, envoyeA: null }, null)).rejects.toThrow(MESSAGE_RENOUVELLEMENT_GARANTIES);
     expect(await obtenirPrisma().facture.count({ where: { policeId: b.policeId, type: "RENOUVELLEMENT" } })).toBe(0);
-    await expect(modifierFacture(technique, renA, { lignes: [{ codeFormule: "F", effectif: 2 }], nombreTranches: 1, envoyeA: null }, null)).rejects.toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
+    await expect(modifierFacture(technique, renA, { lignes: [{ codeFormule: "F", effectif: 2 }], nombreTranches: 1, envoyeA: null }, null)).rejects.toThrow(MESSAGE_RENOUVELLEMENT_GARANTIES);
     await expect(emettreFacture(technique, renA, null)).rejects.toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
     const restee = (await lireFacture(technique, renA))!;
     expect(restee).toMatchObject({ statut: "BROUILLON", ttc: "101500" });
     expect(restee.numero).toBeNull();
+    await expect(emettreFacture(technique, renA, null)).rejects.toThrow(/Abandonner le brouillon/);
+
+    // H87 : le brouillon bloqué s'abandonne (motif obligatoire, définitif, aucun numéro consommé).
+    await abandonnerFacture(technique, renA, "Produit passé en garanties avant l'émission", null);
+    expect(await lireFacture(technique, renA)).toMatchObject({ statut: "ABANDONNEE", numero: null, abandon: { par: technique.identifiant, motif: "Produit passé en garanties avant l'émission" } });
+  });
+});
+
+const TAGS_GARANTIES = ["libelle", "branche", "prime_nette", "accessoires", "taux_taxe", "taxe", "ttc"].map((c) => `garanties_souscrites[].${c}`);
+
+/** Modèle de facture d'un produit par garanties : il cite `garanties_souscrites[]` (une ligne par garantie, avec son taux). */
+const publierFactureGaranties = (code: string) =>
+  publier("FACTURE", code, analyse([...CONTENU_FACTURE, ...TAGS_GARANTIES], { filtres: ["lettres"], textes: ["Article 13 du Code CIMA : la prise d'effet est subordonnée au paiement de la prime."] }));
+
+describe("session 6.2b : produit par garanties, de la cotation composée à la facture", () => {
+  async function produitParGaranties(options: { factureDuProduit?: boolean; cpAvecGaranties?: boolean } = {}): Promise<{ code: string; incendie: string; iard: string }> {
+    const code = CODE("GPR");
+    const incendie = (await assurerBranche(`INC_${code}`)).slice(0, 28);
+    const iard = (await assurerBranche(`IARD_${code}`)).slice(0, 28);
+    await creerTaxe(technique, { branche: incendie, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "12.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
+    await creerTaxe(technique, { branche: iard, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "7.25", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
+    await creerProduit(technique, { code, libelle: "SECURPRO (produit de test par garanties)", gamme: "SECUR", branche: iard }, null);
+    const references = (await listerVersions(technique, produitIndividuel))!.versions[0].references;
+    await creerVersion(
+      technique,
+      code,
+      {
+        dateEffet: "2020-01-01",
+        modeTarification: "GARANTIES",
+        references,
+        arrondi: { precision: 1, sens: "PROCHE", niveau: "LIGNE", composanteAbsorbante: "TAXE" },
+        prorata: { actif: false, primeMinimale: null },
+        fractionnement: { tranchesMax: 4, repartitionPourcent: null, decalagesMois: null, frais: "0" },
+        cotation: { validiteMois: 3, formulesMax: 3 },
+        seuilValidationTtc: null,
+        formules: [],
+        garanties: [{ libelle: "Incendie", branche: incendie }],
+      },
+      null,
+    );
+    // Les modèles du produit citent les champs `garanties_souscrites[]` : le dictionnaire les connaît, sinon le dépôt serait refusé (T9).
+    await publier("CP", code, analyse(options.cpAvecGaranties === false ? CONTENU_CP : [...CONTENU_CP, ...TAGS_GARANTIES]));
+    if (options.factureDuProduit !== false) await publierFactureGaranties(code);
+    return { code, incendie, iard };
+  }
+
+  /** Police d'un produit par garanties : cotation créée par le Commercial, prime composée par la Technique, soumise, acceptée, CP émises. */
+  async function policeGaranties(p: { code: string; incendie: string; iard: string }, typeContrat: "INDIVIDUEL" | "GROUPE" = "INDIVIDUEL", options: { emettreLesCp?: boolean } = {}) {
+    const id = await creerBrouillon(commercial, {
+      codeProduit: p.code,
+      clientId: null,
+      typeContrat,
+      souscripteur: { type: "MORALE", nom: "", prenoms: "", raison_sociale: "ENTREPRISE INVENTÉE SA", telephone: "", email: "", adresse: "Plateau, rue inventée" },
+      dateEffet: "2026-01-01",
+      dateEcheance: "2026-12-31",
+      nombreTranches: 2,
+      lignes: [],
+      motifForcage: null,
+      assures: typeContrat === "GROUPE" ? [assure(1, ""), assure(2, "")] : [],
+      beneficiaires: [],
+      contactsUrgence: [],
+      risque: {},
+    }, null);
+    await composerLaPrime(
+      technique,
+      id,
+      [
+        { libelle: "Incendie", branche: p.incendie, primeNette: "10000", accessoires: "2500" },
+        { libelle: "Vol", branche: p.iard, primeNette: "9850", accessoires: "2500" },
+        { libelle: "Dégât des eaux", branche: p.iard, primeNette: "6000", accessoires: "2500" },
+      ],
+      "Simulateur de la Technique (chiffres inventés)",
+      null,
+    );
+    expect((await soumettre(commercial, id, null)).statut).toBe("EMISE");
+    const { numeroPolice: numero } = await accepter(commercial, id, [], numeroPolice(), null);
+    if (options.emettreLesCp !== false) await emettreCp(technique, id, null);
+    const police = await obtenirPrisma().police.findUniqueOrThrow({ where: { numero } });
+    return { cotationId: id, policeId: police.id, numero };
+  }
+
+  it("CP et facture : une ligne par garantie avec son taux, prime.* = somme des lignes, taux unique vide, formules vide ; mêmes montants partout", async () => {
+    const p = await produitParGaranties();
+    const pol = await policeGaranties(p);
+
+    // CP : mêmes données que la facture.
+    const cp = derniere("CP");
+    expect((cp.donnees.garanties_souscrites as unknown[]).length).toBe(3);
+    expect(cp.donnees.formules).toEqual([]);
+    expect(cp.donnees.prime).toMatchObject({ nette: "25850", accessoires: "7500", taxe: "3074", ttc: "36424" });
+
+    // T10 : la Technique relève le taux de l'incendie (15 %, branche propre à ce produit) APRÈS l'émission des CP : la facture reprend la
+    // composition figée de la police, ses taux et ses montants, au caractère près.
+    await creerTaxe(technique, { branche: p.incendie, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "15", assiette: "NETTE_ACCESSOIRES", dateEffet: "2025-06-01", dateFin: null }, null);
+    const id = await creerFactureAffaireNouvelle(technique, pol.policeId, null, null);
+    expect((await emettreFacture(technique, id, null)).statut).toBe("EMISE");
+    const d = derniere("FACTURE");
+    expect(d.donnees.garanties_souscrites).toEqual(cp.donnees.garanties_souscrites);
+    expect(d.donnees.prime).toMatchObject({ taxe: "3074", ttc: "36424" });
+    // Incendie : (10 000 + 2 500) × 12,5 % = 1 562,5 → 1 563 ; Vol : 895 ; Dégât des eaux : 616 ; TTC 14 063 + 13 245 + 9 116 = 36 424.
+    expect(d.donnees.garanties_souscrites).toEqual([
+      { libelle: "Incendie", branche: p.incendie, prime_nette: "10000", accessoires: "2500", taux_taxe: "12.5", taxe: "1563", ttc: "14063" },
+      { libelle: "Vol", branche: p.iard, prime_nette: "9850", accessoires: "2500", taux_taxe: "7.25", taxe: "895", ttc: "13245" },
+      { libelle: "Dégât des eaux", branche: p.iard, prime_nette: "6000", accessoires: "2500", taux_taxe: "7.25", taxe: "616", ttc: "9116" },
+    ]);
+    // Plusieurs taux : prime.taux_taxe est vide (facultatif) ; la base de la taxe est la somme des bases des lignes (25 850 + 7 500).
+    expect(d.donnees.prime).toMatchObject({ nette: "25850", accessoires: "7500", base_taxe: "33350", taux_taxe: null, taxe: "3074", ttc: "36424" });
+    expect(d.donnees.formules).toEqual([]);
+    // Fractionnement inchangé, appliqué au TTC total : 2 × 18 212.
+    expect(d.donnees.echeances).toEqual([1, 2].map((n) => expect.objectContaining({ numero: n, montant: "18212" })));
+    const lue = (await lireFacture(technique, id))!;
+    expect(lue).toMatchObject({ statut: "EMISE", ttc: "36424" });
+    expect(lue.contenu.garanties).toHaveLength(3);
+
+    // L'avoir reprend les lignes en négatif.
+    await emettreAvoir(technique, id, "Erreur sur la facture (avoir de test)", null);
+    const avoir = derniere("AVOIR");
+    expect((avoir.donnees.garanties_souscrites as { ttc: string }[]).map((g) => g.ttc)).toEqual(["-14063", "-13245", "-9116"]);
+    expect(avoir.donnees.prime).toMatchObject({ nette: "-25850", taxe: "-3074", ttc: "-36424" });
+  });
+
+  it("un seul taux dans toute la composition : prime.taux_taxe est rempli", async () => {
+    const p = await produitParGaranties();
+    const id = await creerBrouillon(commercial, {
+      codeProduit: p.code, clientId: null, typeContrat: "INDIVIDUEL",
+      souscripteur: { type: "PHYSIQUE", nom: "ZADI", prenoms: "Awa (inventée)", raison_sociale: "", telephone: "", email: "", adresse: "Cocody, rue inventée" },
+      dateEffet: "2026-01-01", dateEcheance: "2026-12-31", nombreTranches: 1, lignes: [], motifForcage: null, assures: [], beneficiaires: [], contactsUrgence: [], risque: {},
+    }, null);
+    await composerLaPrime(technique, id, [{ libelle: "Vol", branche: p.iard, primeNette: "9850", accessoires: "2500" }], "Une seule garantie (inventée)", null);
+    await soumettre(commercial, id, null);
+    const { numeroPolice: numero } = await accepter(commercial, id, [], numeroPolice(), null);
+    await emettreCp(technique, id, null);
+    const pol = await obtenirPrisma().police.findUniqueOrThrow({ where: { numero } });
+    const fid = await creerFactureAffaireNouvelle(technique, pol.id, null, null);
+    await emettreFacture(technique, fid, null);
+    expect(derniere("FACTURE").donnees.prime).toMatchObject({ taux_taxe: "7.25", taxe: "895", ttc: "13245" });
+  });
+
+  it("la facture d'un produit par garanties ne s'émet pas avec un modèle qui ne détaille pas les garanties (ici le modèle commun) : refus avant tout numéro ; elle s'émet avec le modèle du produit", async () => {
+    // Le produit n'a pas de modèle de facture propre : c'est le modèle commun (fait pour les produits à la formule, sans garanties_souscrites[]) qui serait retenu.
+    const p = await produitParGaranties({ factureDuProduit: false });
+    const pol = await policeGaranties(p);
+    const temoin = await emettreFacture(technique, await creerFactureAffaireNouvelle(technique, (await policeT3()).policeId, null, null), null);
+    if (temoin.statut !== "EMISE") throw new Error("attendu : émise");
+
+    const id = await creerFactureAffaireNouvelle(technique, pol.policeId, null, null);
+    await expect(emettreFacture(technique, id, null)).rejects.toThrow(/ne détaille pas les garanties/);
+    expect(await lireFacture(technique, id)).toMatchObject({ statut: "BROUILLON", numero: null });
+
+    // Après la publication du modèle du produit, la même facture s'émet ; aucun numéro n'avait été consommé par le refus.
+    await publierFactureGaranties(p.code);
+    const r = await emettreFacture(technique, id, null);
+    if (r.statut !== "EMISE") throw new Error("attendu : émise");
+    expect(numeroDe(r.numero)).toBe(numeroDe(temoin.numero) + 1);
+    expect(derniere("FACTURE").donnees.garanties_souscrites).toHaveLength(3);
+  });
+
+  it("les CP d'un produit par garanties ne s'émettent pas avec un modèle qui ne détaille pas les garanties (aucun CP n'est émis) ; avec le modèle des garanties, ils s'émettent", async () => {
+    const sansDetail = await produitParGaranties({ cpAvecGaranties: false });
+    const pol = await policeGaranties(sansDetail, "INDIVIDUEL", { emettreLesCp: false });
+    await expect(emettreCp(technique, pol.cotationId, null)).rejects.toThrow(/ne détaille pas les garanties/);
+    expect(await obtenirPrisma().documentEmis.count({ where: { policeId: pol.policeId, type: "CP" } })).toBe(0);
+
+    const avecDetail = await produitParGaranties();
+    const pol2 = await policeGaranties(avecDetail, "INDIVIDUEL", { emettreLesCp: false });
+    await emettreCp(technique, pol2.cotationId, null);
+    expect(derniere("CP").donnees.garanties_souscrites).toHaveLength(3);
+  });
+
+  it("l'écran d'une police à garanties n'offre ni renouvellement ni avenant (H90) ; une police à la formule les offre toujours", async () => {
+    const p = await produitParGaranties();
+    const pol = await policeGaranties(p, "GROUPE");
+    await emettreFacture(technique, await creerFactureAffaireNouvelle(technique, pol.policeId, null, null), null);
+    expect((await facturesDePolice(technique, pol.cotationId))!.police.composee).toBe(true);
+
+    const t2 = await policeT2();
+    await emettreFacture(technique, await creerFactureAffaireNouvelle(technique, t2.policeId, null, null), null);
+    const vue = (await facturesDePolice(technique, t2.cotationId))!;
+    expect(vue.police.composee).toBe(false);
+    expect(vue.possibles.renouvellement).not.toBeNull();
+  });
+
+  it("renouvellement et avenant d'une police à garanties : refusés avec un message explicite, rien n'est calculé en silence (H90)", async () => {
+    const p = await produitParGaranties();
+    const pol = await policeGaranties(p, "GROUPE");
+    const id = await creerFactureAffaireNouvelle(technique, pol.policeId, null, null);
+    await emettreFacture(technique, id, null);
+    await expect(creerFactureRenouvellement(technique, pol.policeId, { lignes: null, nombreTranches: 1, envoyeA: null }, null)).rejects.toThrow(MESSAGE_RENOUVELLEMENT_GARANTIES);
+
+    await incorporerAdherents(gestionnaire, pol.policeId, "2026-07-22", [{ nom_prenoms: "Nouvel Adhérent Inventé", date_naissance: "1992-02-02", sexe: "M", lien: "Salarié", formule: "" }], null);
+    const vue = (await facturesDePolice(technique, pol.cotationId))!;
+    const incorporation = vue.possibles.avenants[0];
+    await expect(creerFactureAvenant(technique, pol.policeId, incorporation.numero, null, null)).rejects.toThrow(MESSAGE_AVENANT_GARANTIES);
+    expect(await obtenirPrisma().facture.count({ where: { policeId: pol.policeId, type: { in: ["RENOUVELLEMENT", "AVENANT"] } } })).toBe(0);
+  });
+});
+
+describe("session 6.2b : abandon d'un brouillon de facture (H87)", () => {
+  it("motif obligatoire, journalisé, définitif, aucun numéro consommé : la facture suivante porte le numéro qui suit la dernière émise", async () => {
+    const prisma = obtenirPrisma();
+    const premiere = await creerFactureAffaireNouvelle(technique, (await policeT3()).policeId, null, null);
+    const emise = await emettreFacture(technique, premiere, null);
+    if (emise.statut !== "EMISE") throw new Error("attendu : émise");
+
+    const brouillon = await creerFactureAffaireNouvelle(technique, (await policeT3()).policeId, null, null);
+    expect((await lireFacture(technique, brouillon))!.actions.abandonner).toBe(true);
+    await expect(abandonnerFacture(technique, brouillon, "  ", null)).rejects.toThrow(/Motif de l'abandon obligatoire/);
+    await expect(abandonnerFacture(technique, brouillon, "abc", null)).rejects.toThrow(/Motif de l'abandon obligatoire/);
+    await expect(abandonnerFacture(dg, brouillon, "Doublon de saisie", null)).rejects.toThrow(ErreurAcces);
+    expect((await lireFacture(technique, brouillon))!.statut).toBe("BROUILLON");
+
+    await abandonnerFacture(technique, brouillon, "Doublon de saisie (test)", null);
+    const abandonnee = (await lireFacture(technique, brouillon))!;
+    expect(abandonnee).toMatchObject({ statut: "ABANDONNEE", numero: null, libelleStatut: "Abandonnée", abandon: { par: technique.identifiant, motif: "Doublon de saisie (test)" } });
+    expect(abandonnee.actions).toMatchObject({ abandonner: false, modifier: false, emettre: false });
+    const journal = (await lireJournal({ action: "FACTURE_ABANDONNEE" })).lignes.find((l) => l.objet === `facture ${brouillon}`)!;
+    expect(journal.avant).toMatchObject({ statut: "BROUILLON", type: "AFFAIRE_NOUVELLE" });
+    expect(journal.apres).toMatchObject({ statut: "ABANDONNEE", motif: "Doublon de saisie (test)" });
+
+    // Définitif : ni nouvel abandon, ni émission, ni modification ; la base l'impose aussi.
+    await expect(abandonnerFacture(technique, brouillon, "Encore un abandon", null)).rejects.toThrow(/déjà abandonné/);
+    await expect(emettreFacture(technique, brouillon, null)).rejects.toThrow(/déjà abandonnée/);
+    await expect(modifierFacture(technique, brouillon, { lignes: null, nombreTranches: null, envoyeA: null }, null)).rejects.toThrow(/abandonné/);
+    expect(await sql(`UPDATE factures SET statut = 'BROUILLON' WHERE id = ${brouillon}`)).toMatch(/abandonnée/);
+    expect(await sql(`DELETE FROM factures WHERE id = ${brouillon}`)).toMatch(/suppression interdite/);
+
+    // Aucun numéro consommé : la facture suivante prend le numéro qui suit celui de la dernière émise.
+    const suivante = await creerFactureAffaireNouvelle(technique, (await policeT3()).policeId, null, null);
+    const s2 = await emettreFacture(technique, suivante, null);
+    if (s2.statut !== "EMISE") throw new Error("attendu : émise");
+    expect(numeroDe(s2.numero)).toBe(numeroDe(emise.numero) + 1);
+    // Aucune facture abandonnée ne porte de numéro : la base l'impose (voir le test des gardes SQL ci-dessous), ce n'est pas un résultat du hasard.
+    expect(await prisma.facture.count({ where: { statut: "ABANDONNEE" } })).toBeGreaterThan(0);
+  });
+
+  it("une facture émise, un avoir ne s'abandonnent pas ; une demande « À valider » s'abandonne", async () => {
+    const emise = await creerFactureAffaireNouvelle(technique, (await policeT3()).policeId, null, null);
+    await emettreFacture(technique, emise, null);
+    await expect(abandonnerFacture(technique, emise, "Facture émise à tort", null)).rejects.toThrow(/Seul un brouillon/);
+    const { avoirId } = await emettreAvoir(technique, emise, "Erreur de saisie (avoir de test)", null);
+    await expect(abandonnerFacture(technique, avoirId, "Un avoir ne s'abandonne pas", null)).rejects.toThrow(/avoir/);
+
+    const p = await policeT3("2026-01-01"); // TTC annuel 274 181 F > seuil 200 000 F
+    const demande = await creerFactureAffaireNouvelle(gestionnaire, p.policeId, null, null);
+    expect((await emettreFacture(gestionnaire, demande, null)).statut).toBe("A_VALIDER");
+    await abandonnerFacture(gestionnaire, demande, "La souscription est annulée (test)", null);
+    expect((await lireFacture(gestionnaire, demande))!).toMatchObject({ statut: "ABANDONNEE", numero: null });
+  });
+
+  it("une demande « À valider » d'un autre ne s'abandonne que par son demandeur ou par un profil qui peut décider ; un brouillon, par n'importe quel profil qui peut le modifier", async () => {
+    const p = await policeT3("2026-01-01"); // TTC annuel 274 181 F > seuil 200 000 F
+    const demande = await creerFactureAffaireNouvelle(gestionnaire, p.policeId, null, null);
+    expect((await emettreFacture(gestionnaire, demande, null)).statut).toBe("A_VALIDER");
+
+    // Un second gestionnaire (« Oui sous seuil ») ne peut ni émettre ni valider cette demande : il ne la détruit pas non plus.
+    expect((await lireFacture(gestionnaire2, demande))!.actions).toMatchObject({ abandonner: false, emettre: false });
+    await expect(abandonnerFacture(gestionnaire2, demande, "Je n'en veux pas (test)", null)).rejects.toThrow(/demandeur/);
+    expect((await lireFacture(technique, demande))!.statut).toBe("A_VALIDER");
+    // Un profil qui peut décider (Technique, « Oui ») l'abandonne.
+    expect((await lireFacture(technique, demande))!.actions.abandonner).toBe(true);
+    await abandonnerFacture(technique, demande, "Demande sans suite après vérification (test)", null);
+    expect((await lireFacture(technique, demande))!).toMatchObject({ statut: "ABANDONNEE", numero: null });
+
+    // Le brouillon (non soumis) d'un gestionnaire s'abandonne par un autre gestionnaire.
+    const brouillon = await creerFactureAffaireNouvelle(gestionnaire, (await policeT3()).policeId, null, null);
+    await abandonnerFacture(gestionnaire2, brouillon, "Doublon de saisie (test)", null);
+    expect((await lireFacture(gestionnaire, brouillon))!.statut).toBe("ABANDONNEE");
+  });
+
+  it("la base refuse les abandons incohérents, même en SQL : facture émise, sans motif, motif trop court, numéro conservé ; le brouillon refusé reste intact", async () => {
+    const emise = await creerFactureAffaireNouvelle(technique, (await policeT3()).policeId, null, null);
+    await emettreFacture(technique, emise, null);
+    const brouillon = await creerFactureAffaireNouvelle(technique, (await policeT3()).policeId, null, null);
+    const abandon = (motif: string) => `statut = 'ABANDONNEE', abandonne_par_id = ${technique.id}, abandonne_par = 'x', abandonne_le = now(), motif_abandon = '${motif}'`;
+
+    expect(await sql(`UPDATE factures SET ${abandon("Motif de test")} WHERE id = ${emise}`)).toMatch(/seul un brouillon ou une demande à valider peut être abandonné/);
+    expect(await sql(`UPDATE factures SET statut = 'ABANDONNEE' WHERE id = ${brouillon}`)).toMatch(/factures_abandon_coherent/);
+    expect(await sql(`UPDATE factures SET ${abandon("ab")} WHERE id = ${brouillon}`)).toMatch(/factures_abandon_coherent/);
+    expect(await sql(`UPDATE factures SET abandonne_par_id = ${technique.id} WHERE id = ${brouillon}`)).toMatch(/factures_abandon_coherent/); // des champs d'abandon sans statut
+    expect(await sql(`UPDATE factures SET ${abandon("Motif de test")}, numero = 'FAC-2026-9999', emise_le = now() WHERE id = ${brouillon}`)).toMatch(/factures_numero_a_l_emission/);
+    expect((await lireFacture(technique, brouillon))!).toMatchObject({ statut: "BROUILLON", numero: null, abandon: null });
+    expect((await lireFacture(technique, emise))!.statut).toBe("EMISE");
+    // Un abandon complet et cohérent, lui, est accepté par la base (le contrôle est donc bien celui des contraintes, pas un refus systématique).
+    expect(await sql(`UPDATE factures SET ${abandon("Motif de test")} WHERE id = ${brouillon}`)).toBe("accepté");
+    expect((await lireFacture(technique, brouillon))!).toMatchObject({ statut: "ABANDONNEE", numero: null });
+  });
+
+  it("un brouillon d'avenant s'abandonne ; l'incorporation peut alors être facturée de nouveau", async () => {
+    const p = await policeT2();
+    await emettreFacture(technique, await creerFactureAffaireNouvelle(technique, p.policeId, null, null), null);
+    await incorporerAdherents(gestionnaire, p.policeId, "2026-07-22", [{ nom_prenoms: "Nouvel Adhérent Inventé", date_naissance: "1992-02-02", sexe: "M", lien: "Salarié", formule: "SOLO" }], null);
+    const avenant = await creerFactureAvenant(technique, p.policeId, 2, null, null);
+    await expect(creerFactureAvenant(technique, p.policeId, 2, null, null)).rejects.toThrow(/déjà/);
+    await abandonnerFacture(technique, avenant, "Mauvaise date d'incorporation (test)", null);
+    expect((await lireFacture(technique, avenant))!).toMatchObject({ statut: "ABANDONNEE", numero: null });
+    expect((await facturesDePolice(technique, p.cotationId))!.possibles.avenants).toEqual([{ numero: 2, dateEffet: "2026-07-22", adherents: 1 }]);
+    const refait = await creerFactureAvenant(technique, p.policeId, 2, null, null);
+    expect(refait).not.toBe(avenant);
+  });
+
+  it("une facture annulée n'est pas « remplacée » par un brouillon de remplacement abandonné", async () => {
+    const p = await policeT3();
+    const f = await creerFactureAffaireNouvelle(technique, p.policeId, null, null);
+    await emettreFacture(technique, f, null);
+    await emettreAvoir(technique, f, "Erreur de facturation (avoir de test)", null);
+    const brouillon = await creerFactureAffaireNouvelle(technique, p.policeId, null, null);
+    expect((await lireFacture(technique, f))!.remplacante).toMatchObject({ id: brouillon, numero: null });
+    await abandonnerFacture(technique, brouillon, "Remplacement préparé par erreur (test)", null);
+    expect((await lireFacture(technique, f))!.remplacante).toBeNull();
+  });
+
+  it("l'émission ou l'avoir d'une facture abandonnée dit qu'elle est abandonnée, jamais « émise par quelqu'un d'autre »", async () => {
+    const brouillon = await creerFactureAffaireNouvelle(technique, (await policeT3()).policeId, null, null);
+    await abandonnerFacture(technique, brouillon, "Facture préparée par erreur (test)", null);
+    await expect(emettreFacture(technique, brouillon, null)).rejects.toThrow(/déjà abandonnée/);
+    await expect(emettreAvoir(technique, brouillon, "Un avoir sur un abandon (test)", null)).rejects.toThrow(/abandonnée.*rien à annuler/);
+  });
+
+  it("l'abandon libère la place : un renouvellement en cours bloquait le suivant, une affaire nouvelle abandonnée se refait", async () => {
+    const p = await policeT2();
+    const an = await creerFactureAffaireNouvelle(technique, p.policeId, null, null);
+    await emettreFacture(technique, an, null);
+    const ren = await creerFactureRenouvellement(technique, p.policeId, { lignes: null, nombreTranches: 1, envoyeA: null }, null);
+    await expect(creerFactureRenouvellement(technique, p.policeId, { lignes: null, nombreTranches: 1, envoyeA: null }, null)).rejects.toThrow(/déjà en cours/);
+    await abandonnerFacture(technique, ren, "Mauvais effectifs, à refaire (test)", null);
+    const renBis = await creerFactureRenouvellement(technique, p.policeId, { lignes: null, nombreTranches: 4, envoyeA: null }, null);
+    expect(renBis).not.toBe(ren);
+    expect((await lireFacture(technique, renBis))!.statut).toBe("BROUILLON");
+    const vue = (await facturesDePolice(technique, p.cotationId))!;
+    expect(vue.factures.map((f) => f.statut)).toEqual(expect.arrayContaining(["EMISE", "ABANDONNEE", "BROUILLON"]));
+
+    const q = await policeT3();
+    const brouillon = await creerFactureAffaireNouvelle(technique, q.policeId, null, null);
+    await abandonnerFacture(technique, brouillon, "Facture préparée trop tôt (test)", null);
+    const refaite = await creerFactureAffaireNouvelle(technique, q.policeId, null, null);
+    expect(refaite).not.toBe(brouillon);
   });
 });

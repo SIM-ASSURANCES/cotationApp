@@ -4,6 +4,7 @@ import ExcelJS from "exceljs";
 
 import { Prisma } from "@/generated/prisma/client";
 
+import { estComposition, type DonneesCalcul } from "@/domaine/calcul/composition";
 import { dateValide, type DateIso } from "@/domaine/calcul/dates";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
 import { normaliserNumeroPolice, numeroCertificatParDefaut } from "@/domaine/cotation/police";
@@ -69,7 +70,7 @@ async function formulesEnVigueur(produitCode: string) {
     include: { formules: { orderBy: { code: "asc" } } },
   });
   if (!version) throw new ErreurMetier(`Le produit ${produitCode} n'a pas de version en vigueur.`);
-  return { produit, formules: version.formules.map((f) => ({ code: f.code, libelle: f.libelle, ageMin: f.ageMin, ageMax: f.ageMax })) };
+  return { produit, parGaranties: version.modeTarification === "GARANTIES", formules: version.formules.map((f) => ({ code: f.code, libelle: f.libelle, ageMin: f.ageMin, ageMax: f.ageMax })) };
 }
 
 const ENTETE = { font: { bold: true, color: { argb: "FFFFFFFF" } }, fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F3A68" } } } as const;
@@ -77,19 +78,21 @@ const ENTETE = { font: { bold: true, color: { argb: "FFFFFFFF" } }, fill: { type
 /** Fichier modèle .xlsx d'un produit : colonnes du dictionnaire, une ligne d'exemple inventée, une feuille d'aide. */
 export async function modeleImport(acteur: UtilisateurCourant, produitCode: string): Promise<{ nom: string; contenu: Uint8Array }> {
   await exiger(acteur, false);
-  const { produit, formules } = await formulesEnVigueur(produitCode);
+  const { produit, formules, parGaranties } = await formulesEnVigueur(produitCode);
   const classeur = new ExcelJS.Workbook();
   classeur.creator = "SIM Documents";
   const feuille = classeur.addWorksheet("Adhérents");
   feuille.columns = COLONNES_IMPORT.map((c) => ({ header: c.cle, key: c.cle, width: Math.max(18, c.exemple.length + 4) }));
   feuille.getRow(1).eachCell((cellule) => Object.assign(cellule, { font: ENTETE.font, fill: ENTETE.fill }));
   // Ligne d'exemple, INVENTÉE : à remplacer par les vrais adhérents (elle serait contrôlée comme les autres).
-  feuille.addRow(Object.fromEntries(COLONNES_IMPORT.map((c) => [c.cle, c.cle === "formule" ? (formules[0]?.code ?? c.exemple) : c.exemple])));
+  feuille.addRow(Object.fromEntries(COLONNES_IMPORT.map((c) => [c.cle, c.cle === "formule" ? (parGaranties ? "" : (formules[0]?.code ?? c.exemple)) : c.exemple])));
   feuille.views = [{ state: "frozen", ySplit: 1 }];
   const listeFormules = formules.map((f) => f.code).join(",");
+  // La lettre de chaque colonne se déduit de l'ordre des colonnes du dictionnaire (jamais écrite en dur : une colonne ajoutée la décalerait).
+  const lettre = (cle: CleColonne) => String.fromCharCode(65 + COLONNES_IMPORT.findIndex((c) => c.cle === cle));
   for (let ligne = 2; ligne <= 5001; ligne++) {
-    feuille.getCell(`D${ligne}`).dataValidation = { type: "list", allowBlank: true, formulae: ['"M,F"'] };
-    if (listeFormules.length > 0 && listeFormules.length < 250) feuille.getCell(`F${ligne}`).dataValidation = { type: "list", allowBlank: false, formulae: [`"${listeFormules}"`] };
+    feuille.getCell(`${lettre("sexe")}${ligne}`).dataValidation = { type: "list", allowBlank: true, formulae: ['"M,F"'] };
+    if (!parGaranties && listeFormules.length > 0 && listeFormules.length < 250) feuille.getCell(`${lettre("formule")}${ligne}`).dataValidation = { type: "list", allowBlank: false, formulae: [`"${listeFormules}"`] };
   }
 
   const aide = classeur.addWorksheet("Aide");
@@ -100,7 +103,8 @@ export async function modeleImport(acteur: UtilisateurCourant, produitCode: stri
   aide.addRow([]);
   const t = aide.addRow(["Colonne", "Obligatoire", "Contenu", "Format"]);
   t.eachCell((c) => Object.assign(c, { font: ENTETE.font, fill: ENTETE.fill }));
-  for (const c of COLONNES_IMPORT) aide.addRow([c.cle, c.obligatoire ? "oui" : "non", c.libelle, c.format]);
+  for (const c of COLONNES_IMPORT) aide.addRow([c.cle, c.obligatoire && !(parGaranties && c.cle === "formule") ? "oui" : "non", c.libelle, c.format]);
+  if (parGaranties) aide.addRow(["", "", "Produit tarifé par garanties : pour une police dont la prime a été composée, la colonne « formule » reste VIDE (une formule saisie serait refusée). Elle n'est obligatoire que pour une police préparée avec des formules avant le changement de mode du produit."]);
   aide.addRow([]);
   const tf = aide.addRow(["Formule", "Âges", "Libellé"]);
   tf.eachCell((c) => Object.assign(c, { font: ENTETE.font, fill: ENTETE.fill }));
@@ -185,14 +189,15 @@ async function lireTableau(nom: string, contenu: Uint8Array): Promise<Tableau> {
 }
 
 /** Lignes du fichier : colonnes reconnues par leur en-tête ; les lignes entièrement vides sont ignorées. */
-export async function lireFichierImport(nom: string, contenu: Uint8Array): Promise<LigneBrute[]> {
+export async function lireFichierImport(nom: string, contenu: Uint8Array, options: { sansFormule?: boolean } = {}): Promise<LigneBrute[]> {
   const { entetes, lignes } = await lireTableau(nom, contenu);
   const index = new Map<CleColonne, number>();
   entetes.forEach((e, i) => {
     const cle = cleDEntete(e);
     if (cle && !index.has(cle)) index.set(cle, i);
   });
-  const manquantes = COLONNES_IMPORT.filter((c) => c.obligatoire && !index.has(c.cle)).map((c) => c.cle);
+  // Police par garanties (6.2b) : la colonne « formule » peut manquer (elle n'a pas de sens).
+  const manquantes = COLONNES_IMPORT.filter((c) => c.obligatoire && !index.has(c.cle) && !(c.cle === "formule" && options.sansFormule)).map((c) => c.cle);
   if (manquantes.length > 0) {
     throw new ErreurMetier(`Colonnes absentes de la première ligne du fichier : ${manquantes.join(", ")}. Partez du fichier modèle du produit.`);
   }
@@ -234,6 +239,7 @@ async function contexteControle(police: PoliceAvecVersion, dateEffet: DateIso, n
     aujourdhui: aujourdhui(),
     formulesProduit: new Map(version.formules.map((f) => [f.code, { ageMin: f.ageMin, ageMax: f.ageMax }])),
     formulesPolice: police.formulesRetenues as unknown as string[],
+    sansFormule: estComposition(police.donneesCalcul as unknown as DonneesCalcul),
     adherents,
     numerosPris: new Set([...polices, ...documents].map((x) => x.numero).concat(reserves)),
     numeroPolice: police.numero,
@@ -267,7 +273,7 @@ export async function controlerImport(acteur: UtilisateurCourant, policeId: numb
   await exiger(acteur, true);
   const police = await policeMere(policeId);
   await verifierDate(police, dateEffet);
-  const brutes = await lireFichierImport(fichier.nom, fichier.contenu);
+  const brutes = await lireFichierImport(fichier.nom, fichier.contenu, { sansFormule: estComposition(police.donneesCalcul as unknown as DonneesCalcul) });
   const ctx = await contexteControle(police, dateEffet, brutes.map((l) => String(l.cellules.numero_certificat ?? "")));
   const controlees = controlerLignes(brutes, ctx);
   const erreurs = controlees.filter((l) => l.erreurs.length > 0).length;

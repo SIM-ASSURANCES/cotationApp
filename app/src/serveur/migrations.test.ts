@@ -3,7 +3,7 @@
 // Ce test, sans base de données, vérifie :
 //   1. que chaque nom suit le format AAAAMMJJHHMMSS_nom et que les horodatages sont STRICTEMENT croissants (pas de doublon) ;
 //   2. que toute migration ajoutée après la session 4a porte un horodatage postérieur à 20261009100000, et toute migration
-//      ajoutée après la 4b un horodatage postérieur à 20261009110000 (phase 5) ;
+//      ajoutée après la 4b un horodatage postérieur à 20261009110000 (phase 5), et ainsi de suite jusqu'à la 6.2a (20261012100000) ;
 //   3. qu'aucune migration ne dépend d'un objet (table, fonction, type) créé par une migration nommée APRÈS elle.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -37,6 +37,10 @@ const DERNIERE_MIGRATION_4B = "20261009110000";
 /** Migration de la session 5a ; toute migration plus récente (corrections de la 5a, 5b) est nommée après elle. */
 const MIGRATIONS_5A = ["20261009120000_import_masse_stockage_differe"];
 const DERNIERE_MIGRATION_5A = "20261009120000";
+
+/** Migrations des sessions 5b, 6.0 et 6.2a ; toute migration plus récente (6.2b…) est nommée après la dernière. */
+const MIGRATIONS_5B_A_6_2A = ["20261009130000_taches_police", "20261009140000_avis_relances", "20261010090000_session_6_0", "20261012100000_mode_tarification"];
+const DERNIERE_MIGRATION_6_2A = "20261012100000";
 
 type Migration = { nom: string; sql: string };
 
@@ -130,6 +134,13 @@ describe("ordre des migrations du dépôt", () => {
     expect(noms.filter((n) => MIGRATIONS_5A.includes(n))).toEqual(MIGRATIONS_5A);
     const nouvelles = noms.filter((n) => !MIGRATIONS_4A.includes(n) && !MIGRATIONS_4B.includes(n) && !MIGRATIONS_5A.includes(n));
     expect(nouvelles.filter((n) => n.slice(0, 14) <= DERNIERE_MIGRATION_5A)).toEqual([]);
+  });
+
+  it(`toute migration plus récente que la 6.2a est nommée après ${DERNIERE_MIGRATION_6_2A}`, () => {
+    expect(noms.filter((n) => MIGRATIONS_5B_A_6_2A.includes(n)).sort()).toEqual(MIGRATIONS_5B_A_6_2A);
+    const anciennes = [...MIGRATIONS_4A, ...MIGRATIONS_4B, ...MIGRATIONS_5A, ...MIGRATIONS_5B_A_6_2A];
+    const nouvelles = noms.filter((n) => !anciennes.includes(n));
+    expect(nouvelles.filter((n) => n.slice(0, 14) <= DERNIERE_MIGRATION_6_2A)).toEqual([]);
   });
 
   it("aucune migration ne dépend d'une migration nommée après elle", () => {

@@ -4,13 +4,14 @@ import { redirect } from "next/navigation";
 
 import type { EtatFormulaire } from "@/composants/types";
 import { avertissementNumeroContrat } from "@/domaine/cotation/police";
-import { accepter, creerBrouillon, modifierBrouillon, refuser, renvoyerEnBrouillon, soumettre, valider } from "@/serveur/cotations";
+import { accepter, composerLaPrime, creerBrouillon, modifierBrouillon, refuser, renvoyerEnBrouillon, soumettre, valider } from "@/serveur/cotations";
 import { emettreCotation, reediter, soumettreCp } from "@/serveur/documents";
 import { ErreurMetier, type UtilisateurCourant } from "@/serveur/types";
 
 import { avecMessage, champ, executerAction } from "../executer";
 import { lireBeneficiaires, lireComplementsSouscripteur, lireContactsUrgence } from "../lire-complements";
 import { lireCotation } from "./lire-cotation";
+import { lireLignesDePrime } from "./lire-composition";
 
 /** Crée ou modifie un brouillon, puis ouvre sa fiche. */
 export async function enregistrerCotation(_etat: EtatFormulaire, donnees: FormData): Promise<EtatFormulaire> {
@@ -92,6 +93,14 @@ export async function reediterDocument(_e: EtatFormulaire, d: FormData): Promise
   const id = idDe(d);
   const documentId = Number(champ(d, "documentId"));
   return executerAction(async (acteur, ip) => void (await reediter(acteur, documentId, ip)), "Document réédité : nouvelle version.", `/cotations/${id}`);
+}
+
+/** La Technique compose la prime d'un brouillon d'un produit tarifé par garanties (session 6.2b) : lignes de prime et motif obligatoire. */
+export async function composerPrime(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
+  const id = idDe(d);
+  const lignes = lireLignesDePrime(d);
+  const motif = champ(d, "motif");
+  return executerAction(async (acteur, ip) => void (await composerLaPrime(acteur, id, lignes, motif, ip)), "Prime composée : les taxes sont calculées par ligne, les totaux sont à jour.", `/cotations/${id}`);
 }
 
 export async function renvoyerCotation(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {

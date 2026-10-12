@@ -539,6 +539,19 @@ export async function fichiersAssocies(ids: VersionsAssociees) {
   };
 }
 
+/**
+ * Session 6.2b : la prime d'un produit par garanties se détaille garantie par garantie (`garanties_souscrites[]`). Un modèle qui ne cite
+ * aucun de ces champs (par exemple un modèle fait pour les produits à la formule) produirait un document numéroté sans détail ni taux :
+ * refusé AVANT l'émission, comme l'absence de modèle.
+ */
+export function exigerDetailDesGaranties(libelleDocument: string, champsDuModele: string[], composee: boolean, precision = ""): void {
+  if (composee && !champsDuModele.some((c) => c.startsWith("garanties_souscrites"))) {
+    throw new ErreurMetier(
+      `Le modèle de ${libelleDocument} retenu ne détaille pas les garanties (aucun champ garanties_souscrites[]) : déposez et faites publier le modèle de ${libelleDocument} de ce produit (guide de balisage).${precision ? ` ${precision}` : ""}`,
+    );
+  }
+}
+
 /** Version PUBLIÉE en vigueur à une date d'un modèle (choisi par son type et son produit, ou par son code). */
 export async function versionPublieeEnVigueur(
   critere: { type: TypeModele; produitId: number | null; niveauRelance?: number | null } | { code: string },

@@ -26,7 +26,8 @@ function Resume({ v }: { v: VersionProduit }) {
     <section className="mb-4 rounded border border-border p-4 text-sm">
       <h3 className="mb-2 font-semibold">Version en vigueur depuis le {v.dateEffet}</h3>
       <p className="mb-2 text-neutral">
-        Tarification : {LIBELLE_MODE[v.modeTarification] ?? v.modeTarification} ·{" "}
+        Tarification : {LIBELLE_MODE[v.modeTarification] ?? v.modeTarification}
+        {v.garanties && v.garanties.length > 0 ? ` — garanties : ${v.garanties.map((g) => (g.branche ? `${g.libelle} (${g.branche})` : g.libelle)).join(", ")}${v.garantiesSaisieLibre === false ? " ; saisie libre interdite" : ""}` : ""} ·{" "}
         Arrondi : {v.arrondi.precision} F, {LIBELLE_SENS[v.arrondi.sens].toLowerCase()}, {LIBELLE_NIVEAU[v.arrondi.niveau].toLowerCase()} · Prorata {v.prorata.actif ? "actif" : "inactif"}
         {v.prorata.primeMinimale ? `, prime minimale ${net(v.prorata.primeMinimale)}` : ""} · Fractionnement jusqu'à {v.fractionnement.tranchesMax} tranche(s)
         {net(v.fractionnement.frais) !== "0" ? `, frais ${net(v.fractionnement.frais)}` : ""} · Validité {v.cotation.validiteMois} mois
@@ -98,7 +99,8 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
           <p className="mb-4 text-sm text-neutral">
             Un produit tarifé par garanties (SECURPRO, SECURHOME, SECURHOME +, RELAXACCIDENTS) a son mode « Par garanties » dès sa première version : une
             version « Par formule » plus ancienne resterait en vigueur, et calculée, pour tout document daté avant la date d&apos;effet de la suivante.
-            Une version « Par garanties » ne calcule rien : elle garde pourtant une formule de forme (prime unitaire 0, sans accessoires).
+            Une version « Par garanties » ne calcule rien : la prime est composée par la Technique, garantie par garantie, sur chaque cotation. Elle n&apos;a besoin d&apos;aucune
+            formule (la liste des garanties ci-dessous est facultative) ; un assuré n&apos;y a pas de formule.
           </p>
           <FormulaireAction action={ajouterUneVersion} libelleBouton="Enregistrer la version">
             <input type="hidden" name="codeProduit" value={produit.code} />
@@ -155,6 +157,27 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
               <Champ nom="validiteMois" libelle="Validité d'une cotation (mois, à partir de la date d'établissement)" valeur={String(base?.cotation.validiteMois ?? 3)} autoComplete="off" />
               <Champ nom="formulesMax" libelle="Formules comparées au plus" valeur={String(base?.cotation.formulesMax ?? 3)} autoComplete="off" />
               <Champ nom="seuil" libelle="Seuil de TTC pour la double validation (facultatif)" requis={false} valeur={base?.seuilValidationTtc ? net(base.seuilValidationTtc) : ""} autoComplete="off" />
+            </div>
+            <h3 className="mb-1 font-semibold">Garanties du produit (mode « Par garanties » seulement)</h3>
+            <p className="mb-2 text-sm text-neutral">
+              Une garantie par ligne : « Libellé » ou « Libellé ; BRANCHE » (la branche fiscale est alors proposée sur la ligne de prime). Elles servent de suggestions à la
+              composition de la prime. Aucune formule n&apos;est nécessaire dans ce mode.
+            </p>
+            <div className="mb-4 max-w-4xl">
+              <input type="hidden" name="garantiesPresentes" value="1" />
+              <label className="mb-2 block text-sm font-medium">
+                Garanties
+                <textarea
+                  name="garanties"
+                  rows={6}
+                  defaultValue={(base?.garanties ?? []).map((g) => (g.branche ? `${g.libelle} ; ${g.branche}` : g.libelle)).join("\n")}
+                  className={select}
+                  placeholder={"Incendie ; INCENDIE\nVol ; IARD"}
+                />
+              </label>
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input type="checkbox" name="garantiesSaisieLibre" defaultChecked={base?.garantiesSaisieLibre ?? true} /> Saisie libre autorisée (décochée : seuls les libellés de la liste sont acceptés)
+              </label>
             </div>
             <h3 className="mb-1 font-semibold">Références contractuelles (CDC §7)</h3>
             <p className="mb-2 text-sm text-neutral">

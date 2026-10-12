@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { problemesVersion } from "@/domaine/calcul/parametrage";
 
-import { lireVersion } from "./lire-version";
+import { lireGaranties, lireVersion } from "./lire-version";
 
 /** Formulaire tel que le navigateur l'envoie : T1 (BENI), deux formules. */
 function formulaireBeni(surcharge: Record<string, string> = {}): FormData {
@@ -71,5 +71,40 @@ describe("lireVersion : formulaire -> version saisie", () => {
 
     const inconnu = lireVersion(formulaireBeni({ modeTarification: "AU_HASARD" }));
     expect(problemesVersion(inconnu).join(" | ")).toContain("mode de tarification");
+  });
+});
+
+describe("session 6.2b : garanties du produit", () => {
+  it("session 6.2b : la ligne de formule vide affichée par défaut est ignorée (mode par garanties sans formule) ; une ligne commencée est gardée, pour que la validation la signale", () => {
+    const d = new FormData();
+    for (const [k, v] of Object.entries({ dateEffet: "2026-01-01", precision: "1", sens: "PROCHE", niveau: "LIGNE", tranchesMax: "4", frais: "0", validiteMois: "3", formulesMax: "3", modeTarification: "GARANTIES" })) d.append(k, v);
+    const ligne = (code: string, libelle: string, prime: string) => {
+      d.append("formule_code", code); d.append("formule_libelle", libelle); d.append("formule_taux", ""); d.append("formule_prime", prime);
+      d.append("formule_mode", "AUCUN"); d.append("formule_valeur", "0"); d.append("formule_age_min", ""); d.append("formule_age_max", "");
+    };
+    ligne("", "", ""); // la ligne vide du formulaire
+    expect(lireVersion(d).formules).toEqual([]);
+    ligne("", "Solo", ""); // commencée : gardée (le code et la prime manquent : la validation le dit)
+    expect(lireVersion(d).formules.map((f) => f.libelle)).toEqual(["Solo"]);
+  });
+
+  it("une garantie par ligne, « Libellé » ou « Libellé ; BRANCHE » (branche en majuscules), lignes vides ignorées", () => {
+    expect(lireGaranties("Incendie ; incendie\n\n  Vol  \r\nBris de glace;IARD\n")).toEqual([
+      { libelle: "Incendie", branche: "INCENDIE" },
+      { libelle: "Vol", branche: null },
+      { libelle: "Bris de glace", branche: "IARD" },
+    ]);
+    expect(lireGaranties("")).toEqual([]);
+  });
+
+  it("le formulaire porte la liste et la case « saisie libre » ; sans le marqueur du formulaire, la saisie libre reste permise", () => {
+    const d = formulaireBeni({ modeTarification: "GARANTIES", garanties: "Incendie ; INCENDIE\nVol", garantiesPresentes: "1" });
+    const avec = lireVersion(d);
+    expect(avec.garanties).toEqual([{ libelle: "Incendie", branche: "INCENDIE" }, { libelle: "Vol", branche: null }]);
+    expect(avec.garantiesSaisieLibre).toBe(false); // case décochée dans un formulaire qui la propose
+    d.set("garantiesSaisieLibre", "on");
+    expect(lireVersion(d).garantiesSaisieLibre).toBe(true);
+    expect(lireVersion(formulaireBeni()).garantiesSaisieLibre).toBe(true); // formulaire d'avant la 6.2b
+    expect(lireVersion(formulaireBeni()).garanties).toEqual([]);
   });
 });

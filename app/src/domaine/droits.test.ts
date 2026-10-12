@@ -41,6 +41,19 @@ describe("matrice par défaut (CDC §4)", () => {
   });
 });
 
+describe("« Composer une prime » (session 6.2b, D32)", () => {
+  const matrice = droitsParDefaut();
+  it("la Technique compose ; aucun autre profil n'a accès, pas même en lecture (la Direction Générale non plus)", () => {
+    for (const profil of PROFILS) {
+      expect(matrice[profil.code].COMPOSER_PRIME, profil.code).toBe(profil.code === "TECHNIQUE" ? "OUI" : "AUCUN");
+    }
+  });
+  it("le profil qui compose peut aussi valider une cotation par défaut : c'est la séparation des tâches (le composeur est contributeur) qui l'en empêche, pas la matrice", () => {
+    expect(matrice.TECHNIQUE.VALIDER_COTATION).toBe("VALIDE");
+    expect(matrice.TECHNIQUE.COMPOSER_PRIME).toBe("OUI");
+  });
+});
+
 describe("niveaux", () => {
   it("distingue lire, agir et valider", () => {
     expect(peutLire("AUCUN")).toBe(false);

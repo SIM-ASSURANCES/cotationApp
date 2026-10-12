@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import type { EtatFormulaire } from "@/composants/types";
 import type { EnvoyeA } from "@/domaine/facturation/factures";
 import {
+  abandonnerFacture,
   creerFactureAffaireNouvelle,
   creerFactureAvenant,
   creerFactureRenouvellement,
@@ -63,6 +64,12 @@ export async function modifierLaFacture(_e: EtatFormulaire, d: FormData): Promis
     "Brouillon modifié.",
     `/factures/${id}`,
   );
+}
+
+/** Abandonne un brouillon de facture (session 6.2b, H87) : motif obligatoire, définitif, aucun numéro consommé. */
+export async function abandonnerLaFacture(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
+  const id = identifiant(d, "factureId");
+  return executerAction(async (acteur, ip) => void (await abandonnerFacture(acteur, id, champ(d, "motif"), ip)), "Brouillon abandonné.", `/factures/${id}`);
 }
 
 export async function emettreLaFacture(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {

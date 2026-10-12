@@ -13,7 +13,7 @@ const ligne = (surcharge: Partial<LigneTaux>): LigneTaux => ({
   ...surcharge,
 });
 
-/** Taux de la loi communiqués par la Technique le 08/10/2026 (D18), en données de test. */
+/** Taux de la loi communiqués par la Technique le 08/10/2026 (D18), en données de test. L'IARD y est laissée à taux mixte (état d'avant la 6.2b) pour éprouver le refus. */
 const loi: LigneTaux[] = [
   ligne({ branche: "IA", tauxPourcent: "7.25" }),
   ligne({ branche: "DECES", tauxPourcent: "0" }),
@@ -46,7 +46,7 @@ describe("choix du taux de taxe (D18 ; régime de taxe, H29 fermée le 09/10/202
     expect(choisirTaux(lignes, "SANTE", "INDIVIDUEL", "2026-10-08").tauxPourcent).toBe("4");
   });
 
-  it("IARD : refuse le calcul tant que le taux mixte n'est pas paramétré", () => {
+  it("une branche à taux mixte (ici l'IARD de ce jeu d'essai, état d'avant la 6.2b) : refuse le calcul tant que le taux n'est pas paramétré", () => {
     expect(() => choisirTaux(loi, "IARD", "INDIVIDUEL", "2026-10-08")).toThrow("taux mixte non pris en charge : à paramétrer");
   });
 

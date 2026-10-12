@@ -4,13 +4,13 @@ import { notFound, redirect } from "next/navigation";
 import { AvertissementsReports } from "@/composants/AvertissementsReports";
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
-import { CANAUX_PAIEMENT, LIBELLE_CANAL, LONGUEUR_MIN_MOTIF_AVOIR } from "@/domaine/facturation/factures";
+import { CANAUX_PAIEMENT, LIBELLE_CANAL, LONGUEUR_MIN_MOTIF_ABANDON, LONGUEUR_MIN_MOTIF_AVOIR } from "@/domaine/facturation/factures";
 import { aujourdhui } from "@/serveur/parametrage";
 import { lireFacture } from "@/serveur/factures";
 import { exigerUtilisateur } from "@/serveur/session";
 import { ErreurAcces } from "@/serveur/types";
 
-import { emettreLAvoir, emettreLaFacture, enregistrerLePaiement, imputerLAvance, modifierLaFacture, relancerLesPdf } from "../actions";
+import { abandonnerLaFacture, emettreLAvoir, emettreLaFacture, enregistrerLePaiement, imputerLAvance, modifierLaFacture, relancerLesPdf } from "../actions";
 
 const f = (m: string) => formaterMontant(montant(m));
 const entree = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2";
@@ -39,6 +39,12 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
       <h1 className="mb-1 text-2xl font-semibold text-primary">{x.libelleType} {titre}</h1>
       <p className="mb-4 text-sm"><strong>Statut :</strong> {x.libelleStatut}{x.avoir ? <> par l'avoir <Link href={`/factures/${x.avoir.id}`} className="text-primary underline">{x.avoir.numero}</Link></> : null}</p>
 
+      {x.abandon ? (
+        <p role="status" className="mb-4 rounded border border-border bg-muted p-3 text-sm">
+          <strong>Brouillon abandonné</strong> par {x.abandon.par} le {new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }).format(x.abandon.le)}. Motif : {x.abandon.motif}. L&apos;abandon est définitif et aucun numéro n&apos;a été consommé ;
+          une nouvelle facture peut être préparée pour la même période.
+        </p>
+      ) : null}
       {x.statut === "A_VALIDER" ? (
         <p className="mb-4 rounded border border-warning-border bg-warning-bg p-3 text-sm">
           <strong>À valider :</strong> TTC {f(x.ttc)} F au-dessus du seuil du produit ({x.seuil ? f(x.seuil) : "?"} F). Demande de {x.demandePar}. Un profil habilité, autre que le demandeur, émet la facture (CDC §4.1).
@@ -68,10 +74,29 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
       </section>
 
       <h2 className="mb-2 text-lg font-semibold">Montants (moteur de calcul)</h2>
+      {c.garanties && c.garanties.length > 0 ? (
+        <div className="mb-6 overflow-x-auto">
+          <table className="w-full min-w-[52rem] border-collapse text-sm">
+            <thead>
+              <tr className="bg-primary text-right text-primary-foreground"><th className="p-2 text-left">Garantie</th><th className="p-2 text-left">Branche</th><th className="p-2">Prime nette (HT)</th><th className="p-2">Accessoires</th><th className="p-2">Taux</th><th className="p-2">Taxe</th><th className="p-2">TTC</th></tr>
+            </thead>
+            <tbody>
+              {c.garanties.map((g, i) => (
+                <tr key={i} className="border-b border-border text-right">
+                  <td className="p-2 text-left">{g.libelle}</td><td className="p-2 text-left">{g.branche}</td><td className="p-2 tabular-nums">{f(g.nette)}</td><td className="p-2 tabular-nums">{f(g.accessoires)}</td><td className="p-2 tabular-nums">{montant(g.tauxTaxe).toString().replace(".", ",")} %</td><td className="p-2 tabular-nums">{f(g.taxe)}</td><td className="p-2 tabular-nums">{f(g.ttc)}</td>
+                </tr>
+              ))}
+              <tr className="text-right font-semibold">
+                <td className="p-2 text-left">Total</td><td className="p-2" /><td className="p-2 tabular-nums">{f(c.totaux.nette)}</td><td className="p-2 tabular-nums">{f(c.totaux.accessoires)}</td><td className="p-2" /><td className="p-2 tabular-nums">{f(c.totaux.taxe)}</td><td className="p-2 tabular-nums">{f(c.totaux.ttc)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      ) : (
       <div className="mb-6 overflow-x-auto">
         <table className="w-full min-w-[46rem] border-collapse text-sm">
           <thead>
-            <tr className="bg-primary text-right text-primary-foreground"><th className="p-2 text-left">Formule</th><th className="p-2">Effectif</th><th className="p-2">Prime nette (HT)</th><th className="p-2">Accessoires</th><th className="p-2">Taxe ({c.taxe.tauxPourcent} %)</th><th className="p-2">TTC</th></tr>
+            <tr className="bg-primary text-right text-primary-foreground"><th className="p-2 text-left">Formule</th><th className="p-2">Effectif</th><th className="p-2">Prime nette (HT)</th><th className="p-2">Accessoires</th><th className="p-2">Taxe ({c.taxe.tauxPourcent !== null ? `${c.taxe.tauxPourcent} %` : "plusieurs taux"})</th><th className="p-2">TTC</th></tr>
           </thead>
           <tbody>
             {c.formules.map((l) => (
@@ -85,6 +110,7 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
           </tbody>
         </table>
       </div>
+      )}
 
       {x.etat ? (
         <section className="mb-6 max-w-4xl">
@@ -161,6 +187,20 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
                   <label className="mb-3 block text-sm">Nombre de tranches<input name="nombreTranches" type="number" min={1} defaultValue={Math.max(1, c.echeances.length)} className={entree} /></label>
                 </>
               ) : null}
+            </FormulaireAction>
+          </div>
+        ) : null}
+
+        {x.actions.abandonner ? (
+          <div className="rounded border border-border p-4">
+            <h2 className="mb-2 text-lg font-semibold">Abandonner le brouillon</h2>
+            <p className="mb-3 text-sm text-neutral">
+              Le brouillon passe au statut « Abandonnée », définitivement : aucun numéro n&apos;est consommé, la place de la facture se libère (une nouvelle facture peut être préparée pour la même
+              période). Le motif est obligatoire ({LONGUEUR_MIN_MOTIF_ABANDON} caractères au moins) et l&apos;abandon est journalisé.
+            </p>
+            <FormulaireAction action={abandonnerLaFacture} libelleBouton="Abandonner le brouillon" discret>
+              {cache}
+              <Champ nom="motif" libelle="Motif de l'abandon (obligatoire)" autoComplete="off" />
             </FormulaireAction>
           </div>
         ) : null}

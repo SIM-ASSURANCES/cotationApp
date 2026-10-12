@@ -20,6 +20,7 @@ export function FormulaireCotation({
   tranchesMax,
   formulesMax,
   intermediaires,
+  parGaranties = false,
   base,
 }: {
   produit: { code: string; libelle: string };
@@ -29,6 +30,8 @@ export function FormulaireCotation({
   formulesMax: number;
   /** Intermédiaires actifs du référentiel (session 6.0). */
   intermediaires: IntermediaireDocument[];
+  /** Produit en mode GARANTIES (session 6.2b) : pas de formules, la prime est composée ensuite par la Technique. */
+  parGaranties?: boolean;
   base?: DetailCotation;
 }) {
   const ligneDe = (code: string) => base?.lignes.find((l) => l.code === code);
@@ -96,7 +99,17 @@ export function FormulaireCotation({
         <Champ nom="nombreTranches" libelle={`Nombre de tranches (1 à ${tranchesMax})`} valeur={String(base?.nombreTranches ?? 1)} autoComplete="off" />
       </div>
 
-      <h2 className="mb-1 text-lg font-semibold">Formules</h2>
+      {parGaranties ? (
+        <section className="mb-4 max-w-3xl rounded border border-border bg-muted p-4 text-sm">
+          <h2 className="mb-1 text-lg font-semibold">Prime</h2>
+          <p>
+            Ce produit se tarife par garanties : la prime n&apos;est pas calculée automatiquement. Créez le brouillon (souscripteur, assurés, dates) ; la
+            Technique <strong>composera</strong> ensuite la prime, garantie par garantie, depuis la fiche de la cotation. Tant que la prime n&apos;est pas
+            composée, la cotation ne peut pas être soumise.
+          </p>
+        </section>
+      ) : null}
+      {parGaranties ? null : <><h2 className="mb-1 text-lg font-semibold">Formules</h2>
       <p className="mb-2 text-sm text-neutral">
         Saisissez l'effectif des formules à chiffrer (de 1 à {formulesMax}) ; laissez vide pour exclure une formule. La prime forcée est
         facultative : elle remplace le tarif, exige un motif et passe la cotation « À valider ». Les accessoires reprennent la valeur du
@@ -144,11 +157,12 @@ export function FormulaireCotation({
           </tbody>
         </table>
       </div>
-      <Champ nom="motifForcage" libelle="Motif du forçage (obligatoire si une prime est forcée)" requis={false} valeur={base?.motifForcage ?? ""} autoComplete="off" />
+      <Champ nom="motifForcage" libelle="Motif du forçage (obligatoire si une prime est forcée)" requis={false} valeur={base?.motifForcage ?? ""} autoComplete="off" /></>}
 
       <h2 className="mb-2 mt-2 text-lg font-semibold">Assurés (facultatif)</h2>
       <LignesAssures
-        formules={formules}
+        // Par garanties (6.2b) : pas de formule d'assuré (la composition ne distingue pas de formules) ; la colonne n'est pas proposée.
+        formules={parGaranties ? [] : formules}
         initiales={(base?.assures ?? []).map((a) => ({ nom: a.nom_prenoms, naissance: a.date_naissance, sexe: a.sexe, lien: a.lien, identification: a.num_identification ?? "", formule: a.formule }))}
       />
 

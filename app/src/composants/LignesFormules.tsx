@@ -27,9 +27,14 @@ const vide = (): LigneFormule => ({ code: "", libelle: "", tauxCouverture: "", p
 
 const entree = "w-full rounded border border-border bg-surface px-2 py-1";
 
+/** Une ligne « commencée » : au moins un champ renseigné. Une ligne entièrement vide n'est pas exigée (mode par garanties, 6.2b) : le serveur l'ignore. */
+const commencee = (l: LigneFormule): boolean =>
+  [l.code, l.libelle, l.tauxCouverture, l.primeUnitaire, l.ageMin, l.ageMax].some((v) => v.trim() !== "") || l.accessoireMode !== "AUCUN" || !["", "0"].includes(l.accessoireValeur.trim());
+
 /** Lignes de formules d'une version de produit : ajout et retrait de lignes. Les champs portent le même nom (getAll côté serveur). */
 export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
   const [lignes, setLignes] = useState<LigneFormule[]>(initiales.length > 0 ? initiales : [vide()]);
+  // Mode par garanties (session 6.2b) : aucune formule n'est nécessaire, on peut toutes les retirer. En mode par formule, la validation en exige une.
 
   const modifier = (i: number, champ: keyof LigneFormule, valeur: string) =>
     setLignes((l) => l.map((x, k) => (k === i ? { ...x, [champ]: valeur } : x)));
@@ -54,16 +59,16 @@ export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
           {lignes.map((l, i) => (
             <tr key={i} className="border-b border-border align-top">
               <td className="p-1">
-                <input name="formule_code" value={l.code} onChange={(e) => modifier(i, "code", e.target.value.toUpperCase())} aria-label="Code de la formule" className={entree} required />
+                <input name="formule_code" value={l.code} onChange={(e) => modifier(i, "code", e.target.value.toUpperCase())} aria-label="Code de la formule" className={entree} required={commencee(l)} />
               </td>
               <td className="p-1">
-                <input name="formule_libelle" value={l.libelle} onChange={(e) => modifier(i, "libelle", e.target.value)} aria-label="Libellé" className={entree} required />
+                <input name="formule_libelle" value={l.libelle} onChange={(e) => modifier(i, "libelle", e.target.value)} aria-label="Libellé" className={entree} required={commencee(l)} />
               </td>
               <td className="p-1">
                 <input name="formule_taux" value={l.tauxCouverture} onChange={(e) => modifier(i, "tauxCouverture", e.target.value)} aria-label="Taux de couverture" className={entree} />
               </td>
               <td className="p-1">
-                <input name="formule_prime" value={l.primeUnitaire} onChange={(e) => modifier(i, "primeUnitaire", e.target.value)} aria-label="Prime unitaire" inputMode="decimal" className={entree} required />
+                <input name="formule_prime" value={l.primeUnitaire} onChange={(e) => modifier(i, "primeUnitaire", e.target.value)} aria-label="Prime unitaire" inputMode="decimal" className={entree} required={commencee(l)} />
               </td>
               <td className="p-1">
                 <select name="formule_mode" value={l.accessoireMode} onChange={(e) => modifier(i, "accessoireMode", e.target.value)} aria-label="Mode des accessoires" className={entree}>
@@ -75,7 +80,7 @@ export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
                 </select>
               </td>
               <td className="p-1">
-                <input name="formule_valeur" value={l.accessoireValeur} onChange={(e) => modifier(i, "accessoireValeur", e.target.value)} aria-label="Valeur des accessoires" inputMode="decimal" className={entree} required />
+                <input name="formule_valeur" value={l.accessoireValeur} onChange={(e) => modifier(i, "accessoireValeur", e.target.value)} aria-label="Valeur des accessoires" inputMode="decimal" className={entree} required={commencee(l)} />
               </td>
               <td className="p-1">
                 <input name="formule_age_min" value={l.ageMin} onChange={(e) => modifier(i, "ageMin", e.target.value)} aria-label="Âge minimal" inputMode="numeric" className={entree} />
@@ -84,7 +89,7 @@ export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
                 <input name="formule_age_max" value={l.ageMax} onChange={(e) => modifier(i, "ageMax", e.target.value)} aria-label="Âge maximal" inputMode="numeric" className={entree} />
               </td>
               <td className="p-1">
-                <button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} disabled={lignes.length === 1} className="rounded border border-border px-2 py-1 disabled:opacity-40">
+                <button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} className="rounded border border-border px-2 py-1">
                   Retirer
                 </button>
               </td>

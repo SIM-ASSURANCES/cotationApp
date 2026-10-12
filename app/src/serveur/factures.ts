@@ -3,6 +3,8 @@ import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 
 import type { EntreeCalcul } from "@/domaine/calcul/calcul";
+import { estComposition, type DonneesCalcul } from "@/domaine/calcul/composition";
+import { compositionPossible, MESSAGE_AVENANT_GARANTIES, MESSAGE_RENOUVELLEMENT_GARANTIES, MESSAGE_TARIFICATION_PAR_GARANTIES } from "@/domaine/calcul/parametrage";
 import type { DateIso } from "@/domaine/calcul/dates";
 import { montant } from "@/domaine/calcul/montant";
 import { estRegimeTaxe, estTypeContrat, REGIME_PAR_DEFAUT } from "@/domaine/calcul/taxes";
@@ -26,6 +28,7 @@ import {
   nomFacture,
   periodeRenouvellement,
   problemesEnvoyeA,
+  problemesAbandon,
   problemesMotifAvoir,
   type CanalPaiement,
   type ContenuFacture,
@@ -42,9 +45,9 @@ import { contexteProduit, montantsDu } from "./documents";
 import { avanceDisponible, encaissementsDe, inclusionImputations, reportsEnAttente, versEncaissements, type ReportEnAttente } from "./encaissements";
 import { niveauDuProfil } from "./droits";
 import { versIntermediairesDocument } from "./intermediaires";
-import { modelesAssocies, versionPublieeEnVigueur } from "./modeles";
+import { exigerDetailDesGaranties, modelesAssocies, versionPublieeEnVigueur } from "./modeles";
 import { allouerNumero } from "./numerotation";
-import { aujourdhui, construireEntree, executerCalcul, exigerCalculAutomatiqueEnVigueur, resoudreContexte } from "./parametrage";
+import { aujourdhui, construireEntree, executerCalcul, exigerCalculAutomatiqueEnVigueur, resoudreContexte, resoudreVersion } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { figer, produire, produireEnAttente, prochaineVersion, type AssociesFiges, type IssueProduction, type TypeAProduire } from "./production";
 import { lireParametresSociete } from "./societe";
@@ -134,7 +137,7 @@ async function contenuCalcule(
   police: PoliceChargee,
   produitId: number,
   versionDateEffet: Date,
-  entree: EntreeCalcul,
+  entree: DonneesCalcul,
   o: { assures: Assure[]; ordresSansPrime: number[]; echeances: ContenuFacture["echeances"]; envoyeA: EnvoyeA | null },
 ): Promise<ContenuFacture> {
   const contexte = await contexteProduit(produitId, versionDateEffet);
@@ -155,6 +158,8 @@ async function contenuCalcule(
     dateEcheance: entree.dateEcheance,
     joursCouverts: m.resultat.joursCouverts,
     formules: m.formules,
+    // Produit tarifé par garanties (session 6.2b) : une ligne par garantie ; absent pour une facture à la formule (contenu inchangé).
+    ...(m.garanties.length > 0 ? { garanties: m.garanties } : {}),
     totaux: m.totaux,
     taxe: m.taxe,
     echeances: o.echeances,
@@ -222,11 +227,11 @@ export async function creerFactureAffaireNouvelle(acteur: UtilisateurCourant, po
     if (!(await tx.documentEmis.findFirst({ where: { policeId, type: "CP" }, select: { id: true } }))) {
       throw new ErreurMetier("Émettez d'abord les conditions particulières de la police : la facture d'affaire nouvelle les suit (H48).");
     }
-    const existante = await tx.facture.findFirst({ where: { policeId, type: "AFFAIRE_NOUVELLE", statut: { not: "ANNULEE" } } });
+    const existante = await tx.facture.findFirst({ where: { policeId, type: "AFFAIRE_NOUVELLE", statut: { notIn: ["ANNULEE", "ABANDONNEE"] } } });
     if (existante) throw new ErreurMetier(`La facture d'affaire nouvelle de cette police existe déjà (${existante.numero ?? "brouillon"}).`);
     const initiale = police.adherents.find((v) => v.motif === "INITIALE");
     const assures = estContratDeGroupe(police.typeContrat) && initiale ? (initiale.adherents as unknown as Assure[]) : listeCourante(police);
-    const contenu = await contenuCalcule(police, police.cotation.produitId, police.cotation.versionDateEffet, police.donneesCalcul as unknown as EntreeCalcul, {
+    const contenu = await contenuCalcule(police, police.cotation.produitId, police.cotation.versionDateEffet, police.donneesCalcul as unknown as DonneesCalcul, {
       assures,
       ordresSansPrime: [],
       echeances: echeancesJson(police.echeancier),
@@ -248,7 +253,7 @@ export type SaisieRenouvellement = { lignes: { codeFormule: string; effectif: nu
 
 /** Dernière période facturée (affaire nouvelle ou renouvellement non annulé) : le renouvellement la suit. */
 async function dernierePeriode(tx: Tx, policeId: number) {
-  return tx.facture.findFirst({ where: { policeId, type: { in: ["AFFAIRE_NOUVELLE", "RENOUVELLEMENT"] }, statut: { not: "ANNULEE" } }, orderBy: { dateEcheance: "desc" } });
+  return tx.facture.findFirst({ where: { policeId, type: { in: ["AFFAIRE_NOUVELLE", "RENOUVELLEMENT"] }, statut: { notIn: ["ANNULEE", "ABANDONNEE"] } }, orderBy: { dateEcheance: "desc" } });
 }
 
 /**
@@ -261,8 +266,14 @@ async function calculRenouvellement(tx: Tx, police: PoliceChargee, precedente: L
   const { dateEffet, dateEcheance } = periodeRenouvellement(depuisDate(precedente.dateEcheance));
   // Régime de taxe de la cotation (session 6.0) ; cotation plus ancienne : le régime proposé pour son type de contrat.
   const regime = police.cotation.regimeTaxe && estRegimeTaxe(police.cotation.regimeTaxe) ? police.cotation.regimeTaxe : REGIME_PAR_DEFAUT[police.typeContrat];
+  // Session 6.2b (H90) : le renouvellement d'une police à garanties n'est pas géré (la composition de la nouvelle période non plus), que la période
+  // précédente ait été composée ou que le produit soit passé en mode par garanties depuis.
+  const precedenteFigee = contenuDe(precedente).entree as DonneesCalcul;
+  if (estComposition(precedenteFigee) || compositionPossible((await resoudreVersion(tx, police.produitCode, dateEffet)).version.modeTarification)) {
+    throw new ErreurMetier(MESSAGE_RENOUVELLEMENT_GARANTIES);
+  }
   const contexte = await resoudreContexte(tx, police.produitCode, dateEffet, dateEffet, regime);
-  const avant = contenuDe(precedente).entree as EntreeCalcul;
+  const avant = precedenteFigee;
   const lignes = saisie.lignes ?? avant.lignes.map((l) => ({ codeFormule: l.code, effectif: l.effectif }));
   if (lignes.length === 0 || lignes.some((l) => !Number.isInteger(l.effectif) || l.effectif < 1)) throw new ErreurMetier("Chaque formule renouvelée a un effectif entier d'au moins 1.");
   const nombreTranches = saisie.nombreTranches ?? Math.max(1, contenuDe(precedente).echeances.length);
@@ -324,7 +335,10 @@ export async function creerFactureAvenant(acteur: UtilisateurCourant, policeId: 
       orderBy: { dateEffet: "desc" },
     });
     if (!periode) throw new ErreurMetier(`Aucune facture émise ne couvre le ${date} : émettez d'abord la facture de la période où l'incorporation prend effet.`);
-    const base = contenuDe(periode).entree as EntreeCalcul;
+    const baseFigee = contenuDe(periode).entree as DonneesCalcul;
+    // Session 6.2b (H90) : la prime d'un avenant à garanties n'est pas gérée ; rien n'est calculé en silence.
+    if (estComposition(baseFigee)) throw new ErreurMetier(MESSAGE_AVENANT_GARANTIES);
+    const base = baseFigee;
     const concernes = new Set(version.concernes as unknown as number[]);
     const incorpores = (version.adherents as unknown as Assure[]).filter((a) => concernes.has(a.ordre));
     if (incorpores.length === 0) throw new ErreurMetier("Cette incorporation n'ajoute aucun adhérent.");
@@ -359,6 +373,41 @@ export async function creerFactureAvenant(acteur: UtilisateurCourant, policeId: 
   }, "Cette incorporation est déjà facturée.");
 }
 
+// ---------------------------------------------------------------- Abandon d'un brouillon (session 6.2b, H87)
+
+/**
+ * Abandonne un brouillon de facture (affaire nouvelle, renouvellement ou avenant), y compris une demande « À valider » : statut
+ * « Abandonnée », MOTIF OBLIGATOIRE, journalisé, DÉFINITIF. Aucun numéro n'est consommé (le brouillon n'en a pas : la base l'impose). La place
+ * de la facture se libère : on peut préparer une nouvelle facture pour la même période. Même droit que la modification d'un brouillon.
+ */
+export async function abandonnerFacture(acteur: UtilisateurCourant, factureId: number, motif: string, adresseIp: string | null): Promise<void> {
+  const niveau = await exiger(acteur, "EMETTRE_FACTURE", "émission de facture");
+  await obtenirPrisma().$transaction(async (tx) => {
+    const f = await verrouiller(tx, factureId);
+    const problemes = problemesAbandon(f, motif);
+    if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
+    // Une demande « À valider » est retirée par son demandeur, ou par un profil qui peut décider (au-dessus du seuil, « Oui » seulement) :
+    // un profil « Oui (sous seuil) » qui n'est pas le demandeur ne détruit pas la demande d'un autre avant que la Technique l'ait vue.
+    if (f.statut === "A_VALIDER" && f.demandeParId !== acteur.id && validationContratRequise(niveau, f.ttc.toFixed(), await seuilDe(f.produitId, f.versionDateEffet))) {
+      throw new ErreurMetier(`Cette demande de validation a été faite par ${f.demandePar} : seul son demandeur, ou un profil qui peut émettre au-dessus du seuil, l'abandonne.`);
+    }
+    const maintenant = new Date();
+    await tx.facture.update({ where: { id: f.id }, data: { statut: "ABANDONNEE", abandonneParId: acteur.id, abandonnePar: acteur.identifiant, abandonneLe: maintenant, motifAbandon: motif.trim() } });
+    await journaliser(
+      {
+        acteur: auteur(acteur),
+        action: "FACTURE_ABANDONNEE",
+        objetType: "facture",
+        objetId: f.id,
+        avant: { statut: f.statut, type: f.type, ttc: f.ttc.toFixed(), dateEffet: depuisDate(f.dateEffet) },
+        apres: { statut: "ABANDONNEE", motif: motif.trim() },
+        adresseIp,
+      },
+      tx,
+    );
+  });
+}
+
 // ---------------------------------------------------------------- Modification d'un brouillon
 
 /** Brouillon seulement : « Envoyé à » ; pour un renouvellement, aussi les effectifs et le nombre de tranches (recalcul). */
@@ -366,6 +415,7 @@ export async function modifierFacture(acteur: UtilisateurCourant, factureId: num
   await exiger(acteur, "EMETTRE_FACTURE", "émission de facture");
   await obtenirPrisma().$transaction(async (tx) => {
     const f = await verrouiller(tx, factureId);
+    if (f.statut === "ABANDONNEE") throw new ErreurMetier("Ce brouillon est abandonné : il ne se modifie plus.");
     if (f.statut !== "BROUILLON") throw new ErreurMetier("Seul un brouillon se modifie. Une facture émise se corrige par un avoir puis une nouvelle facture.");
     const police = (await chargerPolice(tx, f.policeId))!;
     const avant = contenuDe(f);
@@ -430,6 +480,7 @@ export function donnees(
     dateEcheance: contenu.dateEcheance,
     joursCouverts: contenu.joursCouverts,
     formules: contenu.formules,
+    garanties: contenu.garanties,
     totaux: contenu.totaux,
     taxe: contenu.taxe,
     echeances: contenu.echeances,
@@ -495,10 +546,21 @@ export async function emettreFacture(acteur: UtilisateurCourant, factureId: numb
   const prisma = obtenirPrisma();
   const lue = await prisma.facture.findUnique({ where: { id: factureId } });
   if (!lue || lue.type === "AVOIR") throw new ErreurMetier("Facture introuvable.");
-  if (lue.statut !== "BROUILLON" && lue.statut !== "A_VALIDER") throw new ErreurMetier(`Cette facture est déjà ${LIBELLE_STATUT_FACTURE[lue.statut as StatutFacture].toLowerCase()} (${lue.numero}).`);
+  if (lue.statut !== "BROUILLON" && lue.statut !== "A_VALIDER") {
+    throw new ErreurMetier(`Cette facture est déjà ${LIBELLE_STATUT_FACTURE[lue.statut as StatutFacture].toLowerCase()}${lue.numero ? ` (${lue.numero})` : ""}.`);
+  }
   // Session 6.2a : un renouvellement prépare des montants au tarif en vigueur à sa date d'effet ; si ce produit est passé en GARANTIES entre-temps,
   // il ne s'émet plus (ni lui, ni la demande de validation). Affaire nouvelle et avenant viennent de la police, figée avec sa version (T10).
-  if (lue.type === "RENOUVELLEMENT") await exigerCalculAutomatiqueEnVigueur(prisma, lue.produitId, depuisDate(lue.dateEffet));
+  if (lue.type === "RENOUVELLEMENT") {
+    try {
+      await exigerCalculAutomatiqueEnVigueur(prisma, lue.produitId, depuisDate(lue.dateEffet));
+    } catch (erreur) {
+      if (erreur instanceof ErreurMetier && erreur.message === MESSAGE_TARIFICATION_PAR_GARANTIES) {
+        throw new ErreurMetier(`${MESSAGE_TARIFICATION_PAR_GARANTIES}. Ce brouillon de renouvellement a été préparé avant le changement de mode du produit : il ne s'émet plus, abandonnez-le (« Abandonner le brouillon »).`);
+      }
+      throw erreur;
+    }
+  }
 
   const ttc = lue.ttc.toFixed();
   const seuil = await seuilDe(lue.produitId, lue.versionDateEffet);
@@ -518,9 +580,16 @@ export async function emettreFacture(acteur: UtilisateurCourant, factureId: numb
 
   const date = aujourdhui();
   const modele = await modeleRetenu("FACTURE", lue.produitId, date);
+  // Session 6.2b : la facture d'un produit par garanties se détaille garantie par garantie : refus AVANT l'attribution du numéro si le modèle retenu
+  // (celui du produit, sinon le modèle commun, fait pour les produits à la formule) ne cite aucun champ `garanties_souscrites[]`.
+  if ((contenuDe(lue).garanties ?? []).length > 0) {
+    const { analyse } = await prisma.modeleVersion.findUniqueOrThrow({ where: { id: modele.modeleVersionId }, select: { analyse: true } });
+    exigerDetailDesGaranties("facture", (analyse as unknown as { champs?: string[] }).champs ?? [], true, "Aucun numéro n'a été consommé.");
+  }
   const commun = await lireParametresSociete(date);
   const resultat = await prisma.$transaction(async (tx) => {
     const f = await verrouiller(tx, factureId);
+    if (f.statut === "ABANDONNEE") throw new ErreurMetier("Ce brouillon vient d'être abandonné : rechargez la page.");
     if (f.statut !== "BROUILLON" && f.statut !== "A_VALIDER") throw new ErreurMetier("Cette facture vient d'être émise par quelqu'un d'autre.");
     const police = (await chargerPolice(tx, f.policeId))!;
     const contenu = contenuDe(f);
@@ -586,7 +655,15 @@ export async function emettreAvoir(acteur: UtilisateurCourant, factureId: number
   const commun = await lireParametresSociete(date);
   const resultat = await prisma.$transaction(async (tx) => {
     const f = await verrouiller(tx, factureId);
-    if (f.statut !== "EMISE" || !f.numero) throw new ErreurMetier(f.statut === "ANNULEE" ? "Cette facture est déjà annulée par un avoir." : "Seule une facture émise s'annule par un avoir ; un brouillon reste sans suite.");
+    if (f.statut !== "EMISE" || !f.numero) {
+      throw new ErreurMetier(
+        f.statut === "ANNULEE"
+          ? "Cette facture est déjà annulée par un avoir."
+          : f.statut === "ABANDONNEE"
+            ? "Cette facture a été abandonnée : elle n'a jamais été émise, il n'y a rien à annuler."
+            : "Seule une facture émise s'annule par un avoir ; un brouillon reste sans suite.",
+      );
+    }
     const police = (await chargerPolice(tx, f.policeId))!;
     const contenu = contenuAvoir(contenuDe(f));
     const numero = await allouerNumero(tx, "AV", date);
@@ -963,7 +1040,9 @@ export type FactureLue = LigneFactureLue & {
   avance: { disponible: string; proposee: string; reportsEnAttente: ReportEnAttente[] };
   /** Facture annulée : sommes reportées en avance sur la police (H47). */
   reports: { recu: string | null; date: DateIso; montant: string }[];
-  actions: { modifier: boolean; emettre: boolean; emettreSousSeuil: boolean; avoir: boolean; payer: boolean; imputer: boolean; relancer: boolean };
+  /** Brouillon abandonné (session 6.2b, H87) : qui, quand, pourquoi. */
+  abandon: { par: string; le: Date; motif: string } | null;
+  actions: { abandonner: boolean; modifier: boolean; emettre: boolean; emettreSousSeuil: boolean; avoir: boolean; payer: boolean; imputer: boolean; relancer: boolean };
 };
 
 const inclusion = {
@@ -1034,7 +1113,8 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
     f.factureOrigineId ? prisma.facture.findUnique({ where: { id: f.factureOrigineId }, select: { id: true, numero: true } }) : null,
     f.annuleeParId ? prisma.facture.findUnique({ where: { id: f.annuleeParId }, select: { id: true, numero: true } }) : null,
     f.remplaceId ? prisma.facture.findUnique({ where: { id: f.remplaceId }, select: { id: true, numero: true } }) : null,
-    prisma.facture.findFirst({ where: { remplaceId: f.id }, select: { id: true, numero: true, statut: true }, orderBy: { id: "desc" } }),
+    // Un brouillon de remplacement abandonné ne remplace rien.
+    prisma.facture.findFirst({ where: { remplaceId: f.id, statut: { not: "ABANDONNEE" } }, select: { id: true, numero: true, statut: true }, orderBy: { id: "desc" } }),
   ]);
   const seuil = f.type === "AVOIR" ? null : await seuilDe(f.produitId, f.versionDateEffet);
   const disponible = await avanceDisponible(prisma, f.policeId);
@@ -1060,7 +1140,11 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
     documents: f.aProduire.map((p) => ({ numero: p.numero, version: p.version, type: p.type, statut: p.statut as DocumentFacture["statut"], documentId: p.documentId, tentatives: p.tentatives, derniereErreur: p.derniereErreur })),
     avance: { disponible, proposee, reportsEnAttente: await reportsEnAttente(prisma, f.policeId) },
     reports: reports.map((r) => ({ recu: r.paiement?.numeroRecu ?? null, date: depuisDate(r.date), montant: r.montant.toFixed() })),
+    abandon: f.statut === "ABANDONNEE" && f.abandonnePar && f.abandonneLe && f.motifAbandon ? { par: f.abandonnePar, le: f.abandonneLe, motif: f.motifAbandon } : null,
     actions: {
+      // Un brouillon ou une demande « À valider » s'abandonne (H87) ; jamais un avoir ni une facture émise.
+      // Une demande « À valider » d'un autre ne s'abandonne que par un profil qui peut décider (voir abandonnerFacture).
+      abandonner: ouverte && f.type !== "AVOIR" && peutAgir(d.facture) && !(f.statut === "A_VALIDER" && sousSeuil && f.demandeParId !== acteur.id),
       modifier: f.statut === "BROUILLON" && peutAgir(d.facture),
       // Le demandeur d'une validation ne l'émet pas lui-même ; une demande « À valider » ne se refait pas.
       emettre: ouverte && peutAgir(d.facture) && !(f.statut === "A_VALIDER" && (sousSeuil || f.demandeParId === acteur.id)),
@@ -1075,7 +1159,8 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
 }
 
 export type FacturesDePolice = {
-  police: { id: number; numero: string; cotationId: number; typeContrat: string | null; dateEffet: DateIso; dateEcheance: DateIso; souscripteur: string; cpEmises: boolean };
+  /** `composee` : la prime de la police est celle d'une composition (6.2b) ; son renouvellement et ses avenants ne sont pas gérés (H90). */
+  police: { id: number; numero: string; cotationId: number; typeContrat: string | null; dateEffet: DateIso; dateEcheance: DateIso; souscripteur: string; cpEmises: boolean; composee: boolean };
   factures: LigneFactureLue[];
   possibles: { affaireNouvelle: boolean; renouvellement: { dateEffet: DateIso; dateEcheance: DateIso } | null; avenants: { numero: number; dateEffet: DateIso; adherents: number }[] };
   /** Avance de la police (H33, H47) : solde créditeur et mouvements. */
@@ -1091,7 +1176,7 @@ export async function facturesDePolice(acteur: UtilisateurCourant, cotationId: n
   if (!police) return null;
   const toutes = await prisma.facture.findMany({ where: { policeId: police.id }, include: inclusion, orderBy: [{ id: "asc" }] });
   const cpEmises = (await prisma.documentEmis.count({ where: { policeId: police.id, type: "CP" } })) > 0;
-  const vivantes = toutes.filter((f) => f.statut !== "ANNULEE");
+  const vivantes = toutes.filter((f) => f.statut !== "ANNULEE" && f.statut !== "ABANDONNEE");
   const derniere = vivantes.filter((f) => f.type === "AFFAIRE_NOUVELLE" || f.type === "RENOUVELLEMENT").sort((a, b) => b.dateEcheance.getTime() - a.dateEcheance.getTime())[0];
   const facturees = new Set(vivantes.filter((f) => f.type === "AVENANT").map((f) => f.adherentsVersion));
   return {
@@ -1104,6 +1189,7 @@ export async function facturesDePolice(acteur: UtilisateurCourant, cotationId: n
       dateEcheance: depuisDate(police.dateEcheance),
       souscripteur: nomFacture(police.souscripteur as unknown as Souscripteur),
       cpEmises,
+      composee: estComposition(police.donneesCalcul as unknown as DonneesCalcul),
     },
     factures: toutes.map(sansEtat),
     possibles: {

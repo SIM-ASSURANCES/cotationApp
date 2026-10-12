@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import {
   calculAutomatiquePossible,
+  compositionPossible,
   MESSAGE_TARIFICATION_PAR_GARANTIES,
   MODES_TARIFICATION,
+  problemesLibellesGaranties,
   problemesVersion,
   type VersionSaisie,
 } from "./parametrage";
@@ -46,5 +48,44 @@ describe("session 6.2a : mode de tarification", () => {
     const problemes = problemesVersion(version({ modeTarification: "INVALIDE" as never }));
     expect(problemes).toHaveLength(1);
     expect(problemes[0]).toContain("mode de tarification");
+  });
+});
+
+describe("session 6.2b : composition, formules facultatives et liste des garanties", () => {
+  it("seul GARANTIES se compose (la chaîne exacte) ; FORMULE se calcule, jamais les deux", () => {
+    expect(compositionPossible("GARANTIES")).toBe(true);
+    for (const mode of ["FORMULE", "", "garanties", "AUTRE"]) expect(compositionPossible(mode), mode).toBe(false);
+    for (const mode of MODES_TARIFICATION) expect(compositionPossible(mode) && calculAutomatiquePossible(mode)).toBe(false);
+  });
+
+  it("une version par garanties n'a pas besoin de formule (H85 relâchée) ; à la formule, il en faut une", () => {
+    expect(problemesVersion(version({ modeTarification: "GARANTIES", formules: [] }))).toEqual([]);
+    expect(problemesVersion(version({ modeTarification: "FORMULE", formules: [] }))).toEqual(["Un produit doit avoir au moins une formule."]);
+  });
+
+  it("les frais de fractionnement ne s'ajoutent pas en mode par garanties (ils se saisissent comme une ligne de prime)", () => {
+    const frais = { tranchesMax: 4, repartitionPourcent: null, decalagesMois: null, frais: "500" };
+    expect(problemesVersion(version({ modeTarification: "GARANTIES", fractionnement: frais })).join(" ")).toContain("frais de fractionnement");
+    expect(problemesVersion(version({ modeTarification: "FORMULE", fractionnement: frais }))).toEqual([]);
+  });
+
+  it("liste des garanties : libellés uniques de 1 à 100 caractères, branche en code valide, 30 au plus, interdite à la formule", () => {
+    const g = (libelle: string, branche: string | null = null) => ({ libelle, branche });
+    expect(problemesVersion(version({ modeTarification: "GARANTIES", garanties: [g("Incendie", "INCENDIE"), g("Vol")] }))).toEqual([]);
+    expect(problemesVersion(version({ modeTarification: "GARANTIES", garanties: [g("Vol"), g(" vol ")] })).join(" ")).toContain("en double");
+    expect(problemesVersion(version({ modeTarification: "GARANTIES", garanties: [g("")] })).join(" ")).toContain("libellé");
+    expect(problemesVersion(version({ modeTarification: "GARANTIES", garanties: [g("x".repeat(101))] })).join(" ")).toContain("libellé");
+    expect(problemesVersion(version({ modeTarification: "GARANTIES", garanties: [g("Vol", "iard")] })).join(" ")).toContain("branche invalide");
+    expect(problemesVersion(version({ modeTarification: "GARANTIES", garanties: Array.from({ length: 31 }, (_, i) => g(`G${i}`)) })).join(" ")).toContain("Au plus 30");
+    expect(problemesVersion(version({ modeTarification: "FORMULE", garanties: [g("Vol")] })).join(" ")).toContain("n'a de sens qu'en mode par garanties");
+    expect(problemesVersion(version({ modeTarification: "GARANTIES", garantiesSaisieLibre: false, garanties: [] })).join(" ")).toContain("saisie libre est interdite");
+  });
+
+  it("libellés refusés : seulement quand la saisie libre est interdite, sans tenir compte de la casse ni des espaces de bord", () => {
+    const v = { garanties: [{ libelle: "Incendie", branche: null }, { libelle: "Vol", branche: null }] };
+    expect(problemesLibellesGaranties({ ...v, garantiesSaisieLibre: true }, ["Bris de glace"])).toEqual([]);
+    expect(problemesLibellesGaranties({ garanties: [], garantiesSaisieLibre: undefined }, ["Quoi que ce soit"])).toEqual([]);
+    expect(problemesLibellesGaranties({ ...v, garantiesSaisieLibre: false }, ["  vol ", "INCENDIE"])).toEqual([]);
+    expect(problemesLibellesGaranties({ ...v, garantiesSaisieLibre: false }, ["Vol", "Bris de glace"])).toEqual(["Ligne 2 : « Bris de glace » n'est pas une garantie de ce produit (la saisie libre est interdite)."]);
   });
 });

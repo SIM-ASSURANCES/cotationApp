@@ -78,6 +78,25 @@ Puis, dans un navigateur : connexion, page « Journal d'audit » (la connexion y
 
 `generateur: "ko"` dans `/api/sante` signifie que le générateur est arrêté, que LibreOffice est introuvable dans l'image, **ou** que Tahoma ou Calibri manque (polices non copiées dans `generateur/polices/` avant la construction) : le `/sante` du générateur en donne le détail (`"polices_manquantes"`).
 
+## Après l'installation : produits à paramétrer par la Technique (D31, D32)
+
+> **À faire sur le serveur, par la Technique, avant la première cotation de ces produits.** Le dépôt, les données de démarrage et les migrations ne créent **aucun produit réel** : cette étape est une étape de mise en production, pas de développement.
+
+**SECURPRO, SECURHOME, SECURHOME + et RELAXACCIDENTS se tarifient par garanties.** Chacun doit être créé (écran « Paramétrage > Produits ») avec une **première version en mode « Par garanties »**, jamais en mode « Par formule » : une version « Par formule » plus ancienne continuerait de calculer, avec une prime fausse, tout document daté avant la date d'effet de la version suivante. En mode « Par garanties », le calcul automatique est refusé ; la prime est **composée par la Technique** (droit « Composer une prime ») sur la cotation, garantie par garantie (D32).
+
+Ordre à suivre, après `docker compose run --rm outils npm run initialiser` (qui crée les branches et les taux de démarrage, dont **INCENDIE à 12,5 %** et **IARD à 7,25 %**) :
+
+1. **Branches et taxes** (installation faite **avant** la session 6.2b) : `initialiser` n'écrase jamais ce qui existe déjà.
+   - Dans l'écran « Taxes », la branche IARD a gardé sa ligne « taux mixte » : ajouter une nouvelle ligne IARD à 7,25 %, avec sa date d'effet (l'ancienne ligne est clôturée la veille).
+   - Dans l'écran « Branches », IARD a gardé son ancien libellé « Incendie, accidents et risques divers (IARD) » alors que INCENDIE existe maintenant à côté : le renommer (« Autres dommages aux biens (IARD) ») pour qu'on ne les confonde pas.
+   - Vérifier, pour finir, les taux de chaque branche utilisée par les lignes de prime (INCENDIE, IARD, IA, DECES…).
+2. **Produit** : créer le produit (code, libellé, gamme, branche principale), puis sa première version avec le mode « Par garanties », la liste des garanties du produit (facultative) et ses références contractuelles (CG).
+3. **Modèles Word**, **déposés par la Technique** puis **publiés par la Direction Générale** (la Technique ne publie pas) : pour chaque produit, le modèle de **cotation**, celui des **conditions particulières**, celui de la **facture** et, pour un contrat de groupe, le **certificat d'adhésion** (sans prime). Cotation, CP et facture citent la boucle `garanties_souscrites` (guide de balisage) ; sans elle, leur émission est refusée. Sans modèle de facture propre au produit, c'est le modèle commun qui serait retenu : il ne détaille pas les garanties, et la facture est refusée avant tout numéro.
+4. **Droits** : le droit « Composer une prime » est « Oui » pour le profil Technique et sans accès pour les autres ; il se règle dans l'écran des droits de l'Admin système.
+5. **Essai** : le faire de préférence dans un environnement de recette ([recette.md](recette.md)). Une cotation de test émise en production consomme de **vrais numéros** (cotation, police, facture) et laisse des documents émis **intangibles** : n'en faire que sur décision de Thierry, avec un souscripteur de test sans équivoque.
+
+Le **renouvellement** et la **facturation de l'incorporation d'adhérents** d'une police à garanties ne sont pas encore gérés (D32, H90) : la facture de renouvellement et la facture d'avenant sont refusées avec un message explicite, et l'écran de la police ne les propose pas. **L'incorporation elle-même reste possible** (les adhérents sont ajoutés à la liste, sans formule) mais elle n'est **ni facturée ni accompagnée d'une prime** : la tâche « Facture d'avenant à émettre » qu'elle crée ne peut pas être exécutée tant que Thierry n'a pas tranché H90. Ne pas incorporer d'adhérents dans une police à garanties avant cette décision.
+
 ## 5. Mise à jour
 
 Avant une mise à jour qui contient une migration (`app/prisma/migrations/`) : **sauvegarder la base et le volume `documents`** (§7).

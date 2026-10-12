@@ -22,7 +22,7 @@ export function LignesAssures({ initiales, formules }: { initiales: LigneAssure[
               <th className="p-2">Sexe</th>
               <th className="p-2">Lien (filiation)</th>
               <th className="p-2">Pièce d&apos;identité (facultatif)</th>
-              <th className="p-2">Formule</th>
+              {formules.length > 0 ? <th className="p-2">Formule</th> : null}
               <th className="p-2" />
             </tr>
           </thead>
@@ -40,12 +40,14 @@ export function LignesAssures({ initiales, formules }: { initiales: LigneAssure[
                 </td>
                 <td className="p-1"><input name="assure_lien" value={l.lien} onChange={(e) => modifier(i, "lien", e.target.value)} aria-label="Lien" className={entree} /></td>
                 <td className="p-1"><input name="assure_identification" value={l.identification} onChange={(e) => modifier(i, "identification", e.target.value)} aria-label="Pièce d'identité" placeholder="CNI, passeport…" className={entree} /></td>
-                <td className="p-1">
-                  <select name="assure_formule" value={l.formule} onChange={(e) => modifier(i, "formule", e.target.value)} aria-label="Formule" className={entree}>
-                    <option value="">—</option>
-                    {formules.map((f) => (<option key={f.code} value={f.code}>{f.code}</option>))}
-                  </select>
-                </td>
+                {formules.length > 0 ? (
+                  <td className="p-1">
+                    <select name="assure_formule" value={l.formule} onChange={(e) => modifier(i, "formule", e.target.value)} aria-label="Formule" className={entree}>
+                      <option value="">—</option>
+                      {formules.map((f) => (<option key={f.code} value={f.code}>{f.code}</option>))}
+                    </select>
+                  </td>
+                ) : null}
                 <td className="p-1"><button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} className="rounded border border-border px-2 py-1">Retirer</button></td>
               </tr>
             ))}

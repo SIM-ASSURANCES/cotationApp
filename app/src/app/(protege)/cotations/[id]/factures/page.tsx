@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { AvertissementsReports } from "@/composants/AvertissementsReports";
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
+import { MESSAGE_AVENANT_GARANTIES, MESSAGE_RENOUVELLEMENT_GARANTIES } from "@/domaine/calcul/parametrage";
 import { CANAUX_PAIEMENT, LIBELLE_CANAL } from "@/domaine/facturation/factures";
 import { facturesDePolice } from "@/serveur/factures";
 import { aujourdhui } from "@/serveur/parametrage";
@@ -149,7 +150,9 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
 
           <div className="rounded border border-border p-4">
             <h2 className="mb-2 text-lg font-semibold">Renouvellement</h2>
-            {possibles.renouvellement ? (
+            {police.composee ? (
+              <p className="text-sm text-neutral">{MESSAGE_RENOUVELLEMENT_GARANTIES}. Décision en attente de Thierry (H90).</p>
+            ) : possibles.renouvellement ? (
               <FormulaireAction action={creerFacture} libelleBouton="Préparer le renouvellement (brouillon)">
                 {cache("RENOUVELLEMENT")}
                 <p className="mb-3 text-sm text-neutral">
@@ -164,7 +167,9 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
 
           <div className="rounded border border-border p-4">
             <h2 className="mb-2 text-lg font-semibold">Avenant d'incorporation</h2>
-            {possibles.avenants.length > 0 ? (
+            {police.composee ? (
+              <p className="text-sm text-neutral">{MESSAGE_AVENANT_GARANTIES}. Décision en attente de Thierry (H90).</p>
+            ) : possibles.avenants.length > 0 ? (
               <FormulaireAction action={creerFacture} libelleBouton="Préparer l'avenant (brouillon)">
                 {cache("AVENANT")}
                 <label className="mb-3 block text-sm font-medium">

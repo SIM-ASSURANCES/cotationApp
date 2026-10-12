@@ -1,3 +1,5 @@
+> **Suite (décisions de Thierry après la 6.2b)** : H98 est décidée et mise en œuvre sur `phase-6.2b-h98` (la composition est vidée au changement de période, de régime ou de type de contrat) ; H90 : principe retenu, pour la 6.2c. Voir D32. Le texte ci-dessous décrit l'état de la 6.2b telle que livrée.
+
 # Compte rendu de la session 6.2b : composition manuelle de la prime, abandon d'un brouillon de facture
 
 Écrit le 12/10/2026, branche `phase-6.2b` (créée depuis `main` à jour, après la fusion de la V1 et de la 6.2a), **non fusionnée**. Décision : [decisions.md](decisions.md#d32--décisions-de-thierry-du-12102026-composition-manuelle-de-la-prime-et-abandon-dun-brouillon-session-62b) (D32, H89 à H97). Source : instructions de la phase 6.2 (hors dépôt) et décisions de Thierry du 12/10/2026. **La 6.2c et la refonte V2 ne sont pas commencées.** Le simulateur de primes de la Technique reste hors dépôt : aucun barème, classe de risque, plafond ni coefficient n'est repris ; tous les chiffres des tests sont inventés, posés à la main avec leur calcul en commentaire.

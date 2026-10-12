@@ -33,6 +33,7 @@ const formatDate = (iso: string | null) => (iso ? new Intl.DateTimeFormat("fr-FR
 
 export default async function PageCotation(props: PageProps<"/cotations/[id]">) {
   const { id } = await props.params;
+  const compositionVidee = (await props.searchParams).composition === "videe";
   const utilisateur = await exigerDroit("CREER_COTATION", peutLire);
   const c = Number.isInteger(Number(id)) ? await lireCotation(utilisateur, Number(id)) : null;
   if (!c) {
@@ -83,6 +84,12 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
       {c.filigrane ? (
         <p role="alert" className="mb-4 rounded border-2 border-danger bg-danger-bg p-3 text-center text-2xl font-bold tracking-widest text-danger">
           {c.filigrane}
+        </p>
+      ) : null}
+      {compositionVidee && aComposer ? (
+        <p role="status" className="mb-4 rounded border border-warning-border bg-warning-bg p-3 text-sm">
+          <strong>La composition de la prime a été vidée.</strong> La période, le régime de taxe ou le type de contrat a changé : les montants composés ne valaient que pour les conditions d&apos;origine
+          (aucun prorata n&apos;est appliqué). La prime est de nouveau « À composer » ; l&apos;ancienne composition, avec son auteur et son motif, est gardée au journal.
         </p>
       ) : null}
       {c.brouillonAFormulesSousGaranties ? (

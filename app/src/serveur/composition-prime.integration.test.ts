@@ -450,7 +450,7 @@ describe("modification d'un brouillon composé et paramétrage de la version", (
     expect(c.contributeurs).toEqual(expect.arrayContaining([commercial.id, technique.id]));
   });
 
-  it("la date d'effet choisit le taux : 4 % avant le 01/03/2026, 1,5 % à partir de cette date, à la composition comme quand le Commercial change les dates ; le journal garde les dates avant / après", async () => {
+  it("la date d'effet choisit le taux : 4 % avant le 01/03/2026, 1,5 % à partir de cette date, à la composition (le Commercial qui change les dates vide la composition : H98)", async () => {
     const code = await produitGaranties();
     const ligne = [{ libelle: "Santé", branche: SANTE_DATEE, primeNette: "200000", accessoires: "0" }];
     const taxeDe = async (id: number) => (await lireCotation(commercial, id))!.resultat.totaux.arrondi.taxe.toFixed();
@@ -464,16 +464,16 @@ describe("modification d'un brouillon composé et paramétrage de la version", (
     await composerLaPrime(technique, tard, ligne, "Santé, effet en mars (inventé)", null);
     expect(await taxeDe(tard)).toBe("3000"); // 200 000 × 1,5 %
 
-    // Le Commercial avance la date d'effet du premier brouillon au 01/03 : le taux est résolu de nouveau, la prime nette ne bouge pas.
+    // Le Commercial avance la date d'effet du premier brouillon au 01/03 : la composition est vidée (H98), puis la Technique recompose au nouveau taux.
     await modifierBrouillon(commercial, tot, saisie(code, { dateEffet: "2026-03-01", dateEcheance: "2027-02-28" }), null);
+    await composerLaPrime(technique, tot, ligne, "Santé, effet en mars, recomposée (inventé)", null);
     expect(await taxeDe(tot)).toBe("3000");
-    const c = (await lireCotation(commercial, tot))!;
-    expect(c.composition!.lignes[0]).toMatchObject({ primeNette: "200000", tauxPourcent: "1.5" });
-    expect(c.composition).toMatchObject({ composePar: technique.identifiant }); // H93 : la composition reste celle de la Technique
+    expect((await lireCotation(commercial, tot))!.composition!.lignes[0]).toMatchObject({ primeNette: "200000", tauxPourcent: "1.5" });
+    // Le journal de la modification garde les dates avant / après.
     const journal = (await lireJournal({ action: "COTATION_MODIFIEE" })).lignes.filter((l) => l.objet === `cotation ${tot}`);
     expect(journal).toHaveLength(1);
     expect(journal[0].avant).toMatchObject({ dateEffet: "2026-02-15", dateEcheance: "2027-02-14", nombreTranches: 1, ttc: "208000" });
-    expect(journal[0].apres).toMatchObject({ dateEffet: "2026-03-01", dateEcheance: "2027-02-28", nombreTranches: 1, ttc: "203000" });
+    expect(journal[0].apres).toMatchObject({ dateEffet: "2026-03-01", dateEcheance: "2027-02-28", nombreTranches: 1, ttc: null });
   });
 
   it("une version par garanties n'a pas besoin de formule ; ses frais de fractionnement et une liste de garanties à la formule sont refusés", async () => {
@@ -672,5 +672,77 @@ describe("import en masse des adhérents d'une police de groupe composée", () =
     expect(feuille.getRow(3).getCell(colonne("formule")).dataValidation).toBeUndefined();
     // La liste des sexes, elle, est bien posée sur la colonne « sexe » (la lettre se déduit de l'ordre des colonnes).
     expect(feuille.getRow(3).getCell(colonne("sexe")).dataValidation?.formulae).toEqual(['"M,F"']);
+  });
+});
+
+describe("H98 : changer la période, le régime ou le type de contrat vide la composition", () => {
+  async function composee(surcharge: Partial<SaisieCotation> = {}) {
+    const code = await produitGaranties();
+    const id = await creerBrouillon(commercial, saisie(code, surcharge), null);
+    await composerLaPrime(technique, id, LIGNES_IARD(), "Calcul du simulateur (inventé)", null);
+    return { code, id };
+  }
+  const videe = async (id: number) => {
+    const c = (await lireCotation(commercial, id))!;
+    const ligne = await obtenirPrisma().cotation.findUniqueOrThrow({ where: { id } });
+    return { c, ligne };
+  };
+
+  it.each([
+    ["la date d'effet", { dateEffet: "2026-02-01" }, "la période"],
+    ["la date d'échéance", { dateEcheance: "2027-06-30" }, "la période"],
+    ["le régime de taxe", { regimeTaxe: "GROUPE" as const }, "le régime de taxe"],
+    ["le type de contrat", { typeContrat: "GROUPE" as const }, "le type de contrat"],
+  ])("changer %s : retour « À composer » (prime et TTC absents, auteur et motif effacés), message, soumission refusée, ancienne composition au journal", async (_quoi, changement, raison) => {
+    const { code, id } = await composee();
+    const r = await modifierBrouillon(commercial, id, saisie(code, changement), null);
+    expect(r).toEqual({ compositionVidee: true });
+
+    const { c, ligne } = await videe(id);
+    expect(c.composition).toMatchObject({ lignes: [], composePar: null, composeLe: null, motif: null });
+    expect(ligne.ttcTotal).toBeNull();
+    expect([ligne.compositionParId, ligne.compositionPar, ligne.compositionLe, ligne.compositionMotif]).toEqual([null, null, null, null]);
+    expect((await listerCotations(technique)).find((x) => x.id === id)).toMatchObject({ aComposer: true, ttc: null });
+    await expect(soumettre(commercial, id, null)).rejects.toThrow(MESSAGE_NON_COMPOSEE);
+
+    // L'ancienne composition est au journal : lignes, TTC, composeur, motif, et ce qui a déclenché le vidage.
+    const j = (await lireJournal({ action: "COTATION_COMPOSITION_VIDEE" })).lignes.filter((l) => l.objet === `cotation ${id}`);
+    expect(j).toHaveLength(1);
+    expect((j[0].avant as { lignes: unknown[] }).lignes).toHaveLength(3);
+    expect(j[0].avant).toMatchObject({ ttc: "36424", composePar: technique.identifiant, motif: "Calcul du simulateur (inventé)" });
+    expect(j[0].apres).toMatchObject({ retour: "À composer" });
+    expect(String((j[0].apres as { raison: string }).raison)).toContain(raison); // un type de contrat qui change entraîne aussi son régime proposé
+
+    // La Technique peut recomposer ensuite (nouveau composeur, nouveau motif).
+    await expect(composerLaPrime(technique2, id, LIGNES_IARD(), "Recomposition après changement (inventée)", null)).resolves.toMatchObject({ ttc: expect.any(String) });
+  });
+
+  it("changer le nombre de tranches garde la composition (seul l'échéancier change) ; enregistrer sans rien changer, ou changer le souscripteur, aussi", async () => {
+    const { code, id } = await composee({ nombreTranches: 2 });
+    expect(await modifierBrouillon(commercial, id, saisie(code, { nombreTranches: 4 }), null)).toEqual({ compositionVidee: false });
+    let { c } = await videe(id);
+    expect(c.composition).toMatchObject({ composePar: technique.identifiant, motif: "Calcul du simulateur (inventé)" });
+    expect(c.composition!.lignes).toHaveLength(3);
+    expect(c.resultat.totaux.arrondi.ttc.toFixed()).toBe("36424");
+    expect(c.echeancier).toHaveLength(4);
+
+    expect(await modifierBrouillon(commercial, id, saisie(code, { nombreTranches: 4 }), null)).toEqual({ compositionVidee: false });
+    expect(await modifierBrouillon(commercial, id, saisie(code, { nombreTranches: 4, souscripteur: { ...prospect, nom: "AUTRE" } }), null)).toEqual({ compositionVidee: false });
+    ({ c } = await videe(id));
+    expect(c.composition!.lignes).toHaveLength(3);
+    expect((await lireJournal({ action: "COTATION_COMPOSITION_VIDEE" })).lignes.filter((l) => l.objet === `cotation ${id}`)).toHaveLength(0);
+  });
+
+  it("un brouillon déjà « À composer » qui change de période n'a rien à vider : pas d'entrée de journal de vidage", async () => {
+    const code = await produitGaranties();
+    const id = await creerBrouillon(commercial, saisie(code), null);
+    expect(await modifierBrouillon(commercial, id, saisie(code, { dateEffet: "2026-02-01" }), null)).toEqual({ compositionVidee: false });
+    expect((await lireJournal({ action: "COTATION_COMPOSITION_VIDEE" })).lignes.filter((l) => l.objet === `cotation ${id}`)).toHaveLength(0);
+  });
+
+  it("la Technique qui modifie la période d'un brouillon qu'elle a composé le vide aussi (la règle ne dépend pas de qui modifie)", async () => {
+    const { code, id } = await composee();
+    expect(await modifierBrouillon(technique, id, saisie(code, { dateEcheance: "2027-03-31" }), null)).toEqual({ compositionVidee: true });
+    expect((await lireCotation(technique, id))!.composition!.lignes).toEqual([]);
   });
 });

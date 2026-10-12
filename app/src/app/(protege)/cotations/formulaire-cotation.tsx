@@ -107,6 +107,12 @@ export function FormulaireCotation({
             Technique <strong>composera</strong> ensuite la prime, garantie par garantie, depuis la fiche de la cotation. Tant que la prime n&apos;est pas
             composée, la cotation ne peut pas être soumise.
           </p>
+          {base?.composition && base.composition.lignes.length > 0 ? (
+            <p className="mt-2 font-medium">
+              La prime est déjà composée : changer la <strong>période</strong>, le <strong>régime de taxe</strong> ou le <strong>type de contrat</strong> la vide (retour « À composer »,
+              l&apos;ancienne composition reste au journal) ; changer le nombre de tranches la garde.
+            </p>
+          ) : null}
         </section>
       ) : null}
       {parGaranties ? null : <><h2 className="mb-1 text-lg font-semibold">Formules</h2>

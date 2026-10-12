@@ -1,13 +1,31 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { Carte, EnTetePage, Tableau, type ColonneTableau } from "@/composants/ui";
 import { CHAMPS, FILTRES, FILTRES_JINJA, type Section } from "@/domaine/documents/dictionnaire";
 import { BALISES_FIXES } from "@/domaine/documents/modeles";
 import { peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
 import { exigerUtilisateur } from "@/serveur/session";
 
-const code = "rounded bg-muted px-1 font-mono text-[0.85em]";
+const code = "break-words rounded bg-muted px-1 font-mono text-[0.85em] text-foreground";
+
+type Filtre = (typeof FILTRES)[number];
+type Champ = (typeof CHAMPS)[number];
+
+// `align-top` : les lignes de ces tableaux font plusieurs lignes de texte ; `min-w-40` : à 390 px le tableau défile au lieu d'écraser les colonnes.
+const COLONNES_FILTRES: ColonneTableau<Filtre>[] = [
+  { cle: "nom", entete: "Filtre", className: "align-top", rendu: (f) => <span className="font-mono">{f.nom}</span> },
+  { cle: "syntaxe", entete: "Dans le Word", className: "min-w-40 align-top", rendu: (f) => <span className="font-mono text-xs">{f.syntaxe}</span> },
+  { cle: "rendu", entete: "Rendu", className: "min-w-40 align-top", rendu: (f) => f.rendu },
+  { cle: "note", entete: "À savoir", className: "min-w-40 align-top", rendu: (f) => f.note },
+];
+
+const COLONNES_CHAMPS: ColonneTableau<Champ>[] = [
+  { cle: "chemin", entete: "Champ", className: "align-top", rendu: (c) => <span className="font-mono text-xs">{c.chemin}</span> },
+  { cle: "type", entete: "Type", className: "align-top", rendu: (c) => c.type },
+  { cle: "description", entete: "Description", className: "min-w-48 align-top", rendu: (c) => c.description },
+  { cle: "exemple", entete: "Exemple (aperçu)", className: "min-w-32 align-top", rendu: (c) => <span className="text-neutral">{c.exemple === undefined || c.exemple === "" ? "" : String(c.exemple)}</span> },
+];
 
 /** Aide intégrée (CDC §6.2, §6.3) : générée à partir du dictionnaire du code, sa source unique. */
 export default async function PageAide() {
@@ -18,17 +36,11 @@ export default async function PageAide() {
   const sections = [...new Set(CHAMPS.map((c) => c.section))] as Section[];
 
   return (
-    <main className="max-w-5xl">
-      <p className="mb-2 text-sm">
-        <Link href="/modeles" className="text-primary underline">
-          ← Modèles Word
-        </Link>
-      </p>
-      <h1 className="mb-4 text-2xl font-semibold text-primary">Aide à la rédaction des modèles Word</h1>
+    <main className="max-w-5xl space-y-6">
+      <EnTetePage filAriane={[{ libelle: "Modèles Word", href: "/modeles" }, { libelle: "Aide" }]} titre="Aide à la rédaction des modèles Word" />
 
-      <section className="mb-8 space-y-2 text-sm">
-        <h2 className="text-lg font-semibold">Règles</h2>
-        <ul className="list-disc space-y-1 pl-5">
+      <Carte titre="Règles">
+        <ul className="list-disc space-y-2 pl-5 text-sm text-foreground">
           <li>
             Une valeur s'écrit <code className={code}>{"{{ souscripteur.nom }}"}</code>, avec les noms du dictionnaire ci-dessous, et seulement
             eux : un autre nom fait refuser le dépôt, avec son emplacement.
@@ -83,68 +95,34 @@ export default async function PageAide() {
           </li>
           <li>Polices : utilisez celles installées sur le générateur (Calibri, Tahoma, Arial, Times New Roman, MS Gothic…). Une autre police fait l'objet d'un avertissement au dépôt : la mise en page pourrait différer de Word.</li>
         </ul>
-      </section>
+      </Carte>
 
-      <section className="mb-8">
-        <h2 className="mb-2 text-lg font-semibold">Filtres</h2>
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="bg-primary text-left text-primary-foreground">
-              <th className="p-2">Filtre</th>
-              <th className="p-2">Dans le Word</th>
-              <th className="p-2">Rendu</th>
-              <th className="p-2">À savoir</th>
-            </tr>
-          </thead>
-          <tbody>
-            {FILTRES.map((f) => (
-              <tr key={f.nom} className="border-b border-border align-top">
-                <td className="p-2 font-mono">{f.nom}</td>
-                <td className="p-2 font-mono text-xs">{f.syntaxe}</td>
-                <td className="p-2">{f.rendu}</td>
-                <td className="p-2">{f.note}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <p className="mt-2 text-sm text-neutral">
+      <Carte titre="Filtres">
+        <Tableau colonnes={COLONNES_FILTRES} lignes={FILTRES} cleLigne={(f) => f.nom} legende="Filtres disponibles dans les modèles" />
+        <p className="mt-3 text-sm text-muted-foreground">
           Filtres de Jinja également permis : <code className={code}>{FILTRES_JINJA.join(", ")}</code> (par exemple{" "}
           <code className={code}>{"{{ assures | length }}"}</code>).
         </p>
-      </section>
+      </Carte>
 
-      <section>
-        <h2 className="mb-1 text-lg font-semibold">Dictionnaire des champs (CDC §6.3)</h2>
-        <p className="mb-3 text-sm text-neutral">
-          « assures[].nom_prenoms » : champ de chaque assuré, à écrire dans une boucle (<code className={code}>{"{{ a.nom_prenoms }}"}</code>).
-          Les champs <code className={code}>risque.*</code> sont propres à chaque produit (minuscules, chiffres et _).
-        </p>
-        {sections.map((section) => (
-          <div key={section} className="mb-6">
-            <h3 className="mb-1 font-semibold">{section}</h3>
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="bg-muted text-left">
-                  <th className="p-1">Champ</th>
-                  <th className="p-1">Type</th>
-                  <th className="p-1">Description</th>
-                  <th className="p-1">Exemple (aperçu)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {CHAMPS.filter((c) => c.section === section).map((c) => (
-                  <tr key={c.chemin} className="border-b border-border align-top">
-                    <td className="p-1 font-mono text-xs">{c.chemin}</td>
-                    <td className="p-1">{c.type}</td>
-                    <td className="p-1">{c.description}</td>
-                    <td className="p-1 text-neutral">{c.exemple === undefined || c.exemple === "" ? "" : String(c.exemple)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ))}
-      </section>
+      <Carte
+        titre="Dictionnaire des champs (CDC §6.3)"
+        description={
+          <>
+            « assures[].nom_prenoms » : champ de chaque assuré, à écrire dans une boucle (<code className={code}>{"{{ a.nom_prenoms }}"}</code>).
+            Les champs <code className={code}>risque.*</code> sont propres à chaque produit (minuscules, chiffres et _).
+          </>
+        }
+      >
+        <div className="space-y-6">
+          {sections.map((section) => (
+            <div key={section}>
+              <h3 className="mb-2 font-semibold text-foreground">{section}</h3>
+              <Tableau colonnes={COLONNES_CHAMPS} lignes={CHAMPS.filter((c) => c.section === section)} cleLigne={(c) => c.chemin} legende={`Champs de la section ${section}`} />
+            </div>
+          ))}
+        </div>
+      </Carte>
     </main>
   );
 }

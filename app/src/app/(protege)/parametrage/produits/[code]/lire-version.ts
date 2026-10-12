@@ -1,6 +1,6 @@
 import { NIVEAUX_ARRONDI, type ModeAccessoire, type NiveauArrondi } from "@/domaine/calcul/calcul";
 import { SENS_ARRONDI, normaliserMontantSaisi, type Precision, type SensArrondi } from "@/domaine/calcul/montant";
-import { MODES_TARIFICATION, type ModeTarification, type VersionSaisie } from "@/domaine/calcul/parametrage";
+import { MODES_TARIFICATION, type GarantieParametree, type ModeTarification, type VersionSaisie } from "@/domaine/calcul/parametrage";
 
 const champ = (donnees: FormData, nom: string): string => String(donnees.get(nom) ?? "").trim();
 const champOuNull = (donnees: FormData, nom: string): string | null => champ(donnees, nom) || null;
@@ -17,6 +17,21 @@ const age = (texte: string | undefined): number | null => ((texte ?? "").trim() 
 /** Valeur parmi celles autorisées ; sinon une valeur volontairement invalide, que la validation refusera avec un message. */
 const parmi = <T extends string>(valeur: string, autorisees: readonly T[]): T =>
   (autorisees as readonly string[]).includes(valeur) ? (valeur as T) : ("INVALIDE" as T);
+
+/**
+ * Garanties du produit (session 6.2b) : une par ligne, « Libellé » ou « Libellé ; BRANCHE » (branche fiscale proposée sur la ligne de prime).
+ * Les lignes vides sont ignorées ; le contrôle (doublons, code de branche) est fait par la validation du domaine.
+ */
+export function lireGaranties(texte: string): GarantieParametree[] {
+  return texte
+    .split(/\r?\n/)
+    .map((ligne) => ligne.trim())
+    .filter((ligne) => ligne !== "")
+    .map((ligne) => {
+      const [libelle, branche] = ligne.split(";").map((x) => x.trim());
+      return { libelle, branche: branche ? branche.toUpperCase() : null };
+    });
+}
 
 /**
  * Lit le formulaire « nouvelle version » (texte saisi) et en fait une VersionSaisie. Aucune
@@ -47,6 +62,9 @@ export function lireVersion(donnees: FormData): VersionSaisie {
     seuilValidationTtc: mOuNull(champOuNull(donnees, "seuil")),
     // Champ absent : FORMULE (le comportement d'avant la 6.2a) ; valeur inconnue : refusée avec un message par la validation.
     modeTarification: parmi<ModeTarification>(champ(donnees, "modeTarification") || "FORMULE", MODES_TARIFICATION),
+    // Session 6.2b : liste des garanties du produit (mode par garanties) ; la case « saisie libre » est cochée par défaut, et absente d'un formulaire d'avant.
+    garanties: lireGaranties(champ(donnees, "garanties")),
+    garantiesSaisieLibre: donnees.has("garantiesPresentes") ? donnees.get("garantiesSaisieLibre") === "on" : true,
     references: {
       cgModeleCode: champOuNull(donnees, "cgModeleCode")?.toUpperCase() ?? null,
       cgVisa: champOuNull(donnees, "cgVisa"),

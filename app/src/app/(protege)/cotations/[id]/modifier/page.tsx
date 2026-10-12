@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { MessageTarificationParGaranties } from "@/composants/MessageTarificationParGaranties";
-import { calculAutomatiquePossible, enVigueur } from "@/domaine/calcul/parametrage";
+import { compositionPossible, enVigueur } from "@/domaine/calcul/parametrage";
 import { peutModifier } from "@/domaine/cotation/statuts";
 import { peutAgir } from "@/domaine/droits";
 import { listerClients } from "@/serveur/clients";
@@ -29,20 +28,6 @@ export default async function PageModifierCotation(props: PageProps<"/cotations/
   if (!donnees || !version) {
     redirect(`/cotations/${cotation.id}`);
   }
-  if (!calculAutomatiquePossible(version.modeTarification)) {
-    // Session 6.2a : le produit est passé en GARANTIES depuis la création de ce brouillon ; le serveur refuserait chaque envoi.
-    return (
-      <main>
-        <p className="mb-2 text-sm">
-          <Link href={`/cotations/${cotation.id}`} className="text-primary underline">
-            ← Fiche de la cotation
-          </Link>
-        </p>
-        <h1 className="mb-4 text-2xl font-semibold text-primary">Modifier le brouillon n° {cotation.id}</h1>
-        <MessageTarificationParGaranties />
-      </main>
-    );
-  }
   const [clients, intermediaires] = await Promise.all([listerClients(utilisateur), listerIntermediaires(utilisateur, { actifsSeulement: true })]);
 
   return (
@@ -60,6 +45,7 @@ export default async function PageModifierCotation(props: PageProps<"/cotations/
         tranchesMax={version.fractionnement.tranchesMax}
         formulesMax={version.cotation.formulesMax}
         intermediaires={intermediaires.map((i) => ({ code: i.code, nom: i.nom, role: i.role }))}
+        parGaranties={compositionPossible(version.modeTarification)}
         base={cotation}
       />
     </main>

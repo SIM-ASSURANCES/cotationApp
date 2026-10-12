@@ -9,7 +9,8 @@
  *
  * Normatif : uniquement les noms du CDC, plus `assures[].sexe` (D12), `doc.auteur_nom` (D20) et, pour les factures et
  * les reçus (D23), `envoye_a.*`, `formules[].base_taxe` et `paiements[].payeur` ; pour les avis d'échéance et les
- * relances (D25), `echeance_appelee.*` et `relance.*` ; `solde.avance` (D28, session 6.0).
+ * relances (D25), `echeance_appelee.*` et `relance.*` ; `solde.avance` (D28, session 6.0) ; pour les produits tarifés par garanties
+ * (D32, session 6.2b), `garanties_souscrites[]`, et `prime.taux_taxe` devient facultatif (vide quand plusieurs taux s'appliquent).
  * `risque.*` est ouvert : chaque produit y met ses propres champs (CDC §6.3, « extensible »).
  * Les champs des éléments de `societe.rib[]`, `societe.mobile_money[]` et `societe.recours[]` ne
  * sont pas nommés par le CDC : les noms retenus ici sont des hypothèses (decisions.md, D14).
@@ -159,10 +160,20 @@ export const CHAMPS: readonly Champ[] = [
   c("formules[].taxe", "montant", "Taxe", "4256", S3),
   c("formules[].ttc", "montant", "Prime TTC", "288000", S3),
   c("formules[].base_taxe", "montant", "Montant HT de la ligne : assiette de la taxe (extension D23)", "283744", S3),
+  // Session 6.2b (D32) : produit tarifé par garanties. Une ligne par garantie souscrite, avec SON taux de taxe ; vide pour un produit à la formule.
+  // Attention : `bloc("garanties", …)` désigne un SOUS-MODÈLE (bibliothèque de modèles), pas cette donnée.
+  c("garanties_souscrites", "liste", "Une ligne par garantie souscrite d'un produit tarifé par garanties (extension D32) ; liste vide pour un produit à la formule", undefined, S3, FACULTATIF),
+  c("garanties_souscrites[].libelle", "texte", "Libellé de la garantie, de la surprime ou de la majoration (extension D32)", "Incendie", S3),
+  c("garanties_souscrites[].branche", "texte", "Branche fiscale de la ligne : INCENDIE, IARD, IA, DECES… (extension D32)", "INCENDIE", S3),
+  c("garanties_souscrites[].prime_nette", "montant", "Prime nette de la garantie (extension D32)", "10000", S3),
+  c("garanties_souscrites[].accessoires", "montant", "Accessoires de la garantie (extension D32)", "2500", S3),
+  c("garanties_souscrites[].taux_taxe", "pourcentage", "Taux de taxe de la garantie, selon sa branche (extension D32)", "12.5", S3),
+  c("garanties_souscrites[].taxe", "montant", "Taxe de la garantie (extension D32)", "1563", S3),
+  c("garanties_souscrites[].ttc", "montant", "Prime TTC de la garantie : nette + accessoires + taxe (extension D32)", "14063", S3),
   c("prime.nette", "montant", "Prime nette totale", "15440202", S3),
   c("prime.accessoires", "montant", "Accessoires", "213000", S3),
   c("prime.base_taxe", "montant", "Assiette de la taxe", "15653202", S3),
-  c("prime.taux_taxe", "pourcentage", "Taux de taxe", "1.5", S3),
+  c("prime.taux_taxe", "pourcentage", "Taux de taxe ; vide quand plusieurs taux s'appliquent (garanties de branches différentes, D32)", "1.5", S3, FACULTATIF),
   c("prime.taxe", "montant", "Taxe", "234798", S3),
   c("prime.ttc", "montant", "Prime TTC", "15888000", S3),
   c("prime.forcee", "booleen", "Prime forcée (non affiché au client)", false, S3),

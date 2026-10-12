@@ -1,12 +1,13 @@
 {
-  "source": "Taux communiqués par la Direction Technique le 08/10/2026 (fixés par la loi, D18) ; MOTO, VOYAGE et RECOLTE à 7,25 % communiqués le 09/10/2026 (D27, H32).",
+  "source": "Taux communiqués par la Direction Technique le 08/10/2026 (fixés par la loi, D18) ; MOTO, VOYAGE et RECOLTE à 7,25 % communiqués le 09/10/2026 (D27, H32). IARD à 7,25 % et INCENDIE à 12,5 % : ventilation du taux mixte par branche de ligne de prime (session 6.2b, D32).",
   "dateEffet": "Date d'effet de démarrage : 01/01/2026, provisoire (la Technique n'a pas donné de date, D27).",
   "lignes": [
     { "branche": "IA", "typeContrat": null, "tauxPourcent": "7.25", "tauxMixte": false, "commentaire": "Individuelle accident", "dateEffet": "2026-01-01", "dateFin": null },
     { "branche": "DECES", "typeContrat": null, "tauxPourcent": "0", "tauxMixte": false, "commentaire": "Décès", "dateEffet": "2026-01-01", "dateFin": null },
     { "branche": "SANTE", "typeContrat": "INDIVIDUEL", "tauxPourcent": "4", "tauxMixte": false, "commentaire": "Santé individuelle", "dateEffet": "2026-01-01", "dateFin": null },
     { "branche": "SANTE", "typeContrat": "GROUPE", "tauxPourcent": "1.5", "tauxMixte": false, "commentaire": "Santé groupe", "dateEffet": "2026-01-01", "dateFin": null },
-    { "branche": "IARD", "typeContrat": null, "tauxPourcent": null, "tauxMixte": true, "commentaire": "Incendie et dommages aux biens : 12,5 % pour l'incendie ; 7,25 % pour le reste. Règle de ventilation non confirmée : calcul refusé.", "dateEffet": "2026-01-01", "dateFin": null },
+    { "branche": "IARD", "typeContrat": null, "tauxPourcent": "7.25", "tauxMixte": false, "commentaire": "Autres dommages aux biens : 7,25 % (D32, H32 fermée) ; l'incendie a sa propre branche", "dateEffet": "2026-01-01", "dateFin": null },
+    { "branche": "INCENDIE", "typeContrat": null, "tauxPourcent": "12.5", "tauxMixte": false, "commentaire": "Incendie : 12,5 % depuis le 01/01/2026, provisoire (D32)", "dateEffet": "2026-01-01", "dateFin": null },
     { "branche": "MOTO", "typeContrat": null, "tauxPourcent": "7.25", "tauxMixte": false, "commentaire": "Moto (SECURMOTO) : 7,25 % (D27, H32)", "dateEffet": "2026-01-01", "dateFin": null },
     { "branche": "VOYAGE", "typeContrat": null, "tauxPourcent": "7.25", "tauxMixte": false, "commentaire": "Assistance voyage (RELAXVOYAGE) : 7,25 % (D27, H32)", "dateEffet": "2026-01-01", "dateFin": null },
     { "branche": "RECOLTE", "typeContrat": null, "tauxPourcent": "7.25", "tauxMixte": false, "commentaire": "Récoltes (SECURECOLTE) : 7,25 % (D27, H32)", "dateEffet": "2026-01-01", "dateFin": null }

@@ -361,14 +361,15 @@ describe("taxes par branche et type de contrat (D18)", () => {
     expect(await initialiserBranches(branches.lignes)).toBe(0);
     await initialiserTaxes(fichier.lignes);
     expect(await initialiserTaxes(fichier.lignes)).toBe(0);
-    const taux = (await listerTaxes(technique)).filter((t) => ["IA", "DECES", "SANTE", "IARD", "MOTO", "VOYAGE", "RECOLTE"].includes(t.branche));
+    const taux = (await listerTaxes(technique)).filter((t) => ["IA", "DECES", "SANTE", "IARD", "INCENDIE", "MOTO", "VOYAGE", "RECOLTE"].includes(t.branche));
     expect(taux.map((t) => [t.branche, t.typeContrat, t.tauxPourcent, t.tauxMixte])).toEqual(
       expect.arrayContaining([
         ["IA", null, "7.25", false],
         ["DECES", null, "0", false],
         ["SANTE", "INDIVIDUEL", "4", false],
         ["SANTE", "GROUPE", "1.5", false],
-        ["IARD", null, null, true],
+        ["IARD", null, "7.25", false],
+        ["INCENDIE", null, "12.5", false],
         ["MOTO", null, "7.25", false],
         ["VOYAGE", null, "7.25", false],
         ["RECOLTE", null, "7.25", false],

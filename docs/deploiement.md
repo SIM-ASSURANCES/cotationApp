@@ -78,6 +78,22 @@ Puis, dans un navigateur : connexion, page « Journal d'audit » (la connexion y
 
 `generateur: "ko"` dans `/api/sante` signifie que le générateur est arrêté, que LibreOffice est introuvable dans l'image, **ou** que Tahoma ou Calibri manque (polices non copiées dans `generateur/polices/` avant la construction) : le `/sante` du générateur en donne le détail (`"polices_manquantes"`).
 
+## Après l'installation : produits à paramétrer par la Technique (D31, D32)
+
+> **À faire sur le serveur, par la Technique, avant la première cotation de ces produits.** Le dépôt, les données de démarrage et les migrations ne créent **aucun produit réel** : cette étape est une étape de mise en production, pas de développement.
+
+**SECURPRO, SECURHOME, SECURHOME + et RELAXACCIDENTS se tarifient par garanties.** Chacun doit être créé (écran « Paramétrage > Produits ») avec une **première version en mode « Par garanties »**, jamais en mode « Par formule » : une version « Par formule » plus ancienne continuerait de calculer, avec une prime fausse, tout document daté avant la date d'effet de la version suivante. En mode « Par garanties », le calcul automatique est refusé ; la prime est **composée par la Technique** (droit « Composer une prime ») sur la cotation, garantie par garantie (D32).
+
+Ordre à suivre, après `docker compose run --rm outils npm run initialiser` (qui crée les branches et les taux de démarrage, dont **INCENDIE à 12,5 %** et **IARD à 7,25 %**) :
+
+1. **Taxes** : vérifier, dans l'écran « Taxes », les taux de chaque branche utilisée par les lignes de prime (INCENDIE, IARD, IA, DECES…). Une installation faite **avant** la session 6.2b a gardé une ligne IARD « taux mixte » (jamais modifiée par `initialiser`, car un taux déjà paramétré n'est jamais écrasé) : ajouter une nouvelle ligne IARD à 7,25 %, avec sa date d'effet ; l'ancienne ligne est clôturée la veille.
+2. **Produit** : créer le produit (code, libellé, gamme, branche principale), puis sa première version avec le mode « Par garanties », la liste des garanties du produit (facultative) et ses références contractuelles (CG).
+3. **Modèles Word** : déposer et publier les modèles de CP et de facture du produit, avec la boucle `garanties_souscrites` (aide à la rédaction des modèles).
+4. **Droits** : le droit « Composer une prime » est « Oui » pour le profil Technique et sans accès pour les autres ; il se règle dans l'écran des droits de l'Admin système.
+5. Faire une cotation de test complète (création, composition, émission, acceptation, CP, facture) avant d'ouvrir le produit aux Commerciaux.
+
+Le **renouvellement** et l'**incorporation d'adhérents** d'une police à garanties ne sont pas encore gérés (D32, H90) : ils sont refusés avec un message explicite.
+
 ## 5. Mise à jour
 
 Avant une mise à jour qui contient une migration (`app/prisma/migrations/`) : **sauvegarder la base et le volume `documents`** (§7).

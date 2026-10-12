@@ -6,15 +6,19 @@ import { peutAgir, peutLire, type CodeAction } from "@/domaine/droits";
 import { calculer, VERSION_MOTEUR, type EntreeCalcul, type AssietteTaxe, type ModeAccessoire, type ResultatCalcul, type RegleArrondi } from "@/domaine/calcul/calcul";
 import { ajouterJours, dateValide, type DateIso } from "@/domaine/calcul/dates";
 import { genererEcheancier, type Tranche } from "@/domaine/calcul/echeancier";
+import { composer, VERSION_COMPOSITION, estComposition, type DonneesCalcul, type EntreeComposition, type LigneComposee, type LigneDePrime } from "@/domaine/calcul/composition";
 import { ErreurCalcul, montant, type Precision } from "@/domaine/calcul/montant";
 import {
   calculAutomatiquePossible,
   codeValide,
+  compositionPossible,
   enVigueur,
+  MESSAGE_COMPOSITION_IMPOSSIBLE,
   MESSAGE_TARIFICATION_PAR_GARANTIES,
   problemesTaxe,
   problemesVersion,
   type FormuleSaisie,
+  type GarantieParametree,
   type ModeTarification,
   type TaxeSaisie,
   type VersionSaisie,
@@ -342,8 +346,15 @@ export async function creerProduit(
 /** Une version lue en base porte toujours son mode de tarification (la colonne est obligatoire). */
 export type VersionProduit = VersionSaisie & { id: number; modeTarification: ModeTarification };
 
+/** Refus de la composition manuelle pour une version qui n'est pas en mode GARANTIES (session 6.2b). */
+export function exigerComposition(mode: string): void {
+  if (!compositionPossible(mode)) {
+    throw new ErreurMetier(MESSAGE_COMPOSITION_IMPOSSIBLE);
+  }
+}
+
 /**
- * Seul point de refus du calcul automatique d'un produit tarifé par garanties (session 6.2a). Appelé là où un montant naît du
+ * Point de refus du calcul automatique d'un produit tarifé par garanties (session 6.2a). Appelé là où un montant naît du
  * tarif (résolution du contexte de calcul, construction de l'entrée du moteur) et là où un document ou une facture le reprend
  * (émission d'une cotation, montants d'un document). Le texte est celui fixé par la Technique ; il remplace, pour l'IARD, le
  * refus « taux mixte non pris en charge » (qui reste le filet d'un produit à la formule rattaché à une branche à taux mixte).
@@ -374,6 +385,8 @@ function versVersion(v: Prisma.ProduitVersionGetPayload<{ include: { formules: t
     cotation: { validiteMois: v.validiteMois, formulesMax: v.formulesMax },
     seuilValidationTtc: v.seuilValidationTtc ? texte(v.seuilValidationTtc) : null,
     modeTarification: v.modeTarification as ModeTarification,
+    garanties: (v.garanties as GarantieParametree[] | null) ?? [],
+    garantiesSaisieLibre: v.garantiesSaisieLibre,
     references: { cgModeleCode: v.cgModeleCode, cgVisa: v.cgVisa, csModeleCode: v.csModeleCode, csVisa: v.csVisa },
     formules: v.formules
       .map(
@@ -438,6 +451,8 @@ export async function creerVersion(acteur: UtilisateurCourant, codeProduit: stri
         formulesMax: saisie.cotation.formulesMax,
         seuilValidationTtc: canoniqueOuNull(saisie.seuilValidationTtc),
         modeTarification: saisie.modeTarification ?? "FORMULE",
+        garanties: (saisie.garanties ?? []).map((g) => ({ libelle: g.libelle.trim(), branche: g.branche })) as unknown as Prisma.InputJsonValue,
+        garantiesSaisieLibre: saisie.garantiesSaisieLibre ?? true,
         cgModeleCode: saisie.references?.cgModeleCode ?? null,
         cgVisa: saisie.references?.cgVisa?.trim() ?? null,
         csModeleCode: saisie.references?.csModeleCode ?? null,
@@ -463,7 +478,7 @@ export async function creerVersion(acteur: UtilisateurCourant, codeProduit: stri
         action: "PARAMETRE_MODIFIE",
         objetType: "produit_version",
         objetId: cree.id,
-        apres: { produit: codeProduit, dateEffet: saisie.dateEffet, modeTarification: saisie.modeTarification ?? "FORMULE", formules: saisie.formules.map((f) => f.code) },
+        apres: { produit: codeProduit, dateEffet: saisie.dateEffet, modeTarification: saisie.modeTarification ?? "FORMULE", garanties: (saisie.garanties ?? []).length, formules: saisie.formules.map((f) => f.code) },
         adresseIp,
       },
       tx,
@@ -503,21 +518,12 @@ export type ContexteCalcul = {
 };
 
 /**
- * Trouve les paramètres EN VIGUEUR : la version du produit à la date du document, la taxe de la
- * branche et du régime de taxe à la date d'effet de la police (CDC §8.1, D18 ; décision de Thierry du
- * 08/10/2026 : la date d'effet, pas la date du document ; régime de taxe : session 6.0, H29 fermée).
+ * Produit actif et version EN VIGUEUR à la date du document (étape commune au calcul automatique et à la composition). Ne regarde
+ * pas le mode de tarification : c'est à l'appelant de décider ce qu'il accepte.
  */
-export async function resoudreContexte(
-  client: ClientLecture,
-  codeProduit: string,
-  dateDocument: DateIso,
-  dateEffet: DateIso,
-  regime: RegimeTaxe,
-): Promise<ContexteCalcul> {
-  for (const d of [dateEffet, dateDocument]) {
-    if (!dateValide(d)) {
-      throw new ErreurMetier(`Date invalide : « ${d} ».`);
-    }
+export async function resoudreVersion(client: ClientLecture, codeProduit: string, dateDocument: DateIso): Promise<{ produit: { id: number; code: string; libelle: string; branche: string }; version: VersionProduit }> {
+  if (!dateValide(dateDocument)) {
+    throw new ErreurMetier(`Date invalide : « ${dateDocument} ».`);
   }
   const produit = await client.produit.findUnique({
     where: { code: codeProduit },
@@ -533,10 +539,96 @@ export async function resoudreContexte(
   if (!version) {
     throw new ErreurMetier(`Aucun paramétrage de « ${produit.code} » en vigueur au ${dateDocument}.`);
   }
+  return { produit: { id: produit.id, code: produit.code, libelle: produit.libelle, branche: produit.branche }, version };
+}
+
+/**
+ * Trouve les paramètres EN VIGUEUR : la version du produit à la date du document, la taxe de la
+ * branche et du régime de taxe à la date d'effet de la police (CDC §8.1, D18 ; décision de Thierry du
+ * 08/10/2026 : la date d'effet, pas la date du document ; régime de taxe : session 6.0, H29 fermée).
+ * Voie du CALCUL AUTOMATIQUE : refuse un produit en mode GARANTIES (sessions 6.2a et 6.2b : sa prime se compose).
+ */
+export async function resoudreContexte(
+  client: ClientLecture,
+  codeProduit: string,
+  dateDocument: DateIso,
+  dateEffet: DateIso,
+  regime: RegimeTaxe,
+): Promise<ContexteCalcul> {
+  if (!dateValide(dateEffet)) {
+    throw new ErreurMetier(`Date invalide : « ${dateEffet} ».`);
+  }
+  const { produit, version } = await resoudreVersion(client, codeProduit, dateDocument);
   // Avant la taxe : un produit tarifé par garanties est refusé pour cette raison, pas pour un taux mixte (session 6.2a).
   exigerCalculAutomatique(version.modeTarification);
   const taxe = await taxeEnVigueur(client, produit.branche, regime, dateEffet);
   return { produit: { id: produit.id, code: produit.code, libelle: produit.libelle }, version, taxe };
+}
+
+export const MESSAGE_NON_COMPOSEE = "La prime n'est pas encore composée : la Technique doit la composer (action « Composer une prime ») avant la soumission";
+
+/**
+ * Cohérence entre le mode de tarification d'une version et la nature du calcul figé qu'on lui rattache (session 6.2b) : un calcul
+ * automatique ne se rattache qu'à une version à la formule, une composition qu'à une version par garanties ET non vide (jamais de 0 silencieux).
+ */
+export function exigerModeCoherent(mode: string, donnees: DonneesCalcul): void {
+  if (estComposition(donnees)) {
+    exigerComposition(mode);
+    if (donnees.lignes.length === 0) throw new ErreurMetier(MESSAGE_NON_COMPOSEE);
+  } else {
+    exigerCalculAutomatique(mode);
+  }
+}
+
+/** Idem pour la version EN VIGUEUR à `date` (un document préparé avant une bascule de mode ne s'émet plus : sessions 6.2a et 6.2b). */
+export async function exigerModeCoherentEnVigueur(client: Pick<Prisma.TransactionClient, "produitVersion">, produitId: number, date: DateIso, donnees: DonneesCalcul): Promise<void> {
+  const versions = await client.produitVersion.findMany({ where: { produitId }, select: { dateEffet: true, modeTarification: true } });
+  const enCours = enVigueur(versions.map((v) => ({ dateEffet: depuisDate(v.dateEffet), modeTarification: v.modeTarification })), date);
+  if (!enCours) return;
+  if (estComposition(donnees)) exigerComposition(enCours.modeTarification);
+  else exigerCalculAutomatique(enCours.modeTarification);
+}
+
+/** Paramètres d'une composition manuelle (session 6.2b) : le produit et sa version en vigueur, qui doit être en mode GARANTIES. Pas de taxe ici : chaque ligne a la sienne. */
+export type ContexteComposition = { produit: { id: number; code: string; libelle: string }; version: VersionProduit };
+
+export async function resoudreContexteComposition(client: ClientLecture, codeProduit: string, dateDocument: DateIso): Promise<ContexteComposition> {
+  const { produit, version } = await resoudreVersion(client, codeProduit, dateDocument);
+  exigerComposition(version.modeTarification);
+  return { produit: { id: produit.id, code: produit.code, libelle: produit.libelle }, version };
+}
+
+/**
+ * Résout et FIGE le taux de taxe de chaque ligne de prime : branche de la ligne, régime de taxe de la cotation, date d'effet de la
+ * police, avec la MÊME résolution que le calcul automatique (`taxeEnVigueur`, H29). La branche doit exister et être active (D21).
+ */
+export async function figerLesTaux(client: Pick<Prisma.TransactionClient, "taxe" | "produit" | "branche">, lignes: LigneDePrime[], regime: RegimeTaxe, dateEffet: DateIso): Promise<LigneComposee[]> {
+  if (!dateValide(dateEffet)) {
+    throw new ErreurMetier(`Date invalide : « ${dateEffet} ».`);
+  }
+  const taux = new Map<string, TaxeSaisie & { tauxPourcent: string }>();
+  for (const code of new Set(lignes.map((l) => l.branche))) {
+    const branche = await client.branche.findUnique({ where: { code } });
+    if (!branche) throw new ErreurMetier(`La branche « ${code} » n'est pas dans la liste des branches.`);
+    if (!branche.actif) throw new ErreurMetier(`La branche « ${code} » est désactivée : elle ne peut plus recevoir de ligne de prime.`);
+    taux.set(code, await taxeEnVigueur(client, code, regime, dateEffet));
+  }
+  return lignes.map((l) => {
+    const t = taux.get(l.branche)!;
+    return { libelle: l.libelle.trim(), branche: l.branche, primeNette: canonique(l.primeNette), accessoires: canonique(l.accessoires), tauxPourcent: canonique(t.tauxPourcent), assiette: t.assiette };
+  });
+}
+
+/** Entrée figée d'une composition : les lignes aux taux résolus, la règle d'arrondi de la version, les dates de la police. */
+export function construireComposition(contexte: ContexteComposition, demande: { dateEffet: DateIso; dateEcheance: DateIso; lignes: LigneComposee[]; nombreTranches: number }): EntreeComposition {
+  exigerComposition(contexte.version.modeTarification); // ceinture, comme pour construireEntree
+  if (demande.nombreTranches > 1 && !montant(contexte.version.fractionnement.frais).isZero()) {
+    throw new ErreurMetier("Les frais de fractionnement de cette version ne s'ajoutent pas en mode par garanties : demandez à la Technique une version sans frais (ils se saisissent comme une ligne de prime).");
+  }
+  if (!Number.isInteger(demande.nombreTranches) || demande.nombreTranches < 1 || demande.nombreTranches > contexte.version.fractionnement.tranchesMax) {
+    throw new ErreurMetier(`Ce produit autorise de 1 à ${contexte.version.fractionnement.tranchesMax} tranche(s).`);
+  }
+  return { type: "COMPOSITION", version: VERSION_COMPOSITION, dateEffet: demande.dateEffet, dateEcheance: demande.dateEcheance, arrondi: contexte.version.arrondi, lignes: demande.lignes };
 }
 
 export type LigneDemande = {
@@ -608,12 +700,13 @@ export function construireEntree(
 
 /** Moteur + échéancier. Les erreurs de calcul deviennent des refus lisibles. */
 export function executerCalcul(
-  entree: EntreeCalcul,
+  entree: DonneesCalcul,
   fractionnement: { repartitionPourcent: string[] | null; decalagesMois: number[] | null },
   nombreTranches: number,
 ): { resultat: ResultatCalcul; echeancier: Tranche[] | null } {
   try {
-    const resultat = calculer(entree);
+    const resultat = estComposition(entree) ? composer(entree) : calculer(entree);
+    const arrondiEcheancier = estComposition(entree) ? entree.arrondi : entree.parametres.arrondi;
     const { repartitionPourcent, decalagesMois } = fractionnement;
     const echeancier =
       nombreTranches > 1
@@ -623,7 +716,7 @@ export function executerCalcul(
             dateEffet: entree.dateEffet,
             repartitionPourcent: repartitionPourcent?.length === nombreTranches ? repartitionPourcent : undefined,
             decalagesMois: decalagesMois?.length === nombreTranches ? decalagesMois : undefined,
-            arrondi: { precision: entree.parametres.arrondi.precision, sens: entree.parametres.arrondi.sens },
+            arrondi: { precision: arrondiEcheancier.precision, sens: arrondiEcheancier.sens },
           })
         : null;
     return { resultat, echeancier };

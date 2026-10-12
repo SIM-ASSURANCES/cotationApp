@@ -17,12 +17,12 @@ import { donneesDocument, type SourceDocument } from "@/domaine/documents/donnee
 
 import { assurerBranche } from "./branches-test";
 import { obtenirConfig } from "./config";
-import { accepter, creerBrouillon, soumettre, type SaisieCotation } from "./cotations";
+import { accepter, composerLaPrime, creerBrouillon, lireCotation, soumettre, type SaisieCotation } from "./cotations";
 import { emettreCp } from "./documents";
 import { initialiserProfilsEtDroits } from "./droits";
 import { generateur, remplacerGenerateur } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
-import { aujourdhui, creerProduit, creerVersion, initialiserBranches, initialiserTaxes, type TaxeDemarrage } from "./parametrage";
+import { aujourdhui, creerProduit, creerTaxe, creerVersion, initialiserBranches, initialiserTaxes, type TaxeDemarrage } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { lireImageSociete, lireParametresSociete } from "./societe";
 import { assurerSignature, assurerSocieteDeTest, PNG_REEL_1PX } from "./societe-test";
@@ -171,7 +171,7 @@ describe("T5 : SECURVIE, trois bénéficiaires, branche DECES (taxe 0 %)", () =>
 });
 
 describe("T6 : VOL (IARD), cases à cocher et date d'émission dynamique — document seul", () => {
-  it("l'IARD est refusée par le moteur : en mode GARANTIES (règle générale, D31), et à la formule tant que le taux mixte n'est pas tranché (H32) : c'est pourquoi T6 ne teste que le document", async () => {
+  it("l'IARD n'est plus à taux mixte (INCENDIE 12,5 % et IARD 7,25 %, D32) : un produit par garanties se compose, un produit à la formule sur une branche à taux mixte reste refusé", async () => {
     const saisie = (codeProduit: string): SaisieCotation => ({
       codeProduit,
       clientId: null,
@@ -180,24 +180,31 @@ describe("T6 : VOL (IARD), cases à cocher et date d'émission dynamique — doc
       dateEffet: "2026-01-01",
       dateEcheance: "2026-12-31",
       nombreTranches: 1,
-      lignes: [{ codeFormule: "STANDARD", effectif: 1 }],
+      lignes: [],
       motifForcage: null,
       assures: [],
       beneficiaires: [],
       contactsUrgence: [],
       risque: {},
     });
-    // Configuration prévue pour un produit IARD : mode GARANTIES, avec les VRAIES données de démarrage (IARD à taux mixte).
+    // Configuration prévue pour un produit IARD : mode GARANTIES, avec les VRAIES données de démarrage (IARD à 7,25 %, INCENDIE à 12,5 %).
     const garanties = CODE("VOLG");
     await creerProduit(technique, { code: garanties, libelle: "Vol, par garanties (bout en bout)", gamme: "RELAX", branche: "IARD" }, null);
-    await creerVersion(technique, garanties, { ...version(), modeTarification: "GARANTIES" }, null);
-    await expect(creerBrouillon(commercial, saisie(garanties), null).then((id) => soumettre(commercial, id, null))).rejects.toThrow(/Ce produit se tarifie par garanties : la prime doit être composée par la Technique \(composition manuelle\)/);
+    await creerVersion(technique, garanties, { ...version(), modeTarification: "GARANTIES", formules: [] }, null);
+    const brouillon = await creerBrouillon(commercial, saisie(garanties), null);
+    await expect(soumettre(commercial, brouillon, null)).rejects.toThrow(/pas encore composée/);
+    await composerLaPrime(technique, brouillon, [{ libelle: "Incendie", branche: "INCENDIE", primeNette: "10000", accessoires: "2500" }, { libelle: "Vol", branche: "IARD", primeNette: "9850", accessoires: "2500" }], "Simulateur (inventé)", null);
+    expect((await soumettre(commercial, brouillon, null)).statut).toBe("EMISE");
+    // Incendie : 12 500 × 12,5 % = 1 562,5 → 1 563 ; Vol : 12 350 × 7,25 % = 895,375 → 895 ; TTC 12 500 + 1 563 + 12 350 + 895 = 27 308.
+    expect((await lireCotation(commercial, brouillon))!.resultat.totaux.arrondi.ttc.toFixed()).toBe("27308");
 
-    // Produit IARD à la formule : le filet du taux mixte reste en place.
+    // Un produit à la formule rattaché à une branche à taux MIXTE reste refusé : le filet existe toujours (la branche mixte est propre à ce test).
+    const mixte = (await assurerBranche(`MIX_${CODE("B")}`.slice(0, 20)));
+    await creerTaxe(technique, { branche: mixte, typeContrat: null, tauxMixte: true, commentaire: "12,5 % / 7,25 % (inventé)", tauxPourcent: null, assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
     const formule = CODE("VOL");
-    await creerProduit(technique, { code: formule, libelle: "Vol (bout en bout)", gamme: "RELAX", branche: "IARD" }, null);
+    await creerProduit(technique, { code: formule, libelle: "Vol (bout en bout)", gamme: "RELAX", branche: mixte }, null);
     await creerVersion(technique, formule, version(), null);
-    await expect(creerBrouillon(commercial, saisie(formule), null).then((id) => soumettre(commercial, id, null))).rejects.toThrow(/taux mixte non pris en charge/);
+    await expect(creerBrouillon(commercial, { ...saisie(formule), lignes: [{ codeFormule: "STANDARD", effectif: 1 }] }, null).then((id) => soumettre(commercial, id, null))).rejects.toThrow(/taux mixte non pris en charge/);
   });
 
   it("CP VOL déposé (contenu du §10.1 vérifié), puis rendu avec des montants de fixture : les bonnes cases sont cochées, la date d'émission suit", async () => {

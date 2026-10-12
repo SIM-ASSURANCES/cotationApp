@@ -207,6 +207,45 @@ FIXTURES: dict[str, bytes] = {
         "Vérification : {{ doc.url_verification }}   {{ qr_code }}",
         police="Calibri",
     ),
+    # Session 6.2b (D32) : CP et facture d'un produit tarifé par garanties : UNE LIGNE PAR GARANTIE souscrite, avec SON taux de taxe ;
+    # le taux de taxe global n'est rempli que si un seul taux s'applique (`prime.taux_taxe` est facultatif).
+    "cp_garanties_test.docx": document(
+        *IDENTIFICATION_CP,
+        "Garanties souscrites :",
+        [
+            ["Garantie", "Branche", "Prime nette", "Taux", "Taxe", "TTC"],
+            ["{%tr for g in garanties_souscrites %}", "", "", "", "", ""],
+            ["{{ g.libelle }}", "{{ g.branche }}", "{{ g.prime_nette | montant }}", "{{ g.taux_taxe | pct }}", "{{ g.taxe | montant }}", "{{ g.ttc | montant }}"],
+            ["{%tr endfor %}", "", "", "", "", ""],
+        ],
+        *CLAUSES_FINALES_CP,
+        police="Calibri",
+    ),
+    "facture_garanties_test.docx": document(
+        "FACTURE n° {{ doc.numero }} ({{ doc.version }}) – {{ produit.libelle }}",
+        "Police n° {{ police.numero }}, souscrite le {{ police.date_souscription | date }} ; période du {{ police.date_effet | date }} au {{ police.date_echeance | date }}",
+        "Facturé à : {% if souscripteur.type == 'MORALE' %}{{ souscripteur.raison_sociale }}{% else %}{{ souscripteur.nom }} {{ souscripteur.prenoms }}{% endif %}, {{ souscripteur.adresse }}",
+        [
+            ["Garantie", "Prime HT", "Accessoires", "Taux", "Taxe", "TTC"],
+            ["{%tr for g in garanties_souscrites %}", "", "", "", "", ""],
+            ["{{ g.libelle }}", "{{ g.prime_nette | montant }}", "{{ g.accessoires | montant }}", "{{ g.taux_taxe | pct }}", "{{ g.taxe | montant }}", "{{ g.ttc | montant }}"],
+            ["{%tr endfor %}", "", "", "", "", ""],
+        ],
+        "Total HT : {{ prime.nette | montant }} ; accessoires : {{ prime.accessoires | montant }} ; taxe : {{ prime.taxe | montant }}",
+        "Taux de taxe unique : {{ prime.taux_taxe | pct }}",
+        "Total TTC : {{ prime.ttc | montant }} F CFA, soit {{ prime.ttc | lettres }}.",
+        "{%p for e in echeances %}",
+        "Échéance {{ e.numero }} du {{ e.date | date }} : {{ e.montant | montant }} F CFA – {{ e.statut }}",
+        "{%p endfor %}",
+        "{%p for r in societe.rib %}",
+        "Virement : {{ r.banque }}, compte {{ r.numero }}",
+        "{%p endfor %}",
+        "Article 13 du Code CIMA : la prise d'effet du contrat est subordonnée au paiement de la prime.",
+        "{{ societe.raison_sociale }} – RCCM {{ societe.rccm }} – NCC {{ societe.ncc }}",
+        "Fait à {{ doc.lieu_emission }}, le {{ doc.date_emission | date }}. Pour SIM Assurances : {{ signature_sim }}",
+        "Vérification : {{ doc.url_verification }}   {{ qr_code }}",
+        police="Calibri",
+    ),
     # Avoir (CDC §11.3) : la facture annulée, montants négatifs.
     "avoir_test.docx": document(
         "AVOIR n° {{ doc.numero }} – annule la facture {{ doc.facture_origine }}",

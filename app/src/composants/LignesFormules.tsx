@@ -30,6 +30,7 @@ const entree = "w-full rounded border border-border bg-surface px-2 py-1";
 /** Lignes de formules d'une version de produit : ajout et retrait de lignes. Les champs portent le même nom (getAll côté serveur). */
 export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
   const [lignes, setLignes] = useState<LigneFormule[]>(initiales.length > 0 ? initiales : [vide()]);
+  // Mode par garanties (session 6.2b) : aucune formule n'est nécessaire, on peut toutes les retirer. En mode par formule, la validation en exige une.
 
   const modifier = (i: number, champ: keyof LigneFormule, valeur: string) =>
     setLignes((l) => l.map((x, k) => (k === i ? { ...x, [champ]: valeur } : x)));
@@ -84,7 +85,7 @@ export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
                 <input name="formule_age_max" value={l.ageMax} onChange={(e) => modifier(i, "ageMax", e.target.value)} aria-label="Âge maximal" inputMode="numeric" className={entree} />
               </td>
               <td className="p-1">
-                <button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} disabled={lignes.length === 1} className="rounded border border-border px-2 py-1 disabled:opacity-40">
+                <button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} className="rounded border border-border px-2 py-1">
                   Retirer
                 </button>
               </td>

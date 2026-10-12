@@ -1,10 +1,11 @@
 {
-  "source": "Branches citées par la Direction Technique le 08/10/2026 (D18), plus celles des produits hors tableau ajoutées en session 6.0 (D27, H32). La liste est paramétrable depuis l'écran « Branches ».",
+  "source": "Branches citées par la Direction Technique le 08/10/2026 (D18), plus celles des produits hors tableau ajoutées en session 6.0 (D27, H32) et la branche INCENDIE ajoutée en session 6.2b (D32). La liste est paramétrable depuis l'écran « Branches ».",
   "lignes": [
     { "code": "IA", "libelle": "Individuelle accident" },
     { "code": "DECES", "libelle": "Décès" },
     { "code": "SANTE", "libelle": "Santé" },
-    { "code": "IARD", "libelle": "Incendie, accidents et risques divers (IARD)" },
+    { "code": "IARD", "libelle": "Autres dommages aux biens (IARD)" },
+    { "code": "INCENDIE", "libelle": "Incendie" },
     { "code": "MOTO", "libelle": "Moto (SECURMOTO)" },
     { "code": "VOYAGE", "libelle": "Assistance voyage (RELAXVOYAGE)" },
     { "code": "RECOLTE", "libelle": "Récoltes (SECURECOLTE)" }

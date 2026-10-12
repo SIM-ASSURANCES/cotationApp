@@ -36,6 +36,22 @@ export type FormuleSource = {
   ttc: string;
 };
 
+/**
+ * Une garantie souscrite d'un produit tarifé par garanties (session 6.2b, `garanties_souscrites[]`) : une ligne de prime composée par la
+ * Technique, avec SON taux de taxe (résolu à la composition, figé) et ses montants arrondis par le module.
+ */
+export type GarantieSource = {
+  libelle: string;
+  branche: string;
+  nette: string;
+  accessoires: string;
+  tauxTaxe: string;
+  taxe: string;
+  ttc: string;
+  /** Assiette de la taxe de la ligne (nette + accessoires, ou nette seule selon la taxe de sa branche). */
+  baseTaxe: string;
+};
+
 export type SourceDocument = {
   type: TypeDocument;
   numero: string;
@@ -62,8 +78,12 @@ export type SourceDocument = {
   dateEcheance: DateIso;
   joursCouverts: number;
   formules: FormuleSource[];
-  totaux: { nette: string; accessoires: string; taxe: string; ttc: string };
-  taxe: { tauxPourcent: string; assiette: string };
+  /** Produit en mode GARANTIES (session 6.2b) : une ligne par garantie souscrite. Absent ou vide : produit à la formule. */
+  garanties?: GarantieSource[];
+  /** `baseTaxe` : assiette totale de la taxe quand elle n'est pas déduite de l'assiette unique (composition, plusieurs assiettes possibles). */
+  totaux: { nette: string; accessoires: string; taxe: string; ttc: string; baseTaxe?: string };
+  /** `tauxPourcent` null : plusieurs taux de taxe dans le même document (composition par garanties) ; `prime.taux_taxe` est alors vide. */
+  taxe: { tauxPourcent: string | null; assiette: string };
   echeances: { numero: number; date: DateIso; montant: string }[];
   forcee: boolean;
   motifForcage: string | null;
@@ -121,7 +141,7 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
   // absents, et un modèle de certificat qui les utilise ne se génère pas (le générateur nomme le champ).
   const certificat = s.type === "CERTIFICAT";
   const assiette = (t: { nette: string; accessoires: string }) => (s.taxe.assiette === "NETTE" ? montant(t.nette) : montant(t.nette).plus(montant(t.accessoires)));
-  const baseTaxe = assiette(s.totaux);
+  const baseTaxe = s.totaux.baseTaxe !== undefined ? montant(s.totaux.baseTaxe) : assiette(s.totaux);
   const fa = s.facturation;
   const donnees = {
     societe: s.societe,
@@ -201,6 +221,10 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
       ttc: certificat ? NON_FOURNI : f.ttc,
       base_taxe: certificat ? NON_FOURNI : assiette(f).toFixed(),
     })),
+    // Une ligne par garantie souscrite (session 6.2b) ; liste vide pour un produit à la formule (champ facultatif).
+    garanties_souscrites: certificat
+      ? NON_FOURNI
+      : (s.garanties ?? []).map((g) => ({ libelle: g.libelle, branche: g.branche, prime_nette: g.nette, accessoires: g.accessoires, taux_taxe: g.tauxTaxe, taxe: g.taxe, ttc: g.ttc })),
     prime: certificat
       ? NON_FOURNI
       : {

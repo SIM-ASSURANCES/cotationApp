@@ -30,10 +30,12 @@ export const ACTIONS = [
   { code: "VALIDER_COTATION", libelle: "Valider une cotation (prime forcée ou seuil dépassé)" },
   // Extension hors tableau du CDC §4 (session 5b, D25) : tableaux de bord, paramétrable.
   { code: "CONSULTER_TABLEAUX_DE_BORD", libelle: "Consulter les tableaux de bord" },
+  // Extension hors tableau du CDC §4 (session 6.2b, D32) : composition manuelle de la prime d'un produit tarifé par garanties.
+  { code: "COMPOSER_PRIME", libelle: "Composer une prime (produit tarifé par garanties)" },
 ] as const;
 
 /** Actions ajoutées au tableau du CDC §4 par une décision consignée (decisions.md). */
-export const ACTIONS_HORS_CDC: readonly CodeAction[] = ["VALIDER_COTATION", "CONSULTER_TABLEAUX_DE_BORD"];
+export const ACTIONS_HORS_CDC: readonly CodeAction[] = ["VALIDER_COTATION", "CONSULTER_TABLEAUX_DE_BORD", "COMPOSER_PRIME"];
 
 export type CodeAction = (typeof ACTIONS)[number]["code"];
 
@@ -77,6 +79,8 @@ const LIGNES: Record<CodeAction, readonly CodeNiveau[]> = {
   VALIDER_COTATION: [A, A, V, A, A, A],
   // Session 5b (D25) : au minimum Technique, Comptabilité et Direction Générale en lecture (instructions de la phase 5).
   CONSULTER_TABLEAUX_DE_BORD: [A, A, L, L, L, A],
+  // Session 6.2b (D32) : la Technique compose la prime ; les autres profils n'ont pas accès (le Commercial crée la cotation, la Technique la compose).
+  COMPOSER_PRIME: [A, A, O, A, A, A],
 };
 
 export function droitsParDefaut(): MatriceDroits {

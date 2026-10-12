@@ -17,7 +17,7 @@ Les règles propres à Next.js sont dans `app/CLAUDE.md`.
 ## Code
 
 - Montants en décimal, jamais en flottant (D3).
-- Un produit en mode `GARANTIES` n'a jamais de montant automatique : tout nouveau chemin qui calcule un montant avec le moteur, ou qui émet un document préparé avant une bascule de mode, appelle `exigerCalculAutomatique` (ou `exigerCalculAutomatiqueEnVigueur`). D31 liste les cinq sites actuels.
+- Un produit en mode `GARANTIES` n'a jamais de montant automatique : sa prime est **composée** par la Technique (`composerLaPrime`, D32) et figée avec la cotation. Tout nouveau chemin qui calcule un montant avec le moteur, ou qui émet un document préparé avant une bascule de mode, appelle `exigerCalculAutomatique`, `exigerModeCoherent` ou leurs variantes « en vigueur » : la nature du calcul figé (automatique ou composition) doit correspondre au mode de la version. D31 et D32 listent les sites.
 - Couches `domaine/` → `serveur/` → `app/` (D4). Le moteur de calcul est la seule source des montants.
 - Migrations : nom strictement postérieur à la dernière (`migrations.test.ts` le vérifie). Jamais `prisma db push` ; sur un serveur, uniquement `npm run migrate:deploy` (ou `docker compose up -d --build`).
 - Pas de `npm audit fix --force`.

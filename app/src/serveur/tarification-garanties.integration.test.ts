@@ -5,7 +5,7 @@ import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { EntreeCalcul } from "@/domaine/calcul/calcul";
-import { MESSAGE_TARIFICATION_PAR_GARANTIES, type VersionSaisie } from "@/domaine/calcul/parametrage";
+import { MESSAGE_BROUILLON_A_FORMULES, MESSAGE_TARIFICATION_PAR_GARANTIES, type VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Souscripteur } from "@/domaine/cotation/saisie";
 
 import { lireJournal } from "./audit";
@@ -89,7 +89,8 @@ const saisie = (codeProduit: string, surcharge: Partial<SaisieCotation> = {}): S
   risque: {},
   ...surcharge,
 });
-const saisieGaranties = (codeProduit: string) => saisie(codeProduit, { lignes: [{ codeFormule: "UNITE", effectif: 1 }], nombreTranches: 1 });
+/** Cotation d'un produit par garanties (session 6.2b) : aucune formule, la prime sera composée par la Technique. */
+const saisieGaranties = (codeProduit: string) => saisie(codeProduit, { lignes: [], nombreTranches: 1 });
 
 let compteurPolice = 0;
 const numeroPolice = () => `TST-2026-${String(Date.now() % 1_000_000).padStart(6, "0")}-G${String(++compteurPolice).padStart(5, "0")}`;
@@ -189,13 +190,21 @@ describe("GARANTIES : aucun montant automatique", () => {
     }
   });
 
-  it("aucune cotation ne naît pour un produit tarifé par garanties", async () => {
+  it("le brouillon d'un produit par garanties naît « à composer » (sans TTC) et ne se soumet pas tant que la prime n'est pas composée ; avec des formules, il est refusé", async () => {
     const code = CODE("GAC");
     await creerProduit(technique, { code, libelle: "Garanties (test)", gamme: "RELAX", branche: brancheSante }, null);
     await creerVersion(technique, code, versionGaranties("2020-01-01"), null);
 
-    await expect(creerBrouillon(commercial, saisieGaranties(code), null)).rejects.toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
+    await expect(creerBrouillon(commercial, saisie(code), null)).rejects.toThrow(MESSAGE_BROUILLON_A_FORMULES);
     expect(await nombreDeCotations(code)).toBe(0);
+
+    const id = await creerBrouillon(commercial, saisieGaranties(code), null);
+    const c = (await lireCotation(commercial, id))!;
+    expect(c.composition).toMatchObject({ lignes: [] });
+    expect(c.lignes).toEqual([]);
+    expect((await obtenirPrisma().cotation.findUniqueOrThrow({ where: { id } })).ttcTotal).toBeNull();
+    await expect(soumettre(commercial, id, null)).rejects.toThrow(/pas encore composée/);
+    expect((await lireCotation(commercial, id))!.statut).toBe("BROUILLON");
   });
 
   it("un produit basculé en GARANTIES : le brouillon d'avant ne peut plus être soumis ni modifié, une cotation déjà émise reste acceptable (T10)", async () => {
@@ -209,9 +218,9 @@ describe("GARANTIES : aucun montant automatique", () => {
     // La version GARANTIES s'applique aux documents datés d'aujourd'hui.
     await creerVersion(technique, code, versionGaranties(aujourdhui()), null);
 
-    await expect(soumettre(commercial, brouillon, null)).rejects.toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
-    await expect(modifierBrouillon(commercial, brouillon, saisie(code), null)).rejects.toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
-    await expect(creerBrouillon(commercial, saisie(code), null)).rejects.toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
+    await expect(soumettre(commercial, brouillon, null)).rejects.toThrow(MESSAGE_BROUILLON_A_FORMULES);
+    await expect(modifierBrouillon(commercial, brouillon, saisie(code), null)).rejects.toThrow(MESSAGE_BROUILLON_A_FORMULES);
+    await expect(creerBrouillon(commercial, saisie(code), null)).rejects.toThrow(MESSAGE_BROUILLON_A_FORMULES);
     const apres = (await lireCotation(commercial, brouillon))!;
     expect(apres.statut).toBe("BROUILLON");
     expect(apres.numero).toBeNull();
@@ -240,7 +249,7 @@ describe("GARANTIES : aucun montant automatique", () => {
     expect(apres.numero).toBeNull();
     // Renvoyée en brouillon, elle ne se soumet pas davantage : il faudra la recomposer (6.2b).
     await renvoyerEnBrouillon(technique2, id, "Produit passé en garanties", null);
-    await expect(soumettre(commercial, id, null)).rejects.toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
+    await expect(soumettre(commercial, id, null)).rejects.toThrow(MESSAGE_BROUILLON_A_FORMULES);
   });
 
   it("ceinture : l'émission refuse aussi une cotation rattachée à la version GARANTIES (état fabriqué en SQL : aucun chemin de l'application n'y mène)", async () => {

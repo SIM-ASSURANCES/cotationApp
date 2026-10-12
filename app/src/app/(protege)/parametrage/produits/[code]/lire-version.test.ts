@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { problemesVersion } from "@/domaine/calcul/parametrage";
 
-import { lireVersion } from "./lire-version";
+import { lireGaranties, lireVersion } from "./lire-version";
 
 /** Formulaire tel que le navigateur l'envoie : T1 (BENI), deux formules. */
 function formulaireBeni(surcharge: Record<string, string> = {}): FormData {
@@ -71,5 +71,27 @@ describe("lireVersion : formulaire -> version saisie", () => {
 
     const inconnu = lireVersion(formulaireBeni({ modeTarification: "AU_HASARD" }));
     expect(problemesVersion(inconnu).join(" | ")).toContain("mode de tarification");
+  });
+});
+
+describe("session 6.2b : garanties du produit", () => {
+  it("une garantie par ligne, « Libellé » ou « Libellé ; BRANCHE » (branche en majuscules), lignes vides ignorées", () => {
+    expect(lireGaranties("Incendie ; incendie\n\n  Vol  \r\nBris de glace;IARD\n")).toEqual([
+      { libelle: "Incendie", branche: "INCENDIE" },
+      { libelle: "Vol", branche: null },
+      { libelle: "Bris de glace", branche: "IARD" },
+    ]);
+    expect(lireGaranties("")).toEqual([]);
+  });
+
+  it("le formulaire porte la liste et la case « saisie libre » ; sans le marqueur du formulaire, la saisie libre reste permise", () => {
+    const d = formulaireBeni({ modeTarification: "GARANTIES", garanties: "Incendie ; INCENDIE\nVol", garantiesPresentes: "1" });
+    const avec = lireVersion(d);
+    expect(avec.garanties).toEqual([{ libelle: "Incendie", branche: "INCENDIE" }, { libelle: "Vol", branche: null }]);
+    expect(avec.garantiesSaisieLibre).toBe(false); // case décochée dans un formulaire qui la propose
+    d.set("garantiesSaisieLibre", "on");
+    expect(lireVersion(d).garantiesSaisieLibre).toBe(true);
+    expect(lireVersion(formulaireBeni()).garantiesSaisieLibre).toBe(true); // formulaire d'avant la 6.2b
+    expect(lireVersion(formulaireBeni()).garanties).toEqual([]);
   });
 });

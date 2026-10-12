@@ -2,7 +2,7 @@ import { ajouterJours, ajouterMois, dateValide, type DateIso } from "../calcul/d
 import { analyserMontant, ErreurCalcul, montant, ZERO, type Montant } from "../calcul/montant";
 import type { Assure, Souscripteur } from "../cotation/saisie";
 import type { IntermediaireDocument } from "../intermediaires";
-import type { FormuleSource } from "../documents/donnees";
+import type { FormuleSource, GarantieSource } from "../documents/donnees";
 import { repartirEcheances, type EcheanceDue } from "./echeances";
 
 /**
@@ -20,7 +20,7 @@ export const LIBELLE_TYPE_FACTURE: Record<TypeFacture, string> = {
   AVOIR: "Avoir",
 };
 
-export const STATUTS_FACTURE = ["BROUILLON", "A_VALIDER", "EMISE", "ANNULEE"] as const;
+export const STATUTS_FACTURE = ["BROUILLON", "A_VALIDER", "EMISE", "ANNULEE", "ABANDONNEE"] as const;
 export type StatutFacture = (typeof STATUTS_FACTURE)[number];
 
 export const LIBELLE_STATUT_FACTURE: Record<StatutFacture, string> = {
@@ -28,6 +28,8 @@ export const LIBELLE_STATUT_FACTURE: Record<StatutFacture, string> = {
   A_VALIDER: "À valider",
   EMISE: "Émise",
   ANNULEE: "Annulée",
+  // Session 6.2b (H87) : un brouillon dont on renonce, sans numéro consommé.
+  ABANDONNEE: "Abandonnée",
 };
 
 export const CANAUX_PAIEMENT = ["ESPECES", "CHEQUE", "VIREMENT", "MOBILE_MONEY"] as const;
@@ -68,8 +70,11 @@ export type ContenuFacture = {
   dateEcheance: DateIso;
   joursCouverts: number;
   formules: FormuleSource[];
-  totaux: { nette: string; accessoires: string; taxe: string; ttc: string };
-  taxe: { tauxPourcent: string; assiette: string };
+  /** Produit en mode GARANTIES (session 6.2b) : une ligne par garantie souscrite, avec son taux de taxe. Absent d'une facture à la formule ou d'avant. */
+  garanties?: GarantieSource[];
+  totaux: { nette: string; accessoires: string; taxe: string; ttc: string; baseTaxe?: string };
+  /** `tauxPourcent` null : plusieurs taux de taxe dans la facture (garanties de branches différentes). */
+  taxe: { tauxPourcent: string | null; assiette: string };
   /** Échéancier de la facture : vide si elle n'est pas fractionnée (une seule tranche). */
   echeances: { numero: number; date: DateIso; montant: string }[];
   /** Entrée du moteur dont viennent les montants (null pour un avoir : ses montants sont ceux de la facture annulée). */
@@ -116,7 +121,14 @@ export function contenuAvoir(facture: ContenuFacture): ContenuFacture {
   return {
     ...facture,
     formules: facture.formules.map((f) => ({ ...f, primeUnitaire: negatif(f.primeUnitaire), primeParAssure: negatif(f.primeParAssure), nette: negatif(f.nette), accessoires: negatif(f.accessoires), taxe: negatif(f.taxe), ttc: negatif(f.ttc) })),
-    totaux: { nette: negatif(totaux.nette), accessoires: negatif(totaux.accessoires), taxe: negatif(totaux.taxe), ttc: negatif(totaux.ttc) },
+    garanties: facture.garanties?.map((g) => ({ ...g, nette: negatif(g.nette), accessoires: negatif(g.accessoires), taxe: negatif(g.taxe), ttc: negatif(g.ttc), baseTaxe: negatif(g.baseTaxe) })),
+    totaux: {
+      nette: negatif(totaux.nette),
+      accessoires: negatif(totaux.accessoires),
+      taxe: negatif(totaux.taxe),
+      ttc: negatif(totaux.ttc),
+      ...(totaux.baseTaxe !== undefined ? { baseTaxe: negatif(totaux.baseTaxe) } : {}),
+    },
     // Un avoir n'a pas d'échéancier : il annule la facture en une fois.
     echeances: [],
     entree: null,
@@ -128,6 +140,24 @@ export const LONGUEUR_MIN_MOTIF_AVOIR = 5;
 export function problemesMotifAvoir(motif: string): string[] {
   const t = motif.trim();
   return t.length < LONGUEUR_MIN_MOTIF_AVOIR || t.length > 500 ? [`Motif de l'avoir obligatoire (${LONGUEUR_MIN_MOTIF_AVOIR} à 500 caractères).`] : [];
+}
+
+// ------------------------------------------------------------------ Abandon d'un brouillon (session 6.2b, H87)
+
+export const LONGUEUR_MIN_MOTIF_ABANDON = 5;
+
+/**
+ * Motif obligatoire de l'abandon d'un brouillon de facture : un brouillon (ou une demande « À valider ») dont on renonce, définitivement,
+ * sans qu'aucun numéro ne soit consommé. Un avoir n'est jamais un brouillon : il ne s'abandonne pas.
+ */
+export function problemesAbandon(facture: { type: string; statut: string }, motif: string): string[] {
+  const p: string[] = [];
+  if (facture.type === "AVOIR") p.push("Un avoir ne s'abandonne pas.");
+  else if (facture.statut === "ABANDONNEE") p.push("Ce brouillon est déjà abandonné.");
+  else if (facture.statut !== "BROUILLON" && facture.statut !== "A_VALIDER") p.push("Seul un brouillon (ou une demande « À valider ») peut être abandonné : une facture émise se corrige par un avoir.");
+  const t = motif.trim();
+  if (t.length < LONGUEUR_MIN_MOTIF_ABANDON || t.length > 500) p.push(`Motif de l'abandon obligatoire (${LONGUEUR_MIN_MOTIF_ABANDON} à 500 caractères).`);
+  return p;
 }
 
 // ------------------------------------------------------------------ Renouvellement (CDC §11.3)

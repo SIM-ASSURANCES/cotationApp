@@ -46,6 +46,32 @@ export const MESSAGE_TARIFICATION_PAR_GARANTIES = "Ce produit se tarifie par gar
  */
 export const calculAutomatiquePossible = (mode: string): boolean => mode === "FORMULE";
 
+/**
+ * La composition manuelle de la prime (session 6.2b) n'existe que pour le mode GARANTIES, et seulement pour lui : la chaîne exacte,
+ * comme pour `calculAutomatiquePossible` (une valeur inconnue n'est ni calculée ni composée).
+ */
+export const compositionPossible = (mode: string): boolean => mode === "GARANTIES";
+
+/** Brouillon préparé avec des formules, que son produit a quittées pour le mode par garanties (session 6.2b) : il ne se convertit pas, on le recrée. */
+export const MESSAGE_BROUILLON_A_FORMULES =
+  "Ce produit se tarife désormais par garanties : ce brouillon, préparé avec des formules, ne peut plus être modifié ni soumis ; créez une nouvelle cotation, dont la Technique composera la prime";
+
+/** Refus de la composition manuelle pour un produit à la formule (le tarif existe : la Technique ne compose pas la prime). */
+export const MESSAGE_COMPOSITION_IMPOSSIBLE = "Ce produit se tarifie à la formule : la prime se calcule, elle ne se compose pas";
+
+/**
+ * Renouvellement et incorporation d'adhérents d'une police dont la prime a été composée (session 6.2b, H90) : non pris en charge. La
+ * composition d'une nouvelle période, ou d'un avenant, est une décision de Thierry et de la Technique ; en attendant, jamais de montant
+ * recopié ou recalculé en silence.
+ */
+export const MESSAGE_RENOUVELLEMENT_GARANTIES =
+  "Le renouvellement d'une police d'un produit tarifé par garanties n'est pas encore pris en charge : la composition de la nouvelle période n'est pas gérée";
+export const MESSAGE_AVENANT_GARANTIES =
+  "L'incorporation d'adhérents dans une police d'un produit tarifé par garanties n'est pas encore facturée automatiquement : la prime d'un avenant à garanties n'est pas gérée";
+
+/** Une garantie paramétrée du produit : son libellé et, facultativement, la branche fiscale proposée sur la ligne de prime. */
+export type GarantieParametree = { libelle: string; branche: string | null };
+
 export type VersionSaisie = {
   dateEffet: DateIso;
   arrondi: RegleArrondi;
@@ -63,6 +89,11 @@ export type VersionSaisie = {
   seuilValidationTtc: string | null;
   /** Mode de tarification (session 6.2a). Absent : FORMULE, le comportement d'avant. */
   modeTarification?: ModeTarification;
+  /** Garanties du produit proposées à la composition de la prime (session 6.2b, mode GARANTIES). Absent ou vide : saisie libre. */
+  garanties?: GarantieParametree[];
+  /** Faux : la composition n'accepte que les libellés de `garanties`. Absent : vrai. */
+  garantiesSaisieLibre?: boolean;
+  /** Mode GARANTIES : les formules sont facultatives (la prime ne vient pas d'un tarif) ; mode FORMULE : au moins une. */
   formules: FormuleSaisie[];
   /**
    * Références contractuelles (CDC §7) : modèle de CG (et de CS) joint au contrat, et visa cité dans
@@ -152,7 +183,25 @@ export function problemesVersion(v: VersionSaisie): string[] {
   if (!Number.isInteger(v.cotation.formulesMax) || v.cotation.formulesMax < 1 || v.cotation.formulesMax > 10) {
     p.push("Le nombre maximal de formules comparées doit être de 1 à 10.");
   }
-  if (v.formules.length === 0) p.push("Un produit doit avoir au moins une formule.");
+  const parGaranties = v.modeTarification === "GARANTIES";
+  if (v.formules.length === 0 && !parGaranties) p.push("Un produit doit avoir au moins une formule.");
+  // Mode par garanties (session 6.2b) : pas de frais de fractionnement automatiques (taux de taxe ambigu avec plusieurs branches : ils se
+  // saisissent comme une ligne de prime) ; liste des garanties du produit contrôlée ; elle n'a pas de sens à la formule.
+  if (parGaranties && montant(v.fractionnement.frais || "0").greaterThan(0)) {
+    p.push("Mode par garanties : les frais de fractionnement ne s'ajoutent pas automatiquement, saisissez-les comme une ligne de prime.");
+  }
+  const garanties = v.garanties ?? [];
+  if (!parGaranties && (garanties.length > 0 || v.garantiesSaisieLibre === false)) p.push("La liste des garanties n'a de sens qu'en mode par garanties.");
+  if (garanties.length > 30) p.push("Au plus 30 garanties par produit.");
+  const libellesVus = new Set<string>();
+  for (const g of garanties) {
+    const libelle = g.libelle.trim();
+    if (libelle === "" || libelle.length > 100) p.push("Une garantie a un libellé de 1 à 100 caractères.");
+    else if (libellesVus.has(libelle.toLowerCase())) p.push(`Garantie « ${libelle} » en double.`);
+    libellesVus.add(libelle.toLowerCase());
+    if (g.branche !== null && !codeValide(g.branche)) p.push(`Garantie « ${libelle} » : code de branche invalide.`);
+  }
+  if (parGaranties && v.garantiesSaisieLibre === false && garanties.length === 0) p.push("La saisie libre est interdite : la liste des garanties du produit ne peut pas être vide.");
   const codes = new Set<string>();
   for (const f of v.formules) {
     const nom = `Formule « ${f.code} »`;
@@ -172,6 +221,19 @@ export function problemesVersion(v: VersionSaisie): string[] {
     }
   }
   return p;
+}
+
+/**
+ * Libellés de lignes de prime refusés par la liste des garanties du produit (session 6.2b) : seulement quand la saisie libre est
+ * interdite. Sinon la liste n'est qu'une aide à la saisie. Comparaison sans casse ni espaces de bord.
+ */
+export function problemesLibellesGaranties(version: Pick<VersionSaisie, "garanties" | "garantiesSaisieLibre">, libelles: string[]): string[] {
+  if (version.garantiesSaisieLibre !== false) return [];
+  const permis = new Set((version.garanties ?? []).map((g) => g.libelle.trim().toLowerCase()));
+  return libelles
+    .map((l, i) => ({ l: l.trim(), i }))
+    .filter(({ l }) => !permis.has(l.toLowerCase()))
+    .map(({ l, i }) => `Ligne ${i + 1} : « ${l} » n'est pas une garantie de ce produit (la saisie libre est interdite).`);
 }
 
 export function problemesTaxe(t: TaxeSaisie): string[] {

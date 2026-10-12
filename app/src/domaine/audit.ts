@@ -29,6 +29,7 @@ export const ACTIONS_AUDIT = [
   // Cotations (phase 2)
   "COTATION_CREEE",
   "COTATION_MODIFIEE",
+  "COTATION_COMPOSEE",
   "COTATION_SOUMISE",
   "COTATION_RENVOYEE",
   "COTATION_ACCEPTEE",
@@ -60,6 +61,7 @@ export const ACTIONS_AUDIT = [
   "FACTURE_A_VALIDER",
   "FACTURE_EMISE",
   "FACTURE_ANNULEE",
+  "FACTURE_ABANDONNEE",
   "PAIEMENT_ENREGISTRE",
   "PDF_EN_ATTENTE",
   // Session 5a : stockage indisponible (T14, ECRITURE_PARTAGE_ECHEC est plus haut) et import en masse (CDC §13)

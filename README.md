@@ -33,7 +33,7 @@ Cas de test du CDC (§16) :
 | T3 | Facture individuelle YAO (prorata) | test automatisé ; taux de 1,5 % pris comme cas particulier (H30, fermée) |
 | T4 | Correction de facture par avoir | test automatisé, y compris sur T3 payée en partie (session 6.0) |
 | T5 | SECURVIE, 3 bénéficiaires | test automatisé (bout en bout) |
-| T6 | CP VOL, cases à cocher | **écart** : document testé, mais montants de test, car le taux mixte de l'IARD reste refusé (H32) et que les produits à garanties sont bloqués (D31, 6.2a) |
+| T6 | CP VOL, cases à cocher | **écart** : le document est testé seul (cases à cocher, date d'émission), avec des montants de test ; depuis la 6.2b, un produit IARD se tarife par garanties : la prime est composée par la Technique (D32), l'incendie à 12,5 % et les autres dommages à 7,25 % (H32 fermée), testé de la composition à la facture |
 | T7 | Liste de plus de 10 assurés | test automatisé |
 | T8 | Génération en masse (500 adhérents) | test automatisé (temps mesuré : [docs/recette.md](docs/recette.md)) |
 | T9 | Modèle avec balise inconnue | test automatisé |
@@ -130,7 +130,7 @@ Prérequis à fournir par l'administrateur :
 - Installation sans Docker : [docs/installation.md](docs/installation.md) ; déploiement : [docs/deploiement.md](docs/deploiement.md) ; [exigences pour le serveur](docs/exigences-serveur.md)
 - Cahier des charges : [docs/cdc.md](docs/cdc.md)
 - Aide à la rédaction des modèles Word : écran « Modèles › Aide » de l'application ([source](app/src/app/%28protege%29/modeles/aide/page.tsx)) ; [guide de balisage](docs/guide-balisage.md) (méthode, pièges, anomalies A1 à A20) et script `generateur/scripts/verifier_modele.py` qui vérifie un modèle avant son dépôt
-- Comptes rendus : [phase 2](docs/compte-rendu-phase-2.md), [3a](docs/compte-rendu-phase-3a.md), [3b](docs/compte-rendu-phase-3b.md), [4.0](docs/compte-rendu-phase-4.0.md), [4a](docs/compte-rendu-phase-4a.md), [4b](docs/compte-rendu-phase-4b.md), [5a](docs/compte-rendu-phase-5a.md), [5b](docs/compte-rendu-phase-5b.md), [6.0](docs/compte-rendu-phase-6.0.md), [6.1](docs/compte-rendu-phase-6.1.md), [refonte visuelle V1](docs/compte-rendu-refonte-v1.md), [6.2a](docs/compte-rendu-phase-6.2a.md)
+- Comptes rendus : [phase 2](docs/compte-rendu-phase-2.md), [3a](docs/compte-rendu-phase-3a.md), [3b](docs/compte-rendu-phase-3b.md), [4.0](docs/compte-rendu-phase-4.0.md), [4a](docs/compte-rendu-phase-4a.md), [4b](docs/compte-rendu-phase-4b.md), [5a](docs/compte-rendu-phase-5a.md), [5b](docs/compte-rendu-phase-5b.md), [6.0](docs/compte-rendu-phase-6.0.md), [6.1](docs/compte-rendu-phase-6.1.md), [refonte visuelle V1](docs/compte-rendu-refonte-v1.md), [6.2a](docs/compte-rendu-phase-6.2a.md), [6.2b](docs/compte-rendu-phase-6.2b.md)
 
 ## Règles du dépôt
 

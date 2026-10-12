@@ -115,11 +115,11 @@ export function joursCouverts(dateEffet: DateIso, dateEcheance: DateIso): number
   return jours;
 }
 
-function composants(nette: Montant, accessoires: Montant, taxe: Montant): Composants {
+export function composants(nette: Montant, accessoires: Montant, taxe: Montant): Composants {
   return { nette, accessoires, taxe, ttc: nette.plus(accessoires).plus(taxe) };
 }
 
-function somme(liste: Composants[]): Composants {
+export function somme(liste: Composants[]): Composants {
   return composants(
     liste.reduce((s, c) => s.plus(c.nette), ZERO),
     liste.reduce((s, c) => s.plus(c.accessoires), ZERO),

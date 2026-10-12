@@ -218,7 +218,8 @@ FIXTURES: dict[str, bytes] = {
             ["{{ g.libelle }}", "{{ g.branche }}", "{{ g.prime_nette | montant }}", "{{ g.taux_taxe | pct }}", "{{ g.taxe | montant }}", "{{ g.ttc | montant }}"],
             ["{%tr endfor %}", "", "", "", "", ""],
         ],
-        *CLAUSES_FINALES_CP,
+        # Plusieurs taux : pas de taux global entre parenthèses (le taux de chaque garantie est dans le tableau).
+        *(c.replace("taxe ({{ prime.taux_taxe | pct }}) ", "taxe ") for c in CLAUSES_FINALES_CP),
         police="Calibri",
     ),
     "cotation_garanties_test.docx": document(

@@ -38,6 +38,13 @@ sortie/
 # Seule exception, pour plus tard : documents de test INVENTÉS.
 !generateur/tests/fixtures/**/*.pdf
 !generateur/tests/fixtures/**/*.docx
+# Fichiers d'import et rapports d'erreurs : ils peuvent contenir des données clients.
+# Les fichiers d'import des tests sont générés par le code ; seule exception possible : des fichiers
+# de test INVENTÉS dans les dossiers de tests (même règle que pour *.docx).
+*.xlsx
+*.csv
+!generateur/tests/fixtures/**/*.xlsx
+!generateur/tests/fixtures/**/*.csv
 # Fichiers de verrouillage de Word et de LibreOffice
 ~$*
 .~lock.*#
@@ -57,11 +64,13 @@ desktop.ini
 docs/branding/
 docs/CHARTE GRAPHIQUE*.pdf
 PLAN_CLAUDE_CODE_*.md
+# Fichiers d'instructions des sessions : jamais versionnés
+PHASE_*.md
+.plans/
 
 # --- Polices des modèles Word : sous licence, copiées à la main (voir generateur/polices/README.md)
 generateur/polices/*
 !generateur/polices/README.md
 
-PHASE_3_instructions_claude_code.md
 # --- Redis lancé depuis le dépôt (développement) : instantané local -----
 dump.rdb

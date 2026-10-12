@@ -2,8 +2,9 @@ import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { ComplementsSouscripteur } from "@/composants/ComplementsSouscripteur";
 import { LignesAssures, LignesBeneficiaires, LignesContactsUrgence, LignesRisque } from "@/composants/LignesDynamiques";
 import { montant } from "@/domaine/calcul/montant";
-import { LIBELLE_TYPE_CONTRAT, TYPES_CONTRAT } from "@/domaine/calcul/taxes";
+import { ChoixContrat } from "@/composants/ChoixContrat";
 import type { LigneClient } from "@/serveur/clients";
+import type { IntermediaireDocument } from "@/domaine/intermediaires";
 import type { DetailCotation } from "@/serveur/cotations";
 
 import { enregistrerCotation } from "./actions";
@@ -18,6 +19,7 @@ export function FormulaireCotation({
   clients,
   tranchesMax,
   formulesMax,
+  intermediaires,
   base,
 }: {
   produit: { code: string; libelle: string };
@@ -25,9 +27,13 @@ export function FormulaireCotation({
   clients: LigneClient[];
   tranchesMax: number;
   formulesMax: number;
+  /** Intermédiaires actifs du référentiel (session 6.0). */
+  intermediaires: IntermediaireDocument[];
   base?: DetailCotation;
 }) {
   const ligneDe = (code: string) => base?.lignes.find((l) => l.code === code);
+  // Un intermédiaire déjà choisi et désactivé depuis reste proposé sur son brouillon.
+  const choixPossibles = [...intermediaires, ...(base?.intermediaires ?? []).filter((i) => !intermediaires.some((x) => x.code === i.code))];
   const s = base?.souscripteur;
   return (
     <FormulaireAction action={enregistrerCotation} libelleBouton={base ? "Enregistrer le brouillon" : "Créer le brouillon"}>
@@ -64,19 +70,24 @@ export function FormulaireCotation({
       <ComplementsSouscripteur valeurs={s} />
 
       <h2 className="mb-2 text-lg font-semibold">Contrat</h2>
-      <label className="mb-4 block max-w-md text-sm font-medium">
-        Type de contrat (obligatoire : il détermine le taux de taxe)
-        <select name="typeContrat" defaultValue={base?.typeContrat ?? ""} required className={entree}>
-          <option value="" disabled>
-            — Choisir —
-          </option>
-          {TYPES_CONTRAT.map((t) => (
-            <option key={t} value={t}>
-              {LIBELLE_TYPE_CONTRAT[t]}
-            </option>
-          ))}
-        </select>
-      </label>
+      <ChoixContrat typeContrat={base?.typeContrat ?? ""} regimeTaxe={base?.regimeTaxe ?? ""} />
+
+      <h2 className="mb-2 text-lg font-semibold">Intermédiaires (0 à 2)</h2>
+      <div className="mb-4 grid max-w-3xl gap-x-6 sm:grid-cols-2">
+        {[0, 1].map((n) => (
+          <label key={n} className="mb-2 block text-sm font-medium">
+            Intermédiaire {n + 1} (facultatif)
+            <select name="intermediaire" defaultValue={base?.intermediaires[n]?.code ?? ""} className={entree}>
+              <option value="">— Aucun —</option>
+              {choixPossibles.map((i) => (
+                <option key={i.code} value={i.code}>
+                  {i.nom} ({i.code}, {i.role})
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+      </div>
 
       <h2 className="mb-2 text-lg font-semibold">Période et fractionnement</h2>
       <div className="mb-4 grid max-w-4xl gap-x-6 sm:grid-cols-3">
@@ -138,7 +149,7 @@ export function FormulaireCotation({
       <h2 className="mb-2 mt-2 text-lg font-semibold">Assurés (facultatif)</h2>
       <LignesAssures
         formules={formules}
-        initiales={(base?.assures ?? []).map((a) => ({ nom: a.nom_prenoms, naissance: a.date_naissance, sexe: a.sexe, lien: a.lien, formule: a.formule }))}
+        initiales={(base?.assures ?? []).map((a) => ({ nom: a.nom_prenoms, naissance: a.date_naissance, sexe: a.sexe, lien: a.lien, identification: a.num_identification ?? "", formule: a.formule }))}
       />
 
       <h2 className="mb-2 text-lg font-semibold">Bénéficiaires (SECURVIE, RELAXACCIDENT)</h2>

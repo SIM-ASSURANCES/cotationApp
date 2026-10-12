@@ -1,6 +1,7 @@
 import type { DateIso } from "../calcul/dates";
 import { montant } from "../calcul/montant";
 import type { Assure, Beneficiaire, ContactUrgence, Risque, Souscripteur } from "../cotation/saisie";
+import type { IntermediaireDocument } from "../intermediaires";
 import { appliquerFacultatifs, champsInconnus, NON_FOURNI, type NonFourni } from "./dictionnaire";
 import { libelleDuree } from "./duree";
 import type { TypeDocument } from "./emission";
@@ -53,6 +54,8 @@ export type SourceDocument = {
   contactsUrgence: ContactUrgence[] | null;
   /** Certificat d'adhésion : numéro de la police mère (police.police_mere) ; null pour un autre document. */
   policeMere: string | null;
+  /** Intermédiaires de la cotation (0 à 2, session 6.0) ; absent : document qui ne les connaît pas (liste vide, D19). */
+  intermediaires?: IntermediaireDocument[];
   risque: Risque;
   dateEffet: DateIso;
   dateEcheance: DateIso;
@@ -81,6 +84,8 @@ export type Facturation = {
   echeances: { numero: number; date: DateIso; montant: string; statut: "Payé" | "Non payé" }[];
   paiements: { numero: string; date: DateIso; montant: string; reference: string; canal: string; payeur: string; restantDu: string }[];
   solde: { totalPaye: string; restantDu: string };
+  /** solde.avance (D28) : avance disponible de la police au moment du document ; absent pour un avoir. */
+  avance?: string;
   /** doc.facture_origine : facture annulée (avoir) ou réglée (reçu) ; null pour une facture. */
   factureOrigine: string | null;
   envoyeA: { nom: string; adresse: string } | null;
@@ -126,7 +131,7 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
       cs_libelle: s.cs?.libelle ?? null,
       cs_visa: s.cs?.visa ?? null,
     },
-    intermediaires: NON_FOURNI,
+    intermediaires: s.intermediaires ? s.intermediaires.map((i) => ({ nom: i.nom, code: i.code, role: i.role })) : NON_FOURNI,
     souscripteur: {
       type: sous.type,
       nom: ou(sous.nom),
@@ -156,6 +161,7 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
       date_naissance: ou(a.date_naissance),
       sexe: ou(a.sexe),
       lien: ou(a.lien),
+      num_identification: ou(a.num_identification ?? ""),
       formule: ou(a.formule),
       prime: certificat ? NON_FOURNI : primeDeLAssure(a, s.formules, s.ordresSansPrime), // H36 : pas de prime sur le certificat
     })),
@@ -170,7 +176,8 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
     risque: s.risque,
     police: {
       numero: s.policeNumero,
-      reference: NON_FOURNI,
+      // La référence de la police est son numéro (réponse de la Technique, D27 ; H46 fermée).
+      reference: s.policeNumero,
       date_souscription: fa ? fa.dateSouscription : s.type === "COTATION" ? null : s.dateEmission,
       date_effet: s.dateEffet,
       date_echeance: s.dateEcheance,
@@ -210,7 +217,11 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
         ? fa.echeances.map((e) => ({ numero: e.numero, date: e.date, montant: e.montant, statut: e.statut }))
         : s.echeances.map((e) => ({ numero: e.numero, date: e.date, montant: e.montant, statut: "À payer" })),
     paiements: (fa?.paiements ?? []).map((p) => ({ numero: p.numero, date: p.date, montant: p.montant, reference: p.reference, canal: p.canal, restant_du: p.restantDu, payeur: p.payeur })),
-    solde: certificat ? NON_FOURNI : fa ? { total_paye: fa.solde.totalPaye, restant_du: fa.solde.restantDu } : { total_paye: "0", restant_du: s.totaux.ttc },
+    solde: certificat
+      ? NON_FOURNI
+      : fa
+        ? { total_paye: fa.solde.totalPaye, restant_du: fa.solde.restantDu, avance: fa.avance ?? NON_FOURNI }
+        : { total_paye: "0", restant_du: s.totaux.ttc, avance: NON_FOURNI },
     echeance_appelee: fa?.appel
       ? { numero: fa.appel.echeance.numero, date: fa.appel.echeance.date, montant: fa.appel.echeance.montant, restant_du: fa.appel.echeance.restantDu }
       : NON_FOURNI,

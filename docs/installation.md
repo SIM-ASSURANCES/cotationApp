@@ -77,7 +77,7 @@ npm run initialiser
 npm run creer-admin
 ```
 
-`initialiser` crée les 6 profils du CDC §4 et leurs droits par défaut ; on peut le relancer sans risque, il n'écrase jamais un droit modifié. `creer-admin` te demande l'identifiant, le nom, puis le mot de passe **dans le terminal**, sans l'afficher (12 caractères minimum). Ce mot de passe ne passe par aucun fichier.
+`initialiser` crée les 6 profils du CDC §4 et leurs droits par défaut, les motifs de refus, les branches fiscales et les taux de taxe de démarrage (`app/prisma/donnees/`) ; on peut le relancer sans risque, il n'écrase jamais un droit, une branche ou un taux déjà en base. `creer-admin` te demande l'identifiant, le nom, puis le mot de passe **dans le terminal**, sans l'afficher (12 caractères minimum). Ce mot de passe ne passe par aucun fichier.
 
 Vérifications :
 
@@ -174,6 +174,7 @@ Il affiche `[travailleur] démarré : 0 lot(s) d'import, 0 lot(s) d'avis et de r
 
 ## 8. Travail courant
 
+- **Après la récupération d'une branche** (depuis `app/`) : `npm install` si `package.json` a changé ; `npm run migrate:deploy` si la branche apporte une migration (sauvegarder d'abord la base si elle contient des données utiles) ; `npm run initialiser` si elle ajoute des données de démarrage (`app/prisma/donnees/`, ex. branches MOTO, VOYAGE, RECOLTE en session 6.0) ; puis relancer l'application, le générateur et le travailleur. **Jamais `npx prisma db push`** : il contourne les migrations et les déclencheurs de la base.
 - **Modifier le schéma de la base** (poste de développement uniquement) : `npx prisma migrate dev --name <nom-de-la-migration>`, puis `npx prisma generate`, car Prisma 7 ne le lance plus automatiquement. Sur un serveur : uniquement `npm run migrate:deploy`.
 - **Version de production en local** : `npm run build`, puis `npm start`, qui lance `node .next/standalone/server.js`, la commande utilisée sur un serveur.
 - **Ajouter une dépendance Python** : l'ajouter dans `generateur/requirements.in`, puis, l'environnement étant activé :

@@ -6,7 +6,7 @@ import { Prisma } from "@/generated/prisma/client";
 
 import { dateValide, type DateIso } from "@/domaine/calcul/dates";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
-import { normaliserNumeroPolice } from "@/domaine/cotation/police";
+import { normaliserNumeroPolice, numeroCertificatParDefaut } from "@/domaine/cotation/police";
 import type { Assure } from "@/domaine/cotation/saisie";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import {
@@ -31,7 +31,6 @@ import { emettreCertificat } from "./documents";
 import { niveauDuProfil } from "./droits";
 import { aujourdhui } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
-import { lireFormatNumeroPolice } from "./societe";
 import { ecrituresDifferees, lireDocumentEmis, zipStocker } from "./stockage";
 import { creerTachesImport } from "./taches-police";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
@@ -193,7 +192,7 @@ export async function lireFichierImport(nom: string, contenu: Uint8Array): Promi
     const cle = cleDEntete(e);
     if (cle && !index.has(cle)) index.set(cle, i);
   });
-  const manquantes = COLONNES_IMPORT.filter((c) => !index.has(c.cle)).map((c) => c.cle);
+  const manquantes = COLONNES_IMPORT.filter((c) => c.obligatoire && !index.has(c.cle)).map((c) => c.cle);
   if (manquantes.length > 0) {
     throw new ErreurMetier(`Colonnes absentes de la première ligne du fichier : ${manquantes.join(", ")}. Partez du fichier modèle du produit.`);
   }
@@ -209,25 +208,36 @@ export async function lireFichierImport(nom: string, contenu: Uint8Array): Promi
 
 type PoliceAvecVersion = Prisma.PoliceGetPayload<{ include: { cotation: { select: { produitId: true; versionDateEffet: true } } } }>;
 
-async function contexteControle(police: PoliceAvecVersion, dateEffet: DateIso, numeros: string[]): Promise<ContexteControle> {
-  const prisma = obtenirPrisma();
-  const version = await prisma.produitVersion.findUniqueOrThrow({
+async function contexteControle(police: PoliceAvecVersion, dateEffet: DateIso, numeros: string[], lotEnCours: number | null = null, client: Prisma.TransactionClient = obtenirPrisma()): Promise<ContexteControle> {
+  const version = await client.produitVersion.findUniqueOrThrow({
     where: { produitId_dateEffet: { produitId: police.cotation.produitId, dateEffet: police.cotation.versionDateEffet } },
     include: { formules: true },
   });
-  const uniques = [...new Set(numeros.map(normaliserNumeroPolice).filter((n) => n !== ""))];
-  const [polices, documents] = await Promise.all([
-    prisma.police.findMany({ where: { numero: { in: uniques } }, select: { numero: true } }),
-    prisma.documentEmis.findMany({ where: { numero: { in: uniques } }, select: { numero: true }, distinct: ["numero"] }),
+  const adherents = police.assures as unknown as Assure[];
+  const versions = await client.adherentsVersion.findMany({ where: { policeId: police.id }, select: { adherents: true } });
+  const prochainOrdre = Math.max(0, ...versions.flatMap((v) => (v.adherents as unknown as Assure[]).map((a) => a.ordre)), ...adherents.map((a) => a.ordre)) + 1;
+  // Numéros à vérifier : ceux du fichier et ceux qui seraient proposés aux lignes sans numéro (session 6.0).
+  const proposes = numeros.map((_, i) => numeroCertificatParDefaut(police.numero, prochainOrdre + i) ?? "");
+  const uniques = [...new Set([...numeros.map(normaliserNumeroPolice), ...proposes].filter((n) => n !== ""))];
+  const [polices, documents, lignes] = await Promise.all([
+    client.police.findMany({ where: { numero: { in: uniques } }, select: { numero: true } }),
+    client.documentEmis.findMany({ where: { numero: { in: uniques } }, select: { numero: true }, distinct: ["numero"] }),
+    // Lignes d'un import confirmé dont le certificat n'est pas encore produit : leur numéro est réservé.
+    client.ligneImport.findMany({
+      where: { documentId: null, adherentOrdre: { not: null }, lot: { policeId: police.id, statut: { in: ["EN_COURS", "TERMINE"] }, ...(lotEnCours !== null ? { id: { not: lotEnCours } } : {}) } },
+      select: { donnees: true },
+    }),
   ]);
+  const reserves = lignes.map((l) => (l.donnees as unknown as DonneesLigne).numero_certificat).filter((n) => uniques.includes(n));
   return {
     dateEffet,
     aujourdhui: aujourdhui(),
     formulesProduit: new Map(version.formules.map((f) => [f.code, { ageMin: f.ageMin, ageMax: f.ageMax }])),
     formulesPolice: police.formulesRetenues as unknown as string[],
-    adherents: police.assures as unknown as Assure[],
-    numerosPris: new Set([...polices, ...documents].map((x) => x.numero)),
-    formatNumero: await lireFormatNumeroPolice(),
+    adherents,
+    numerosPris: new Set([...polices, ...documents].map((x) => x.numero).concat(reserves)),
+    numeroPolice: police.numero,
+    prochainOrdre,
   };
 }
 
@@ -442,7 +452,7 @@ export async function confirmerImport(acteur: UtilisateurCourant, lotId: number,
         const police = await policeMere(lot.policeId, tx);
         const dateEffet = depuisDate(lot.dateEffet);
         const donnees = valides.map((l) => l.donnees as unknown as DonneesLigne);
-        const ctx = await contexteControle(police, dateEffet, donnees.map((d) => d.numero_certificat));
+        const ctx = await contexteControle(police, dateEffet, donnees.map((d) => d.numero_certificat), lotId, tx);
         const recontrole: LigneControlee[] = controlerLignes(
           valides.map((l, i) => ({ numero: l.numeroLigne, cellules: donnees[i] })),
           ctx,

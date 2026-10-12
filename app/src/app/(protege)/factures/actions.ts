@@ -11,7 +11,9 @@ import {
   emettreAvoir,
   emettreFacture,
   enregistrerPaiement,
+  imputerAvance,
   modifierFacture,
+  restituerAvance,
   relancerPdf,
   type ResultatEmission,
 } from "@/serveur/factures";
@@ -90,15 +92,47 @@ export async function enregistrerLePaiement(_e: EtatFormulaire, d: FormData): Pr
   const id = identifiant(d, "factureId");
   let numero = "";
   let restant = "";
+  let excedent = "0";
   return executerAction(
     async (acteur, ip) => {
       const r = await enregistrerPaiement(acteur, id, { date: champ(d, "date"), montant: champ(d, "montant"), canal: champ(d, "canal"), reference: champ(d, "reference"), payeur: champ(d, "payeur") }, ip);
       numero = r.numeroRecu;
       restant = r.restantDu;
+      excedent = r.excedent;
       return bilan(r.productions);
     },
-    () => `Paiement enregistré : reçu ${numero}, restant dû ${restant} F. La facture est rééditée (version suivante).`,
+    () =>
+      `Paiement enregistré : reçu ${numero}, restant dû ${restant} F. La facture est rééditée (version suivante).` +
+      (excedent !== "0" ? ` Trop-perçu de ${excedent} F versé en avance sur la police.` : ""),
     `/factures/${id}`,
+  );
+}
+
+export async function imputerLAvance(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
+  const id = identifiant(d, "factureId");
+  let restant = "";
+  return executerAction(
+    async (acteur, ip) => {
+      const r = await imputerAvance(acteur, id, champ(d, "montant"), ip);
+      restant = r.restantDu;
+      return bilan(r.productions);
+    },
+    () => `Avance imputée : restant dû ${restant} F. La facture est rééditée (version suivante).`,
+    `/factures/${id}`,
+  );
+}
+
+export async function restituerLAvance(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
+  const policeId = identifiant(d, "policeId");
+  const cotationId = identifiant(d, "cotationId");
+  let reste = "";
+  return executerAction(
+    async (acteur, ip) => {
+      reste = (await restituerAvance(acteur, policeId, { date: champ(d, "date"), montant: champ(d, "montant"), canal: champ(d, "canal"), reference: champ(d, "reference") }, ip)).avance;
+      return [];
+    },
+    () => `Restitution enregistrée. Avance restante : ${reste} F.`,
+    `/cotations/${cotationId}/factures`,
   );
 }
 

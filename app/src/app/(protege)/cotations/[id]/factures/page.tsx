@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { FormulaireAction } from "@/composants/FormulaireAction";
+import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
+import { CANAUX_PAIEMENT, LIBELLE_CANAL } from "@/domaine/facturation/factures";
 import { facturesDePolice } from "@/serveur/factures";
+import { aujourdhui } from "@/serveur/parametrage";
 import { exigerUtilisateur } from "@/serveur/session";
 import { ErreurAcces } from "@/serveur/types";
 
-import { creerFacture } from "../../../factures/actions";
+import { creerFacture, restituerLAvance } from "../../../factures/actions";
 
 const f = (m: string) => formaterMontant(montant(m));
 const entree = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2";
@@ -80,6 +82,52 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
             </table>
           </div>
         )}
+      </section>
+
+      <section id="avance" className="mb-8 max-w-5xl">
+        <h2 className="mb-2 text-lg font-semibold">Avance de la police</h2>
+        <p className="mb-2 text-sm">
+          <strong>Solde créditeur :</strong> {f(vue.avance.disponible)} F. Un trop-perçu, ou la somme déjà payée d&apos;une facture annulée par un avoir, vient ici ; elle s&apos;impute sur une facture de la police (depuis la facture) ou se restitue.
+        </p>
+        {vue.avance.mouvements.length > 0 ? (
+          <table className="mb-3 w-full border-collapse text-sm">
+            <thead><tr className="text-left text-zinc-600"><th className="p-1">Date</th><th className="p-1">Mouvement</th><th className="p-1 text-right">Montant</th><th className="p-1">Facture</th><th className="p-1">Reçu d&apos;origine</th><th className="p-1">Canal, référence</th><th className="p-1">Par</th></tr></thead>
+            <tbody>
+              {vue.avance.mouvements.map((m) => (
+                <tr key={m.id} className="border-t border-bordure">
+                  <td className="p-1">{m.date}</td>
+                  <td className="p-1">{m.libelle}</td>
+                  <td className="p-1 text-right">{m.credit ? "+" : "−"} {f(m.montant)}</td>
+                  <td className="p-1">{m.facture ?? "—"}</td>
+                  <td className="p-1">{m.recu ?? "—"}</td>
+                  <td className="p-1">{m.canal ? `${m.canal}${m.reference ? `, ${m.reference}` : ""}` : "—"}</td>
+                  <td className="p-1">{m.par}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
+        {vue.droits.restituer && montant(vue.avance.disponible).greaterThan(0) ? (
+          <div className="rounded border border-bordure p-4">
+            <h3 className="mb-2 font-semibold">Restituer l&apos;avance</h3>
+            <p className="mb-3 text-sm text-zinc-700">Remboursement au client, tracé au journal. Aucun document n&apos;est produit.</p>
+            <FormulaireAction action={restituerLAvance} libelleBouton="Enregistrer la restitution">
+              <input type="hidden" name="policeId" value={police.id} />
+              <input type="hidden" name="cotationId" value={police.cotationId} />
+              <div className="grid gap-x-4 sm:grid-cols-2">
+                <Champ nom="date" libelle="Date (AAAA-MM-JJ)" valeur={aujourdhui()} autoComplete="off" />
+                <Champ nom="montant" libelle={`Montant (au plus ${f(vue.avance.disponible)} F)`} valeur={vue.avance.disponible} autoComplete="off" />
+                <label className="mb-4 block text-sm font-medium">Canal
+                  <select name="canal" required defaultValue="" className={entree}>
+                    <option value="" disabled>— Choisir —</option>
+                    {CANAUX_PAIEMENT.map((k) => <option key={k} value={k}>{LIBELLE_CANAL[k]}</option>)}
+                  </select>
+                </label>
+                <Champ nom="reference" libelle="Référence (obligatoire sauf espèces)" requis={false} autoComplete="off" />
+              </div>
+            </FormulaireAction>
+          </div>
+        ) : null}
       </section>
 
       {vue.droits.creer ? (

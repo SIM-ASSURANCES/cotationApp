@@ -1,6 +1,7 @@
 import { ajouterJours, ajouterMois, dateValide, type DateIso } from "../calcul/dates";
 import { analyserMontant, ErreurCalcul, montant, ZERO, type Montant } from "../calcul/montant";
 import type { Assure, Souscripteur } from "../cotation/saisie";
+import type { IntermediaireDocument } from "../intermediaires";
 import type { FormuleSource } from "../documents/donnees";
 
 /**
@@ -31,11 +32,15 @@ export const LIBELLE_STATUT_FACTURE: Record<StatutFacture, string> = {
 export const CANAUX_PAIEMENT = ["ESPECES", "CHEQUE", "VIREMENT", "MOBILE_MONEY"] as const;
 export type CanalPaiement = (typeof CANAUX_PAIEMENT)[number];
 
-export const LIBELLE_CANAL: Record<CanalPaiement, string> = {
+/** « AVANCE » : imputation de l'avance de la police sur une facture (session 6.0) ; jamais le canal d'un paiement. */
+export type CanalEncaissement = CanalPaiement | "AVANCE";
+
+export const LIBELLE_CANAL: Record<CanalEncaissement, string> = {
   ESPECES: "Espèces",
   CHEQUE: "Chèque",
   VIREMENT: "Virement",
   MOBILE_MONEY: "Mobile Money",
+  AVANCE: "Avance",
 };
 
 export const estCanalPaiement = (valeur: string): valeur is CanalPaiement => (CANAUX_PAIEMENT as readonly string[]).includes(valeur);
@@ -68,6 +73,8 @@ export type ContenuFacture = {
   echeances: { numero: number; date: DateIso; montant: string }[];
   /** Entrée du moteur dont viennent les montants (null pour un avoir : ses montants sont ceux de la facture annulée). */
   entree: unknown;
+  /** Intermédiaires de la cotation (session 6.0) ; absent d'une facture d'avant : liste vide dans le document. */
+  intermediaires?: IntermediaireDocument[];
 };
 
 // ------------------------------------------------------------------ « Envoyé à »
@@ -132,7 +139,15 @@ export function periodeRenouvellement(echeancePrecedente: DateIso): { dateEffet:
 
 // ------------------------------------------------------------------ Paiements et soldes (CDC §11.1, §12)
 
-export type PaiementEnregistre = { numero: string; date: DateIso; montant: string; reference: string; canal: CanalPaiement; payeur: string };
+/**
+ * Somme qui règle une facture : un paiement (reçu REC), un paiement reporté depuis la facture annulée qu'elle remplace (H47 :
+ * son reçu d'origine reste valable), ou une imputation de l'avance de la police (H33, sans reçu : `numero` vide).
+ * `excedent` : part d'un paiement au-delà du restant dû, versée en avance (H33) ; elle ne règle pas la facture.
+ */
+export type PaiementEnregistre = { numero: string; date: DateIso; montant: string; reference: string; canal: CanalEncaissement; payeur: string; excedent?: string };
+
+/** Part d'une somme qui règle la facture (montant hors excédent). */
+export const partReglee = (p: Pick<PaiementEnregistre, "montant" | "excedent">): Montant => montant(p.montant).minus(montant(p.excedent ?? "0"));
 
 export type EtatPaiements = {
   totalPaye: string;
@@ -146,7 +161,7 @@ export type EtatPaiements = {
 export function etatPaiements(ttc: string, echeances: ContenuFacture["echeances"], paiements: readonly PaiementEnregistre[]): EtatPaiements {
   let cumule: Montant = ZERO;
   const liste = paiements.map((p) => {
-    cumule = cumule.plus(montant(p.montant));
+    cumule = cumule.plus(partReglee(p));
     return { ...p, restantDu: montant(ttc).minus(cumule).toFixed() };
   });
   let couvert: Montant = ZERO;
@@ -161,14 +176,14 @@ export type SaisiePaiement = { date: DateIso; montant: string; canal: string; re
 
 /**
  * Contrôles d'un paiement (CDC §12) : montant > 0 (analyseur unique), facture émise et non annulée (pas un avoir),
- * date valide et pas dans le futur, canal connu. Trop-perçu REFUSÉ (H33) : le montant ne dépasse pas le restant dû.
- * Renvoie le montant canonique.
+ * date valide et pas dans le futur, canal connu. Trop-perçu ACCEPTÉ (réponse de la Technique du 09/10/2026, H33) : la part
+ * au-delà du restant dû est l'`excedent`, versé en avance sur la police. Renvoie le montant canonique et l'excédent.
  */
 export function controlerPaiement(
   saisie: SaisiePaiement,
   facture: { statut: StatutFacture; type: TypeFacture; numero: string | null; restantDu: string },
   aujourdhui: DateIso,
-): { problemes: string[]; montant: string | null } {
+): { problemes: string[]; montant: string | null; excedent: string } {
   const p: string[] = [];
   let canonique: string | null = null;
   try {
@@ -180,16 +195,58 @@ export function controlerPaiement(
   if (facture.type === "AVOIR") p.push("Un avoir ne se paie pas.");
   else if (facture.statut === "ANNULEE") p.push(`La facture ${facture.numero ?? ""} est annulée par un avoir : aucun paiement ne peut y être enregistré.`.replace("  ", " "));
   else if (facture.statut !== "EMISE") p.push("Seule une facture émise peut recevoir un paiement.");
-  if (!dateValide(saisie.date)) p.push("Date du paiement invalide (AAAA-MM-JJ).");
-  else if (saisie.date > aujourdhui) p.push("La date du paiement ne peut pas être dans le futur.");
-  if (!estCanalPaiement(saisie.canal)) p.push("Canal de paiement : espèces, chèque, virement ou Mobile Money.");
+  else if (!montant(facture.restantDu).greaterThan(0)) p.push("Cette facture est déjà soldée : une somme reçue en plus s'enregistre sur la facture suivante, ou se restitue.");
+  p.push(...problemesDateCanal(saisie, aujourdhui, "paiement"));
+  if (saisie.payeur.trim().length > 200) p.push("Payeur : 200 caractères au plus.");
+  if (p.length > 0 || canonique === null) return { problemes: p, montant: null, excedent: "0" };
+  const excedent = montant(canonique).minus(montant(facture.restantDu));
+  return { problemes: [], montant: canonique, excedent: excedent.greaterThan(0) ? excedent.toFixed() : "0" };
+}
+
+function problemesDateCanal(saisie: { date: DateIso; canal: string; reference: string }, aujourdhui: DateIso, quoi: string): string[] {
+  const p: string[] = [];
+  if (!dateValide(saisie.date)) p.push(`Date du ${quoi} invalide (AAAA-MM-JJ).`);
+  else if (saisie.date > aujourdhui) p.push(`La date du ${quoi} ne peut pas être dans le futur.`);
+  if (!estCanalPaiement(saisie.canal)) p.push(`Canal du ${quoi} : espèces, chèque, virement ou Mobile Money.`);
   if (saisie.reference.trim().length > 120) p.push("Référence : 120 caractères au plus.");
   if (saisie.canal !== "ESPECES" && saisie.reference.trim() === "") p.push("La référence de la transaction est obligatoire pour un chèque, un virement ou un paiement Mobile Money.");
-  if (saisie.payeur.trim().length > 200) p.push("Payeur : 200 caractères au plus.");
-  if (canonique !== null && p.length === 0 && montant(canonique).greaterThan(montant(facture.restantDu))) {
-    p.push(
-      `Trop-perçu refusé (H33) : le paiement de ${canonique} F dépasse le restant dû de ${montant(facture.restantDu).toFixed()} F. Enregistrez au plus le restant dû ; un éventuel excédent se traite hors du module.`,
-    );
+  return p;
+}
+
+// ------------------------------------------------------------------ Avance sur police (session 6.0, H33)
+
+export type SaisieRestitution = { date: DateIso; montant: string; canal: string; reference: string };
+
+/** Montant d'un débit de l'avance (imputation ou restitution) : > 0, et jamais plus que l'avance disponible (ni le plafond donné). */
+function montantDebit(saisi: string, disponible: string, plafond: { valeur: string; message: string } | null): { problemes: string[]; montant: string | null } {
+  let canonique: string;
+  try {
+    canonique = analyserMontant(saisi);
+  } catch (erreur) {
+    return { problemes: [erreur instanceof ErreurCalcul ? erreur.message : "Montant invalide."], montant: null };
   }
-  return { problemes: p, montant: p.length === 0 ? canonique : null };
+  const m = montant(canonique);
+  if (!m.greaterThan(0)) return { problemes: ["Le montant doit être supérieur à 0."], montant: null };
+  if (m.greaterThan(montant(disponible))) return { problemes: [`Le montant (${canonique} F) dépasse l'avance disponible de la police (${montant(disponible).toFixed()} F).`], montant: null };
+  if (plafond && m.greaterThan(montant(plafond.valeur))) return { problemes: [plafond.message], montant: null };
+  return { problemes: [], montant: canonique };
+}
+
+/** Restitution de tout ou partie de l'avance : date, montant, canal, référence (pas de nouveau type de document, H74). */
+export function controlerRestitution(saisie: SaisieRestitution, disponible: string, aujourdhui: DateIso): { problemes: string[]; montant: string | null } {
+  const debit = montantDebit(saisie.montant, disponible, null);
+  const p = [...debit.problemes, ...problemesDateCanal(saisie, aujourdhui, "remboursement")];
+  return { problemes: p, montant: p.length === 0 ? debit.montant : null };
+}
+
+/** Imputation de l'avance sur une facture émise et en cours de la même police, au plus son restant dû. */
+export function controlerImputation(saisi: string, disponible: string, facture: { statut: StatutFacture; type: TypeFacture; restantDu: string }): { problemes: string[]; montant: string | null } {
+  if (facture.type === "AVOIR" || facture.statut !== "EMISE") return { problemes: ["L'avance ne s'impute que sur une facture émise et en cours."], montant: null };
+  return montantDebit(saisi, disponible, { valeur: facture.restantDu, message: `L'imputation ne peut pas dépasser le restant dû de la facture (${montant(facture.restantDu).toFixed()} F).` });
+}
+
+/** Imputation proposée : le plus petit de l'avance disponible et du restant dû (0 : rien à proposer). */
+export function imputationProposee(disponible: string, restantDu: string): string {
+  const plusPetit = montant(disponible).lessThan(montant(restantDu)) ? montant(disponible) : montant(restantDu);
+  return plusPetit.greaterThan(0) ? plusPetit.toFixed() : "0";
 }

@@ -415,7 +415,7 @@ def fusionner(
 ) -> Resultat:
     """Fusionne le modèle ; produit le corps et, pour chaque liste trop longue ou imposée, son annexe.
 
-    `champs_facultatifs` : chemins du dictionnaire déclarés facultatifs (D19, « police.reference »,
+    `champs_facultatifs` : chemins du dictionnaire déclarés facultatifs (D19, « police.nantissement »,
     « formules[].x ») ; vides, ils s'écrivent vides même dans un filtre. Toutes les données absentes
     et tous les champs obligatoires vides du corps et des annexes sont nommés dans une seule erreur."""
     facultatifs = frozenset(champs_facultatifs)

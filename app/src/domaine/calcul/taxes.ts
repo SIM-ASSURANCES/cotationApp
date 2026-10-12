@@ -4,11 +4,12 @@ import { ErreurCalcul } from "./montant";
 /**
  * Choix du taux de taxe (CDC §8.3, réponse de la Technique H5 du 08/10/2026, D18). Règles pures.
  *
- * La clé d'un taux est (branche, type de contrat, date d'effet). Un type de contrat vide veut dire
- * « tous types ». Le taux retenu est celui de la ligne LA PLUS PRÉCISE en vigueur à la date demandée
- * (la date d'effet de la police : CDC §8.1, D9) : d'abord le type du contrat, puis le type auquel il est
- * rattaché (H29), enfin « tous types ». Les taux eux-mêmes sont des DONNÉES (table des taxes), jamais
- * écrits ici.
+ * La clé d'un taux est (branche, régime de taxe, date d'effet). Un régime vide veut dire « tous régimes ».
+ * Depuis la réponse de la Technique du 09/10/2026 (H29 fermée) : c'est le RÉGIME DE TAXE choisi sur la
+ * cotation (« Individuel » ou « Groupe »), et non plus le type de contrat, qui sélectionne le taux. Le taux
+ * retenu est celui de la ligne LA PLUS PRÉCISE en vigueur à la date demandée (la date d'effet de la police :
+ * CDC §8.1, D9) : d'abord le régime, puis « tous régimes ». Les taux eux-mêmes sont des DONNÉES (table des
+ * taxes), jamais écrits ici.
  */
 
 export const TYPES_CONTRAT = ["INDIVIDUEL", "FAMILLE", "GROUPE", "GROUPE_OUVERT"] as const;
@@ -26,11 +27,22 @@ export function estTypeContrat(valeur: string): valeur is TypeContrat {
 }
 
 /**
- * Hypothèse H29 (à confirmer) : la loi ne cite que INDIVIDUEL et GROUPE. FAMILLE prend le taux
- * INDIVIDUEL, GROUPE_OUVERT le taux GROUPE, quand aucune ligne propre à leur type n'existe.
+ * Régime de taxe (réponse de la Technique du 09/10/2026, H29 fermée : « un bouton pour dire si le contrat est
+ * individuel ou groupe »). Choisi sur la cotation, obligatoire ; il sélectionne le taux. Le type de contrat
+ * reste dans les documents (`police.type_contrat`).
  */
-export const RATTACHEMENT_TYPE_CONTRAT: Partial<Record<TypeContrat, TypeContrat>> = {
+export const REGIMES_TAXE = ["INDIVIDUEL", "GROUPE"] as const;
+export type RegimeTaxe = (typeof REGIMES_TAXE)[number];
+
+export const LIBELLE_REGIME_TAXE: Record<RegimeTaxe, string> = { INDIVIDUEL: "Individuel", GROUPE: "Groupe" };
+
+export const estRegimeTaxe = (valeur: string): valeur is RegimeTaxe => (REGIMES_TAXE as readonly string[]).includes(valeur);
+
+/** Régime proposé par défaut : INDIVIDUEL et FAMILLE → Individuel ; GROUPE et GROUPE_OUVERT → Groupe. Modifiable. */
+export const REGIME_PAR_DEFAUT: Record<TypeContrat, RegimeTaxe> = {
+  INDIVIDUEL: "INDIVIDUEL",
   FAMILLE: "INDIVIDUEL",
+  GROUPE: "GROUPE",
   GROUPE_OUVERT: "GROUPE",
 };
 
@@ -38,7 +50,10 @@ export const MESSAGE_TAUX_MIXTE = "taux mixte non pris en charge : à paramétre
 
 export type LigneTaux = {
   branche: string;
-  /** null : tous types de contrat. */
+  /**
+   * Régime de taxe de la ligne (colonne historique `type_contrat`) ; null : tous régimes. Une ligne FAMILLE ou
+   * GROUPE_OUVERT d'avant la session 6.0 n'est plus jamais retenue : seuls INDIVIDUEL, GROUPE et « tous » le sont.
+   */
   typeContrat: TypeContrat | null;
   /** Taux en % (« 1.5 ») ; null pour une ligne à taux mixte. */
   tauxPourcent: string | null;
@@ -57,22 +72,19 @@ export function periodesSeChevauchent(a: Pick<LigneTaux, "dateEffet" | "dateFin"
   return a.dateEffet <= (b.dateFin ?? "9999-12-31") && b.dateEffet <= (a.dateFin ?? "9999-12-31");
 }
 
-/** Ordre de recherche pour un type de contrat : le type, son rattachement (H29), puis « tous types ». */
-export function typesCherches(typeContrat: TypeContrat): (TypeContrat | null)[] {
-  const rattache = RATTACHEMENT_TYPE_CONTRAT[typeContrat];
-  return rattache ? [typeContrat, rattache, null] : [typeContrat, null];
-}
+/** Ordre de recherche pour un régime de taxe : le régime, puis « tous régimes ». */
+export const typesCherches = (regime: RegimeTaxe): (RegimeTaxe | null)[] => [regime, null];
 
 /**
  * Taux applicable à une branche, un type de contrat et une date. Refuse une branche à taux mixte et
  * l'absence de taux, avec un message clair. Les lignes d'une même clé ne se chevauchent jamais
  * (contrainte en base) : au plus une est en vigueur.
  */
-export function choisirTaux<T extends LigneTaux>(lignes: T[], branche: string, typeContrat: TypeContrat, date: DateIso): T & { tauxPourcent: string } {
-  for (const type of typesCherches(typeContrat)) {
+export function choisirTaux<T extends LigneTaux>(lignes: T[], branche: string, regime: RegimeTaxe, date: DateIso): T & { tauxPourcent: string } {
+  for (const type of typesCherches(regime)) {
     const enVigueur = lignes.filter((l) => l.branche === branche && l.typeContrat === type && enVigueurLe(l, date));
     if (enVigueur.length > 1) {
-      throw new ErreurCalcul(`Plusieurs taux de taxe en vigueur pour la branche « ${branche} » (${type ?? "tous types"}) au ${date} : paramétrage à corriger.`);
+      throw new ErreurCalcul(`Plusieurs taux de taxe en vigueur pour la branche « ${branche} » (${type ?? "tous régimes"}) au ${date} : paramétrage à corriger.`);
     }
     const ligne = enVigueur[0];
     if (!ligne) continue;
@@ -81,7 +93,7 @@ export function choisirTaux<T extends LigneTaux>(lignes: T[], branche: string, t
     }
     return ligne as T & { tauxPourcent: string };
   }
-  throw new ErreurCalcul(`Aucune taxe en vigueur pour la branche « ${branche} » (contrat ${typeContrat}) au ${date}.`);
+  throw new ErreurCalcul(`Aucune taxe en vigueur pour la branche « ${branche} » (régime ${LIBELLE_REGIME_TAXE[regime].toLowerCase()}) au ${date}.`);
 }
 
 /**

@@ -25,10 +25,12 @@ La sécurité des pages se vérifie à deux niveaux : `src/proxy.ts` (premier fi
 | `npm run lint` | ESLint, y compris le sens des couches. |
 | `npm run typecheck` | Génère les types des routes (`next typegen`), puis vérifie les types (`tsc --noEmit`). |
 | `npm test` | Tests Vitest (une seule exécution). |
-| `npm run test:integration` | Tests sur une vraie base PostgreSQL de test (`TEST_DATABASE_URL`, supprimée et recréée à chaque fois). Le générateur y est simulé. |
+| `npm run test:integration` | Tests sur une vraie base PostgreSQL de test (`TEST_DATABASE_URL`, supprimée et recréée à chaque fois) et sur Redis (`REDIS_URL`). Le générateur y est simulé. |
 | `npm run test:e2e` | Tests de bout en bout : base de test **et** vrai générateur (`GENERATEUR_URL`, à lancer avant), avec les modèles de test de `generateur/tests/fixtures/`. |
-| `npm run initialiser` | Crée les profils du CDC §4 et leurs droits par défaut (sans écraser les droits modifiés). |
+| `npm run initialiser` | Crée les profils du CDC §4 et leurs droits par défaut, les motifs de refus, les branches et les taux de démarrage (`prisma/donnees/`), sans rien écraser. |
 | `npm run creer-admin` | Crée le premier Admin système ; le mot de passe se saisit dans le terminal. |
+| `npm run travailleur` | Travailleur de la file de tâches BullMQ (D24) : imports en masse, lots d'avis et de relances, reprise des écritures différées. Exige `REDIS_URL`. |
+| `npm run seed:dev` | Comptes de test, **développement seulement** : exige `AUTORISER_SEED_DEV=oui` et `SEED_MOT_DE_PASSE`, refusé si `NODE_ENV=production` (voir `scripts/seed-dev.mts`). |
 | `npm run migrate:deploy` | Applique les migrations existantes : **seule commande de migration autorisée sur un serveur** (jamais `prisma migrate dev`). |
 
 `npm install` lance aussi `prisma generate` (script `postinstall`) : le client Prisma est recréé dans `src/generated/`, un dossier ignoré par Git.

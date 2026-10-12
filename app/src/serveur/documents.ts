@@ -7,7 +7,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { calculer, type EntreeCalcul } from "@/domaine/calcul/calcul";
 import type { DateIso } from "@/domaine/calcul/dates";
 import { dateAdhesion, estContratDeGroupe, type VersionAdherents } from "@/domaine/cotation/adherents";
-import { normaliserNumeroPolice, problemesNumeroPolice } from "@/domaine/cotation/police";
+import { normaliserNumeroPolice, numeroCertificatParDefaut, problemesNumeroCertificat } from "@/domaine/cotation/police";
 import type { Assure, Beneficiaire, ContactUrgence, Risque, Souscripteur } from "@/domaine/cotation/saisie";
 import { ecartEnJours } from "@/domaine/calcul/dates";
 import { statutEffectif, type StatutCotation } from "@/domaine/cotation/statuts";
@@ -27,14 +27,16 @@ import { IMAGES_SOCIETE } from "@/domaine/documents/societe";
 import { peutAgir, peutLire, type CodeAction } from "@/domaine/droits";
 
 import { journaliser, type ActeurAudit } from "./audit";
+import { versIntermediairesDocument } from "./intermediaires";
 import { obtenirConfig } from "./config";
 import { niveauDuProfil } from "./droits";
 import { generateur, type ImagePng } from "./generateur";
 import { fichiersAssocies, lireSeuilListe, modelesAssocies, versionPublieeEnVigueur, type VersionsAssociees } from "./modeles";
 import { aujourdhui } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
-import { lireFormatNumeroPolice, lireImageSociete, lireParametresSociete } from "./societe";
+import { lireImageSociete, lireParametresSociete } from "./societe";
 import { differerEcriture, ecrituresDifferees, lireDocumentEmis, programmerReprise, stockage, tenterEcriture } from "./stockage";
+import { fermerTachesAutomatiquement } from "./taches-police";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 import { cloreValidationContrat, controlerSeuilContrat, demanderValidationContrat, exigerAutreQueLeDemandeur } from "./validation-contrat";
 
@@ -272,6 +274,8 @@ async function produire(acteur: UtilisateurCourant, p: Production, adresseIp: st
       tx,
     );
     if (!ecriture.ecrit) await differerEcriture(tx, { documentId: ligne.id, numero: p.numero, version, chemin, empreinte, contenu: pdf, erreur: ecriture.erreur }, auteur(acteur), adresseIp);
+    // H66 : une version des CP émise ferme les tâches « Nouvelle version des CP à émettre » qu'elle satisfait.
+    if (p.type === "CP" && p.policeId !== null) await fermerTachesAutomatiquement(tx, p.policeId, auteur(acteur), adresseIp);
     return ligne;
   });
   if (!ecriture.ecrit) await programmerReprise(cree.id);
@@ -339,7 +343,7 @@ async function sourceCommune(contexte: ContexteProduit, date: DateIso) {
 // ---------------------------------------------------------------- Cotation (CDC §9)
 
 export async function chargerCotation(id: number) {
-  const c = await obtenirPrisma().cotation.findUnique({ where: { id }, include: { produit: true } });
+  const c = await obtenirPrisma().cotation.findUnique({ where: { id }, include: { produit: true, intermediaires: true } });
   if (!c) throw new ErreurMetier("Cotation introuvable.");
   // doc.auteur_nom (D20) : nom de l'utilisateur qui a créé la cotation.
   const auteur = await obtenirPrisma().utilisateur.findUnique({ where: { id: c.auteurId }, select: { nom: true } });
@@ -371,6 +375,7 @@ function sourceDeCotation(
     ordresSansPrime: [],
     beneficiaires: (c.beneficiaires as unknown as Beneficiaire[] | null) ?? null,
     contactsUrgence: (c.contactsUrgence as unknown as ContactUrgence[] | null) ?? null,
+    intermediaires: versIntermediairesDocument(c.intermediaires),
     policeMere: null,
     risque: c.risque as unknown as Risque,
     dateEffet: depuisDate(c.dateEffet),
@@ -518,6 +523,7 @@ async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<
     ordresSansPrime: ordresIncorpores(police),
     beneficiaires: (police.beneficiaires as unknown as Beneficiaire[] | null) ?? null,
     contactsUrgence: (police.contactsUrgence as unknown as ContactUrgence[] | null) ?? null,
+    intermediaires: versIntermediairesDocument(c.intermediaires),
     policeMere: null,
     risque: police.risque as unknown as Risque,
     dateEffet: depuisDate(police.dateEffet),
@@ -621,9 +627,19 @@ export async function mettreAJourCp(acteur: UtilisateurCourant, policeId: number
 
 // ---------------------------------------------------------------- Contrat de groupe : certificat d'adhésion (§10.2)
 
+/** Numéro donné, dans un import confirmé, à un AUTRE adhérent dont le certificat n'est pas encore produit. */
+async function numeroReserveParImport(policeId: number, adherentOrdre: number, numero: string): Promise<boolean> {
+  const lignes = await obtenirPrisma().ligneImport.findMany({
+    where: { documentId: null, adherentOrdre: { not: adherentOrdre }, lot: { policeId, statut: { in: ["EN_COURS", "TERMINE"] } }, donnees: { path: ["numero_certificat"], equals: numero } },
+    select: { id: true },
+    take: 1,
+  });
+  return lignes.length > 0;
+}
+
 /**
- * Certificat d'adhésion UNITAIRE d'un adhérent de la police mère : son propre numéro (SAISI, unique, au format
- * des polices : H37), son propre QR code, et `police.police_mere`. Un certificat par adhérent ; une réédition
+ * Certificat d'adhésion UNITAIRE d'un adhérent de la police mère : son propre numéro (dérivé de la police mère :
+ * même racine, même lettre, numéro personnel sur 5 chiffres, unique ; D27), son propre QR code, et `police.police_mere`. Un certificat par adhérent ; une réédition
  * garde le même numéro (version + 1). Pas de prime (H36). La génération en masse reste en phase 5.
  */
 export async function emettreCertificat(acteur: UtilisateurCourant, policeId: number, adherentOrdre: number, numeroSaisi: string, adresseIp: string | null): Promise<DocumentLu> {
@@ -636,11 +652,15 @@ export async function emettreCertificat(acteur: UtilisateurCourant, policeId: nu
   if (await obtenirPrisma().documentEmis.findFirst({ where: { policeId, type: "CERTIFICAT", adherentOrdre } })) {
     throw new ErreurMetier(`Le certificat de l'adhérent n° ${adherentOrdre} est déjà émis : utilisez « Rééditer ».`);
   }
-  const numero = normaliserNumeroPolice(numeroSaisi);
-  const problemes = problemesNumeroPolice(numero, await lireFormatNumeroPolice());
+  // Session 6.0 (D27) : racine et lettre de la police mère, puis le numéro personnel ; vide = numéro d'ordre proposé.
+  const numero = normaliserNumeroPolice(numeroSaisi) || (numeroCertificatParDefaut(police.numero, adherentOrdre) ?? "");
+  const problemes = problemesNumeroCertificat(numero, police.numero);
   if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
   if ((await obtenirPrisma().police.findUnique({ where: { numero }, select: { id: true } })) || (await obtenirPrisma().documentEmis.findFirst({ where: { numero }, select: { id: true } }))) {
     throw new ErreurMetier(`Le numéro « ${numero} » est déjà utilisé par une police ou un document.`);
+  }
+  if (await numeroReserveParImport(policeId, adherentOrdre, numero)) {
+    throw new ErreurMetier(`Le numéro « ${numero} » est réservé à un autre adhérent par un import en cours : choisissez-en un autre.`);
   }
 
   const c = await chargerCotation(police.cotationId);
@@ -669,6 +689,7 @@ export async function emettreCertificat(acteur: UtilisateurCourant, policeId: nu
     ordresSansPrime: [],
     beneficiaires: null,
     contactsUrgence: null,
+    intermediaires: versIntermediairesDocument(c.intermediaires),
     policeMere: police.numero,
     risque: police.risque as unknown as Risque,
     dateEffet: adhesion,

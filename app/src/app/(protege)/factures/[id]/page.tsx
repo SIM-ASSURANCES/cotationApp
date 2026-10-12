@@ -9,7 +9,7 @@ import { lireFacture } from "@/serveur/factures";
 import { exigerUtilisateur } from "@/serveur/session";
 import { ErreurAcces } from "@/serveur/types";
 
-import { emettreLAvoir, emettreLaFacture, enregistrerLePaiement, modifierLaFacture, relancerLesPdf } from "../actions";
+import { emettreLAvoir, emettreLaFacture, enregistrerLePaiement, imputerLAvance, modifierLaFacture, relancerLesPdf } from "../actions";
 
 const f = (m: string) => formaterMontant(montant(m));
 const entree = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2";
@@ -88,7 +88,10 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
       {x.etat ? (
         <section className="mb-6 max-w-4xl">
           <h2 className="mb-2 text-lg font-semibold">Échéances et paiements</h2>
-          <p className="mb-2 text-sm"><strong>Payé :</strong> {f(x.etat.totalPaye)} F — <strong>Restant dû :</strong> {f(x.etat.restantDu)} F</p>
+          <p className="mb-2 text-sm">
+            <strong>Payé :</strong> {f(x.etat.totalPaye)} F — <strong>Restant dû :</strong> {f(x.etat.restantDu)} F
+            {montant(x.avance.disponible).greaterThan(0) ? <> — <strong>Avance de la police :</strong> {f(x.avance.disponible)} F (<Link href={`/cotations/${x.cotationId}/factures#avance`} className="text-sim-bleu underline">détail</Link>)</> : null}
+          </p>
           {x.etat.echeances.length > 0 ? (
             <table className="mb-3 w-full border-collapse text-sm">
               <thead><tr className="text-left text-zinc-600"><th className="p-1">Échéance</th><th className="p-1">Date</th><th className="p-1 text-right">Montant</th><th className="p-1">Statut</th></tr></thead>
@@ -98,9 +101,27 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
           {x.etat.paiements.length > 0 ? (
             <table className="w-full border-collapse text-sm">
               <thead><tr className="text-left text-zinc-600"><th className="p-1">Reçu</th><th className="p-1">Date</th><th className="p-1 text-right">Montant</th><th className="p-1">Canal</th><th className="p-1">Référence</th><th className="p-1">Payeur</th><th className="p-1 text-right">Restant dû après</th></tr></thead>
-              <tbody>{x.etat.paiements.map((p) => <tr key={p.numero} className="border-t border-bordure"><td className="p-1">{p.numero}</td><td className="p-1">{p.date}</td><td className="p-1 text-right">{f(p.montant)}</td><td className="p-1">{LIBELLE_CANAL[p.canal]}</td><td className="p-1">{p.reference || "—"}</td><td className="p-1">{p.payeur}</td><td className="p-1 text-right">{f(p.restantDu)}</td></tr>)}</tbody>
+              <tbody>
+                {x.etat.paiements.map((p, i) => (
+                  <tr key={i} className="border-t border-bordure">
+                    <td className="p-1">{p.numero || "—"}</td>
+                    <td className="p-1">{p.date}</td>
+                    <td className="p-1 text-right">{f(p.montant)}{p.excedent && montant(p.excedent).greaterThan(0) ? <span className="block text-xs text-zinc-600">dont {f(p.excedent)} F en avance</span> : null}</td>
+                    <td className="p-1">{LIBELLE_CANAL[p.canal]}</td>
+                    <td className="p-1">{p.reference || "—"}</td>
+                    <td className="p-1">{p.payeur || "—"}</td>
+                    <td className="p-1 text-right">{f(p.restantDu)}</td>
+                  </tr>
+                ))}
+              </tbody>
             </table>
           ) : <p className="text-sm text-zinc-700">Aucun paiement.</p>}
+          {x.remplace ? <p className="mt-2 text-sm text-zinc-700">Les paiements de la facture annulée {x.remplace.numero} sont repris ici à l&apos;émission (leurs reçus restent valables).</p> : null}
+          {x.reports.length > 0 ? (
+            <p className="mt-2 text-sm text-zinc-700">
+              Sommes reportées en avance sur la police à l&apos;annulation : {x.reports.map((r) => `${f(r.montant)} F (${r.recu ?? "avance"}, ${r.date})`).join(" ; ")}. La facture de remplacement les reprend à son émission.
+            </p>
+          ) : null}
         </section>
       ) : null}
 
@@ -158,7 +179,7 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
         {x.actions.payer ? (
           <div className="rounded border border-bordure p-4">
             <h2 className="mb-2 text-lg font-semibold">Enregistrer un paiement</h2>
-            <p className="mb-3 text-sm text-zinc-700">Un reçu REC est produit, et la facture est rééditée (version suivante, restant dû à jour). Au plus le restant dû : un trop-perçu est refusé (H33).</p>
+            <p className="mb-3 text-sm text-zinc-700">Un reçu REC est produit, et la facture est rééditée (version suivante, restant dû à jour). Un montant supérieur au restant dû est accepté : l&apos;excédent devient une avance sur la police (H33), visible sur le reçu.</p>
             <FormulaireAction action={enregistrerLePaiement} libelleBouton="Enregistrer le paiement">
               {cache}
               <div className="grid gap-x-4 sm:grid-cols-2">
@@ -177,10 +198,26 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
           </div>
         ) : null}
 
+        {x.actions.imputer ? (
+          <div className="rounded border border-bordure p-4">
+            <h2 className="mb-2 text-lg font-semibold">Imputer l&apos;avance de la police</h2>
+            <p className="mb-3 text-sm text-zinc-700">
+              Avance disponible : {f(x.avance.disponible)} F ; restant dû : {x.etat ? f(x.etat.restantDu) : "?"} F. L&apos;imputation apparaît dans les paiements de la facture (rééditée, version suivante) ; aucun reçu n&apos;est produit.
+            </p>
+            <FormulaireAction action={imputerLAvance} libelleBouton="Imputer l'avance">
+              {cache}
+              <Champ nom="montant" libelle="Montant à imputer" valeur={x.avance.proposee} autoComplete="off" />
+            </FormulaireAction>
+          </div>
+        ) : null}
+
         {x.actions.avoir ? (
           <div className="rounded border border-red-300 p-4">
             <h2 className="mb-2 text-lg font-semibold">Annuler par un avoir</h2>
-            <p className="mb-3 text-sm text-zinc-700">Avoir AV de la totalité de la facture (montants négatifs). La facture devient « Annulée – avoir AV-… », y compris sur sa page de vérification. Pour corriger : avoir, puis nouvelle facture depuis la police.</p>
+            <p className="mb-3 text-sm text-zinc-700">
+              Avoir AV de la totalité de la facture (montants négatifs). La facture devient « Annulée – avoir AV-… », y compris sur sa page de vérification, et reste conservée. Pour corriger : avoir, puis nouvelle facture depuis la police.
+              {x.etat && montant(x.etat.totalPaye).greaterThan(0) ? ` Les ${f(x.etat.totalPaye)} F déjà payés sont reportés : la nouvelle facture les reprendra (les reçus restent valables).` : ""}
+            </p>
             <FormulaireAction action={emettreLAvoir} libelleBouton="Émettre l'avoir">
               {cache}
               <Champ nom="motif" libelle={`Motif (${LONGUEUR_MIN_MOTIF_AVOIR} caractères au moins)`} autoComplete="off" />

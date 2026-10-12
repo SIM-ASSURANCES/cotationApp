@@ -85,7 +85,7 @@ class DemandeDocument(BaseModel):
         default=[], description="Listes toujours renvoyées en annexe, même sous le seuil (police de groupe : adhérents)"
     )
     champs_facultatifs: list[str] = Field(
-        default=[], description="Champs facultatifs du dictionnaire (D19, « police.reference ») : vides, ils s'écrivent vides même dans un filtre"
+        default=[], description="Champs facultatifs du dictionnaire (D19, « police.nantissement ») : vides, ils s'écrivent vides même dans un filtre"
     )
 
 

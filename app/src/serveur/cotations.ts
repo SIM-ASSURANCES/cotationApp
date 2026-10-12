@@ -41,8 +41,9 @@ import {
   type RaisonValidation,
 } from "@/domaine/cotation/validation";
 import { normaliserNumeroPolice, problemesNumeroPolice } from "@/domaine/cotation/police";
-import { estTypeContrat, type TypeContrat } from "@/domaine/calcul/taxes";
+import { estRegimeTaxe, estTypeContrat, REGIME_PAR_DEFAUT, type RegimeTaxe, type TypeContrat } from "@/domaine/calcul/taxes";
 import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
+import type { IntermediaireDocument } from "@/domaine/intermediaires";
 
 import { journaliser, type ActeurAudit } from "./audit";
 import { versSouscripteur } from "./clients";
@@ -57,6 +58,7 @@ import {
   type VersionProduit,
 } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
+import { ecrireIntermediaires, resoudreIntermediaires, versIntermediairesDocument } from "./intermediaires";
 import { lireFormatNumeroPolice } from "./societe";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 
@@ -70,8 +72,13 @@ type Tx = Prisma.TransactionClient;
 export type SaisieCotation = {
   codeProduit: string;
   clientId: number | null;
-  /** police.type_contrat : choisit le taux de taxe (D18). Texte lu dans le formulaire, contrôlé ici. */
+  /** police.type_contrat (documents). Texte lu dans le formulaire, contrôlé ici. */
   typeContrat: TypeContrat | string;
+  /**
+   * Régime de taxe (session 6.0, H29 fermée) : INDIVIDUEL ou GROUPE ; il choisit le taux. Obligatoire : le formulaire le
+   * propose selon le type de contrat et l'envoie toujours ; absent (appel sans formulaire), c'est ce régime proposé.
+   */
+  regimeTaxe?: RegimeTaxe | string;
   souscripteur: Souscripteur;
   dateEffet: DateIso;
   dateEcheance: DateIso;
@@ -86,6 +93,11 @@ export type SaisieCotation = {
   beneficiaires: Beneficiaire[] | null;
   contactsUrgence: ContactUrgence[] | null;
   risque: Risque;
+  /**
+   * Codes des intermédiaires (0 à 2, session 6.0, H71 fermée), dans l'ordre de la saisie. Absent : aucun à la création,
+   * inchangés à la modification d'un brouillon. Le formulaire les envoie toujours.
+   */
+  intermediaires?: string[];
 };
 
 /** Ce qu'on peut compléter à l'acceptation, quand on connaît enfin le souscripteur complet et ses bénéficiaires. */
@@ -164,6 +176,7 @@ type Calcul = {
   raisons: RaisonValidation[];
   souscripteur: Souscripteur;
   typeContrat: TypeContrat;
+  regimeTaxe: RegimeTaxe;
   forcages: ReturnType<typeof detecterForcages>;
 };
 
@@ -176,7 +189,11 @@ async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: Saisie
   if (!estTypeContrat(typeContrat)) {
     throw new ErreurMetier("Choisissez le type de contrat (individuel, famille, groupe ou groupe ouvert) : il détermine le taux de taxe.");
   }
-  const contexte = await resoudreContexte(tx, saisie.codeProduit, dateDocument, saisie.dateEffet, typeContrat);
+  const regimeTaxe = saisie.regimeTaxe ?? REGIME_PAR_DEFAUT[typeContrat];
+  if (!estRegimeTaxe(regimeTaxe)) {
+    throw new ErreurMetier("Choisissez le régime de taxe (individuel ou groupe) : il détermine le taux de taxe.");
+  }
+  const contexte = await resoudreContexte(tx, saisie.codeProduit, dateDocument, saisie.dateEffet, regimeTaxe);
   const { version } = contexte;
 
   let souscripteur = saisie.souscripteur;
@@ -231,6 +248,7 @@ async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: Saisie
     raisons: raisonsDeValidation({ forcages, ttc: resultat.totaux.arrondi.ttc, seuil: version.seuilValidationTtc }),
     souscripteur,
     typeContrat,
+    regimeTaxe,
     forcages,
   };
 }
@@ -274,6 +292,7 @@ function donneesAEcrire(saisie: SaisieCotation, c: Calcul) {
     versionDateEffet: versDate(c.versionDateEffet),
     clientId: saisie.clientId,
     typeContrat: c.typeContrat,
+    regimeTaxe: c.regimeTaxe,
     souscripteur: c.souscripteur as unknown as Prisma.InputJsonValue,
     dateEffet: versDate(saisie.dateEffet),
     dateEcheance: versDate(saisie.dateEcheance),
@@ -298,10 +317,22 @@ export async function creerBrouillon(acteur: UtilisateurCourant, saisie: SaisieC
   await exigerAgir(acteur);
   return obtenirPrisma().$transaction(async (tx) => {
     const c = await calculerSaisie(tx, acteur, saisie, aujourdhui());
+    const intermediaires = await resoudreIntermediaires(tx, saisie.intermediaires ?? []);
     const cree = await tx.cotation.create({
       data: { ...donneesAEcrire(saisie, c), statut: "BROUILLON", auteurId: acteur.id, auteurIdentifiant: acteur.identifiant, contributeurs: [acteur.id] },
     });
-    await journaliser({ acteur: auteur(acteur), action: "COTATION_CREEE", objetType: "cotation", objetId: cree.id, apres: { produit: saisie.codeProduit, typeContrat: c.typeContrat, ttc: c.resultat.totaux.arrondi.ttc.toFixed() }, adresseIp }, tx);
+    await ecrireIntermediaires(tx, cree.id, intermediaires);
+    await journaliser(
+      {
+        acteur: auteur(acteur),
+        action: "COTATION_CREEE",
+        objetType: "cotation",
+        objetId: cree.id,
+        apres: { produit: saisie.codeProduit, typeContrat: c.typeContrat, regimeTaxe: c.regimeTaxe, intermediaires: intermediaires.map((i) => i.code), ttc: c.resultat.totaux.arrondi.ttc.toFixed() },
+        adresseIp,
+      },
+      tx,
+    );
     await journaliserAccessoires(tx, acteur, cree.id, null, c.lignesStockees, adresseIp);
     return cree.id;
   });
@@ -326,17 +357,26 @@ export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, 
     const avant = await chargerPourModification(tx, id);
     if (avant.produit.code !== saisie.codeProduit) throw new ErreurMetier("Le produit d'une cotation ne se change pas : créez une nouvelle cotation.");
     const c = await calculerSaisie(tx, acteur, saisie, aujourdhui());
+    const intermediairesAvant = (await tx.cotationIntermediaire.findMany({ where: { cotationId: id }, orderBy: { ordre: "asc" } })).map((i) => i.code);
+    const intermediaires = saisie.intermediaires === undefined ? null : await resoudreIntermediaires(tx, saisie.intermediaires, intermediairesAvant);
     // Qui a modifié un brouillon ne pourra pas le valider (séparation des tâches renforcée, H9).
     const contributeurs = avant.contributeurs.includes(acteur.id) ? avant.contributeurs : [...avant.contributeurs, acteur.id];
     await tx.cotation.update({ where: { id }, data: { ...donneesAEcrire(saisie, c), contributeurs } });
+    if (intermediaires !== null) await ecrireIntermediaires(tx, id, intermediaires);
     await journaliser(
       {
         acteur: auteur(acteur),
         action: "COTATION_MODIFIEE",
         objetType: "cotation",
         objetId: id,
-        avant: { ttc: avant.ttcTotal?.toFixed() ?? null, typeContrat: avant.typeContrat },
-        apres: { ttc: c.resultat.totaux.arrondi.ttc.toFixed(), typeContrat: c.typeContrat, auteurDuBrouillon: avant.auteurIdentifiant },
+        avant: { ttc: avant.ttcTotal?.toFixed() ?? null, typeContrat: avant.typeContrat, regimeTaxe: avant.regimeTaxe, intermediaires: intermediairesAvant },
+        apres: {
+          ttc: c.resultat.totaux.arrondi.ttc.toFixed(),
+          typeContrat: c.typeContrat,
+          regimeTaxe: c.regimeTaxe,
+          intermediaires: intermediaires === null ? intermediairesAvant : intermediaires.map((i) => i.code),
+          auteurDuBrouillon: avant.auteurIdentifiant,
+        },
         adresseIp,
       },
       tx,
@@ -669,6 +709,8 @@ export type DetailCotation = {
   produit: { code: string; libelle: string };
   versionDateEffet: DateIso;
   typeContrat: TypeContrat | null;
+  /** null : cotation d'avant la session 6.0 (le taux venait alors du type de contrat). */
+  regimeTaxe: RegimeTaxe | null;
   souscripteur: Souscripteur;
   clientId: number | null;
   dateEffet: DateIso;
@@ -696,6 +738,8 @@ export type DetailCotation = {
   motifRefusCode: string | null;
   refusCommentaire: string | null;
   numeroPolice: string | null;
+  /** Intermédiaires choisis (copie faite au choix), dans l'ordre. */
+  intermediaires: IntermediaireDocument[];
 };
 
 export async function lireCotation(acteur: UtilisateurCourant, id: number): Promise<DetailCotation | null> {
@@ -703,7 +747,7 @@ export async function lireCotation(acteur: UtilisateurCourant, id: number): Prom
   await expirerCotations();
   const c = await obtenirPrisma().cotation.findUnique({
     where: { id },
-    include: { produit: true, police: { select: { numero: true } } },
+    include: { produit: true, police: { select: { numero: true } }, intermediaires: true },
   });
   if (!c) return null;
   const version = await obtenirPrisma().produitVersion.findUniqueOrThrow({
@@ -722,6 +766,7 @@ export async function lireCotation(acteur: UtilisateurCourant, id: number): Prom
     produit: { code: c.produit.code, libelle: c.produit.libelle },
     versionDateEffet: depuisDate(c.versionDateEffet),
     typeContrat: (c.typeContrat as TypeContrat | null) ?? null,
+    regimeTaxe: (c.regimeTaxe as RegimeTaxe | null) ?? null,
     souscripteur: c.souscripteur as unknown as Souscripteur,
     clientId: c.clientId,
     dateEffet: depuisDate(c.dateEffet),
@@ -746,5 +791,6 @@ export async function lireCotation(acteur: UtilisateurCourant, id: number): Prom
     motifRefusCode: c.motifRefusCode,
     refusCommentaire: c.refusCommentaire,
     numeroPolice: c.police?.numero ?? null,
+    intermediaires: versIntermediairesDocument(c.intermediaires),
   };
 }

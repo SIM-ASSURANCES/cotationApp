@@ -15,16 +15,17 @@ const colonne = (d: FormData, nom: string) => d.getAll(nom).map((v) => String(v)
 
 /** Nouveaux adhérents saisis (mêmes colonnes que les assurés d'une cotation) ; les lignes vides sont ignorées. */
 function lireNouveaux(d: FormData): Omit<Assure, "ordre">[] {
-  const [noms, naissances, sexes, liens, formules] = ["assure_nom", "assure_naissance", "assure_sexe", "assure_lien", "assure_formule"].map((n) => colonne(d, n));
+  const [noms, naissances, sexes, liens, identifications, formules] = ["assure_nom", "assure_naissance", "assure_sexe", "assure_lien", "assure_identification", "assure_formule"].map((n) => colonne(d, n));
   return noms
     .map((nom, i) => ({
       nom_prenoms: nom,
       date_naissance: (naissances[i] ?? "") as Assure["date_naissance"],
       sexe: (sexes[i] ?? "") as Assure["sexe"],
       lien: liens[i] ?? "",
+      num_identification: identifications[i] ?? "",
       formule: formules[i] ?? "",
     }))
-    .filter((a) => a.nom_prenoms !== "" || a.date_naissance !== "" || a.lien !== "");
+    .filter((a) => a.nom_prenoms !== "" || a.date_naissance !== "" || a.lien !== "" || a.num_identification !== "");
 }
 
 export async function incorporerLesAdherents(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {

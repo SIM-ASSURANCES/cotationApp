@@ -113,16 +113,17 @@ describe("données d'une cotation T1 (dictionnaire, montants du moteur)", () => 
     expect("beneficiaires" in d).toBe(false);
     // Non fourni mais facultatif : présent et vide.
     expect(d.intermediaires).toEqual([]);
-    expect(d.police.reference).toBeNull(); // facultatif depuis les corrections de la 4a
     expect(d.police.nantissement).toBeNull();
     expect(d.police.police_mere).toBeNull();
     expect(d.doc.empreinte).toBeNull();
     // Fourni depuis la session 4.0.
     expect(d.police.type_contrat).toBe("GROUPE");
+    // La référence de la police est son numéro (D27, H46 fermée).
+    expect(d.police.reference).toBe(d.police.numero);
   });
 
   it("liste des champs facultatifs envoyée au générateur (D19) : vides, ils s'écrivent vides même dans un filtre", () => {
-    expect([...CHAMPS_FACULTATIFS].sort()).toEqual(["doc.empreinte", "intermediaires", "police.nantissement", "police.police_mere", "police.reference"]);
+    expect([...CHAMPS_FACULTATIFS].sort()).toEqual(["doc.empreinte", "formules[].taux_couverture", "intermediaires", "police.nantissement", "police.police_mere"]);
   });
 
   const assure = (ordre: number, formule: string) => ({ ordre, nom_prenoms: `ASSURÉ ${ordre}`, date_naissance: "" as const, sexe: "" as const, lien: "", formule });

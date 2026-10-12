@@ -284,9 +284,10 @@ describe("incorporation et retrait : nouvelles versions de la liste, nouvelle ve
 });
 
 describe("certificat d'adhésion unitaire", () => {
-  it("numéro saisi et unique, police.police_mere, QR propre, sans prime ; un seul certificat par adhérent ; réédition à l'identique", async () => {
+  it("numéro saisi (racine de la police mère, D27) et unique, police.police_mere, QR propre, sans prime ; un seul certificat par adhérent ; réédition à l'identique", async () => {
     const { policeId, numero } = await policeDeGroupe();
-    const numeroCertificat = numeroPolice("G");
+    const racine = numero.slice(0, -5);
+    const numeroCertificat = `${racine}00042`;
     const doc = await emettreCertificat(technique, policeId, 2, numeroCertificat, null);
 
     expect(doc).toMatchObject({ type: "CERTIFICAT", numero: numeroCertificat, version: 1, policeNumero: numero });
@@ -304,12 +305,15 @@ describe("certificat d'adhésion unitaire", () => {
     expect(ligne).toMatchObject({ adherentOrdre: 2, policeId, type: "CERTIFICAT" });
     expect(ligne.souscripteurMasque).toBe("A******* 2 I******");
 
-    await expect(emettreCertificat(technique, policeId, 2, numeroPolice("G"), null)).rejects.toThrow(/déjà émis/);
+    await expect(emettreCertificat(technique, policeId, 2, `${racine}00043`, null)).rejects.toThrow(/déjà émis/);
     await expect(emettreCertificat(technique, policeId, 3, numeroCertificat, null)).rejects.toThrow(/déjà utilisé/);
     await expect(emettreCertificat(technique, policeId, 3, numero, null)).rejects.toThrow(/déjà utilisé/);
-    await expect(emettreCertificat(technique, policeId, 3, "N'IMPORTE-QUOI", null)).rejects.toThrow(/format/i);
-    await expect(emettreCertificat(technique, policeId, 99, numeroPolice("G"), null)).rejects.toThrow(/ne fait pas partie/);
-    await expect(emettreCertificat(commercial, policeId, 3, numeroPolice("G"), null)).rejects.toThrow(ErreurAcces);
+    await expect(emettreCertificat(technique, policeId, 3, "N'IMPORTE-QUOI", null)).rejects.toThrow(new RegExp(`doit s'écrire ${racine} suivi`));
+    await expect(emettreCertificat(technique, policeId, 3, numeroPolice("G"), null)).rejects.toThrow(/doit s'écrire/);
+    await expect(emettreCertificat(technique, policeId, 3, `${racine.slice(0, -1)}I00003`, null)).rejects.toThrow(/doit s'écrire/);
+    await expect(emettreCertificat(technique, policeId, 3, `${racine}00000`, null)).rejects.toThrow(/réservé au contrat/);
+    await expect(emettreCertificat(technique, policeId, 99, `${racine}00099`, null)).rejects.toThrow(/ne fait pas partie/);
+    await expect(emettreCertificat(commercial, policeId, 3, `${racine}00003`, null)).rejects.toThrow(ErreurAcces);
 
     // Réédition : même numéro, version 2, mêmes données.
     const reedite = await reediter(technique, doc.id, null);
@@ -318,10 +322,12 @@ describe("certificat d'adhésion unitaire", () => {
     expect((await obtenirPrisma().documentEmis.findUniqueOrThrow({ where: { id: reedite.id } })).adherentOrdre).toBe(2);
   });
 
-  it("la date d'adhésion d'un adhérent incorporé est celle de l'incorporation ; un contrat individuel n'a pas de certificat", async () => {
-    const { policeId } = await policeDeGroupe();
+  it("la date d'adhésion d'un adhérent incorporé est celle de l'incorporation ; numéro laissé vide = numéro d'ordre ; un contrat individuel n'a pas de certificat", async () => {
+    const { policeId, numero } = await policeDeGroupe();
     await incorporerAdherents(technique, policeId, "2026-06-15", [adherent(4)], null);
-    await emettreCertificat(technique, policeId, 4, numeroPolice("G"), null);
+    const doc = await emettreCertificat(technique, policeId, 4, "", null);
+
+    expect(doc.numero).toBe(`${numero.slice(0, -5)}00004`);
 
     expect(derniereDemande().donnees.police).toMatchObject({ date_effet: "2026-06-15", date_echeance: "2026-12-31", duree_jours: 200, duree_libelle: "200 jours" });
     // Un certificat n'a pas de prime (H36) : la clé n'existe pas dans ses données.

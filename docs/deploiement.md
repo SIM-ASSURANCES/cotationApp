@@ -8,10 +8,10 @@ Décision D5 (05/10/2026) : l'application est déployée sur un **VPS Linux** av
 
 | Service | Rôle | Joignable depuis |
 | --- | --- | --- |
-| `app` | Application Next.js | `127.0.0.1:3000` de l'hôte (le proxy inverse y envoie le trafic HTTPS) |
+| `app` | Application Next.js | `127.0.0.1:${APP_PORT}` de l'hôte (3000 par défaut ; le proxy inverse y envoie le trafic HTTPS) |
 | `generateur` | FastAPI + LibreOffice + polices | réseau Docker uniquement (`http://generateur:8001`) |
 | `postgres` | Base de données | réseau Docker uniquement |
-| `redis` | File de tâches BullMQ (D24) : imports en masse, reprise des écritures différées | réseau Docker uniquement |
+| `redis` | File de tâches BullMQ (D24) : imports en masse, lots d'avis et de relances, reprise des écritures différées ; mot de passe `REDIS_PASSWORD`, données persistantes (`appendonly`) | réseau Docker uniquement |
 | `travailleur` | Exécute les tâches de la file (même image que `outils`, `npm run travailleur`) : certificats des imports en masse, écriture des documents quand le stockage revient (T14), lots d'avis et de relances et liste du jour chaque matin à 6 h (session 5b) | — (aucun port) |
 | `outils` | Applique les migrations puis s'arrête ; sert aux scripts d'installation | — |
 
@@ -21,8 +21,19 @@ Volumes persistants : `donnees_postgres`, `donnees_redis`, `documents` (document
 
 - VPS Linux avec **Docker Engine** et le plugin **Docker Compose v2** (`docker compose version`).
 - Accès Internet sortant pendant la construction : images Docker, paquets Debian, paquets npm et Python (Montserrat est hébergée dans le dépôt depuis la session 4.0).
-- Un **proxy inverse HTTPS** devant `127.0.0.1:3000` (Dokploy/Traefik, Caddy ou nginx : voir la question Q1) avec un certificat valide. Il doit transmettre `Host`, `X-Forwarded-For` et `X-Forwarded-Proto`. Le pare-feu n'ouvre que les ports 80 et 443 : **jamais** 3000, 5432, 6379 ni 8001.
+- Un **port libre** sur l'hôte pour l'application : `APP_PORT` dans `.env` (3000 par défaut). Le VPS est **partagé avec le portail RH**, qui peut déjà occuper 3000 : vérifier avec `ss -ltn` et choisir un autre port (ex. 3010) si besoin.
+- Un **proxy inverse HTTPS** devant `127.0.0.1:${APP_PORT}` (Dokploy/Traefik, Caddy ou nginx : voir la question Q1) avec un certificat valide. Il doit transmettre `Host`, `X-Forwarded-For` et `X-Forwarded-Proto`. Le pare-feu n'ouvre que les ports 80 et 443 : **jamais** `APP_PORT`, 5432, 6379 ni 8001.
 - Les polices des modèles dans `generateur/polices/` (voir son README et la question Q2).
+
+### Prérequis à fournir par l'administrateur
+
+(Même liste que dans le [README](../README.md#déployer-administrateur).)
+
+- **Domaine** et certificat HTTPS de l'application : `URL_PUBLIQUE` (les QR codes y renvoient ; vide, aucun document ne peut être émis).
+- **Port libre** sur l'hôte : `APP_PORT` (3000 par défaut ; le VPS est partagé avec le portail RH).
+- **Ressources du VPS** (processeurs, mémoire) : elles fixent `CONVERSIONS_SIMULTANEES` (autour du nombre de processeurs moins un).
+- **Polices des modèles** (Tahoma notamment) dans `generateur/polices/`, sous licence, jamais dans le dépôt (question Q2).
+- **Sauvegarde quotidienne** de la base **et** du volume `documents`, copiée hors du VPS, avec un test de restauration.
 
 ## 3. Installation initiale
 
@@ -50,7 +61,7 @@ docker compose run --rm outils npm run creer-admin
 
 ```bash
 docker compose ps                                   # tous les services « running » ou « healthy »
-curl -s http://127.0.0.1:3000/api/sante             # {"statut":"ok","base":"ok","generateur":"ok"}
+curl -s http://127.0.0.1:${APP_PORT:-3000}/api/sante # {"statut":"ok","base":"ok","generateur":"ok"}
 curl -s -o /dev/null -w "%{http_code}\n" https://<domaine>/api/documents    # 401 : les routes sont protégées
 docker compose exec generateur python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8001/sante').read().decode())"
                                                     # "libreoffice_trouve": true, "polices_manquantes": []
@@ -69,12 +80,16 @@ Puis, dans un navigateur : connexion, page « Journal d'audit » (la connexion y
 
 ## 5. Mise à jour
 
+Avant une mise à jour qui contient une migration (`app/prisma/migrations/`) : **sauvegarder la base et le volume `documents`** (§7).
+
 ```bash
 git pull
-docker compose up -d --build     # reconstruit, applique les nouvelles migrations (service « outils »), redémarre
+docker compose up -d --build                         # reconstruit, applique les nouvelles migrations (service « outils »), redémarre
+docker compose run --rm outils npm run initialiser   # nouvelles données de démarrage (branches, taux, droits) ; sans risque à relancer
+docker compose run --rm outils npx prisma migrate status   # « Database schema is up to date »
 ```
 
-Avant une mise à jour qui contient une migration : **sauvegarder la base** (§7).
+**Jamais** `prisma db push` (il contourne les migrations et les déclencheurs de la base) ; **jamais** `docker compose down -v` (il supprime la base, Redis et les documents émis).
 
 ## 6. Retour arrière
 

@@ -2,8 +2,7 @@
 import { describe, expect, it } from "vitest";
 
 import { problemesVersion, type VersionSaisie } from "../calcul/parametrage";
-import { FORMAT_NUMERO_POLICE_DEFAUT } from "../cotation/police";
-import { ageRevolu, cleDEntete, controlerLignes, lireDate, type ContexteControle, type LigneBrute } from "./adherents";
+import { adherentDeLigne, ageRevolu, cleDEntete, controlerLignes, lireDate, type ContexteControle, type LigneBrute } from "./adherents";
 
 const ctx: ContexteControle = {
   dateEffet: "2026-07-01",
@@ -16,7 +15,8 @@ const ctx: ContexteControle = {
   formulesPolice: ["SOLO", "FAMILLE"],
   adherents: [{ ordre: 1, nom_prenoms: "Kouamé Éric", date_naissance: "1985-05-05", sexe: "M", lien: "Salarié", formule: "SOLO" }],
   numerosPris: new Set(["TST-2026-000001-G00001"]),
-  formatNumero: FORMAT_NUMERO_POLICE_DEFAUT,
+  numeroPolice: "TST-2026-000001-G00000",
+  prochainOrdre: 2,
 };
 
 let n = 1;
@@ -60,9 +60,9 @@ describe("contrôles ligne par ligne (CDC §13)", () => {
     expect(r.donnees).toMatchObject({ date_naissance: "1988-03-14", sexe: "F", formule: "SOLO", numero_certificat: "TST-2026-000001-G09999" });
   });
 
-  it("champs obligatoires vides : numéro, nom, date de naissance, formule ; sexe et lien facultatifs", () => {
+  it("champs obligatoires vides : nom, date de naissance, formule ; numéro, sexe et lien facultatifs", () => {
     expect(messages(ligne({ nom_prenoms: "  " }))).toEqual(["nom_prenoms : Champ obligatoire vide."]);
-    expect(messages(ligne({ numero_certificat: null }))).toEqual(["numero_certificat : Champ obligatoire vide."]);
+    expect(messages(ligne({ numero_certificat: null }))).toEqual([]);
     expect(messages(ligne({ date_naissance: "" }))).toEqual(["date_naissance : Champ obligatoire vide."]);
     expect(messages(ligne({ formule: null }))).toEqual(["formule : Champ obligatoire vide."]);
     expect(messages(ligne({ sexe: null, lien: null }))).toEqual([]);
@@ -72,8 +72,19 @@ describe("contrôles ligne par ligne (CDC §13)", () => {
     expect(messages(ligne({ date_naissance: "31/02/1990" }))[0]).toMatch(/^date_naissance : Date invalide/);
     expect(messages(ligne({ date_naissance: "01/01/2030" }))[0]).toMatch(/impossible/);
     expect(messages(ligne({ sexe: "X" }))).toEqual(["sexe : Sexe invalide : M, F ou vide."]);
-    expect(messages(ligne({ numero_certificat: "CERT-1" }))[0]).toMatch(/^numero_certificat : Le numéro du certificat « CERT-1 » ne respecte pas le format/);
-    expect(messages(ligne({ numero_certificat: "TST-2026-000001-G00001" }))[0]).toMatch(/déjà utilisé par une police ou un document/);
+    expect(messages(ligne({ numero_certificat: "CERT-1" }))[0]).toMatch(/^numero_certificat : Le numéro du certificat « CERT-1 » doit s'écrire TST-2026-000001-G suivi/);
+    expect(messages(ligne({ numero_certificat: "AUT-2026-000001-G00004" }))[0]).toMatch(/doit s'écrire TST-2026-000001-G/);
+    expect(messages(ligne({ numero_certificat: "TST-2026-000001-I00004" }))[0]).toMatch(/doit s'écrire TST-2026-000001-G/);
+    expect(messages(ligne({ numero_certificat: "TST-2026-000001-G00000" }))[0]).toMatch(/00000 est réservé au contrat/);
+    expect(messages(ligne({ numero_certificat: "TST-2026-000001-G00001" }))[0]).toMatch(/déjà utilisé par une police, un document ou un import en cours/);
+  });
+
+  it("pièce d'identité (assures[].num_identification, session 6.0) : facultative, 50 caractères au plus, reprise dans l'adhérent", () => {
+    const [r] = controlerLignes([ligne({ num_identification: " CNI C0000000001 " })], ctx);
+    expect(r.erreurs).toEqual([]);
+    expect(adherentDeLigne(r.donnees).num_identification).toBe("CNI C0000000001");
+    expect(messages(ligne({ num_identification: "X".repeat(51) }))).toEqual(["num_identification : Texte trop long (50 caractères au plus)."]);
+    expect(cleDEntete("assures[].num_identification")).toBe("num_identification");
   });
 
   it("formule inconnue du produit, ou connue mais non retenue dans la police", () => {
@@ -128,6 +139,35 @@ describe("doublons (H63)", () => {
     const a = ligne({ nom_prenoms: "Yao Aïcha", date_naissance: "01/01/1990", formule: "PREMIUM" });
     const b = ligne({ nom_prenoms: "Yao Aïcha", date_naissance: "01/01/1990" });
     expect(controlerLignes([a, b], ctx)[1].erreurs).toEqual([]);
+  });
+});
+
+describe("numéro de certificat proposé d'après le numéro d'ordre (session 6.0, D27, H60)", () => {
+  it("colonne vide : racine de la police mère, puis le numéro d'ordre que l'adhérent recevra, sur 5 chiffres", () => {
+    const r = controlerLignes([ligne({ numero_certificat: null }), ligne({ numero_certificat: "TST-2026-000001-G00500" }), ligne({ numero_certificat: "" })], ctx);
+    expect(r.flatMap((l) => l.erreurs)).toEqual([]);
+    expect(r.map((l) => l.donnees.numero_certificat)).toEqual(["TST-2026-000001-G00002", "TST-2026-000001-G00500", "TST-2026-000001-G00004"]);
+  });
+
+  it("une ligne en erreur ne reçoit pas de numéro d'ordre : les suivantes sont décalées", () => {
+    const r = controlerLignes([ligne({ numero_certificat: null, formule: "PREMIUM" }), ligne({ numero_certificat: null })], ctx);
+    expect(r[0].donnees.numero_certificat).toBe("");
+    expect(r[1].donnees.numero_certificat).toBe("TST-2026-000001-G00002");
+  });
+
+  it("numéro saisi égal à un numéro proposé : la seconde ligne est en erreur, et les numéros proposés sont recalculés", () => {
+    const r = controlerLignes([ligne({ numero_certificat: null }), ligne({ numero_certificat: "TST-2026-000001-G00002" }), ligne({ numero_certificat: null })], ctx);
+    expect(r[1].erreurs.map((e) => e.message)).toEqual([`Numéro de certificat déjà donné à la ligne ${r[0].numero}.`]);
+    expect(r[1].donnees.numero_certificat).toBe("TST-2026-000001-G00002");
+    expect(r[2].erreurs).toEqual([]);
+    expect(r[2].donnees.numero_certificat).toBe("TST-2026-000001-G00003");
+  });
+
+  it("numéro proposé déjà pris (import précédent) : erreur sur la ligne ; police mère sans G ou I et 5 chiffres : aucun numéro proposé", () => {
+    const pris = { ...ctx, numerosPris: new Set(["TST-2026-000001-G00002"]) };
+    expect(messages(ligne({ numero_certificat: null }), pris)[0]).toMatch(/numéro proposé « TST-2026-000001-G00002 » est déjà utilisé/);
+    const sansRacine = { ...ctx, numeroPolice: "ANCIEN-123" };
+    expect(messages(ligne({ numero_certificat: null }), sansRacine)[0]).toMatch(/ne se termine pas par G ou I suivi de 5 chiffres/);
   });
 });
 

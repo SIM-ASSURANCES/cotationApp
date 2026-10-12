@@ -2,7 +2,7 @@ import { MODES_ACCESSOIRE, NIVEAUX_ARRONDI, COMPOSANTES, ASSIETTES_TAXE, type As
 import { dateValide, type DateIso } from "./dates";
 import { PRECISIONS, SENS_ARRONDI, montant } from "./montant";
 import { NOMBRE_MAX_TRANCHES } from "./echeancier";
-import { TYPES_CONTRAT, type TypeContrat } from "./taxes";
+import { REGIMES_TAXE, type TypeContrat } from "./taxes";
 
 /**
  * Paramétrage produit et taxes (CDC §7, §8.3). Ces types décrivent ce qu'un administrateur saisit ;
@@ -157,7 +157,8 @@ export function problemesVersion(v: VersionSaisie): string[] {
 export function problemesTaxe(t: TaxeSaisie): string[] {
   const p: string[] = [];
   if (!codeValide(t.branche)) p.push("La branche est invalide (majuscules, chiffres et _).");
-  if (t.typeContrat !== null && !TYPES_CONTRAT.includes(t.typeContrat)) p.push("Le type de contrat est invalide.");
+  // Session 6.0 (H29 fermée) : un taux se rattache à un régime de taxe (Individuel ou Groupe), ou à tous.
+  if (t.typeContrat !== null && !(REGIMES_TAXE as readonly string[]).includes(t.typeContrat)) p.push("Le régime de taxe est invalide (Individuel, Groupe, ou tous régimes).");
   if (t.tauxMixte) {
     if (t.tauxPourcent !== null) p.push("Une ligne à taux mixte n'a pas de taux unique : laissez le taux vide et décrivez les taux en commentaire.");
   } else if (t.tauxPourcent === null) {

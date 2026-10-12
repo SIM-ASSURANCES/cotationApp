@@ -1,7 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import type { FormuleSource } from "../documents/donnees";
-import { contenuAvoir, controlerPaiement, envoyeARetenu, etatPaiements, periodeRenouvellement, problemesEnvoyeA, type ContenuFacture, type PaiementEnregistre } from "./factures";
+import {
+  contenuAvoir,
+  controlerImputation,
+  controlerPaiement,
+  controlerRestitution,
+  envoyeARetenu,
+  etatPaiements,
+  imputationProposee,
+  periodeRenouvellement,
+  problemesEnvoyeA,
+  type ContenuFacture,
+  type PaiementEnregistre,
+} from "./factures";
 
 const paiement = (montant: string, numero = "REC-2026-10-0001"): PaiementEnregistre => ({ numero, date: "2026-10-08", montant, reference: "VIR-1", canal: "VIREMENT", payeur: "YAO" });
 
@@ -32,14 +44,20 @@ describe("contrôles d'un paiement (CDC §12, H33)", () => {
   const saisie = { date: "2026-10-08", montant: "41 000", canal: "VIREMENT", reference: "VIR-1", payeur: "" };
 
   it("accepte un montant au format français et le renvoie en écriture canonique", () => {
-    expect(controlerPaiement(saisie, emise, "2026-10-08")).toEqual({ problemes: [], montant: "41000" });
+    expect(controlerPaiement(saisie, emise, "2026-10-08")).toEqual({ problemes: [], montant: "41000", excedent: "0" });
   });
 
-  it("refuse un trop-perçu avec un message clair (H33)", () => {
-    const r = controlerPaiement({ ...saisie, montant: "122 444" }, emise, "2026-10-08");
-    expect(r.montant).toBeNull();
-    expect(r.problemes.join(" ")).toMatch(/Trop-perçu refusé \(H33\).*122444 F.*122443 F/);
-    expect(controlerPaiement({ ...saisie, montant: "122443" }, emise, "2026-10-08").problemes).toEqual([]);
+  it("accepte un trop-perçu : la part au-delà du restant dû est l'excédent, versé en avance (H33, 09/10/2026)", () => {
+    expect(controlerPaiement({ ...saisie, montant: "130 000" }, emise, "2026-10-08")).toEqual({ problemes: [], montant: "130000", excedent: "7557" });
+    expect(controlerPaiement({ ...saisie, montant: "122443" }, emise, "2026-10-08")).toEqual({ problemes: [], montant: "122443", excedent: "0" });
+    // Facture déjà soldée : rien à régler, la somme va sur la facture suivante ou se restitue.
+    expect(controlerPaiement(saisie, { ...emise, restantDu: "0" }, "2026-10-08").problemes.join(" ")).toMatch(/déjà soldée/);
+  });
+
+  it("le solde d'une facture ne compte que la part réglée d'un paiement (hors excédent)", () => {
+    const e = etatPaiements("122443", [], [paiement("41000"), { ...paiement("90000", "REC-2026-10-0002"), excedent: "8557" }]);
+    expect(e).toMatchObject({ totalPaye: "122443", restantDu: "0" });
+    expect(e.paiements.map((p) => p.restantDu)).toEqual(["81443", "0"]);
   });
 
   it.each([
@@ -58,6 +76,32 @@ describe("contrôles d'un paiement (CDC §12, H33)", () => {
     expect(controlerPaiement(saisie, { ...emise, type: "AVOIR" }, "2026-10-08").problemes.join(" ")).toMatch(/avoir ne se paie pas/);
     expect(controlerPaiement(saisie, { ...emise, statut: "BROUILLON", numero: null }, "2026-10-08").problemes.join(" ")).toMatch(/émise/);
     expect(controlerPaiement({ ...saisie, canal: "ESPECES", reference: "" }, emise, "2026-10-08").problemes).toEqual([]);
+  });
+});
+
+describe("avance sur police : imputation et restitution (H33, 09/10/2026)", () => {
+  const emise = { statut: "EMISE" as const, type: "AFFAIRE_NOUVELLE" as const, restantDu: "81443" };
+
+  it("propose le plus petit de l'avance et du restant dû", () => {
+    expect(imputationProposee("18557", "81443")).toBe("18557");
+    expect(imputationProposee("100000", "81443")).toBe("81443");
+    expect(imputationProposee("0", "81443")).toBe("0");
+  });
+
+  it("une imputation ne dépasse ni l'avance disponible ni le restant dû, et ne vise qu'une facture émise", () => {
+    expect(controlerImputation("10 000", "18557", emise)).toEqual({ problemes: [], montant: "10000" });
+    expect(controlerImputation("20000", "18557", emise).problemes.join(" ")).toMatch(/dépasse l'avance disponible/);
+    expect(controlerImputation("90000", "100000", emise).problemes.join(" ")).toMatch(/restant dû/);
+    expect(controlerImputation("10", "100", { ...emise, statut: "ANNULEE" }).problemes.join(" ")).toMatch(/émise et en cours/);
+    expect(controlerImputation("0", "100", emise).problemes.join(" ")).toMatch(/supérieur à 0/);
+  });
+
+  it("une restitution porte date, montant, canal et référence, sans dépasser l'avance", () => {
+    const r = { date: "2026-10-08", montant: "18557", canal: "VIREMENT", reference: "VIR-REMB-1" };
+    expect(controlerRestitution(r, "18557", "2026-10-08")).toEqual({ problemes: [], montant: "18557" });
+    expect(controlerRestitution({ ...r, montant: "18558" }, "18557", "2026-10-08").problemes.join(" ")).toMatch(/dépasse l'avance/);
+    expect(controlerRestitution({ ...r, reference: "" }, "18557", "2026-10-08").problemes.join(" ")).toMatch(/référence/);
+    expect(controlerRestitution({ ...r, date: "2026-10-09" }, "18557", "2026-10-08").problemes.join(" ")).toMatch(/futur/);
   });
 });
 

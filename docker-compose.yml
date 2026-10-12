@@ -2,7 +2,7 @@
 #
 # Lancement :  docker compose up -d --build
 # Prérequis  : fichier .env à la racine (modèle : .env.example) ; polices dans generateur/polices/.
-# Seul le port 3000 de l'application est publié, et SEULEMENT sur 127.0.0.1 : un proxy inverse
+# Seul le port de l'application est publié (APP_PORT, 3000 par défaut), et SEULEMENT sur 127.0.0.1 : un proxy inverse
 # (Dokploy/Traefik, Caddy, nginx...) assure le HTTPS public et lui transmet les requêtes.
 # La base, Redis et le générateur ne sont joignables que depuis ce réseau Docker.
 
@@ -101,7 +101,8 @@ services:
       # File de tâches (D24) : l'application y dépose les imports confirmés et les écritures différées (T14).
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
     ports:
-      - "127.0.0.1:3000:3000"
+      # Port de l'hôte réglable : le VPS est partagé avec le portail RH, qui peut déjà occuper 3000.
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
     depends_on:
       postgres:
         condition: service_healthy

@@ -4,7 +4,7 @@ import { useState } from "react";
 
 const entree = "w-full rounded border border-bordure bg-white px-2 py-1";
 
-export type LigneAssure = { nom: string; naissance: string; sexe: string; lien: string; formule: string };
+export type LigneAssure = { nom: string; naissance: string; sexe: string; lien: string; identification: string; formule: string };
 
 /** Assurés d'une cotation (dictionnaire assures[]) : ajout et retrait de lignes. Champs de même nom : lus par getAll. */
 export function LignesAssures({ initiales, formules }: { initiales: LigneAssure[]; formules: { code: string; libelle: string }[] }) {
@@ -14,13 +14,14 @@ export function LignesAssures({ initiales, formules }: { initiales: LigneAssure[
   return (
     <div className="mb-4 overflow-x-auto">
       {lignes.length > 0 ? (
-        <table className="w-full min-w-[48rem] border-collapse text-sm">
+        <table className="w-full min-w-[60rem] border-collapse text-sm">
           <thead>
             <tr className="bg-sim-bleu text-left text-white">
               <th className="p-2">Nom et prénoms</th>
               <th className="p-2">Naissance (AAAA-MM-JJ)</th>
               <th className="p-2">Sexe</th>
-              <th className="p-2">Lien</th>
+              <th className="p-2">Lien (filiation)</th>
+              <th className="p-2">Pièce d&apos;identité (facultatif)</th>
               <th className="p-2">Formule</th>
               <th className="p-2" />
             </tr>
@@ -38,6 +39,7 @@ export function LignesAssures({ initiales, formules }: { initiales: LigneAssure[
                   </select>
                 </td>
                 <td className="p-1"><input name="assure_lien" value={l.lien} onChange={(e) => modifier(i, "lien", e.target.value)} aria-label="Lien" className={entree} /></td>
+                <td className="p-1"><input name="assure_identification" value={l.identification} onChange={(e) => modifier(i, "identification", e.target.value)} aria-label="Pièce d'identité" placeholder="CNI, passeport…" className={entree} /></td>
                 <td className="p-1">
                   <select name="assure_formule" value={l.formule} onChange={(e) => modifier(i, "formule", e.target.value)} aria-label="Formule" className={entree}>
                     <option value="">—</option>
@@ -52,7 +54,7 @@ export function LignesAssures({ initiales, formules }: { initiales: LigneAssure[
       ) : (
         <p className="text-sm text-zinc-600">Aucun assuré saisi (facultatif à ce stade).</p>
       )}
-      <button type="button" onClick={() => setLignes((x) => [...x, { nom: "", naissance: "", sexe: "", lien: "", formule: "" }])} className="mt-2 rounded border border-sim-bleu px-3 py-1 text-sm font-medium text-sim-bleu hover:bg-surface">
+      <button type="button" onClick={() => setLignes((x) => [...x, { nom: "", naissance: "", sexe: "", lien: "", identification: "", formule: "" }])} className="mt-2 rounded border border-sim-bleu px-3 py-1 text-sm font-medium text-sim-bleu hover:bg-surface">
         + Ajouter un assuré
       </button>
     </div>

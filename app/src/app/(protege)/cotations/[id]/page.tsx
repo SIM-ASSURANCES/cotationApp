@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ChampNumeroPolice } from "@/composants/ChampNumeroPolice";
 import { ComplementsSouscripteur } from "@/composants/ComplementsSouscripteur";
 import { FormulaireAction } from "@/composants/FormulaireAction";
 import { LignesBeneficiaires, LignesContactsUrgence } from "@/composants/LignesDynamiques";
 import { TachesPolice } from "@/composants/TachesPolice";
 import { formaterMontant, montant, type Montant } from "@/domaine/calcul/montant";
-import { LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
+import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
-import { FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
+import { avertissementNumeroContrat, FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
 import { LIBELLE_STATUT, peutAccepter, peutEtreValidee, peutModifier } from "@/domaine/cotation/statuts";
 import { LIBELLE_RAISON } from "@/domaine/cotation/validation";
 import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
@@ -75,18 +76,21 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           {c.filigrane}
         </p>
       ) : null}
-      <TachesPolice taches={taches} cotationId={c.id} />
+      <TachesPolice taches={taches} cotationId={c.id} chemin={`/cotations/${c.id}`} />
 
       <section className="mb-6 grid max-w-4xl gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
         <p><strong>Produit :</strong> {c.produit.code} — {c.produit.libelle}</p>
         <p><strong>Type de contrat :</strong> {c.typeContrat ? LIBELLE_TYPE_CONTRAT[c.typeContrat] : "non renseigné (cotation antérieure)"}</p>
+        <p><strong>Régime de taxe :</strong> {c.regimeTaxe ? LIBELLE_REGIME_TAXE[c.regimeTaxe] : "non renseigné (cotation antérieure à la session 6.0 : taux choisi par le type de contrat)"}</p>
         <p><strong>Souscripteur :</strong> {nom} ({c.souscripteur.type === "MORALE" ? "personne morale" : "personne physique"})</p>
         <p><strong>Période :</strong> du {formatDate(c.dateEffet)} au {formatDate(c.dateEcheance)} ({x.joursCouverts} jours)</p>
         <p><strong>Établie le :</strong> {formatDate(c.dateEtablissement)}</p>
         <p><strong>Valide jusqu'au :</strong> {formatDate(c.dateValidite)}</p>
         <p><strong>Paramétrage du produit du :</strong> {formatDate(c.versionDateEffet)}</p>
         <p><strong>Auteur :</strong> {c.auteurIdentifiant}</p>
+        <p><strong>Intermédiaire(s) :</strong> {c.intermediaires.length > 0 ? c.intermediaires.map((i) => `${i.nom} (${i.code}, ${i.role})`).join(" ; ") : "aucun"}</p>
         {c.numeroPolice ? <p><strong>Police créée :</strong> {c.numeroPolice}</p> : null}
+        {c.numeroPolice && avertissementNumeroContrat(c.numeroPolice) ? <p role="status" className="text-amber-800">{avertissementNumeroContrat(c.numeroPolice)}</p> : null}
         {c.numeroPolice && estContratDeGroupe(c.typeContrat) ? (
           <p><Link href={`/cotations/${c.id}/adherents`} className="text-sim-bleu underline">Adhérents, certificats d'adhésion et annexe des CP</Link></p>
         ) : null}
@@ -178,12 +182,12 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           <h2 className="mb-2 text-lg font-semibold">Assurés</h2>
           <table className="w-full max-w-3xl border-collapse text-sm">
             <thead>
-              <tr className="text-left text-zinc-600"><th className="p-1">N°</th><th className="p-1">Nom et prénoms</th><th className="p-1">Naissance</th><th className="p-1">Sexe</th><th className="p-1">Lien</th><th className="p-1">Formule</th></tr>
+              <tr className="text-left text-zinc-600"><th className="p-1">N°</th><th className="p-1">Nom et prénoms</th><th className="p-1">Naissance</th><th className="p-1">Sexe</th><th className="p-1">Lien</th><th className="p-1">Pièce d&apos;identité</th><th className="p-1">Formule</th></tr>
             </thead>
             <tbody>
               {c.assures.map((a) => (
                 <tr key={a.ordre} className="border-t border-bordure">
-                  <td className="p-1">{a.ordre}</td><td className="p-1">{a.nom_prenoms}</td><td className="p-1">{a.date_naissance || "—"}</td><td className="p-1">{a.sexe || "—"}</td><td className="p-1">{a.lien || "—"}</td><td className="p-1">{a.formule || "—"}</td>
+                  <td className="p-1">{a.ordre}</td><td className="p-1">{a.nom_prenoms}</td><td className="p-1">{a.date_naissance || "—"}</td><td className="p-1">{a.sexe || "—"}</td><td className="p-1">{a.lien || "—"}</td><td className="p-1">{a.num_identification || "—"}</td><td className="p-1">{a.formule || "—"}</td>
                 </tr>
               ))}
             </tbody>
@@ -336,7 +340,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
               ))}
               <label className="mb-3 mt-3 block text-sm font-medium">
                 Numéro de police attribué par SIM (obligatoire)
-                <input name="numeroPolice" required className={entree} autoComplete="off" placeholder="SCD-2026-000088-G00000" />
+                <ChampNumeroPolice className={entree} />
                 <span className="mt-1 block text-xs font-normal text-zinc-600">
                   Format contrôlé : <code>{formatPolice}</code>
                   {formatPolice === FORMAT_NUMERO_POLICE_DEFAUT ? " (par défaut)" : ""}. Le module ne génère jamais ce numéro.

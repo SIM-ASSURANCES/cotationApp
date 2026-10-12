@@ -9,7 +9,7 @@
  *
  * Normatif : uniquement les noms du CDC, plus `assures[].sexe` (D12), `doc.auteur_nom` (D20) et, pour les factures et
  * les reçus (D23), `envoye_a.*`, `formules[].base_taxe` et `paiements[].payeur` ; pour les avis d'échéance et les
- * relances (D25), `echeance_appelee.*` et `relance.*`.
+ * relances (D25), `echeance_appelee.*` et `relance.*` ; `solde.avance` (D28, session 6.0).
  * `risque.*` est ouvert : chaque produit y met ses propres champs (CDC §6.3, « extensible »).
  * Les champs des éléments de `societe.rib[]`, `societe.mobile_money[]` et `societe.recours[]` ne
  * sont pas nommés par le CDC : les noms retenus ici sont des hypothèses (decisions.md, D14).
@@ -117,7 +117,8 @@ export const CHAMPS: readonly Champ[] = [
   c("assures[].nom_prenoms", "texte", "Nom et prénoms", "KOUADIO Awa Inventée", S2),
   c("assures[].date_naissance", "date", "Date de naissance", "1985-04-12", S2),
   c("assures[].sexe", "texte", "Sexe : M, F, ou vide si inconnu (décision du 05/10/2026)", "F", S2),
-  c("assures[].lien", "texte", "Lien avec le souscripteur", "Souscripteur", S2),
+  c("assures[].lien", "texte", "Lien avec le souscripteur (filiation en santé)", "Souscripteur", S2),
+  c("assures[].num_identification", "texte", "Pièce d'identité de l'assuré (CNI, passeport…), facultative à la saisie (session 6.0, D27)", "CNI C0000000001", S2),
   c("assures[].formule", "texte", "Formule de l'assuré", "SOLO", S2),
   c("assures[].prime", "montant", "Prime TTC de l'assuré : TTC d'une unité de sa formule (H45)", "96000", S2),
   c("beneficiaires", "liste", "Bénéficiaires (SECURVIE, RELAXACCIDENT)", undefined, S2),
@@ -136,7 +137,7 @@ export const CHAMPS: readonly Champ[] = [
 
   // ---------------------------------------------------------------- 6.3.3
   c("police.numero", "texte", "N° de police", "POL-2026-000001", S3),
-  c("police.reference", "texte", "Référence ; vide si l'application ne la connaît pas", "REF-EXEMPLE", S3, FACULTATIF),
+  c("police.reference", "texte", "Référence de la police : son numéro (D27, H46 fermée)", "POL-2026-000001", S3),
   c("police.date_souscription", "date", "Date de souscription", "2026-09-01", S3),
   c("police.date_effet", "dateheure", "Date d'effet (heure obligatoire pour RELAXVOYAGE)", "2026-09-01T08:00", S3),
   c("police.date_echeance", "dateheure", "Date d'échéance", "2027-08-31T23:59", S3),
@@ -150,7 +151,7 @@ export const CHAMPS: readonly Champ[] = [
   c("formules", "liste", "Une ligne par formule (Solo, Famille…)", undefined, S3),
   c("formules[].code", "texte", "Code de la formule", "SOLO", S3),
   c("formules[].libelle", "texte", "Libellé", "Solo", S3),
-  c("formules[].taux_couverture", "pourcentage", "Taux de couverture", "80", S3),
+  c("formules[].taux_couverture", "pourcentage", "Taux de couverture ; vide hors santé (facultatif, décision de Thierry, session 6.0)", "80", S3, FACULTATIF),
   c("formules[].effectif", "entier", "Effectif", 3, S3),
   c("formules[].prime_unitaire", "montant", "Prime unitaire", "93581.33", S3),
   c("formules[].prime_nette", "montant", "Prime nette", "280744", S3),
@@ -181,6 +182,7 @@ export const CHAMPS: readonly Champ[] = [
   c("paiements[].payeur", "texte", "Payeur (extension D23)", "ENTREPRISE INVENTÉE", S3),
   c("solde.total_paye", "montant", "Total payé", "41000", S3),
   c("solde.restant_du", "montant", "Restant dû", "15847000", S3),
+  c("solde.avance", "montant", "Avance disponible de la police : trop-perçus et sommes reportées, non encore imputées ni restituées (extension D28) ; facture, reçu, avis et relance", "0", S3),
   // Session 5b (D25) : avis d'échéance et relances. Non fournis pour les autres documents.
   c("echeance_appelee", "objet", "Échéance appelée par un avis d'échéance ou une relance (extension D25)", undefined, S3),
   c("echeance_appelee.numero", "entier", "N° de l'échéance appelée", 2, S3),

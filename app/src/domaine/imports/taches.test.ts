@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { estOuverte, tachesOuvertes } from "./taches";
+import { estOuverte, problemesMotifFermeture, tachesOuvertes } from "./taches";
 
 // H64 : l'état d'une tâche se déduit des pièces émises.
 describe("tâches d'une police après un import (H64)", () => {
@@ -22,5 +22,13 @@ describe("tâches d'une police après un import (H64)", () => {
   it("facture d'avenant : fermée seulement par une facture émise pour CETTE version de la liste", () => {
     expect(estOuverte(avenant, { ...rien, avenantsEmis: [2, 4] })).toBe(true);
     expect(estOuverte(avenant, { ...rien, avenantsEmis: [3] })).toBe(false);
+  });
+});
+
+describe("fermeture manuelle (H66, session 6.0)", () => {
+  it("motif obligatoire, 500 caractères au plus", () => {
+    expect(problemesMotifFermeture("Pas de facturation")).toEqual([]);
+    expect(problemesMotifFermeture("  ")[0]).toMatch(/motif est obligatoire/);
+    expect(problemesMotifFermeture("x".repeat(501))[0]).toMatch(/trop long/);
   });
 });

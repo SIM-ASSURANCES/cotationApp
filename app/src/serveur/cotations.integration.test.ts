@@ -186,9 +186,26 @@ describe("cotation figée dès l'émission (CDC §4.1)", () => {
     await expect(modifierBrouillon(dg, id, saisie(), null)).rejects.toBeInstanceOf(ErreurAcces); // la DG n'a pas ce droit
   });
 
-  it("refuse une cotation sans type de contrat (il choisit le taux de taxe)", async () => {
+  it("refuse une cotation sans type de contrat", async () => {
     await expect(creerBrouillon(commercial, saisie({ typeContrat: "" }), null)).rejects.toThrow(/type de contrat/);
     await expect(creerBrouillon(commercial, saisie({ typeContrat: "COLLECTIF" }), null)).rejects.toThrow(/type de contrat/);
+  });
+
+  it("régime de taxe (H29 fermée, 09/10/2026) : c'est lui qui choisit le taux, pas le type de contrat ; obligatoire", async () => {
+    // Le produit n'a qu'un taux « Groupe » (1,5 %) : un contrat FAMILLE au régime Groupe le prend…
+    const id = await creerBrouillon(commercial, saisie({ typeContrat: "FAMILLE", regimeTaxe: "GROUPE" }), null);
+    const c = (await lireCotation(commercial, id))!;
+    expect(c).toMatchObject({ typeContrat: "FAMILLE", regimeTaxe: "GROUPE" });
+    expect(c.resultat.totaux.arrondi.ttc.toString()).toBe("15888000");
+    // … au régime Individuel, aucun taux : refus lisible.
+    await expect(creerBrouillon(commercial, saisie({ typeContrat: "GROUPE", regimeTaxe: "INDIVIDUEL" }), null)).rejects.toThrow(/régime individuel/);
+    // Régime proposé (appel sans formulaire) : celui du type de contrat. Envoyé vide ou invalide : refusé.
+    expect((await lireCotation(commercial, await creerBrouillon(commercial, saisie(), null)))!.regimeTaxe).toBe("GROUPE");
+    await expect(creerBrouillon(commercial, saisie({ regimeTaxe: "" }), null)).rejects.toThrow(/régime de taxe/);
+    await expect(creerBrouillon(commercial, saisie({ regimeTaxe: "FAMILLE" }), null)).rejects.toThrow(/régime de taxe/);
+    // Le changement de régime d'un brouillon est tracé avec la modification.
+    await modifierBrouillon(commercial, id, saisie({ typeContrat: "FAMILLE", regimeTaxe: "GROUPE", nombreTranches: 1 }), null);
+    expect((await lireCotation(commercial, id))!.regimeTaxe).toBe("GROUPE");
   });
 });
 
@@ -516,6 +533,14 @@ describe("saisie, droits et traçabilité", () => {
     const c = (await lireCotation(commercial, id))!;
     expect(c.assures[0].sexe).toBe("M");
     expect(c.risque).toEqual({ marque: "Yamaha" });
+  });
+
+  it("pièce d'identité d'un assuré (assures[].num_identification, session 6.0) : facultative, enregistrée, 50 caractères au plus", async () => {
+    const assure = { ordre: 1, nom_prenoms: "Test", date_naissance: "1990-01-01", sexe: "M" as const, lien: "Enfant", formule: "SOLO" };
+    await expect(creerBrouillon(commercial, saisie({ assures: [{ ...assure, num_identification: "X".repeat(51) }] }), null)).rejects.toThrow(/numéro d'identification trop long/);
+    const id = await creerBrouillon(commercial, saisie({ assures: [{ ...assure, num_identification: "CNI C0000000001" }, { ...assure, ordre: 2, nom_prenoms: "Sans pièce" }] }), null);
+    const c = (await lireCotation(commercial, id))!;
+    expect(c.assures.map((a) => a.num_identification ?? "")).toEqual(["CNI C0000000001", ""]);
   });
 
   it("copie le client choisi dans la cotation : la cotation ne bouge pas si le client change ensuite", async () => {

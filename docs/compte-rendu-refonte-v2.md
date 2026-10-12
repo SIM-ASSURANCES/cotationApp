@@ -23,7 +23,7 @@ Cinq relecteurs indépendants (un par lot). Aucune régression de comportement. 
 
 | Suite | Résultat |
 | --- | --- |
-| Unitaires (`npm test`) | 444 verts (433 avant : bibliothèque d'interface étendue) |
+| Unitaires (`npm test`) | 444 verts (nouveaux tests de la bibliothèque : statuts, `LienBouton`, `Bandeau`, `ListeDefinitions`, `Carte`, `Tableau`) |
 | `npm run lint`, `npm run typecheck`, `npm run build` | propres |
 | Intégration, bout en bout, `pytest` | non relancés : aucun fichier de `serveur/`, `domaine/` ni du générateur n'a changé depuis H98 |
 

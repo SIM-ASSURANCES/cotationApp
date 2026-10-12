@@ -1,6 +1,7 @@
 import { GROUPES_SANGUINS, NOMBRE_MAX_ENFANTS, type SouscripteurComplements } from "@/domaine/cotation/saisie";
 
 import { Champ } from "./FormulaireAction";
+import { ListeDeroulante } from "./ui";
 
 /**
  * Compléments du souscripteur (dictionnaire §6.3.2, session 4a) : tous facultatifs à la saisie. Les noms des
@@ -26,17 +27,15 @@ export function ComplementsSouscripteur({ valeurs }: { valeurs?: SouscripteurCom
         <Champ nom="souscripteur_mobile_money" libelle="Mobile money" requis={false} valeur={v.mobile_money} autoComplete="off" />
         <Champ nom="souscripteur_situation_matrimoniale" libelle="Situation matrimoniale" requis={false} valeur={v.situation_matrimoniale} autoComplete="off" />
         <Champ nom="souscripteur_nb_enfants" libelle={`Nombre d'enfants (0 à ${NOMBRE_MAX_ENFANTS})`} requis={false} valeur={v.nb_enfants == null ? "" : String(v.nb_enfants)} autoComplete="off" />
-        <label className="mb-4 block text-sm font-medium">
-          Groupe sanguin
-          <select name="souscripteur_groupe_sanguin" defaultValue={v.groupe_sanguin ?? ""} className="mt-1 block w-full rounded border border-border bg-surface px-3 py-2 text-base">
-            <option value="">—</option>
-            {GROUPES_SANGUINS.map((g) => (
-              <option key={g} value={g}>
-                {g}
-              </option>
-            ))}
-          </select>
-        </label>
+        {/* Même marge basse que les champs voisins (ils sont enveloppés d'un mb-4). */}
+        <div className="mb-4">
+          <ListeDeroulante
+            label="Groupe sanguin"
+            name="souscripteur_groupe_sanguin"
+            defaultValue={v.groupe_sanguin ?? ""}
+            options={[{ valeur: "", libelle: "—" }, ...GROUPES_SANGUINS.map((g) => ({ valeur: g, libelle: g }))]}
+          />
+        </div>
       </div>
     </details>
   );

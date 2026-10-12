@@ -1,3 +1,4 @@
+import { Bandeau } from "@/composants/ui";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 
 /** Une somme reportée d'une facture annulée, encore en attente de sa facture de remplacement (H73, session 6.1). */
@@ -10,16 +11,19 @@ export type ReportAffiche = { mouvementId: number; avertissement: string; montan
 export function AvertissementsReports({ reports }: { reports: readonly ReportAffiche[] }) {
   if (reports.length === 0) return null;
   return (
-    <div role="note" className="mb-3 rounded border border-warning-border bg-warning-bg p-3 text-sm">
-      <p className="mb-1 font-medium">Attention : une partie de l&apos;avance est destinée à une facture de remplacement non émise.</p>
-      <ul className="list-disc pl-5">
-        {reports.map((r) => (
-          <li key={r.mouvementId}>
-            {formaterMontant(montant(r.montant))} F ({r.recu ?? "avance"}, {r.date}) : {r.avertissement}
-          </li>
-        ))}
-      </ul>
-      <p className="mt-1 text-neutral">Rien n&apos;est réservé : si vous imputez ou restituez cette avance, la facture de remplacement ne la retrouvera pas.</p>
+    // `Bandeau` n'accepte que alert / status : le rôle « note » de l'ancien encadré reste porté par l'enveloppe.
+    <div role="note" className="mb-3">
+      <Bandeau ton="avertissement">
+        <p className="mb-1 font-medium">Attention : une partie de l&apos;avance est destinée à une facture de remplacement non émise.</p>
+        <ul className="list-disc pl-5">
+          {reports.map((r) => (
+            <li key={r.mouvementId}>
+              {formaterMontant(montant(r.montant))} F ({r.recu ?? "avance"}, {r.date}) : {r.avertissement}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-1 text-neutral">Rien n&apos;est réservé : si vous imputez ou restituez cette avance, la facture de remplacement ne la retrouvera pas.</p>
+      </Bandeau>
     </div>
   );
 }

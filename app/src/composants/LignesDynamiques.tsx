@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 
-const entree = "w-full rounded border border-border bg-surface px-2 py-1";
+import { Bouton, Champ, ListeDeroulante } from "@/composants/ui";
+
+// Tableau manuel (cellules = champs) aux classes du composant Tableau. Pas de zébrure : un champ teinté ne doit pas reposer sur un fond bg-muted.
+const ENTETE = "border-b border-border bg-muted px-3 py-2 text-left font-medium text-neutral";
+const CELLULE = "border-b border-border px-2 py-1.5 align-top";
+const CORPS = "bg-surface [&>tr:last-child>td]:border-b-0";
+const ZONE_TABLEAU = "relative overflow-x-auto rounded-md border border-border shadow-elevated";
 
 export type LigneAssure = { nom: string; naissance: string; sexe: string; lien: string; identification: string; formule: string };
 
@@ -12,53 +18,60 @@ export function LignesAssures({ initiales, formules }: { initiales: LigneAssure[
   const modifier = (i: number, champ: keyof LigneAssure, valeur: string) => setLignes((l) => l.map((x, k) => (k === i ? { ...x, [champ]: valeur } : x)));
 
   return (
-    <div className="mb-4 overflow-x-auto">
+    <div className="space-y-3">
       {lignes.length > 0 ? (
-        <table className="w-full min-w-[60rem] border-collapse text-sm">
-          <thead>
-            <tr className="bg-primary text-left text-primary-foreground">
-              <th className="p-2">Nom et prénoms</th>
-              <th className="p-2">Naissance (AAAA-MM-JJ)</th>
-              <th className="p-2">Sexe</th>
-              <th className="p-2">Lien (filiation)</th>
-              <th className="p-2">Pièce d&apos;identité (facultatif)</th>
-              {formules.length > 0 ? <th className="p-2">Formule</th> : null}
-              <th className="p-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {lignes.map((l, i) => (
-              <tr key={i} className="border-b border-border">
-                <td className="p-1"><input name="assure_nom" value={l.nom} onChange={(e) => modifier(i, "nom", e.target.value)} aria-label="Nom et prénoms" className={entree} /></td>
-                <td className="p-1"><input name="assure_naissance" value={l.naissance} onChange={(e) => modifier(i, "naissance", e.target.value)} aria-label="Date de naissance" placeholder="1990-05-15" className={entree} /></td>
-                <td className="p-1">
-                  <select name="assure_sexe" value={l.sexe} onChange={(e) => modifier(i, "sexe", e.target.value)} aria-label="Sexe" className={entree}>
-                    <option value="">—</option>
-                    <option value="M">M</option>
-                    <option value="F">F</option>
-                  </select>
-                </td>
-                <td className="p-1"><input name="assure_lien" value={l.lien} onChange={(e) => modifier(i, "lien", e.target.value)} aria-label="Lien" className={entree} /></td>
-                <td className="p-1"><input name="assure_identification" value={l.identification} onChange={(e) => modifier(i, "identification", e.target.value)} aria-label="Pièce d'identité" placeholder="CNI, passeport…" className={entree} /></td>
-                {formules.length > 0 ? (
-                  <td className="p-1">
-                    <select name="assure_formule" value={l.formule} onChange={(e) => modifier(i, "formule", e.target.value)} aria-label="Formule" className={entree}>
-                      <option value="">—</option>
-                      {formules.map((f) => (<option key={f.code} value={f.code}>{f.code}</option>))}
-                    </select>
-                  </td>
-                ) : null}
-                <td className="p-1"><button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} className="rounded border border-border px-2 py-1">Retirer</button></td>
+        <div className={ZONE_TABLEAU}>
+          <table className="w-full min-w-[60rem] border-separate border-spacing-0 text-sm">
+            <thead>
+              <tr>
+                <th scope="col" className={ENTETE}>Nom et prénoms</th>
+                <th scope="col" className={ENTETE}>Naissance (AAAA-MM-JJ)</th>
+                <th scope="col" className={ENTETE}>Sexe</th>
+                <th scope="col" className={ENTETE}>Lien (filiation)</th>
+                <th scope="col" className={ENTETE}>Pièce d&apos;identité (facultatif)</th>
+                {formules.length > 0 ? <th scope="col" className={ENTETE}>Formule</th> : null}
+                <th scope="col" className={ENTETE}><span className="sr-only">Actions</span></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className={CORPS}>
+              {lignes.map((l, i) => (
+                <tr key={i}>
+                  <td className={CELLULE}><Champ name="assure_nom" value={l.nom} onChange={(e) => modifier(i, "nom", e.target.value)} aria-label="Nom et prénoms" /></td>
+                  <td className={CELLULE}><Champ name="assure_naissance" value={l.naissance} onChange={(e) => modifier(i, "naissance", e.target.value)} aria-label="Date de naissance" placeholder="1990-05-15" /></td>
+                  <td className={CELLULE}>
+                    <ListeDeroulante
+                      name="assure_sexe"
+                      value={l.sexe}
+                      onChange={(e) => modifier(i, "sexe", e.target.value)}
+                      aria-label="Sexe"
+                      options={[{ valeur: "", libelle: "—" }, { valeur: "M", libelle: "M" }, { valeur: "F", libelle: "F" }]}
+                    />
+                  </td>
+                  <td className={CELLULE}><Champ name="assure_lien" value={l.lien} onChange={(e) => modifier(i, "lien", e.target.value)} aria-label="Lien" /></td>
+                  <td className={CELLULE}><Champ name="assure_identification" value={l.identification} onChange={(e) => modifier(i, "identification", e.target.value)} aria-label="Pièce d'identité" placeholder="CNI, passeport…" /></td>
+                  {formules.length > 0 ? (
+                    <td className={CELLULE}>
+                      <ListeDeroulante
+                        name="assure_formule"
+                        value={l.formule}
+                        onChange={(e) => modifier(i, "formule", e.target.value)}
+                        aria-label="Formule"
+                        options={[{ valeur: "", libelle: "—" }, ...formules.map((f) => ({ valeur: f.code, libelle: f.code }))]}
+                      />
+                    </td>
+                  ) : null}
+                  <td className={CELLULE}><Bouton variante="secondaire" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))}>Retirer</Bouton></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <p className="text-sm text-neutral">Aucun assuré saisi (facultatif à ce stade).</p>
       )}
-      <button type="button" onClick={() => setLignes((x) => [...x, { nom: "", naissance: "", sexe: "", lien: "", identification: "", formule: "" }])} className="mt-2 rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
+      <Bouton variante="secondaire" onClick={() => setLignes((x) => [...x, { nom: "", naissance: "", sexe: "", lien: "", identification: "", formule: "" }])}>
         + Ajouter un assuré
-      </button>
+      </Bouton>
     </div>
   );
 }
@@ -71,17 +84,18 @@ export function LignesRisque({ initiales }: { initiales: LigneRisque[] }) {
   const modifier = (i: number, champ: keyof LigneRisque, valeur: string) => setLignes((l) => l.map((x, k) => (k === i ? { ...x, [champ]: valeur } : x)));
 
   return (
-    <div className="mb-4">
+    <div className="space-y-3">
       {lignes.map((l, i) => (
-        <div key={i} className="mb-2 flex max-w-2xl gap-2">
-          <input name="risque_cle" value={l.cle} onChange={(e) => modifier(i, "cle", e.target.value)} aria-label="Nom du champ (risque.…)" placeholder="marque" className={entree} />
-          <input name="risque_valeur" value={l.valeur} onChange={(e) => modifier(i, "valeur", e.target.value)} aria-label="Valeur" className={entree} />
-          <button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} className="rounded border border-border px-2 py-1">Retirer</button>
+        // Une colonne sous sm : deux champs et un bouton ne tiennent pas côte à côte sur 390 px.
+        <div key={i} className="flex max-w-2xl flex-col gap-2 sm:flex-row sm:items-start">
+          <div className="min-w-0 flex-1"><Champ name="risque_cle" value={l.cle} onChange={(e) => modifier(i, "cle", e.target.value)} aria-label="Nom du champ (risque.…)" placeholder="marque" /></div>
+          <div className="min-w-0 flex-1"><Champ name="risque_valeur" value={l.valeur} onChange={(e) => modifier(i, "valeur", e.target.value)} aria-label="Valeur" /></div>
+          <Bouton variante="secondaire" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))}>Retirer</Bouton>
         </div>
       ))}
-      <button type="button" onClick={() => setLignes((x) => [...x, { cle: "", valeur: "" }])} className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
+      <Bouton variante="secondaire" onClick={() => setLignes((x) => [...x, { cle: "", valeur: "" }])}>
         + Ajouter un champ de risque
-      </button>
+      </Bouton>
     </div>
   );
 }
@@ -97,36 +111,38 @@ export function LignesBeneficiaires({ initiales }: { initiales: LigneBeneficiair
   const modifier = (i: number, champ: keyof LigneBeneficiaire, valeur: string) => setLignes((l) => l.map((x, k) => (k === i ? { ...x, [champ]: valeur } : x)));
 
   return (
-    <div className="mb-4 overflow-x-auto">
+    <div className="space-y-3">
       {lignes.length > 0 ? (
-        <table className="w-full min-w-[44rem] border-collapse text-sm">
-          <thead>
-            <tr className="bg-primary text-left text-primary-foreground">
-              <th className="p-2">Nom et prénoms</th>
-              <th className="p-2">Lien avec l'assuré</th>
-              <th className="p-2">Contact</th>
-              <th className="p-2">Quote-part (%)</th>
-              <th className="p-2" />
-            </tr>
-          </thead>
-          <tbody>
-            {lignes.map((l, i) => (
-              <tr key={i} className="border-b border-border">
-                <td className="p-1"><input name="benef_nom" value={l.nom} onChange={(e) => modifier(i, "nom", e.target.value)} aria-label="Nom et prénoms du bénéficiaire" className={entree} /></td>
-                <td className="p-1"><input name="benef_lien" value={l.lien} onChange={(e) => modifier(i, "lien", e.target.value)} aria-label="Lien avec l'assuré" className={entree} /></td>
-                <td className="p-1"><input name="benef_contact" value={l.contact} onChange={(e) => modifier(i, "contact", e.target.value)} aria-label="Contact" className={entree} /></td>
-                <td className="p-1"><input name="benef_quote" value={l.quote} onChange={(e) => modifier(i, "quote", e.target.value)} inputMode="decimal" aria-label="Quote-part en pourcentage" placeholder="50" className={entree} /></td>
-                <td className="p-1"><button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} className="rounded border border-border px-2 py-1">Retirer</button></td>
+        <div className={ZONE_TABLEAU}>
+          <table className="w-full min-w-[44rem] border-separate border-spacing-0 text-sm">
+            <thead>
+              <tr>
+                <th scope="col" className={ENTETE}>Nom et prénoms</th>
+                <th scope="col" className={ENTETE}>Lien avec l'assuré</th>
+                <th scope="col" className={ENTETE}>Contact</th>
+                <th scope="col" className={ENTETE}>Quote-part (%)</th>
+                <th scope="col" className={ENTETE}><span className="sr-only">Actions</span></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className={CORPS}>
+              {lignes.map((l, i) => (
+                <tr key={i}>
+                  <td className={CELLULE}><Champ name="benef_nom" value={l.nom} onChange={(e) => modifier(i, "nom", e.target.value)} aria-label="Nom et prénoms du bénéficiaire" /></td>
+                  <td className={CELLULE}><Champ name="benef_lien" value={l.lien} onChange={(e) => modifier(i, "lien", e.target.value)} aria-label="Lien avec l'assuré" /></td>
+                  <td className={CELLULE}><Champ name="benef_contact" value={l.contact} onChange={(e) => modifier(i, "contact", e.target.value)} aria-label="Contact" /></td>
+                  <td className={CELLULE}><Champ name="benef_quote" value={l.quote} onChange={(e) => modifier(i, "quote", e.target.value)} inputMode="decimal" aria-label="Quote-part en pourcentage" placeholder="50" className="text-right tabular-nums" /></td>
+                  <td className={CELLULE}><Bouton variante="secondaire" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))}>Retirer</Bouton></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
         <p className="text-sm text-neutral">Aucun bénéficiaire saisi.</p>
       )}
-      <button type="button" onClick={() => setLignes((x) => [...x, { nom: "", lien: "", contact: "", quote: "" }])} className="mt-2 rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
+      <Bouton variante="secondaire" onClick={() => setLignes((x) => [...x, { nom: "", lien: "", contact: "", quote: "" }])}>
         + Ajouter un bénéficiaire
-      </button>
+      </Bouton>
     </div>
   );
 }
@@ -139,17 +155,17 @@ export function LignesContactsUrgence({ initiales }: { initiales: LigneContactUr
   const modifier = (i: number, champ: keyof LigneContactUrgence, valeur: string) => setLignes((l) => l.map((x, k) => (k === i ? { ...x, [champ]: valeur } : x)));
 
   return (
-    <div className="mb-4">
+    <div className="space-y-3">
       {lignes.map((l, i) => (
-        <div key={i} className="mb-2 flex max-w-2xl gap-2">
-          <input name="urgence_nom" value={l.nom} onChange={(e) => modifier(i, "nom", e.target.value)} aria-label="Nom et prénoms du contact d'urgence" placeholder="Nom et prénoms" className={entree} />
-          <input name="urgence_contact" value={l.contact} onChange={(e) => modifier(i, "contact", e.target.value)} aria-label="Contact" placeholder="Téléphone" className={entree} />
-          <button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} className="rounded border border-border px-2 py-1">Retirer</button>
+        <div key={i} className="flex max-w-2xl flex-col gap-2 sm:flex-row sm:items-start">
+          <div className="min-w-0 flex-1"><Champ name="urgence_nom" value={l.nom} onChange={(e) => modifier(i, "nom", e.target.value)} aria-label="Nom et prénoms du contact d'urgence" placeholder="Nom et prénoms" /></div>
+          <div className="min-w-0 flex-1"><Champ name="urgence_contact" value={l.contact} onChange={(e) => modifier(i, "contact", e.target.value)} aria-label="Contact" placeholder="Téléphone" /></div>
+          <Bouton variante="secondaire" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))}>Retirer</Bouton>
         </div>
       ))}
-      <button type="button" onClick={() => setLignes((x) => [...x, { nom: "", contact: "" }])} className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
+      <Bouton variante="secondaire" onClick={() => setLignes((x) => [...x, { nom: "", contact: "" }])}>
         + Ajouter un contact d'urgence
-      </button>
+      </Bouton>
     </div>
   );
 }

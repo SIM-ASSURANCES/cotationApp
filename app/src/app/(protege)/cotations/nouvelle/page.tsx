@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { Bandeau, EnTetePage, Tableau } from "@/composants/ui";
 import { compositionPossible, enVigueur } from "@/domaine/calcul/parametrage";
 import { peutAgir } from "@/domaine/droits";
 import { listerClients } from "@/serveur/clients";
@@ -17,20 +18,26 @@ export default async function PageNouvelleCotation(props: PageProps<"/cotations/
   if (!code) {
     const produits = (await listerProduits(utilisateur)).filter((p) => p.actif && p.versions.length > 0);
     return (
-      <main>
-        <h1 className="mb-2 text-2xl font-semibold text-primary">Nouvelle cotation</h1>
-        <p className="mb-4 text-sm text-neutral">Choisissez le produit.</p>
-        <ul className="list-disc pl-6">
-          {produits.map((p) => (
-            <li key={p.code}>
-              <Link href={`/cotations/nouvelle?produit=${p.code}`} className="font-medium text-primary underline">
-                {p.code}
-              </Link>{" "}
-              — {p.libelle}
-            </li>
-          ))}
-        </ul>
-        {produits.length === 0 ? <p className="text-sm text-neutral">Aucun produit paramétré : un profil Technique doit d'abord en créer un.</p> : null}
+      <main className="space-y-6">
+        <EnTetePage titre="Nouvelle cotation" sousTitre="Choisissez le produit." filAriane={[{ libelle: "Cotations", href: "/cotations" }, { libelle: "Nouvelle cotation" }]} />
+        <Tableau
+          legende="Produits"
+          lignes={produits}
+          cleLigne={(p) => p.code}
+          messageVide="Aucun produit paramétré : un profil Technique doit d'abord en créer un."
+          colonnes={[
+            {
+              cle: "code",
+              entete: "Produit",
+              rendu: (p) => (
+                <Link href={`/cotations/nouvelle?produit=${p.code}`} className="font-medium text-primary underline">
+                  {p.code}
+                </Link>
+              ),
+            },
+            { cle: "libelle", entete: "Libellé", rendu: (p) => p.libelle },
+          ]}
+        />
       </main>
     );
   }
@@ -39,24 +46,20 @@ export default async function PageNouvelleCotation(props: PageProps<"/cotations/
   const version = donnees ? enVigueur(donnees.versions, aujourdhui()) : null;
   if (!donnees || !version) {
     return (
-      <main>
-        <h1 className="mb-2 text-2xl font-semibold text-danger">Produit indisponible</h1>
-        <p>Ce produit n'existe pas ou n'a aucun paramétrage en vigueur aujourd'hui.</p>
+      <main className="space-y-6">
+        <EnTetePage titre="Produit indisponible" filAriane={[{ libelle: "Cotations", href: "/cotations" }, { libelle: "Nouvelle cotation", href: "/cotations/nouvelle" }]} />
+        <Bandeau ton="danger">Ce produit n'existe pas ou n'a aucun paramétrage en vigueur aujourd'hui.</Bandeau>
       </main>
     );
   }
   const [clients, intermediaires] = await Promise.all([listerClients(utilisateur), listerIntermediaires(utilisateur, { actifsSeulement: true })]);
 
   return (
-    <main>
-      <p className="mb-2 text-sm">
-        <Link href="/cotations/nouvelle" className="text-primary underline">
-          ← Produits
-        </Link>
-      </p>
-      <h1 className="mb-4 text-2xl font-semibold text-primary">
-        Nouvelle cotation : {donnees.produit.code} <span className="font-normal text-neutral">— {donnees.produit.libelle}</span>
-      </h1>
+    <main className="space-y-6">
+      <EnTetePage
+        titre={`Nouvelle cotation : ${donnees.produit.code} — ${donnees.produit.libelle}`}
+        filAriane={[{ libelle: "Cotations", href: "/cotations" }, { libelle: "Nouvelle cotation", href: "/cotations/nouvelle" }, { libelle: donnees.produit.code }]}
+      />
       <FormulaireCotation
         produit={donnees.produit}
         formules={version.formules}

@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { EnTetePage, LienBouton, PastilleStatut, Tableau } from "@/composants/ui";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { LIBELLE_STATUT, STATUTS, estStatut } from "@/domaine/cotation/statuts";
 import { peutAgir, peutLire } from "@/domaine/droits";
@@ -8,14 +9,6 @@ import { niveauDuProfil } from "@/serveur/droits";
 import { exigerDroit } from "@/serveur/session";
 
 const formatDate = new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeZone: "Africa/Abidjan" });
-const COULEUR: Record<string, string> = {
-  BROUILLON: "border border-neutral-border bg-neutral-bg text-neutral",
-  A_VALIDER: "border border-warning-border bg-warning-bg text-warning",
-  EMISE: "border border-primary-border bg-primary-bg text-primary",
-  ACCEPTEE: "border border-success-border bg-success-bg text-success",
-  REFUSEE: "border border-danger-border bg-danger-bg text-danger",
-  EXPIREE: "border border-neutral-border bg-neutral-bg text-neutral",
-};
 
 export default async function PageCotations(props: PageProps<"/cotations">) {
   const utilisateur = await exigerDroit("CREER_COTATION", peutLire);
@@ -24,69 +17,50 @@ export default async function PageCotations(props: PageProps<"/cotations">) {
   const [cotations, niveau] = await Promise.all([listerCotations(utilisateur, { statut }), niveauDuProfil(utilisateur.profil, "CREER_COTATION")]);
 
   return (
-    <main>
-      <div className="mb-4 flex flex-wrap items-center gap-4">
-        <h1 className="text-2xl font-semibold text-primary">Cotations</h1>
-        {peutAgir(niveau) ? (
-          <Link href="/cotations/nouvelle" className="rounded bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover">
-            Nouvelle cotation
-          </Link>
-        ) : null}
-        <Link href="/clients" className="text-sm text-primary underline">
-          Clients
-        </Link>
-      </div>
-      <nav aria-label="Filtre par statut" className="mb-4 flex flex-wrap gap-2 text-sm">
-        <Link href="/cotations" className={`rounded border px-3 py-1 ${!statut ? "border-primary bg-muted font-semibold" : "border-border"}`}>
+    <main className="space-y-6">
+      <EnTetePage
+        titre="Cotations"
+        actions={
+          <>
+            {peutAgir(niveau) ? <LienBouton variante="principal" href="/cotations/nouvelle">Nouvelle cotation</LienBouton> : null}
+            <LienBouton href="/clients">Clients</LienBouton>
+          </>
+        }
+      />
+      {/* Filtre actif en bouton principal, les autres en secondaire : la page n'a pas (encore) de composant « puce de filtre ». */}
+      <nav aria-label="Filtre par statut" className="flex flex-wrap gap-2">
+        <LienBouton variante={!statut ? "principal" : "secondaire"} href="/cotations" aria-current={!statut ? "page" : undefined}>
           Tous
-        </Link>
+        </LienBouton>
         {STATUTS.map((s) => (
-          <Link key={s} href={`/cotations?statut=${s}`} className={`rounded border px-3 py-1 ${statut === s ? "border-primary bg-muted font-semibold" : "border-border"}`}>
+          <LienBouton key={s} variante={statut === s ? "principal" : "secondaire"} href={`/cotations?statut=${s}`} aria-current={statut === s ? "page" : undefined}>
             {LIBELLE_STATUT[s]}
-          </Link>
+          </LienBouton>
         ))}
       </nav>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[48rem] border-collapse text-sm">
-          <thead>
-            <tr className="bg-primary text-left text-primary-foreground">
-              <th className="p-2">N°</th>
-              <th className="p-2">Statut</th>
-              <th className="p-2">Produit</th>
-              <th className="p-2">Souscripteur</th>
-              <th className="p-2 text-right">TTC (F CFA)</th>
-              <th className="p-2">Valide jusqu'au</th>
-              <th className="p-2">Auteur</th>
-            </tr>
-          </thead>
-          <tbody>
-            {cotations.map((c) => (
-              <tr key={c.id} className="border-b border-border">
-                <td className="p-2">
-                  <Link href={`/cotations/${c.id}`} className="font-medium text-primary underline">
-                    {c.numero ?? `Brouillon n° ${c.id}`}
-                  </Link>
-                </td>
-                <td className="p-2">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${COULEUR[c.statut]}`}>{LIBELLE_STATUT[c.statut]}</span>
-                </td>
-                <td className="p-2">{c.produit}</td>
-                <td className="p-2">{c.souscripteur}</td>
-                <td className="p-2 text-right tabular-nums">{c.aComposer ? "À composer" : c.ttc ? formaterMontant(montant(c.ttc)) : "—"}</td>
-                <td className="p-2">{c.dateValidite ? formatDate.format(new Date(`${c.dateValidite}T00:00:00Z`)) : "—"}</td>
-                <td className="p-2">{c.auteur}</td>
-              </tr>
-            ))}
-            {cotations.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="p-4 text-center text-neutral">
-                  Aucune cotation.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+      <Tableau
+        legende="Cotations"
+        lignes={cotations}
+        cleLigne={(c) => String(c.id)}
+        messageVide="Aucune cotation."
+        colonnes={[
+          {
+            cle: "numero",
+            entete: "N°",
+            rendu: (c) => (
+              <Link href={`/cotations/${c.id}`} className="font-medium text-primary underline">
+                {c.numero ?? `Brouillon n° ${c.id}`}
+              </Link>
+            ),
+          },
+          { cle: "statut", entete: "Statut", rendu: (c) => <PastilleStatut libelle={LIBELLE_STATUT[c.statut]} /> },
+          { cle: "produit", entete: "Produit", rendu: (c) => c.produit },
+          { cle: "souscripteur", entete: "Souscripteur", rendu: (c) => c.souscripteur },
+          { cle: "ttc", entete: "TTC (F CFA)", alignement: "droite", rendu: (c) => (c.aComposer ? "À composer" : c.ttc ? formaterMontant(montant(c.ttc)) : "—") },
+          { cle: "validite", entete: "Valide jusqu'au", rendu: (c) => (c.dateValidite ? formatDate.format(new Date(`${c.dateValidite}T00:00:00Z`)) : "—") },
+          { cle: "auteur", entete: "Auteur", rendu: (c) => c.auteur },
+        ]}
+      />
     </main>
   );
 }

@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { EnTetePage } from "@/composants/ui";
 import { compositionPossible, enVigueur } from "@/domaine/calcul/parametrage";
 import { peutModifier } from "@/domaine/cotation/statuts";
 import { peutAgir } from "@/domaine/droits";
@@ -35,13 +35,11 @@ export default async function PageModifierCotation(props: PageProps<"/cotations/
   const [clients, intermediaires] = await Promise.all([listerClients(utilisateur), listerIntermediaires(utilisateur, { actifsSeulement: true })]);
 
   return (
-    <main>
-      <p className="mb-2 text-sm">
-        <Link href={`/cotations/${cotation.id}`} className="text-primary underline">
-          ← Fiche de la cotation
-        </Link>
-      </p>
-      <h1 className="mb-4 text-2xl font-semibold text-primary">Modifier le brouillon n° {cotation.id}</h1>
+    <main className="space-y-6">
+      <EnTetePage
+        titre={`Modifier le brouillon n° ${cotation.id}`}
+        filAriane={[{ libelle: "Cotations", href: "/cotations" }, { libelle: "Fiche de la cotation", href: `/cotations/${cotation.id}` }, { libelle: "Modifier" }]}
+      />
       <FormulaireCotation
         produit={donnees.produit}
         formules={version.formules}

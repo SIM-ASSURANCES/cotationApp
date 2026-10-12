@@ -25,7 +25,7 @@ import { lireValidationContrat } from "@/serveur/validation-contrat";
 import { accepterCotation, emettreCpDeCotation, emettrePdfDeCotation, reediterDocument, refuserCotation, renvoyerCotation, soumettreCotation, validerCotation } from "../actions";
 
 const f = (m: Montant) => formaterMontant(m);
-const entree = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2";
+const entree = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2";
 const formatDate = (iso: string | null) => (iso ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeZone: "UTC" }).format(new Date(`${iso}T00:00:00Z`)) : "—");
 
 export default async function PageCotation(props: PageProps<"/cotations/[id]">) {
@@ -63,16 +63,16 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
   return (
     <main>
       <p className="mb-2 text-sm">
-        <Link href="/cotations" className="text-sim-bleu underline">
+        <Link href="/cotations" className="text-primary underline">
           ← Cotations
         </Link>
       </p>
       <div className="mb-2 flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold text-sim-bleu">{c.numero ?? `Brouillon n° ${c.id}`}</h1>
-        <span className="rounded bg-surface px-3 py-1 text-sm font-semibold">{LIBELLE_STATUT[c.statutEffectif]}</span>
+        <h1 className="text-2xl font-semibold text-primary">{c.numero ?? `Brouillon n° ${c.id}`}</h1>
+        <span className="rounded bg-muted px-3 py-1 text-sm font-semibold">{LIBELLE_STATUT[c.statutEffectif]}</span>
       </div>
       {c.filigrane ? (
-        <p role="alert" className="mb-4 rounded border-2 border-red-600 p-3 text-center text-2xl font-bold tracking-widest text-red-600">
+        <p role="alert" className="mb-4 rounded border-2 border-danger bg-danger-bg p-3 text-center text-2xl font-bold tracking-widest text-danger">
           {c.filigrane}
         </p>
       ) : null}
@@ -90,18 +90,18 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         <p><strong>Auteur :</strong> {c.auteurIdentifiant}</p>
         <p><strong>Intermédiaire(s) :</strong> {c.intermediaires.length > 0 ? c.intermediaires.map((i) => `${i.nom} (${i.code}, ${i.role})`).join(" ; ") : "aucun"}</p>
         {c.numeroPolice ? <p><strong>Police créée :</strong> {c.numeroPolice}</p> : null}
-        {c.numeroPolice && avertissementNumeroContrat(c.numeroPolice) ? <p role="status" className="text-amber-800">{avertissementNumeroContrat(c.numeroPolice)}</p> : null}
+        {c.numeroPolice && avertissementNumeroContrat(c.numeroPolice) ? <p role="status" className="text-warning">{avertissementNumeroContrat(c.numeroPolice)}</p> : null}
         {c.numeroPolice && estContratDeGroupe(c.typeContrat) ? (
-          <p><Link href={`/cotations/${c.id}/adherents`} className="text-sim-bleu underline">Adhérents, certificats d'adhésion et annexe des CP</Link></p>
+          <p><Link href={`/cotations/${c.id}/adherents`} className="text-primary underline">Adhérents, certificats d'adhésion et annexe des CP</Link></p>
         ) : null}
         {c.numeroPolice ? (
-          <p><Link href={`/cotations/${c.id}/factures`} className="text-sim-bleu underline">Factures, avoirs et paiements de la police</Link></p>
+          <p><Link href={`/cotations/${c.id}/factures`} className="text-primary underline">Factures, avoirs et paiements de la police</Link></p>
         ) : null}
         {c.statut === "REFUSEE" ? <p><strong>Refus :</strong> {c.motifRefusCode}{c.refusCommentaire ? ` — ${c.refusCommentaire}` : ""}</p> : null}
       </section>
 
       {c.raisonsValidation.length > 0 ? (
-        <p className="mb-4 rounded border border-amber-400 bg-amber-50 p-3 text-sm">
+        <p className="mb-4 rounded border border-warning-border bg-warning-bg p-3 text-sm">
           <strong>Validation exigée :</strong> {c.raisonsValidation.map((r) => LIBELLE_RAISON[r]).join(", ")}.
         </p>
       ) : null}
@@ -110,7 +110,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[46rem] border-collapse text-sm">
           <thead>
-            <tr className="bg-sim-bleu text-right text-white">
+            <tr className="bg-primary text-right text-primary-foreground">
               <th className="p-2 text-left">Formule</th>
               <th className="p-2">Effectif</th>
               <th className="p-2">Prime nette (HT)</th>
@@ -122,7 +122,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           </thead>
           <tbody>
             {[...x.lignes, ...(x.fraisFractionnement ? [x.fraisFractionnement] : [])].map((l) => (
-              <tr key={l.code} className="border-b border-bordure text-right">
+              <tr key={l.code} className="border-b border-border text-right">
                 <td className="p-2 text-left font-medium">{c.libelles[l.code] ?? "Frais de fractionnement"}</td>
                 <td className="p-2">{l.code === "FRAIS_FRACTIONNEMENT" ? "—" : l.effectif}</td>
                 <td className="p-2">{f(l.arrondi.nette)}</td>
@@ -132,7 +132,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
                 <td className="p-2">{l.code === "FRAIS_FRACTIONNEMENT" ? "—" : f(l.ttcParUnite)}</td>
               </tr>
             ))}
-            <tr className="bg-surface text-right font-semibold">
+            <tr className="bg-muted text-right font-semibold">
               <td className="p-2 text-left">Total général</td>
               <td className="p-2" />
               <td className="p-2">{f(x.totaux.arrondi.nette)}</td>
@@ -145,13 +145,13 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         </table>
       </div>
       {forcees.length > 0 ? (
-        <p className="mt-3 rounded border border-bordure bg-surface p-3 text-sm">
+        <p className="mt-3 rounded border border-border bg-muted p-3 text-sm">
           <strong>Prime forcée (information interne, non affichée au client) :</strong>{" "}
           {forcees.map((l) => `${l.code} : tarif ${montant(l.primeTarif).toString()} → forcée ${montant(l.primeForcee!).toString()}`).join(" ; ")}. Motif : {c.motifForcage}.
         </p>
       ) : null}
       {accessoiresSaisis.length > 0 ? (
-        <p className="mt-3 rounded border border-bordure bg-surface p-3 text-sm">
+        <p className="mt-3 rounded border border-border bg-muted p-3 text-sm">
           <strong>Accessoires modifiés dans la cotation :</strong>{" "}
           {accessoiresSaisis.map((l) => `${l.code} : paramétrage ${montant(l.accessoireTarif ?? "0").toString()} → ${montant(l.accessoireSaisi!).toString()}`).join(" ; ")} (journalisé).
         </p>
@@ -162,13 +162,13 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           <table className="w-full max-w-md border-collapse text-sm">
             <tbody>
               {c.echeancier.map((t) => (
-                <tr key={t.numero} className="border-b border-bordure">
+                <tr key={t.numero} className="border-b border-border">
                   <td className="p-2">{t.numero}</td>
                   <td className="p-2">{formatDate(t.date)}</td>
                   <td className="p-2 text-right">{f(t.montant)}</td>
                 </tr>
               ))}
-              <tr className="bg-surface font-semibold">
+              <tr className="bg-muted font-semibold">
                 <td className="p-2" colSpan={2}>Somme (= TTC)</td>
                 <td className="p-2 text-right">{f(c.echeancier.reduce((s, t) => s.plus(t.montant), x.totaux.arrondi.ttc.minus(x.totaux.arrondi.ttc)))}</td>
               </tr>
@@ -182,11 +182,11 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           <h2 className="mb-2 text-lg font-semibold">Assurés</h2>
           <table className="w-full max-w-3xl border-collapse text-sm">
             <thead>
-              <tr className="text-left text-zinc-600"><th className="p-1">N°</th><th className="p-1">Nom et prénoms</th><th className="p-1">Naissance</th><th className="p-1">Sexe</th><th className="p-1">Lien</th><th className="p-1">Pièce d&apos;identité</th><th className="p-1">Formule</th></tr>
+              <tr className="text-left text-neutral"><th className="p-1">N°</th><th className="p-1">Nom et prénoms</th><th className="p-1">Naissance</th><th className="p-1">Sexe</th><th className="p-1">Lien</th><th className="p-1">Pièce d&apos;identité</th><th className="p-1">Formule</th></tr>
             </thead>
             <tbody>
               {c.assures.map((a) => (
-                <tr key={a.ordre} className="border-t border-bordure">
+                <tr key={a.ordre} className="border-t border-border">
                   <td className="p-1">{a.ordre}</td><td className="p-1">{a.nom_prenoms}</td><td className="p-1">{a.date_naissance || "—"}</td><td className="p-1">{a.sexe || "—"}</td><td className="p-1">{a.lien || "—"}</td><td className="p-1">{a.num_identification || "—"}</td><td className="p-1">{a.formule || "—"}</td>
                 </tr>
               ))}
@@ -199,11 +199,11 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           <h2 className="mb-2 text-lg font-semibold">Bénéficiaires</h2>
           <table className="w-full max-w-3xl border-collapse text-sm">
             <thead>
-              <tr className="text-left text-zinc-600"><th className="p-1">N°</th><th className="p-1">Nom et prénoms</th><th className="p-1">Lien</th><th className="p-1">Contact</th><th className="p-1 text-right">Quote-part</th></tr>
+              <tr className="text-left text-neutral"><th className="p-1">N°</th><th className="p-1">Nom et prénoms</th><th className="p-1">Lien</th><th className="p-1">Contact</th><th className="p-1 text-right">Quote-part</th></tr>
             </thead>
             <tbody>
               {c.beneficiaires.map((b) => (
-                <tr key={b.ordre} className="border-t border-bordure">
+                <tr key={b.ordre} className="border-t border-border">
                   <td className="p-1">{b.ordre}</td><td className="p-1">{b.nom_prenoms}</td><td className="p-1">{b.lien || "—"}</td><td className="p-1">{b.contact || "—"}</td><td className="p-1 text-right">{b.quote_part} %</td>
                 </tr>
               ))}
@@ -223,10 +223,10 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
       ) : null}
 
       <section className="mt-8 grid max-w-3xl gap-6">
-        <div className="rounded border border-bordure p-4">
+        <div className="rounded border border-border p-4">
           <h2 className="mb-2 font-semibold">Documents PDF</h2>
           <div className="mb-3 flex flex-wrap items-end gap-4">
-            <a href={`/api/cotations/${c.id}/apercu`} target="_blank" className="rounded border border-sim-bleu px-3 py-1 text-sm font-medium text-sim-bleu hover:bg-surface">
+            <a href={`/api/cotations/${c.id}/apercu`} target="_blank" className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
               Aperçu PDF (filigrane « APERÇU »)
             </a>
             {emise && pdfCotation.length === 0 && agit ? (
@@ -251,7 +251,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
             ) : null}
           </div>
           {pdfCp.length === 0 && etatContrat?.validation?.statut === "A_VALIDER" ? (
-            <p role="status" className="mb-3 rounded border border-amber-600 bg-amber-50 p-2 text-sm">
+            <p role="status" className="mb-3 rounded border border-warning-border bg-warning-bg p-2 text-sm">
               <strong>Contrat à valider.</strong> Son TTC ({formaterMontant(montant(etatContrat.ttc))} F) dépasse le seuil du produit ({formaterMontant(montant(etatContrat.validation.seuil))} F) ; demandé par {etatContrat.validation.demandeePar} le{" "}
               {new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }).format(etatContrat.validation.demandeeLe)}. Un profil habilité qui n'est pas le demandeur doit l'émettre.
             </p>
@@ -260,7 +260,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
             <table className="w-full border-collapse text-sm">
               <tbody>
                 {documents.map((d) => (
-                  <tr key={d.id} className="border-b border-bordure">
+                  <tr key={d.id} className="border-b border-border">
                     <td className="p-1">
                       {d.libelleType} {d.numero} v{d.version}
                       {d.filigrane ? ` (${d.filigrane})` : ""}
@@ -268,7 +268,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
                     <td className="p-1">{d.dateEmission}</td>
                     <td className="p-1">{d.statut.libelle}</td>
                     <td className="p-1">
-                      <a href={`/api/documents/${d.id}`} className="text-sim-bleu underline">PDF</a>
+                      <a href={`/api/documents/${d.id}`} className="text-primary underline">PDF</a>
                     </td>
                     <td className="p-1 font-mono text-xs" title="Empreinte SHA-256">{d.empreinte.slice(0, 16)}…</td>
                     <td className="p-1">
@@ -284,24 +284,24 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
               </tbody>
             </table>
           ) : (
-            <p className="text-sm text-zinc-600">
+            <p className="text-sm text-neutral">
               {emise ? "Aucun PDF émis pour l'instant." : "Le PDF définitif (numéro, QR code) est émis avec la cotation ; avant, seul l'aperçu est possible."}
             </p>
           )}
         </div>
 
         {peutModifier(c.statut) && agit ? (
-          <div className="flex flex-wrap items-start gap-4 rounded border border-bordure p-4">
-            <Link href={`/cotations/${c.id}/modifier`} className="rounded border border-sim-bleu px-4 py-2 font-semibold text-sim-bleu hover:bg-surface">Modifier le brouillon</Link>
+          <div className="flex flex-wrap items-start gap-4 rounded border border-border p-4">
+            <Link href={`/cotations/${c.id}/modifier`} className="rounded border border-primary px-4 py-2 font-semibold text-primary hover:bg-muted">Modifier le brouillon</Link>
             <FormulaireAction action={soumettreCotation} libelleBouton="Soumettre (émettre)">
               <input type="hidden" name="id" value={c.id} />
-              <p className="mb-2 text-sm text-zinc-700">Le calcul est refait avec les paramètres du jour. Sous le seuil et sans forçage, la cotation est émise tout de suite ; sinon elle passe « À valider ».</p>
+              <p className="mb-2 text-sm text-neutral">Le calcul est refait avec les paramètres du jour. Sous le seuil et sans forçage, la cotation est émise tout de suite ; sinon elle passe « À valider ».</p>
             </FormulaireAction>
           </div>
         ) : null}
 
         {peutEtreValidee(c.statut) ? (
-          <div className="rounded border border-bordure p-4">
+          <div className="rounded border border-border p-4">
             <h2 className="mb-2 font-semibold">Cotation à valider</h2>
             {estContributeur ? (
               <p className="mb-3 text-sm">
@@ -322,17 +322,17 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
                 </label>
               </FormulaireAction>
             ) : (
-              <p className="text-sm text-zinc-600">En attente de validation.</p>
+              <p className="text-sm text-neutral">En attente de validation.</p>
             )}
           </div>
         ) : null}
 
         {peutAccepter(c.statutEffectif) && agit ? (
-          <div className="grid gap-6 rounded border border-bordure p-4 sm:grid-cols-2">
+          <div className="grid gap-6 rounded border border-border p-4 sm:grid-cols-2">
             <FormulaireAction action={accepterCotation} libelleBouton="Accepter et créer la police" className="sm:col-span-2">
               <input type="hidden" name="id" value={c.id} />
               <h2 className="mb-2 font-semibold">Le client accepte</h2>
-              <p className="mb-2 text-sm text-zinc-700">Formule(s) retenue(s) :</p>
+              <p className="mb-2 text-sm text-neutral">Formule(s) retenue(s) :</p>
               {c.lignes.map((l) => (
                 <label key={l.code} className="mb-1 flex items-center gap-2 text-sm">
                   <input type="checkbox" name="retenue" value={l.code} defaultChecked /> {c.libelles[l.code] ?? l.code}
@@ -341,7 +341,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
               <label className="mb-3 mt-3 block text-sm font-medium">
                 Numéro de police attribué par SIM (obligatoire)
                 <ChampNumeroPolice className={entree} />
-                <span className="mt-1 block text-xs font-normal text-zinc-600">
+                <span className="mt-1 block text-xs font-normal text-neutral">
                   Format contrôlé : <code>{formatPolice}</code>
                   {formatPolice === FORMAT_NUMERO_POLICE_DEFAUT ? " (par défaut)" : ""}. Le module ne génère jamais ce numéro.
                 </span>
@@ -372,7 +372,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         ) : null}
 
         {c.statutEffectif === "EXPIREE" ? (
-          <p className="rounded border border-red-300 bg-red-50 p-3 text-sm">Cotation expirée : elle ne peut plus être acceptée ni transformée en police. Créez une nouvelle cotation.</p>
+          <p className="rounded border border-danger-border bg-danger-bg p-3 text-sm">Cotation expirée : elle ne peut plus être acceptée ni transformée en police. Créez une nouvelle cotation.</p>
         ) : null}
       </section>
     </main>

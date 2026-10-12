@@ -2,17 +2,23 @@
 
 import { useActionState, type ReactNode } from "react";
 
+import { Bouton, Champ as ChampSaisie, Icone } from "@/composants/ui";
+
 import type { ActionFormulaire, EtatFormulaire } from "./types";
 
 const etatInitial: EtatFormulaire = {};
 
-/** Formulaire branché sur une Server Action, avec affichage du message d'erreur ou de réussite. */
+/**
+ * Formulaire branché sur une Server Action, avec affichage du message d'erreur ou de réussite. Un seul composant pour tous les
+ * formulaires de l'application : son aspect change ici, son comportement (useActionState, « En cours… ») n'a pas bougé.
+ */
 export function FormulaireAction({
   action,
   libelleBouton,
   children,
   className = "",
   discret = false,
+  pleineLargeur = false,
 }: {
   action: ActionFormulaire;
   libelleBouton: string;
@@ -20,50 +26,57 @@ export function FormulaireAction({
   className?: string;
   /** Bouton secondaire (dans un tableau). */
   discret?: boolean;
+  /** Bouton sur toute la largeur (écran de connexion). */
+  pleineLargeur?: boolean;
 }) {
   const [etat, executer, enCours] = useActionState(action, etatInitial);
   return (
     <form action={executer} className={className}>
       {children}
-      <button
-        type="submit"
-        disabled={enCours}
-        className={
-          discret
-            ? "rounded border border-sim-bleu px-3 py-1 text-sm font-medium text-sim-bleu hover:bg-surface disabled:opacity-50"
-            : "rounded bg-sim-bleu px-4 py-2 font-semibold text-white hover:bg-sim-marine disabled:opacity-50"
-        }
-      >
+      {/* `type="submit"` : le spinner suit l'envoi du formulaire (useFormStatus) ; `disabled` garde le verrou de l'ancien bouton. */}
+      <Bouton type="submit" variante={discret ? "secondaire" : "principal"} disabled={enCours} className={pleineLargeur ? "w-full" : undefined}>
         {enCours ? "En cours…" : libelleBouton}
-      </button>
+      </Bouton>
       {etat.erreur ? (
-        <div role="alert" className="mt-2 text-sm font-medium text-red-700">
-          <p>{etat.erreur}</p>
-          {etat.details?.length ? (
-            <ul className="mt-1 list-disc space-y-1 pl-5 font-normal">
-              {etat.details.map((detail, i) => (
-                <li key={i}>{detail}</li>
-              ))}
-            </ul>
-          ) : null}
+        <div role="alert" className="animate-fade-in-up mt-3 flex items-start gap-2 rounded-md border border-danger-border bg-danger-bg px-3 py-2 text-sm text-danger">
+          <Icone nom="alerte" className="mt-0.5 size-4 shrink-0" />
+          <div>
+            <p className="font-medium">{etat.erreur}</p>
+            {etat.details?.length ? (
+              <ul className="mt-1 list-disc space-y-1 pl-5">
+                {etat.details.map((detail, i) => (
+                  <li key={i}>{detail}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
         </div>
       ) : null}
       {etat.succes ? (
-        <div role="status" className="mt-2 text-sm font-medium text-green-700">
-          <p>{etat.succes}</p>
-          {etat.details?.length ? (
-            <ul className="mt-1 list-disc space-y-1 pl-5 font-normal text-amber-800">
-              {etat.details.map((detail, i) => (
-                <li key={i}>{detail}</li>
-              ))}
-            </ul>
-          ) : null}
+        <div role="status" className="animate-fade-in-up mt-3 flex items-start gap-2 rounded-md border border-success-border bg-success-bg px-3 py-2 text-sm text-success">
+          <Icone nom="succes" className="mt-0.5 size-4 shrink-0" />
+          <div>
+            <p className="font-medium">{etat.succes}</p>
+            {/* Sous un succès, les détails sont des avertissements : ils gardent la teinte d'alerte de l'ancien affichage. */}
+            {etat.details?.length ? (
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-warning">
+                {etat.details.map((detail, i) => (
+                  <li key={i}>{detail}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </form>
   );
 }
 
+/**
+ * Champ de saisie d'un formulaire d'action : enveloppe fine du `Champ` de `composants/ui`, avec les noms de props français
+ * historiques. Attention : `requis` vaut `true` PAR DÉFAUT (astérisque rouge sur chaque champ obligatoire) ; passer
+ * `requis={false}` pour un champ facultatif.
+ */
 export function Champ({
   nom,
   libelle,
@@ -79,17 +92,10 @@ export function Champ({
   autoComplete?: string;
   valeur?: string;
 }) {
+  // Le `div` reprend l'espacement de l'ancienne étiquette (mb-4) : les champs se suivent sans rien entre eux.
   return (
-    <label className="mb-4 block text-sm font-medium">
-      {libelle}
-      <input
-        name={nom}
-        type={type}
-        required={requis}
-        autoComplete={autoComplete}
-        defaultValue={valeur}
-        className="mt-1 block w-full rounded border border-bordure bg-white px-3 py-2 text-base"
-      />
-    </label>
+    <div className="mb-4">
+      <ChampSaisie name={nom} label={libelle} type={type} required={requis} autoComplete={autoComplete} defaultValue={valeur} />
+    </div>
   );
 }

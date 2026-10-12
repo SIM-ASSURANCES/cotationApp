@@ -10,7 +10,7 @@ import { exigerDroit } from "@/serveur/session";
 import { creerUneTaxe } from "./actions";
 
 const LIBELLE_ASSIETTE = { NETTE_ACCESSOIRES: "Nette + accessoires", NETTE: "Nette seule" } as const;
-const entree = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2";
+const entree = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2";
 /** Régime de la ligne ; une ligne FAMILLE ou GROUPE_OUVERT d'avant la session 6.0 n'est plus retenue par le calcul. */
 const libelleType = (t: TypeContrat | null) => (t === null ? "Tous régimes" : estRegimeTaxe(t) ? `Régime ${LIBELLE_REGIME_TAXE[t].toLowerCase()}` : `${LIBELLE_TYPE_CONTRAT[t]} (ancienne clé, non utilisée)`);
 const taux = (t: LigneTaxe) => (t.tauxMixte || t.tauxPourcent === null ? "Taux mixte" : `${montant(t.tauxPourcent).toString().replace(".", ",")} %`);
@@ -29,20 +29,20 @@ export default async function PageTaxes() {
 
   return (
     <main>
-      <h1 className="mb-2 text-2xl font-semibold text-sim-bleu">Table des taxes</h1>
-      <p className="mb-2 max-w-3xl text-sm text-zinc-700">
+      <h1 className="mb-2 text-2xl font-semibold text-primary">Table des taxes</h1>
+      <p className="mb-2 max-w-3xl text-sm text-neutral">
         Taux de taxe par <strong>branche et régime de taxe</strong> (CDC §8.3, réponses de la Technique des 08 et 09/10/2026), historisés : on ajoute une
         version avec une date d'effet, on ne modifie jamais une version en vigueur. Pour un même taux, deux périodes ne peuvent pas se chevaucher ;
         la version précédente sans date de fin est clôturée la veille de la nouvelle.
       </p>
-      <p className="mb-6 max-w-3xl text-sm text-zinc-700">
+      <p className="mb-6 max-w-3xl text-sm text-neutral">
         Le taux appliqué est celui en vigueur à la <strong>date d'effet</strong> de la police, pour le <strong>régime de taxe</strong> choisi sur la
         cotation (Individuel ou Groupe, H29 fermée le 09/10/2026), puis celui de « tous régimes ». Le type de contrat ne choisit plus le taux.
         Une branche à taux mixte refuse le calcul tant que la ventilation n'est pas paramétrée.
       </p>
 
       {peutAgir(niveau) ? (
-        <section className="mb-8 max-w-md rounded border border-bordure bg-surface p-5">
+        <section className="mb-8 max-w-md rounded border border-border bg-surface p-5">
           <h2 className="mb-3 text-lg font-semibold">Ajouter une version de taux</h2>
           <FormulaireAction action={creerUneTaxe} libelleBouton="Ajouter">
             <label className="mb-4 block text-sm font-medium">
@@ -89,7 +89,7 @@ export default async function PageTaxes() {
           </FormulaireAction>
         </section>
       ) : (
-        <p className="mb-6 rounded border border-bordure bg-surface p-3 text-sm">Consultation seule : votre profil peut proposer mais pas enregistrer de taux.</p>
+        <p className="mb-6 rounded border border-border bg-muted p-3 text-sm">Consultation seule : votre profil peut proposer mais pas enregistrer de taux.</p>
       )}
 
       {[...groupes.values()].map((versions) => (
@@ -100,7 +100,7 @@ export default async function PageTaxes() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[44rem] max-w-5xl border-collapse text-sm">
               <thead>
-                <tr className="bg-sim-bleu text-left text-white">
+                <tr className="bg-primary text-left text-primary-foreground">
                   <th className="p-2">Période</th>
                   <th className="p-2">Taux</th>
                   <th className="p-2">Assiette</th>
@@ -111,7 +111,7 @@ export default async function PageTaxes() {
               </thead>
               <tbody>
                 {versions.map((t) => (
-                  <tr key={t.id} className={`border-b border-bordure ${enVigueurLe(t, jour) ? "font-semibold" : ""}`}>
+                  <tr key={t.id} className={`border-b border-border ${enVigueurLe(t, jour) ? "font-semibold" : ""}`}>
                     <td className="p-2">
                       du {t.dateEffet} {t.dateFin ? `au ${t.dateFin}` : "(sans date de fin)"}
                       {enVigueurLe(t, jour) ? " · en vigueur" : ""}
@@ -128,7 +128,7 @@ export default async function PageTaxes() {
           </div>
         </section>
       ))}
-      {taxes.length === 0 ? <p className="text-sm text-zinc-600">Aucune taxe enregistrée.</p> : null}
+      {taxes.length === 0 ? <p className="text-sm text-neutral">Aucune taxe enregistrée.</p> : null}
     </main>
   );
 }

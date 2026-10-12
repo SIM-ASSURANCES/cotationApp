@@ -1,7 +1,7 @@
 // Session 4a, bout en bout (npm run test:e2e) : vraie base de test, VRAI générateur, VRAI stockage.
 //  - T5 : SECURVIE (branche DECES, taxe 0 %), 3 bénéficiaires, garanties issues du sous-modèle, visa du CP = visa des CG.
 //  - T6 : VOL (branche IARD), cases à cocher, date d'émission dynamique. Test du DOCUMENT SEUL, avec des montants
-//    de fixture : l'application refuse de calculer une cotation IARD (taux mixte non tranché : H32).
+//    de fixture : l'application refuse de calculer une cotation IARD (produit en mode GARANTIES, D31 ; à la formule, taux mixte : H32).
 // Modèles Word de test : generateur/tests/fixtures/ (données inventées).
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -171,12 +171,9 @@ describe("T5 : SECURVIE, trois bénéficiaires, branche DECES (taxe 0 %)", () =>
 });
 
 describe("T6 : VOL (IARD), cases à cocher et date d'émission dynamique — document seul", () => {
-  it("l'IARD reste refusée par le moteur de calcul tant que H32 n'est pas tranchée : c'est pourquoi T6 ne teste que le document", async () => {
-    const code = CODE("VOL");
-    await creerProduit(technique, { code, libelle: "Vol (bout en bout)", gamme: "RELAX", branche: "IARD" }, null);
-    await creerVersion(technique, code, version(), null);
-    const saisie: SaisieCotation = {
-      codeProduit: code,
+  it("l'IARD est refusée par le moteur : en mode GARANTIES (règle générale, D31), et à la formule tant que le taux mixte n'est pas tranché (H32) : c'est pourquoi T6 ne teste que le document", async () => {
+    const saisie = (codeProduit: string): SaisieCotation => ({
+      codeProduit,
       clientId: null,
       typeContrat: "INDIVIDUEL",
       souscripteur: { type: "PHYSIQUE", nom: "KOUADIO", prenoms: "Awa", raison_sociale: "", telephone: "", email: "", adresse: "" },
@@ -189,8 +186,18 @@ describe("T6 : VOL (IARD), cases à cocher et date d'émission dynamique — doc
       beneficiaires: [],
       contactsUrgence: [],
       risque: {},
-    };
-    await expect(creerBrouillon(commercial, saisie, null).then((id) => soumettre(commercial, id, null))).rejects.toThrow(/taux mixte non pris en charge/);
+    });
+    // Configuration prévue pour un produit IARD : mode GARANTIES, avec les VRAIES données de démarrage (IARD à taux mixte).
+    const garanties = CODE("VOLG");
+    await creerProduit(technique, { code: garanties, libelle: "Vol, par garanties (bout en bout)", gamme: "RELAX", branche: "IARD" }, null);
+    await creerVersion(technique, garanties, { ...version(), modeTarification: "GARANTIES" }, null);
+    await expect(creerBrouillon(commercial, saisie(garanties), null).then((id) => soumettre(commercial, id, null))).rejects.toThrow(/Ce produit se tarifie par garanties : la prime doit être composée par la Technique \(composition manuelle\)/);
+
+    // Produit IARD à la formule : le filet du taux mixte reste en place.
+    const formule = CODE("VOL");
+    await creerProduit(technique, { code: formule, libelle: "Vol (bout en bout)", gamme: "RELAX", branche: "IARD" }, null);
+    await creerVersion(technique, formule, version(), null);
+    await expect(creerBrouillon(commercial, saisie(formule), null).then((id) => soumettre(commercial, id, null))).rejects.toThrow(/taux mixte non pris en charge/);
   });
 
   it("CP VOL déposé (contenu du §10.1 vérifié), puis rendu avec des montants de fixture : les bonnes cases sont cochées, la date d'émission suit", async () => {

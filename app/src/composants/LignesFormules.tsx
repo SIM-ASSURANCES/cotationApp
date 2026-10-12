@@ -25,7 +25,7 @@ const LIBELLE_MODE: Record<string, string> = {
 
 const vide = (): LigneFormule => ({ code: "", libelle: "", tauxCouverture: "", primeUnitaire: "", accessoireMode: "AUCUN", accessoireValeur: "0", ageMin: "", ageMax: "" });
 
-const entree = "w-full rounded border border-bordure bg-white px-2 py-1";
+const entree = "w-full rounded border border-border bg-surface px-2 py-1";
 
 /** Lignes de formules d'une version de produit : ajout et retrait de lignes. Les champs portent le même nom (getAll côté serveur). */
 export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
@@ -38,7 +38,7 @@ export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
     <div className="mb-4 overflow-x-auto">
       <table className="w-full min-w-[64rem] border-collapse text-sm">
         <thead>
-          <tr className="bg-sim-bleu text-left text-white">
+          <tr className="bg-primary text-left text-primary-foreground">
             <th className="p-2">Code</th>
             <th className="p-2">Libellé</th>
             <th className="p-2">Taux de couverture %</th>
@@ -52,7 +52,7 @@ export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
         </thead>
         <tbody>
           {lignes.map((l, i) => (
-            <tr key={i} className="border-b border-bordure align-top">
+            <tr key={i} className="border-b border-border align-top">
               <td className="p-1">
                 <input name="formule_code" value={l.code} onChange={(e) => modifier(i, "code", e.target.value.toUpperCase())} aria-label="Code de la formule" className={entree} required />
               </td>
@@ -84,7 +84,7 @@ export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
                 <input name="formule_age_max" value={l.ageMax} onChange={(e) => modifier(i, "ageMax", e.target.value)} aria-label="Âge maximal" inputMode="numeric" className={entree} />
               </td>
               <td className="p-1">
-                <button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} disabled={lignes.length === 1} className="rounded border border-bordure px-2 py-1 disabled:opacity-40">
+                <button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} disabled={lignes.length === 1} className="rounded border border-border px-2 py-1 disabled:opacity-40">
                   Retirer
                 </button>
               </td>
@@ -92,7 +92,7 @@ export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
           ))}
         </tbody>
       </table>
-      <button type="button" onClick={() => setLignes((x) => [...x, vide()])} className="mt-2 rounded border border-sim-bleu px-3 py-1 text-sm font-medium text-sim-bleu hover:bg-surface">
+      <button type="button" onClick={() => setLignes((x) => [...x, vide()])} className="mt-2 rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
         + Ajouter une formule
       </button>
     </div>

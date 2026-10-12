@@ -10,7 +10,7 @@ import { ErreurAcces } from "@/serveur/types";
 
 import { enregistrerLaSociete, enregistrerLeFormatNumero, enregistrerLeFormatPolice, enregistrerUneImage } from "./actions";
 
-const zone = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2 font-mono text-sm";
+const zone = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2 font-mono text-sm";
 const lignes = (liste: Record<string, string>[], cles: [string, string]) => liste.map((x) => `${x[cles[0]]} ; ${x[cles[1]]}`).join("\n");
 
 /** Paramètres de la Société (CDC §6.1 : jamais écrits en dur dans les modèles) : societe.*, mentions, images. */
@@ -28,8 +28,8 @@ export default async function PageSociete() {
 
   return (
     <main className="max-w-4xl">
-      <h1 className="mb-2 text-2xl font-semibold text-sim-bleu">Société</h1>
-      <p className="mb-6 text-sm text-zinc-700">
+      <h1 className="mb-2 text-2xl font-semibold text-primary">Société</h1>
+      <p className="mb-6 text-sm text-neutral">
         Valeurs de <code>societe.*</code> et mentions des documents (lieu d&apos;émission, signataire), en vigueur aujourd&apos;hui. Une
         modification s&apos;ajoute avec sa date d&apos;effet : les documents déjà émis ne changent jamais.
       </p>
@@ -67,7 +67,7 @@ export default async function PageSociete() {
       </FormulaireAction>
 
       <h2 className="mb-2 mt-8 text-lg font-semibold">Images</h2>
-      <p className="mb-3 text-sm text-zinc-700">
+      <p className="mb-3 text-sm text-neutral">
         Signature scannée : {lu.images.signature_sim ? "paramétrée" : "absente"} · cachet : {lu.images.cachet_sim ? "paramétré" : "absent"}. Un modèle
         qui utilise <code>{"{{ signature_sim }}"}</code> ou <code>{"{{ cachet_sim }}"}</code> ne peut pas être émis sans elle.
       </p>
@@ -76,7 +76,7 @@ export default async function PageSociete() {
           <div className="grid gap-x-6 sm:grid-cols-3">
             <label className="mb-4 block text-sm font-medium">
               Image
-              <select name="nom" className="mt-1 block w-full rounded border border-bordure bg-white px-3 py-2">
+              <select name="nom" className="mt-1 block w-full rounded border border-border bg-surface px-3 py-2">
                 <option value="signature_sim">Signature scannée</option>
                 <option value="cachet_sim">Cachet</option>
               </select>
@@ -91,7 +91,7 @@ export default async function PageSociete() {
       ) : null}
 
       <h2 className="mb-2 mt-8 text-lg font-semibold">Format du numéro de police</h2>
-      <p className="mb-3 text-sm text-zinc-700">
+      <p className="mb-3 text-sm text-neutral">
         Le numéro de police est attribué par SIM et saisi à l&apos;acceptation de la cotation : le module ne le génère jamais. Il est contrôlé par cette
         expression régulière (en vigueur : <code>{lu.formatPolice.enVigueur}</code>). Signification des 5 chiffres après G ou I : à confirmer (H31).
       </p>
@@ -108,7 +108,7 @@ export default async function PageSociete() {
       {lu.formatPolice.historique.length > 0 ? (
         <table className="mt-3 w-full border-collapse text-sm">
           <thead>
-            <tr className="text-left text-zinc-600">
+            <tr className="text-left text-neutral">
               <th className="p-1">À partir du</th>
               <th className="p-1">Format</th>
               <th className="p-1">Saisi par</th>
@@ -117,7 +117,7 @@ export default async function PageSociete() {
           </thead>
           <tbody>
             {lu.formatPolice.historique.map((h) => (
-              <tr key={`${h.dateEffet}-${h.valeur}`} className="border-t border-bordure">
+              <tr key={`${h.dateEffet}-${h.valeur}`} className="border-t border-border">
                 <td className="p-1">{h.dateEffet}</td>
                 <td className="p-1 font-mono text-xs">{h.valeur}</td>
                 <td className="p-1">{h.creePar}</td>
@@ -127,21 +127,21 @@ export default async function PageSociete() {
           </tbody>
         </table>
       ) : (
-        <p className="text-sm text-zinc-600">Format par défaut, jamais modifié.</p>
+        <p className="text-sm text-neutral">Format par défaut, jamais modifié.</p>
       )}
 
       <h2 className="mb-2 mt-8 text-lg font-semibold">Numéros des documents (cotation, facture, avoir, reçu)</h2>
-      <p className="mb-3 text-sm text-zinc-700">
+      <p className="mb-3 text-sm text-neutral">
         Attribués par le module à l&apos;émission, sans trou. Repères : <code>{"{AAAA}"}</code> l&apos;année (obligatoire), <code>{"{MM}"}</code> le mois
         d&apos;émission (facultatif), <code>{"{NNNN}"}</code> le compteur sur 3 à 8 chiffres (obligatoire). Le compteur est annuel et ne change pas avec le format.
       </p>
       <table className="mb-3 w-full border-collapse text-sm">
         <thead>
-          <tr className="text-left text-zinc-600"><th className="p-1">Document</th><th className="p-1">Format en vigueur</th><th className="p-1">Exemple</th><th className="p-1">Historique</th></tr>
+          <tr className="text-left text-neutral"><th className="p-1">Document</th><th className="p-1">Format en vigueur</th><th className="p-1">Exemple</th><th className="p-1">Historique</th></tr>
         </thead>
         <tbody>
           {lu.formats.map((x) => (
-            <tr key={x.prefixe} className="border-t border-bordure">
+            <tr key={x.prefixe} className="border-t border-border">
               <td className="p-1">{x.libelle}</td>
               <td className="p-1 font-mono text-xs">{x.enVigueur}</td>
               <td className="p-1 font-mono text-xs">{x.exemple}</td>
@@ -155,7 +155,7 @@ export default async function PageSociete() {
           <div className="grid gap-x-6 sm:grid-cols-3">
             <label className="mb-4 block text-sm font-medium">
               Document
-              <select name="prefixe" required defaultValue="" className="mt-1 block w-full rounded border border-bordure bg-white px-3 py-2">
+              <select name="prefixe" required defaultValue="" className="mt-1 block w-full rounded border border-border bg-surface px-3 py-2">
                 <option value="" disabled>— Choisir —</option>
                 {lu.formats.map((x) => <option key={x.prefixe} value={x.prefixe}>{x.libelle}</option>)}
               </select>

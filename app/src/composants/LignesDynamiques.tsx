@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const entree = "w-full rounded border border-bordure bg-white px-2 py-1";
+const entree = "w-full rounded border border-border bg-surface px-2 py-1";
 
 export type LigneAssure = { nom: string; naissance: string; sexe: string; lien: string; identification: string; formule: string };
 
@@ -16,7 +16,7 @@ export function LignesAssures({ initiales, formules }: { initiales: LigneAssure[
       {lignes.length > 0 ? (
         <table className="w-full min-w-[60rem] border-collapse text-sm">
           <thead>
-            <tr className="bg-sim-bleu text-left text-white">
+            <tr className="bg-primary text-left text-primary-foreground">
               <th className="p-2">Nom et prénoms</th>
               <th className="p-2">Naissance (AAAA-MM-JJ)</th>
               <th className="p-2">Sexe</th>
@@ -28,7 +28,7 @@ export function LignesAssures({ initiales, formules }: { initiales: LigneAssure[
           </thead>
           <tbody>
             {lignes.map((l, i) => (
-              <tr key={i} className="border-b border-bordure">
+              <tr key={i} className="border-b border-border">
                 <td className="p-1"><input name="assure_nom" value={l.nom} onChange={(e) => modifier(i, "nom", e.target.value)} aria-label="Nom et prénoms" className={entree} /></td>
                 <td className="p-1"><input name="assure_naissance" value={l.naissance} onChange={(e) => modifier(i, "naissance", e.target.value)} aria-label="Date de naissance" placeholder="1990-05-15" className={entree} /></td>
                 <td className="p-1">
@@ -46,15 +46,15 @@ export function LignesAssures({ initiales, formules }: { initiales: LigneAssure[
                     {formules.map((f) => (<option key={f.code} value={f.code}>{f.code}</option>))}
                   </select>
                 </td>
-                <td className="p-1"><button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} className="rounded border border-bordure px-2 py-1">Retirer</button></td>
+                <td className="p-1"><button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} className="rounded border border-border px-2 py-1">Retirer</button></td>
               </tr>
             ))}
           </tbody>
         </table>
       ) : (
-        <p className="text-sm text-zinc-600">Aucun assuré saisi (facultatif à ce stade).</p>
+        <p className="text-sm text-neutral">Aucun assuré saisi (facultatif à ce stade).</p>
       )}
-      <button type="button" onClick={() => setLignes((x) => [...x, { nom: "", naissance: "", sexe: "", lien: "", identification: "", formule: "" }])} className="mt-2 rounded border border-sim-bleu px-3 py-1 text-sm font-medium text-sim-bleu hover:bg-surface">
+      <button type="button" onClick={() => setLignes((x) => [...x, { nom: "", naissance: "", sexe: "", lien: "", identification: "", formule: "" }])} className="mt-2 rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
         + Ajouter un assuré
       </button>
     </div>
@@ -74,10 +74,10 @@ export function LignesRisque({ initiales }: { initiales: LigneRisque[] }) {
         <div key={i} className="mb-2 flex max-w-2xl gap-2">
           <input name="risque_cle" value={l.cle} onChange={(e) => modifier(i, "cle", e.target.value)} aria-label="Nom du champ (risque.…)" placeholder="marque" className={entree} />
           <input name="risque_valeur" value={l.valeur} onChange={(e) => modifier(i, "valeur", e.target.value)} aria-label="Valeur" className={entree} />
-          <button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} className="rounded border border-bordure px-2 py-1">Retirer</button>
+          <button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} className="rounded border border-border px-2 py-1">Retirer</button>
         </div>
       ))}
-      <button type="button" onClick={() => setLignes((x) => [...x, { cle: "", valeur: "" }])} className="rounded border border-sim-bleu px-3 py-1 text-sm font-medium text-sim-bleu hover:bg-surface">
+      <button type="button" onClick={() => setLignes((x) => [...x, { cle: "", valeur: "" }])} className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
         + Ajouter un champ de risque
       </button>
     </div>
@@ -99,7 +99,7 @@ export function LignesBeneficiaires({ initiales }: { initiales: LigneBeneficiair
       {lignes.length > 0 ? (
         <table className="w-full min-w-[44rem] border-collapse text-sm">
           <thead>
-            <tr className="bg-sim-bleu text-left text-white">
+            <tr className="bg-primary text-left text-primary-foreground">
               <th className="p-2">Nom et prénoms</th>
               <th className="p-2">Lien avec l'assuré</th>
               <th className="p-2">Contact</th>
@@ -109,20 +109,20 @@ export function LignesBeneficiaires({ initiales }: { initiales: LigneBeneficiair
           </thead>
           <tbody>
             {lignes.map((l, i) => (
-              <tr key={i} className="border-b border-bordure">
+              <tr key={i} className="border-b border-border">
                 <td className="p-1"><input name="benef_nom" value={l.nom} onChange={(e) => modifier(i, "nom", e.target.value)} aria-label="Nom et prénoms du bénéficiaire" className={entree} /></td>
                 <td className="p-1"><input name="benef_lien" value={l.lien} onChange={(e) => modifier(i, "lien", e.target.value)} aria-label="Lien avec l'assuré" className={entree} /></td>
                 <td className="p-1"><input name="benef_contact" value={l.contact} onChange={(e) => modifier(i, "contact", e.target.value)} aria-label="Contact" className={entree} /></td>
                 <td className="p-1"><input name="benef_quote" value={l.quote} onChange={(e) => modifier(i, "quote", e.target.value)} inputMode="decimal" aria-label="Quote-part en pourcentage" placeholder="50" className={entree} /></td>
-                <td className="p-1"><button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} className="rounded border border-bordure px-2 py-1">Retirer</button></td>
+                <td className="p-1"><button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} className="rounded border border-border px-2 py-1">Retirer</button></td>
               </tr>
             ))}
           </tbody>
         </table>
       ) : (
-        <p className="text-sm text-zinc-600">Aucun bénéficiaire saisi.</p>
+        <p className="text-sm text-neutral">Aucun bénéficiaire saisi.</p>
       )}
-      <button type="button" onClick={() => setLignes((x) => [...x, { nom: "", lien: "", contact: "", quote: "" }])} className="mt-2 rounded border border-sim-bleu px-3 py-1 text-sm font-medium text-sim-bleu hover:bg-surface">
+      <button type="button" onClick={() => setLignes((x) => [...x, { nom: "", lien: "", contact: "", quote: "" }])} className="mt-2 rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
         + Ajouter un bénéficiaire
       </button>
     </div>
@@ -142,10 +142,10 @@ export function LignesContactsUrgence({ initiales }: { initiales: LigneContactUr
         <div key={i} className="mb-2 flex max-w-2xl gap-2">
           <input name="urgence_nom" value={l.nom} onChange={(e) => modifier(i, "nom", e.target.value)} aria-label="Nom et prénoms du contact d'urgence" placeholder="Nom et prénoms" className={entree} />
           <input name="urgence_contact" value={l.contact} onChange={(e) => modifier(i, "contact", e.target.value)} aria-label="Contact" placeholder="Téléphone" className={entree} />
-          <button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} className="rounded border border-bordure px-2 py-1">Retirer</button>
+          <button type="button" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} className="rounded border border-border px-2 py-1">Retirer</button>
         </div>
       ))}
-      <button type="button" onClick={() => setLignes((x) => [...x, { nom: "", contact: "" }])} className="rounded border border-sim-bleu px-3 py-1 text-sm font-medium text-sim-bleu hover:bg-surface">
+      <button type="button" onClick={() => setLignes((x) => [...x, { nom: "", contact: "" }])} className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
         + Ajouter un contact d'urgence
       </button>
     </div>

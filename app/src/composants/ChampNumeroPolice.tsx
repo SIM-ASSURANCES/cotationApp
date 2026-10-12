@@ -15,7 +15,7 @@ export function ChampNumeroPolice({ className }: { className: string }) {
     <>
       <input name="numeroPolice" required className={className} autoComplete="off" placeholder="SCD-2026-000088-G00000" value={numero} onChange={(e) => setNumero(e.target.value)} />
       {avertissement ? (
-        <span role="status" className="mt-1 block text-xs font-normal text-amber-800">
+        <span role="status" className="mt-1 block text-xs font-normal text-warning">
           {avertissement}
         </span>
       ) : null}

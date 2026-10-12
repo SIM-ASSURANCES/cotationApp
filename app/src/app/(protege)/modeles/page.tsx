@@ -11,7 +11,7 @@ import { exigerUtilisateur } from "@/serveur/session";
 
 import { creerUnModele, enregistrerLeSeuil } from "./actions";
 
-const select = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2 text-base";
+const select = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2 text-base";
 
 export default async function PageModeles() {
   const utilisateur = await exigerUtilisateur();
@@ -31,20 +31,20 @@ export default async function PageModeles() {
 
   return (
     <main>
-      <h1 className="mb-2 text-2xl font-semibold text-sim-bleu">Modèles Word</h1>
-      <p className="mb-2 max-w-3xl text-sm text-zinc-700">
+      <h1 className="mb-2 text-2xl font-semibold text-primary">Modèles Word</h1>
+      <p className="mb-2 max-w-3xl text-sm text-neutral">
         Bibliothèque des modèles (CDC §6) : chaque dépôt est contrôlé, puis conservé comme une version qui n'est jamais écrasée.
         La Technique dépose et soumet ; un autre profil (Direction Générale) publie.
       </p>
       <p className="mb-6 text-sm">
-        <Link href="/modeles/aide" className="font-medium text-sim-bleu underline">
+        <Link href="/modeles/aide" className="font-medium text-primary underline">
           Aide à la rédaction des modèles : syntaxe, filtres et dictionnaire des champs
         </Link>
       </p>
 
       <table className="mb-8 w-full border-collapse text-sm">
         <thead>
-          <tr className="bg-sim-bleu text-left text-white">
+          <tr className="bg-primary text-left text-primary-foreground">
             <th className="p-2">Code</th>
             <th className="p-2">Type</th>
             <th className="p-2">Libellé</th>
@@ -55,15 +55,15 @@ export default async function PageModeles() {
         </thead>
         <tbody>
           {modeles.map((m) => (
-            <tr key={m.id} className="border-b border-bordure">
+            <tr key={m.id} className="border-b border-border">
               <td className="p-2">
-                <Link href={`/modeles/${m.id}`} className="font-medium text-sim-bleu underline">
+                <Link href={`/modeles/${m.id}`} className="font-medium text-primary underline">
                   {m.code}
                 </Link>
               </td>
               <td className="p-2">
                 {m.libelleType}
-                {m.precision ? <span className="block text-xs text-zinc-600">{m.precision}</span> : null}
+                {m.precision ? <span className="block text-xs text-neutral">{m.precision}</span> : null}
               </td>
               <td className="p-2">{m.libelle}</td>
               <td className="p-2">{m.produitCode ?? "commun"}</td>
@@ -73,7 +73,7 @@ export default async function PageModeles() {
           ))}
           {modeles.length === 0 ? (
             <tr>
-              <td colSpan={6} className="p-4 text-center text-zinc-600">
+              <td colSpan={6} className="p-4 text-center text-neutral">
                 Aucun modèle.
               </td>
             </tr>
@@ -83,7 +83,7 @@ export default async function PageModeles() {
 
       <div className="grid gap-8 lg:grid-cols-2">
         {peutAgir(depot) ? (
-          <section className="rounded border border-bordure bg-surface p-5">
+          <section className="rounded border border-border bg-surface p-5">
             <h2 className="mb-3 text-lg font-semibold">Créer un modèle</h2>
             <FormulaireAction action={creerUnModele} libelleBouton="Créer, puis déposer le fichier">
               <label className="mb-4 block text-sm font-medium">
@@ -112,7 +112,7 @@ export default async function PageModeles() {
                   ))}
                 </select>
               </label>
-              <fieldset className="mb-2 rounded border border-bordure p-3">
+              <fieldset className="mb-2 rounded border border-border p-3">
                 <legend className="px-1 text-sm font-medium">Selon le type</legend>
                 <label className="mb-4 block text-sm font-medium">
                   Annexe : liste reprise en entier
@@ -133,9 +133,9 @@ export default async function PageModeles() {
           </section>
         ) : null}
 
-        <section className="rounded border border-bordure bg-surface p-5">
+        <section className="rounded border border-border bg-surface p-5">
           <h2 className="mb-1 text-lg font-semibold">Listes longues (CDC §6.5)</h2>
-          <p className="mb-3 text-sm text-zinc-700">
+          <p className="mb-3 text-sm text-neutral">
             Au-delà de <strong>{seuil}</strong> lignes, une liste (assurés, bénéficiaires, formules, échéances) est remplacée dans le corps
             du document par « Voir annexe – … » et rendue en entier par le modèle d'annexe, à la fin du PDF.
           </p>
@@ -148,7 +148,7 @@ export default async function PageModeles() {
               ))}
             </ul>
           ) : (
-            <p className="mb-3 text-sm text-zinc-600">Valeur par défaut du CDC : 10.</p>
+            <p className="mb-3 text-sm text-neutral">Valeur par défaut du CDC : 10.</p>
           )}
           {peutAgir(parametrage) ? (
             <FormulaireAction action={enregistrerLeSeuil} libelleBouton="Enregistrer le seuil">

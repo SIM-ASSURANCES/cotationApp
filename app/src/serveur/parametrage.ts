@@ -8,11 +8,14 @@ import { ajouterJours, dateValide, type DateIso } from "@/domaine/calcul/dates";
 import { genererEcheancier, type Tranche } from "@/domaine/calcul/echeancier";
 import { ErreurCalcul, montant, type Precision } from "@/domaine/calcul/montant";
 import {
+  calculAutomatiquePossible,
   codeValide,
   enVigueur,
+  MESSAGE_TARIFICATION_PAR_GARANTIES,
   problemesTaxe,
   problemesVersion,
   type FormuleSaisie,
+  type ModeTarification,
   type TaxeSaisie,
   type VersionSaisie,
 } from "@/domaine/calcul/parametrage";
@@ -225,6 +228,17 @@ export async function creerTaxe(acteur: UtilisateurCourant, saisie: TaxeSaisie, 
 
 export type ClientLecture = Pick<Prisma.TransactionClient, "taxe" | "produit">;
 
+/**
+ * Refuse si la version EN VIGUEUR à `date` est tarifée par garanties, alors que le document en attente est rattaché à une version
+ * plus ancienne : un produit basculé en GARANTIES n'émet plus rien de calculé, pas même ce qui attendait (cotation « À valider »,
+ * brouillon de renouvellement). Pour ce qui est déjà émis ou figé sur la police (T10), cette fonction n'est jamais appelée.
+ */
+export async function exigerCalculAutomatiqueEnVigueur(client: Pick<Prisma.TransactionClient, "produitVersion">, produitId: number, date: DateIso): Promise<void> {
+  const versions = await client.produitVersion.findMany({ where: { produitId }, select: { dateEffet: true, modeTarification: true } });
+  const enCours = enVigueur(versions.map((v) => ({ dateEffet: depuisDate(v.dateEffet), modeTarification: v.modeTarification })), date);
+  if (enCours) exigerCalculAutomatique(enCours.modeTarification);
+}
+
 /** Taux le plus précis pour la branche et le régime de taxe, en vigueur à la date d'effet (D18 ; H29 fermée, session 6.0). */
 async function taxeEnVigueur(client: ClientLecture, branche: string, regime: RegimeTaxe, date: DateIso): Promise<TaxeSaisie & { tauxPourcent: string }> {
   const lignes = (await client.taxe.findMany({ where: { branche } })).map(versLigneTaxe);
@@ -325,7 +339,20 @@ export async function creerProduit(
   });
 }
 
-export type VersionProduit = VersionSaisie & { id: number };
+/** Une version lue en base porte toujours son mode de tarification (la colonne est obligatoire). */
+export type VersionProduit = VersionSaisie & { id: number; modeTarification: ModeTarification };
+
+/**
+ * Seul point de refus du calcul automatique d'un produit tarifé par garanties (session 6.2a). Appelé là où un montant naît du
+ * tarif (résolution du contexte de calcul, construction de l'entrée du moteur) et là où un document ou une facture le reprend
+ * (émission d'une cotation, montants d'un document). Le texte est celui fixé par la Technique ; il remplace, pour l'IARD, le
+ * refus « taux mixte non pris en charge » (qui reste le filet d'un produit à la formule rattaché à une branche à taux mixte).
+ */
+export function exigerCalculAutomatique(mode: string): void {
+  if (!calculAutomatiquePossible(mode)) {
+    throw new ErreurMetier(MESSAGE_TARIFICATION_PAR_GARANTIES);
+  }
+}
 
 function versVersion(v: Prisma.ProduitVersionGetPayload<{ include: { formules: true } }>): VersionProduit {
   return {
@@ -346,6 +373,7 @@ function versVersion(v: Prisma.ProduitVersionGetPayload<{ include: { formules: t
     },
     cotation: { validiteMois: v.validiteMois, formulesMax: v.formulesMax },
     seuilValidationTtc: v.seuilValidationTtc ? texte(v.seuilValidationTtc) : null,
+    modeTarification: v.modeTarification as ModeTarification,
     references: { cgModeleCode: v.cgModeleCode, cgVisa: v.cgVisa, csModeleCode: v.csModeleCode, csVisa: v.csVisa },
     formules: v.formules
       .map(
@@ -409,6 +437,7 @@ export async function creerVersion(acteur: UtilisateurCourant, codeProduit: stri
         validiteMois: saisie.cotation.validiteMois,
         formulesMax: saisie.cotation.formulesMax,
         seuilValidationTtc: canoniqueOuNull(saisie.seuilValidationTtc),
+        modeTarification: saisie.modeTarification ?? "FORMULE",
         cgModeleCode: saisie.references?.cgModeleCode ?? null,
         cgVisa: saisie.references?.cgVisa?.trim() ?? null,
         csModeleCode: saisie.references?.csModeleCode ?? null,
@@ -434,7 +463,7 @@ export async function creerVersion(acteur: UtilisateurCourant, codeProduit: stri
         action: "PARAMETRE_MODIFIE",
         objetType: "produit_version",
         objetId: cree.id,
-        apres: { produit: codeProduit, dateEffet: saisie.dateEffet, formules: saisie.formules.map((f) => f.code) },
+        apres: { produit: codeProduit, dateEffet: saisie.dateEffet, modeTarification: saisie.modeTarification ?? "FORMULE", formules: saisie.formules.map((f) => f.code) },
         adresseIp,
       },
       tx,
@@ -504,6 +533,8 @@ export async function resoudreContexte(
   if (!version) {
     throw new ErreurMetier(`Aucun paramétrage de « ${produit.code} » en vigueur au ${dateDocument}.`);
   }
+  // Avant la taxe : un produit tarifé par garanties est refusé pour cette raison, pas pour un taux mixte (session 6.2a).
+  exigerCalculAutomatique(version.modeTarification);
   const taxe = await taxeEnVigueur(client, produit.branche, regime, dateEffet);
   return { produit: { id: produit.id, code: produit.code, libelle: produit.libelle }, version, taxe };
 }
@@ -526,6 +557,7 @@ export function construireEntree(
   demande: { dateEffet: DateIso; dateEcheance: DateIso; lignes: LigneDemande[]; nombreTranches: number },
 ): { entree: EntreeCalcul; primesTarif: Record<string, string>; accessoiresTarif: Record<string, string> } {
   const { version, taxe } = contexte;
+  exigerCalculAutomatique(version.modeTarification); // ceinture : un contexte construit hors de resoudreContexte ne contourne pas le refus
   if (!Number.isInteger(demande.nombreTranches) || demande.nombreTranches < 1 || demande.nombreTranches > version.fractionnement.tranchesMax) {
     throw new ErreurMetier(`Ce produit autorise de 1 à ${version.fractionnement.tranchesMax} tranche(s).`);
   }

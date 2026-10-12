@@ -29,6 +29,23 @@ export type FormuleSaisie = {
 
 export const AGE_MAXIMAL = 120;
 
+/**
+ * Mode de tarification d'une version de produit (session 6.2a).
+ *  - FORMULE : prime unitaire × effectif × prorata (T1, T2, T3), calcul automatique ;
+ *  - GARANTIES : une prime par garantie, que le moteur ne sait pas calculer ; la prime est composée par la Technique.
+ */
+export const MODES_TARIFICATION = ["FORMULE", "GARANTIES"] as const;
+export type ModeTarification = (typeof MODES_TARIFICATION)[number];
+
+/** Refus du calcul automatique d'un produit tarifé par garanties. Texte fixé par la Technique et Thierry (6.2a). */
+export const MESSAGE_TARIFICATION_PAR_GARANTIES = "Ce produit se tarifie par garanties : la prime doit être composée par la Technique (composition manuelle)";
+
+/**
+ * Le moteur ne calcule que le mode FORMULE. Tout autre mode, y compris une valeur inconnue, est refusé :
+ * dans le doute, on ne sort jamais de montant (« jamais de 0 silencieux »).
+ */
+export const calculAutomatiquePossible = (mode: string): boolean => mode === "FORMULE";
+
 export type VersionSaisie = {
   dateEffet: DateIso;
   arrondi: RegleArrondi;
@@ -44,6 +61,8 @@ export type VersionSaisie = {
   cotation: { validiteMois: number; formulesMax: number };
   /** Seuil de TTC au-dessus duquel la double validation est exigée (CDC §4.1). */
   seuilValidationTtc: string | null;
+  /** Mode de tarification (session 6.2a). Absent : FORMULE, le comportement d'avant. */
+  modeTarification?: ModeTarification;
   formules: FormuleSaisie[];
   /**
    * Références contractuelles (CDC §7) : modèle de CG (et de CS) joint au contrat, et visa cité dans
@@ -102,6 +121,7 @@ export function problemesVersion(v: VersionSaisie): string[] {
     }
   }
   if (!dateValide(v.dateEffet)) p.push("La date d'effet est invalide.");
+  if (v.modeTarification !== undefined && !MODES_TARIFICATION.includes(v.modeTarification)) p.push("Le mode de tarification est invalide (par formule ou par garanties).");
   if (!PRECISIONS.includes(v.arrondi.precision)) p.push("La précision d'arrondi doit être 1, 10, 100 ou 1 000.");
   if (!SENS_ARRONDI.includes(v.arrondi.sens)) p.push("Le sens d'arrondi est invalide.");
   if (!NIVEAUX_ARRONDI.includes(v.arrondi.niveau)) p.push("Le niveau d'arrondi est invalide.");

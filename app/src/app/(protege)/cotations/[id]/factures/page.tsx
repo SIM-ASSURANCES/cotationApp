@@ -13,7 +13,7 @@ import { ErreurAcces } from "@/serveur/types";
 import { creerFacture, restituerLAvance } from "../../../factures/actions";
 
 const f = (m: string) => formaterMontant(montant(m));
-const entree = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2";
+const entree = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2";
 
 /** « Envoyé à » (CDC §11.2) : facultatif ; masqué sur la facture s'il est vide ou identique à « Facturé à ». */
 function EnvoyeA() {
@@ -48,29 +48,29 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
   return (
     <main>
       <p className="mb-2 text-sm">
-        <Link href={`/cotations/${police.cotationId}`} className="text-sim-bleu underline">← Cotation</Link>
+        <Link href={`/cotations/${police.cotationId}`} className="text-primary underline">← Cotation</Link>
       </p>
-      <h1 className="mb-1 text-2xl font-semibold text-sim-bleu">Factures de la police {police.numero}</h1>
-      <p className="mb-6 text-sm text-zinc-700">
+      <h1 className="mb-1 text-2xl font-semibold text-primary">Factures de la police {police.numero}</h1>
+      <p className="mb-6 text-sm text-neutral">
         {police.souscripteur}, du {police.dateEffet} au {police.dateEcheance}. Une facture se prépare en brouillon (sans numéro) ; son numéro FAC est attribué à l'émission. Émise, elle ne se modifie plus : une correction passe par un avoir puis une nouvelle facture.
       </p>
 
       <section className="mb-8">
         <h2 className="mb-2 text-lg font-semibold">Factures et avoirs</h2>
         {vue.factures.length === 0 ? (
-          <p className="text-sm text-zinc-700">Aucune facture pour cette police.</p>
+          <p className="text-sm text-neutral">Aucune facture pour cette police.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[48rem] border-collapse text-sm">
               <thead>
-                <tr className="bg-sim-bleu text-left text-white">
+                <tr className="bg-primary text-left text-primary-foreground">
                   <th className="p-2">Numéro</th><th className="p-2">Type</th><th className="p-2">Statut</th><th className="p-2">Période</th><th className="p-2 text-right">TTC</th><th className="p-2 text-right">Restant dû</th><th className="p-2">PDF</th>
                 </tr>
               </thead>
               <tbody>
                 {vue.factures.map((x) => (
-                  <tr key={x.id} className="border-b border-bordure">
-                    <td className="p-2"><Link href={`/factures/${x.id}`} className="text-sim-bleu underline">{x.numero ?? `Brouillon n° ${x.id}`}</Link></td>
+                  <tr key={x.id} className="border-b border-border">
+                    <td className="p-2"><Link href={`/factures/${x.id}`} className="text-primary underline">{x.numero ?? `Brouillon n° ${x.id}`}</Link></td>
                     <td className="p-2">{x.libelleType}</td>
                     <td className="p-2">{x.libelleStatut}</td>
                     <td className="p-2">{x.dateEffet} → {x.dateEcheance}</td>
@@ -92,10 +92,10 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
         </p>
         {vue.avance.mouvements.length > 0 ? (
           <table className="mb-3 w-full border-collapse text-sm">
-            <thead><tr className="text-left text-zinc-600"><th className="p-1">Date</th><th className="p-1">Mouvement</th><th className="p-1 text-right">Montant</th><th className="p-1">Facture</th><th className="p-1">Reçu d&apos;origine</th><th className="p-1">Canal, référence</th><th className="p-1">Par</th></tr></thead>
+            <thead><tr className="text-left text-neutral"><th className="p-1">Date</th><th className="p-1">Mouvement</th><th className="p-1 text-right">Montant</th><th className="p-1">Facture</th><th className="p-1">Reçu d&apos;origine</th><th className="p-1">Canal, référence</th><th className="p-1">Par</th></tr></thead>
             <tbody>
               {vue.avance.mouvements.map((m) => (
-                <tr key={m.id} className="border-t border-bordure">
+                <tr key={m.id} className="border-t border-border">
                   <td className="p-1">{m.date}</td>
                   <td className="p-1">{m.libelle}</td>
                   <td className="p-1 text-right">{m.credit ? "+" : "−"} {f(m.montant)}</td>
@@ -109,9 +109,9 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
           </table>
         ) : null}
         {vue.droits.restituer && montant(vue.avance.disponible).greaterThan(0) ? (
-          <div className="rounded border border-bordure p-4">
+          <div className="rounded border border-border p-4">
             <h3 className="mb-2 font-semibold">Restituer l&apos;avance</h3>
-            <p className="mb-3 text-sm text-zinc-700">Remboursement au client, tracé au journal. Aucun document n&apos;est produit.</p>
+            <p className="mb-3 text-sm text-neutral">Remboursement au client, tracé au journal. Aucun document n&apos;est produit.</p>
             <AvertissementsReports reports={vue.avance.reportsEnAttente} />
             <FormulaireAction action={restituerLAvance} libelleBouton="Enregistrer la restitution">
               <input type="hidden" name="policeId" value={police.id} />
@@ -134,35 +134,35 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
 
       {vue.droits.creer ? (
         <section className="grid max-w-5xl gap-6">
-          <div className="rounded border border-bordure p-4">
+          <div className="rounded border border-border p-4">
             <h2 className="mb-2 text-lg font-semibold">Affaire nouvelle</h2>
             {possibles.affaireNouvelle ? (
               <FormulaireAction action={creerFacture} libelleBouton="Préparer la facture (brouillon)">
                 {cache("AFFAIRE_NOUVELLE")}
-                <p className="mb-3 text-sm text-zinc-700">Montants et échéancier de la police (moteur de calcul), à l'identique des conditions particulières.</p>
+                <p className="mb-3 text-sm text-neutral">Montants et échéancier de la police (moteur de calcul), à l'identique des conditions particulières.</p>
                 <EnvoyeA />
               </FormulaireAction>
             ) : (
-              <p className="text-sm text-zinc-700">{police.cpEmises ? "La facture d'affaire nouvelle existe déjà (voir ci-dessus)." : "Émettez d'abord les conditions particulières de la police."}</p>
+              <p className="text-sm text-neutral">{police.cpEmises ? "La facture d'affaire nouvelle existe déjà (voir ci-dessus)." : "Émettez d'abord les conditions particulières de la police."}</p>
             )}
           </div>
 
-          <div className="rounded border border-bordure p-4">
+          <div className="rounded border border-border p-4">
             <h2 className="mb-2 text-lg font-semibold">Renouvellement</h2>
             {possibles.renouvellement ? (
               <FormulaireAction action={creerFacture} libelleBouton="Préparer le renouvellement (brouillon)">
                 {cache("RENOUVELLEMENT")}
-                <p className="mb-3 text-sm text-zinc-700">
+                <p className="mb-3 text-sm text-neutral">
                   Période proposée : du {possibles.renouvellement.dateEffet} au {possibles.renouvellement.dateEcheance}, au tarif en vigueur à cette date. Formules et effectifs de la période précédente, modifiables dans le brouillon.
                 </p>
                 <EnvoyeA />
               </FormulaireAction>
             ) : (
-              <p className="text-sm text-zinc-700">Le renouvellement suit une facture émise (affaire nouvelle ou renouvellement précédent).</p>
+              <p className="text-sm text-neutral">Le renouvellement suit une facture émise (affaire nouvelle ou renouvellement précédent).</p>
             )}
           </div>
 
-          <div className="rounded border border-bordure p-4">
+          <div className="rounded border border-border p-4">
             <h2 className="mb-2 text-lg font-semibold">Avenant d'incorporation</h2>
             {possibles.avenants.length > 0 ? (
               <FormulaireAction action={creerFacture} libelleBouton="Préparer l'avenant (brouillon)">
@@ -176,11 +176,11 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
                     ))}
                   </select>
                 </label>
-                <p className="mb-3 text-sm text-zinc-700">Prime additionnelle au prorata, du jour de l'incorporation à l'échéance de la période facturée.</p>
+                <p className="mb-3 text-sm text-neutral">Prime additionnelle au prorata, du jour de l'incorporation à l'échéance de la période facturée.</p>
                 <EnvoyeA />
               </FormulaireAction>
             ) : (
-              <p className="text-sm text-zinc-700">Aucune incorporation d'adhérents à facturer.</p>
+              <p className="text-sm text-neutral">Aucune incorporation d'adhérents à facturer.</p>
             )}
           </div>
         </section>

@@ -7,7 +7,7 @@ import { peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
 import { exigerUtilisateur } from "@/serveur/session";
 
-const code = "rounded bg-surface px-1 font-mono text-[0.85em]";
+const code = "rounded bg-muted px-1 font-mono text-[0.85em]";
 
 /** Aide intégrée (CDC §6.2, §6.3) : générée à partir du dictionnaire du code, sa source unique. */
 export default async function PageAide() {
@@ -20,11 +20,11 @@ export default async function PageAide() {
   return (
     <main className="max-w-5xl">
       <p className="mb-2 text-sm">
-        <Link href="/modeles" className="text-sim-bleu underline">
+        <Link href="/modeles" className="text-primary underline">
           ← Modèles Word
         </Link>
       </p>
-      <h1 className="mb-4 text-2xl font-semibold text-sim-bleu">Aide à la rédaction des modèles Word</h1>
+      <h1 className="mb-4 text-2xl font-semibold text-primary">Aide à la rédaction des modèles Word</h1>
 
       <section className="mb-8 space-y-2 text-sm">
         <h2 className="text-lg font-semibold">Règles</h2>
@@ -89,7 +89,7 @@ export default async function PageAide() {
         <h2 className="mb-2 text-lg font-semibold">Filtres</h2>
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="bg-sim-bleu text-left text-white">
+            <tr className="bg-primary text-left text-primary-foreground">
               <th className="p-2">Filtre</th>
               <th className="p-2">Dans le Word</th>
               <th className="p-2">Rendu</th>
@@ -98,7 +98,7 @@ export default async function PageAide() {
           </thead>
           <tbody>
             {FILTRES.map((f) => (
-              <tr key={f.nom} className="border-b border-bordure align-top">
+              <tr key={f.nom} className="border-b border-border align-top">
                 <td className="p-2 font-mono">{f.nom}</td>
                 <td className="p-2 font-mono text-xs">{f.syntaxe}</td>
                 <td className="p-2">{f.rendu}</td>
@@ -107,7 +107,7 @@ export default async function PageAide() {
             ))}
           </tbody>
         </table>
-        <p className="mt-2 text-sm text-zinc-700">
+        <p className="mt-2 text-sm text-neutral">
           Filtres de Jinja également permis : <code className={code}>{FILTRES_JINJA.join(", ")}</code> (par exemple{" "}
           <code className={code}>{"{{ assures | length }}"}</code>).
         </p>
@@ -115,7 +115,7 @@ export default async function PageAide() {
 
       <section>
         <h2 className="mb-1 text-lg font-semibold">Dictionnaire des champs (CDC §6.3)</h2>
-        <p className="mb-3 text-sm text-zinc-700">
+        <p className="mb-3 text-sm text-neutral">
           « assures[].nom_prenoms » : champ de chaque assuré, à écrire dans une boucle (<code className={code}>{"{{ a.nom_prenoms }}"}</code>).
           Les champs <code className={code}>risque.*</code> sont propres à chaque produit (minuscules, chiffres et _).
         </p>
@@ -124,7 +124,7 @@ export default async function PageAide() {
             <h3 className="mb-1 font-semibold">{section}</h3>
             <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="bg-surface text-left">
+                <tr className="bg-muted text-left">
                   <th className="p-1">Champ</th>
                   <th className="p-1">Type</th>
                   <th className="p-1">Description</th>
@@ -133,11 +133,11 @@ export default async function PageAide() {
               </thead>
               <tbody>
                 {CHAMPS.filter((c) => c.section === section).map((c) => (
-                  <tr key={c.chemin} className="border-b border-bordure align-top">
+                  <tr key={c.chemin} className="border-b border-border align-top">
                     <td className="p-1 font-mono text-xs">{c.chemin}</td>
                     <td className="p-1">{c.type}</td>
                     <td className="p-1">{c.description}</td>
-                    <td className="p-1 text-zinc-700">{c.exemple === undefined || c.exemple === "" ? "" : String(c.exemple)}</td>
+                    <td className="p-1 text-neutral">{c.exemple === undefined || c.exemple === "" ? "" : String(c.exemple)}</td>
                   </tr>
                 ))}
               </tbody>

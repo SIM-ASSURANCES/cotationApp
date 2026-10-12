@@ -1,27 +1,139 @@
 @import "tailwindcss";
 
-/* Charte graphique SIM Assurances CI :
-   bleu foncé Pantone 004B9C (RVB 0, 75, 156), bleu clair Pantone 51AEE2 (RVB 81, 174, 226).
-   Typographie institutionnelle : Montserrat. */
+/* Design system SIM Documents, aligné sur le portail RH SIM Assurances (référence : dépôt portailrh, commit 1346e60).
+   Les couleurs et la police sont définies UNE seule fois, ici, puis exposées comme classes Tailwind (bg-primary,
+   text-danger, border-border…). Ne jamais coder une couleur en dur dans un composant : tout passe par ces tokens
+   (un test le vérifie : couleurs.test.ts). Pas de mode sombre. */
+
 :root {
   --background: #ffffff;
-  --foreground: #14213d;
-  --sim-bleu: #004b9c;
-  --sim-ciel: #51aee2;
-  --sim-marine: #1a2a7a;
-  --surface: #f3f7fb;
-  --bordure: #d5e0ec;
+  /* « Encre » : bleu très sombre dérivé du bleu institutionnel plutôt qu'un gris ardoise ; contraste sur blanc > 15:1. */
+  --foreground: #0a2140;
+
+  /* --- Couleurs officielles SIM Assurances (charte graphique) ---
+     Pour les aplats, accents et le logo, où le contraste texte/fond n'est pas en jeu. Pour du texte ou des éléments
+     d'interface, utiliser les tokens sémantiques ci-dessous, qui en dérivent en garantissant WCAG AA (4,5:1). */
+  --color-sim-blue-dark: #004b9c; /* couleur principale (Pantone 004B9C) */
+  --color-sim-blue-light: #51aee2; /* couleur secondaire (Pantone 51AEE2) */
+  --color-sim-red: #fe0101; /* produit « Dommage » */
+  --color-sim-yellow: #fdf20e; /* produit « Santé » */
+  --color-sim-orange: #f16622; /* produit « Accident » */
+
+  --color-surface: #ffffff;
+  /* Bordures et fonds neutres teintés de bleu, dans la « température » du texte. */
+  --color-border: #dbe6f2;
+  --color-muted: #eef4fb;
+  /* muted-foreground : 4,8:1 sur blanc, mais 4,3:1 sur muted (insuffisant) : sur un fond muted, écrire en text-neutral. */
+  --color-muted-foreground: #64748b;
+
+  /* primary = bleu institutionnel : 8,45:1 avec du texte blanc. */
+  --color-primary: #004b9c;
+  --color-primary-hover: #003773;
+  --color-primary-foreground: #ffffff;
+  --color-primary-bg: #eaf1fb;
+  --color-primary-border: #b9d3ef;
+
+  --color-secondary: #f1f5f9;
+  --color-secondary-hover: #e2e8f0;
+  --color-secondary-foreground: #0f172a;
+
+  /* danger dérive du rouge officiel (4,02:1 avec du blanc, insuffisant) : assombri, 5,27:1. */
+  --color-danger: #da0101;
+  --color-danger-hover: #b10101;
+  --color-danger-foreground: #ffffff;
+  --color-danger-bg: #ffebeb;
+  --color-danger-border: #ffb3b3;
+
+  /* warning dérive de l'orange « Accident » (3,15:1 avec du blanc) : assombri, 5,1:1 sur blanc et 4,7:1 sur warning-bg. */
+  --color-warning: #bf470c;
+  --color-warning-bg: #fef3ed;
+  --color-warning-border: #fbd1bd;
+
+  /* info dérive du bleu clair (2,47:1 avec du blanc) : assombri, > 4,5:1 sur fond clair. Le bleu clair brut reste
+     disponible pour les aplats décoratifs. */
+  --color-info: #1d78ab;
+  --color-info-bg: #f1f9fd;
+  --color-info-border: #cbe7f6;
+
+  /* success : la charte n'a pas de couleur « succès » ; vert sobre, hors charte. Écart assumé avec le portail RH (#16a34a,
+     3,3:1 sur blanc : insuffisant en texte) : assombri en #15803d, 5,0:1 sur blanc et 4,8:1 sur success-bg. */
+  --color-success: #15803d;
+  --color-success-bg: #f0fdf4;
+  --color-success-border: #bbf7d0;
+
+  --color-neutral: #475569;
+  --color-neutral-bg: #f1f5f9;
+  --color-neutral-border: #e2e8f0;
+
+  /* --- Coquille de l'application : fond de contenu blanc (comme /connexion), filigrane et cadre bleu par-dessus --- */
+  --color-app-bg: #ffffff;
+  --color-sidebar: #ffffff;
+  --color-sidebar-border: #dbe6f2;
+  /* Titre de groupe de la barre latérale : #64748b (4,8:1) à la place du #94a3b8 du portail (2,6:1, insuffisant en texte). */
+  --color-sidebar-section: #64748b;
+
+  /* --- Courbes d'accélération : référence unique de toute transition (ne pas inventer d'autre cubic-bezier) --- */
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1); /* entrées et sorties */
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1); /* déplacement à l'écran */
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1); /* tiroir et panneau */
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-sim-bleu: var(--sim-bleu);
-  --color-sim-ciel: var(--sim-ciel);
-  --color-sim-marine: var(--sim-marine);
-  --color-surface: var(--surface);
-  --color-bordure: var(--bordure);
   --font-sans: var(--font-montserrat), Arial, Helvetica, sans-serif;
+
+  --color-sim-blue-dark: var(--color-sim-blue-dark);
+  --color-sim-blue-light: var(--color-sim-blue-light);
+  --color-sim-red: var(--color-sim-red);
+  --color-sim-yellow: var(--color-sim-yellow);
+  --color-sim-orange: var(--color-sim-orange);
+
+  --color-surface: var(--color-surface);
+  --color-border: var(--color-border);
+  --color-muted: var(--color-muted);
+  --color-muted-foreground: var(--color-muted-foreground);
+
+  --color-primary: var(--color-primary);
+  --color-primary-hover: var(--color-primary-hover);
+  --color-primary-foreground: var(--color-primary-foreground);
+  --color-primary-bg: var(--color-primary-bg);
+  --color-primary-border: var(--color-primary-border);
+
+  --color-secondary: var(--color-secondary);
+  --color-secondary-hover: var(--color-secondary-hover);
+  --color-secondary-foreground: var(--color-secondary-foreground);
+
+  --color-danger: var(--color-danger);
+  --color-danger-hover: var(--color-danger-hover);
+  --color-danger-foreground: var(--color-danger-foreground);
+  --color-danger-bg: var(--color-danger-bg);
+  --color-danger-border: var(--color-danger-border);
+
+  --color-warning: var(--color-warning);
+  --color-warning-bg: var(--color-warning-bg);
+  --color-warning-border: var(--color-warning-border);
+
+  --color-info: var(--color-info);
+  --color-info-bg: var(--color-info-bg);
+  --color-info-border: var(--color-info-border);
+
+  --color-success: var(--color-success);
+  --color-success-bg: var(--color-success-bg);
+  --color-success-border: var(--color-success-border);
+
+  --color-neutral: var(--color-neutral);
+  --color-neutral-bg: var(--color-neutral-bg);
+  --color-neutral-border: var(--color-neutral-border);
+
+  --color-app-bg: var(--color-app-bg);
+  --color-sidebar: var(--color-sidebar);
+  --color-sidebar-border: var(--color-sidebar-border);
+  --color-sidebar-section: var(--color-sidebar-section);
+
+  --ease-out-strong: var(--ease-out-strong);
+  --ease-in-out-strong: var(--ease-in-out-strong);
+  --ease-drawer: var(--ease-drawer);
 }
 
 body {
@@ -30,13 +142,68 @@ body {
   font-family: var(--font-sans);
 }
 
-/* Bandeau en dégradé bleu marine vers bleu clair, comme les titres de la charte. */
-.bandeau-sim {
-  background: linear-gradient(90deg, var(--sim-marine) 0%, var(--sim-bleu) 55%, #1885b8 100%);
-  color: #ffffff;
+/* Calque « base » : ces règles passent APRÈS les utilitaires dans l'ordre de priorité, donc une classe (focus:outline-danger, shadow-none…)
+   peut toujours les surcharger. Écrites hors de tout calque, elles battraient les classes Tailwind. */
+@layer base {
+  /* Anneau de focus clavier : le bleu principal, 8,45:1 sur blanc (WCAG 1.4.11 : 3:1 au moins). Sur un fond bleu (en-tête du tiroir),
+     ajouter focus-visible:outline-primary-foreground. */
+  :focus-visible {
+    outline: 3px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  /* La barre du haut est collante : sans cette marge, un élément focalisé au clavier peut se retrouver entièrement caché dessous
+     (WCAG 2.4.11). 8 rem couvrent la barre (4 rem) et l'alerte de stockage sur deux lignes. */
+  html {
+    scroll-padding-top: 8rem;
+  }
 }
 
-:focus-visible {
-  outline: 3px solid var(--sim-ciel);
-  outline-offset: 2px;
+/* Ombres « élevées » teintées du bleu principal, réservées aux surfaces de contenu (cartes, panneaux), jamais aux boutons ni aux
+   champs. @utility : elles rejoignent le calque des utilitaires (surchargeables, utilisables avec hover: et motion-safe:). */
+@utility shadow-elevated {
+  box-shadow:
+    0 1px 2px rgba(0, 75, 156, 0.06),
+    0 10px 24px -8px rgba(0, 75, 156, 0.16);
+}
+@utility shadow-elevated-lg {
+  box-shadow:
+    0 2px 4px rgba(0, 75, 156, 0.08),
+    0 18px 36px -10px rgba(0, 75, 156, 0.22);
+}
+
+/* Entrée en fondu avec léger décalage vertical (carte de connexion, bandeaux d'erreur). Neutralisée sous prefers-reduced-motion :
+   le contenu s'affiche directement dans son état final. */
+@utility animate-fade-in-up {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: fade-in-up 0.25s var(--ease-out-strong) both;
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Fondu pur (voile du tiroir mobile, panneaux repliables) : une simple variation d'opacité, coupée tout de même pour ceux qui
+   demandent un mouvement réduit. */
+@utility animate-fade-in {
+  @media (prefers-reduced-motion: no-preference) {
+    animation: fade-in 0.2s ease both;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }

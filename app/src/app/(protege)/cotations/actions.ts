@@ -18,13 +18,14 @@ export async function enregistrerCotation(_etat: EtatFormulaire, donnees: FormDa
   const saisie = lireCotation(donnees);
   const r = await avecMessage(async (acteur, ip) => {
     if (saisie.id !== null) {
-      await modifierBrouillon(acteur, saisie.id, saisie, ip);
-      return saisie.id;
+      const { compositionVidee } = await modifierBrouillon(acteur, saisie.id, saisie, ip);
+      return { id: saisie.id, compositionVidee };
     }
-    return creerBrouillon(acteur, saisie, ip);
+    return { id: await creerBrouillon(acteur, saisie, ip), compositionVidee: false };
   });
   if (!r.ok) return r.etat;
-  redirect(`/cotations/${r.valeur}`);
+  // H98 : la fiche annonce que la composition de la prime a été vidée (message affiché une fois, porté par l'adresse).
+  redirect(`/cotations/${r.valeur.id}${r.valeur.compositionVidee ? "?composition=videe" : ""}`);
 }
 
 const idDe = (d: FormData) => Number(champ(d, "id"));

@@ -177,7 +177,7 @@ describe("cotation figée dès l'émission (CDC §4.1)", () => {
   it("H9 : tout agent ayant le droit de modifier une cotation modifie le brouillon d'un autre, et c'est tracé", async () => {
     const id = await creerBrouillon(commercial, saisie(), null);
 
-    await expect(modifierBrouillon(gestionnaire, id, saisie({ nombreTranches: 2 }), null)).resolves.toBeUndefined();
+    await expect(modifierBrouillon(gestionnaire, id, saisie({ nombreTranches: 2 }), null)).resolves.toEqual({ compositionVidee: false });
     const c = (await lireCotation(commercial, id))!;
     expect(c.nombreTranches).toBe(2);
     expect(c.contributeurs).toEqual(expect.arrayContaining([commercial.id, gestionnaire.id]));
@@ -379,7 +379,7 @@ describe("T13 : forçage de prime et double validation", () => {
 
     await expect(modifierBrouillon(commercial, id, saisie(), null)).rejects.toThrow(/figée/);
     await renvoyerEnBrouillon(commercial, id, "", null);
-    await expect(modifierBrouillon(commercial, id, saisie(), null)).resolves.toBeUndefined();
+    await expect(modifierBrouillon(commercial, id, saisie(), null)).resolves.toEqual({ compositionVidee: false });
     expect((await lireCotation(commercial, id))!.statut).toBe("BROUILLON");
   });
 

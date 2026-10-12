@@ -441,9 +441,15 @@ async function chargerPourModification(tx: Tx, id: number) {
   return cotation;
 }
 
-export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, saisie: SaisieCotation, adresseIp: string | null): Promise<void> {
+/**
+ * Modifie un brouillon. Renvoie `compositionVidee` : vrai quand la modification a vidé la composition de la prime (H98, décision de Thierry
+ * après la 6.2b) : un changement de PÉRIODE, de RÉGIME DE TAXE ou de TYPE DE CONTRAT d'un brouillon composé le fait revenir à « À composer »
+ * (les montants saisis valaient pour les conditions d'origine, sans prorata). L'ancienne composition, avec son auteur et son motif, est gardée
+ * au journal (`COTATION_COMPOSITION_VIDEE`). Un changement du nombre de tranches garde la composition (seul l'échéancier change).
+ */
+export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, saisie: SaisieCotation, adresseIp: string | null): Promise<{ compositionVidee: boolean }> {
   await exigerAgir(acteur);
-  await obtenirPrisma().$transaction(async (tx) => {
+  return obtenirPrisma().$transaction(async (tx) => {
     const avant = await chargerPourModification(tx, id);
     if (avant.produit.code !== saisie.codeProduit) throw new ErreurMetier("Le produit d'une cotation ne se change pas : créez une nouvelle cotation.");
     // Qui modifie un brouillon composé (souscripteur, dates, assurés…) ne touche pas à la composition : ses lignes sont reprises telles quelles,
@@ -454,14 +460,41 @@ export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, 
     if (anciennes && !estComposition(anciennes) && compositionPossible((await resoudreVersion(tx, saisie.codeProduit, aujourdhui())).version.modeTarification)) {
       throw new ErreurMetier(MESSAGE_BROUILLON_A_FORMULES);
     }
-    if (saisie.composition === undefined && anciennes && estComposition(anciennes)) saisie = { ...saisie, composition: saisieDesLignes(anciennes.lignes) };
+    // H98 : qu'est-ce qui change, parmi ce dont dépendent les montants composés ?
+    const raisonsDeVidage: string[] = [];
+    if (anciennes && estComposition(anciennes) && anciennes.lignes.length > 0) {
+      const regimeApres = saisie.regimeTaxe ?? (estTypeContrat(saisie.typeContrat) ? REGIME_PAR_DEFAUT[saisie.typeContrat] : undefined);
+      if (depuisDate(avant.dateEffet) !== saisie.dateEffet || depuisDate(avant.dateEcheance) !== saisie.dateEcheance) raisonsDeVidage.push("la période");
+      if (avant.typeContrat !== saisie.typeContrat) raisonsDeVidage.push("le type de contrat");
+      if (avant.regimeTaxe !== null && regimeApres !== undefined && regimeApres !== avant.regimeTaxe) raisonsDeVidage.push("le régime de taxe");
+    }
+    const compositionVidee = raisonsDeVidage.length > 0;
+    if (compositionVidee) saisie = { ...saisie, composition: [] };
+    else if (saisie.composition === undefined && anciennes && estComposition(anciennes)) saisie = { ...saisie, composition: saisieDesLignes(anciennes.lignes) };
     const c = await calculerSaisie(tx, acteur, saisie, aujourdhui());
     const intermediairesAvant = (await tx.cotationIntermediaire.findMany({ where: { cotationId: id }, orderBy: { ordre: "asc" } })).map((i) => i.code);
     const intermediaires = saisie.intermediaires === undefined ? null : await resoudreIntermediaires(tx, saisie.intermediaires, intermediairesAvant);
     // Qui a modifié un brouillon ne pourra pas le valider (séparation des tâches renforcée, H9).
     const contributeurs = avant.contributeurs.includes(acteur.id) ? avant.contributeurs : [...avant.contributeurs, acteur.id];
-    await tx.cotation.update({ where: { id }, data: { ...donneesAEcrire(saisie, c), contributeurs } });
+    await tx.cotation.update({
+      where: { id },
+      data: { ...donneesAEcrire(saisie, c), contributeurs, ...(compositionVidee ? { compositionParId: null, compositionPar: null, compositionLe: null, compositionMotif: null } : {}) },
+    });
     if (intermediaires !== null) await ecrireIntermediaires(tx, id, intermediaires);
+    if (compositionVidee && anciennes && estComposition(anciennes)) {
+      await journaliser(
+        {
+          acteur: auteur(acteur),
+          action: "COTATION_COMPOSITION_VIDEE",
+          objetType: "cotation",
+          objetId: id,
+          avant: { lignes: anciennes.lignes, ttc: avant.ttcTotal?.toFixed() ?? null, composePar: avant.compositionPar, composeLe: avant.compositionLe?.toISOString() ?? null, motif: avant.compositionMotif },
+          apres: { raison: raisonsDeVidage.join(", "), retour: "À composer" },
+          adresseIp,
+        },
+        tx,
+      );
+    }
     await journaliser(
       {
         acteur: auteur(acteur),
@@ -493,6 +526,7 @@ export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, 
       tx,
     );
     await journaliserAccessoires(tx, acteur, id, avant.lignes as unknown as LigneStockee[], c.lignesStockees, adresseIp);
+    return { compositionVidee };
   });
 }
 

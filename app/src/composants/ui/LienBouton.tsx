@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ComponentProps } from "react";
 
-import { classesBouton, type VarianteBouton } from "./Bouton";
+import { classesBouton, type VarianteBouton } from "./stylesBouton";
 
 /**
  * Lien qui a l'aspect d'un bouton (navigation vers une page ou un fichier), avec les mêmes variantes que `Bouton`. Un lien

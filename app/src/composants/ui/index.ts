@@ -1,5 +1,6 @@
 export { Bandeau, type TonBandeau } from "./Bandeau";
-export { Bouton, classesBouton, type VarianteBouton } from "./Bouton";
+export { Bouton } from "./Bouton";
+export { classesBouton, type VarianteBouton } from "./stylesBouton";
 export { Carte } from "./Carte";
 export { CarteIndicateur, type TonIndicateur } from "./CarteIndicateur";
 export { Champ } from "./Champ";

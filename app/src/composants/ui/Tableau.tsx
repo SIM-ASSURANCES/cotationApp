@@ -23,6 +23,7 @@ export function Tableau<T>({
   cleLigne,
   messageVide = "Aucune donnée.",
   legende,
+  zebre = true,
 }: {
   colonnes: ColonneTableau<T>[];
   lignes: readonly T[];
@@ -30,6 +31,8 @@ export function Tableau<T>({
   messageVide?: string;
   /** Titre du tableau pour les lecteurs d'écran (non affiché). */
   legende?: string;
+  /** Lignes zébrées et surlignées au survol (défaut). À désactiver quand les cellules portent des champs : un champ (fond `primary-bg`) ne se pose jamais sur `bg-muted`. */
+  zebre?: boolean;
 }) {
   if (lignes.length === 0) {
     return (
@@ -40,7 +43,8 @@ export function Tableau<T>({
   }
   return (
     // Région défilante : focalisable au clavier, sinon un tableau plus large que l'écran ne se parcourt pas sans souris.
-    <div tabIndex={0} role="region" aria-label={legende ?? "Tableau"} className="max-h-[calc(100vh-14rem)] overflow-auto rounded-md border border-border shadow-elevated">
+    // `relative` : contient les éléments `sr-only` (position absolue) du tableau, sinon ils élargissent la page entière sur téléphone.
+    <div tabIndex={0} role="region" aria-label={legende ?? "Tableau"} className="relative max-h-[calc(100vh-14rem)] overflow-auto rounded-md border border-border shadow-elevated">
       <table className="w-full min-w-full border-separate border-spacing-0 text-sm">
         {legende ? <caption className="sr-only">{legende}</caption> : null}
         <thead>
@@ -62,7 +66,7 @@ export function Tableau<T>({
         </thead>
         <tbody className="bg-surface">
           {lignes.map((ligne) => (
-            <tr key={cleLigne(ligne)} className="even:bg-muted/40 hover:bg-muted/60">
+            <tr key={cleLigne(ligne)} className={cx(zebre && "even:bg-muted/40 hover:bg-muted/60")}>
               {colonnes.map((colonne) => (
                 <td key={colonne.cle} className={cx("border-b border-border px-4 py-2 text-foreground", colonne.alignement === "droite" && "text-right tabular-nums", colonne.className)}>
                   {colonne.rendu(ligne)}

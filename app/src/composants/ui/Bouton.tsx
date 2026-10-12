@@ -13,6 +13,12 @@ const CLASSES_VARIANTE: Record<VarianteBouton, string> = {
   danger: "bg-danger text-danger-foreground hover:bg-danger-hover",
 };
 
+const BASE_BOUTON =
+  "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-[background-color,color,transform] duration-150 ease-out-strong sm:min-h-0 motion-safe:active:scale-[0.97]";
+
+/** Classes d'un bouton, pour un lien qui doit lui ressembler (voir `LienBouton`) : un seul endroit pour l'aspect des boutons. */
+export const classesBouton = (variante: VarianteBouton = "principal", className?: string): string => cx(BASE_BOUTON, CLASSES_VARIANTE[variante], className);
+
 /**
  * Bouton standard. `danger` seulement pour une action destructrice ou irréversible (annulation, rejet).
  * État d'attente : un bouton `type="submit"` affiche un spinner et se désactive tant que le formulaire qui le contient est en
@@ -37,12 +43,7 @@ export function Bouton({
       type={type}
       disabled={disabled || enAttente}
       aria-busy={enAttente}
-      className={cx(
-        "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-[background-color,color,transform] duration-150 ease-out-strong sm:min-h-0",
-        "motion-safe:active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100",
-        CLASSES_VARIANTE[variante],
-        className,
-      )}
+      className={cx(BASE_BOUTON, "disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100", CLASSES_VARIANTE[variante], className)}
       {...props}
     >
       {enAttente ? (

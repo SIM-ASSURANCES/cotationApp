@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { AvertissementsReports } from "@/composants/AvertissementsReports";
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { CANAUX_PAIEMENT, LIBELLE_CANAL, LONGUEUR_MIN_MOTIF_AVOIR } from "@/domaine/facturation/factures";
@@ -94,8 +95,8 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
           </p>
           {x.etat.echeances.length > 0 ? (
             <table className="mb-3 w-full border-collapse text-sm">
-              <thead><tr className="text-left text-zinc-600"><th className="p-1">Échéance</th><th className="p-1">Date</th><th className="p-1 text-right">Montant</th><th className="p-1">Statut</th></tr></thead>
-              <tbody>{x.etat.echeances.map((e) => <tr key={e.numero} className="border-t border-bordure"><td className="p-1">{e.numero}</td><td className="p-1">{e.date}</td><td className="p-1 text-right">{f(e.montant)}</td><td className="p-1">{e.statut}</td></tr>)}</tbody>
+              <thead><tr className="text-left text-zinc-600"><th className="p-1">Échéance</th><th className="p-1">Date</th><th className="p-1 text-right">Montant</th><th className="p-1 text-right">Payé</th><th className="p-1 text-right">Restant</th><th className="p-1">Statut</th></tr></thead>
+              <tbody>{x.etat.echeances.map((e) => <tr key={e.numero} className="border-t border-bordure"><td className="p-1">{e.numero}</td><td className="p-1">{e.date}</td><td className="p-1 text-right">{f(e.montant)}</td><td className="p-1 text-right">{f(e.paye)}</td><td className="p-1 text-right">{f(e.restant)}</td><td className="p-1">{e.statut}</td></tr>)}</tbody>
             </table>
           ) : null}
           {x.etat.paiements.length > 0 ? (
@@ -204,6 +205,7 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
             <p className="mb-3 text-sm text-zinc-700">
               Avance disponible : {f(x.avance.disponible)} F ; restant dû : {x.etat ? f(x.etat.restantDu) : "?"} F. L&apos;imputation apparaît dans les paiements de la facture (rééditée, version suivante) ; aucun reçu n&apos;est produit.
             </p>
+            <AvertissementsReports reports={x.avance.reportsEnAttente} />
             <FormulaireAction action={imputerLAvance} libelleBouton="Imputer l'avance">
               {cache}
               <Champ nom="montant" libelle="Montant à imputer" valeur={x.avance.proposee} autoComplete="off" />

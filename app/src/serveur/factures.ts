@@ -39,7 +39,7 @@ import {
 
 import { journaliser, type ActeurAudit } from "./audit";
 import { contexteProduit, montantsDu } from "./documents";
-import { avanceDisponible, encaissementsDe, inclusionImputations, versEncaissements } from "./encaissements";
+import { avanceDisponible, encaissementsDe, inclusionImputations, reportsEnAttente, versEncaissements, type ReportEnAttente } from "./encaissements";
 import { niveauDuProfil } from "./droits";
 import { versIntermediairesDocument } from "./intermediaires";
 import { modelesAssocies, versionPublieeEnVigueur } from "./modeles";
@@ -874,6 +874,8 @@ export const LIBELLE_MOUVEMENT_AVANCE: Record<string, string> = {
 
 export type AvanceDePolice = {
   disponible: string;
+  /** Sommes reportées d'une facture annulée, dont la facture de remplacement n'est pas encore émise (H73) : à afficher en avertissement. */
+  reportsEnAttente: ReportEnAttente[];
   mouvements: { id: number; type: string; libelle: string; credit: boolean; date: DateIso; montant: string; facture: string | null; recu: string | null; canal: string | null; reference: string | null; par: string }[];
 };
 
@@ -888,6 +890,7 @@ export async function avanceDePolice(acteur: UtilisateurCourant, policeId: numbe
   });
   return {
     disponible: await avanceDisponible(prisma, policeId),
+    reportsEnAttente: await reportsEnAttente(prisma, policeId),
     mouvements: lignes.map((m) => ({
       id: m.id,
       type: m.type,
@@ -953,8 +956,8 @@ export type FactureLue = LigneFactureLue & {
   seuil: string | null;
   etat: EtatPaiements | null;
   documents: DocumentFacture[];
-  /** Avance disponible de la police (H33) et imputation proposée sur cette facture (0 : rien à proposer). */
-  avance: { disponible: string; proposee: string };
+  /** Avance disponible de la police (H33), imputation proposée sur cette facture (0 : rien à proposer), et sommes reportées encore en attente de leur facture de remplacement (H73). */
+  avance: { disponible: string; proposee: string; reportsEnAttente: ReportEnAttente[] };
   /** Facture annulée : sommes reportées en avance sur la police (H47). */
   reports: { recu: string | null; date: DateIso; montant: string }[];
   actions: { modifier: boolean; emettre: boolean; emettreSousSeuil: boolean; avoir: boolean; payer: boolean; imputer: boolean; relancer: boolean };
@@ -1052,7 +1055,7 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
     emiseLe: f.emiseLe,
     seuil,
     documents: f.aProduire.map((p) => ({ numero: p.numero, version: p.version, type: p.type, statut: p.statut as DocumentFacture["statut"], documentId: p.documentId, tentatives: p.tentatives, derniereErreur: p.derniereErreur })),
-    avance: { disponible, proposee },
+    avance: { disponible, proposee, reportsEnAttente: await reportsEnAttente(prisma, f.policeId) },
     reports: reports.map((r) => ({ recu: r.paiement?.numeroRecu ?? null, date: depuisDate(r.date), montant: r.montant.toFixed() })),
     actions: {
       modifier: f.statut === "BROUILLON" && peutAgir(d.facture),

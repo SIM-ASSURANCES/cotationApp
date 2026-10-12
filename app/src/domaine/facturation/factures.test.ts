@@ -26,12 +26,35 @@ describe("soldes et échéances (CDC §11.1, §12, H49)", () => {
     expect(e.echeances.map((x) => x.statut)).toEqual(["Non payé", "Non payé", "Non payé", "Non payé"]);
   });
 
-  it("les échéances se marquent payées dans l'ordre ; une échéance couverte en partie reste « Non payé »", () => {
+  it("les échéances se marquent payées dans l'ordre ; une échéance couverte en partie est « Partiellement payé » (6.1)", () => {
     const e = etatPaiements("11592000", echeances, [paiement("2898000"), paiement("2000000", "REC-2026-10-0002")]);
-    expect(e.echeances.map((x) => x.statut)).toEqual(["Payé", "Non payé", "Non payé", "Non payé"]);
+    expect(e.echeances.map((x) => x.statut)).toEqual(["Payé", "Partiellement payé", "Non payé", "Non payé"]);
     expect(e.paiements.map((p) => p.restantDu)).toEqual(["8694000", "6694000"]);
     expect(e).toMatchObject({ totalPaye: "4898000", restantDu: "6694000" });
     expect(etatPaiements("11592000", echeances, [paiement("5796000")]).echeances.map((x) => x.statut)).toEqual(["Payé", "Payé", "Non payé", "Non payé"]);
+  });
+
+  describe("session 6.1 : une seule règle pour la facture (écran, PDF) et pour les échéances", () => {
+    const quatre = [1, 2, 3, 4].map((numero) => ({ numero, date: `2026-${String(numero * 3).padStart(2, "0")}-01`, montant: "25111" }));
+    const attendu = [["Payé", "25111", "0"], ["Partiellement payé", "24889", "222"], ["Non payé", "0", "25111"], ["Non payé", "0", "25111"]];
+    const lire = (e: ReturnType<typeof etatPaiements>) => e.echeances.map((x) => [x.statut, x.paye, x.restant]);
+
+    it("recette du 09/10/2026 : TTC 100 444 en 4 × 25 111, 50 000 payés : restant dû 50 444, échéance 2 « Partiellement payé » pour 222", () => {
+      const e = etatPaiements("100444", quatre, [paiement("50000")]);
+      expect(e).toMatchObject({ totalPaye: "50000", restantDu: "50444" });
+      expect(lire(e)).toEqual(attendu);
+    });
+
+    it("une imputation d'avance (canal Avance, sans reçu) compte comme un paiement dans la répartition", () => {
+      const avance: PaiementEnregistre = { numero: "", date: "2026-10-09", montant: "20000", reference: "", canal: "AVANCE", payeur: "" };
+      expect(lire(etatPaiements("100444", quatre, [paiement("30000"), avance]))).toEqual(attendu);
+      expect(lire(etatPaiements("100444", quatre, [avance, { ...avance, montant: "30000" }]))).toEqual(attendu);
+    });
+
+    it("l'excédent d'un paiement (versé en avance) ne règle aucune échéance", () => {
+      const trop: PaiementEnregistre = { ...paiement("60000"), excedent: "10000" };
+      expect(lire(etatPaiements("100444", quatre, [trop]))).toEqual(attendu);
+    });
   });
 
   it("T3 : paiement de 41 000 sur 122 443 (HT 120 633, taxe 1 810) : restant dû 81 443", () => {

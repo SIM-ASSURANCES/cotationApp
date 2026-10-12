@@ -187,6 +187,7 @@ FIXTURES: dict[str, bytes] = {
         "Total TTC : {{ prime.ttc | montant }} F CFA, soit {{ prime.ttc | lettres }}.",
         "{%p for e in echeances %}",
         "Échéance {{ e.numero }} du {{ e.date | date }} : {{ e.montant | montant }} F CFA – {{ e.statut }}",
+        "Détail de l'échéance {{ e.numero }} : payé {{ e.paye | montant }} F CFA, restant {{ e.restant | montant }} F CFA",
         "{%p endfor %}",
         "{%p if paiements %}",
         "{%p for p in paiements %}",

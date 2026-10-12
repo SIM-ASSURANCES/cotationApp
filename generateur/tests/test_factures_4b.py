@@ -35,7 +35,7 @@ def donnees_t2(**autres: Any) -> dict[str, Any]:
             {"libelle": "Famille", "effectif": 31, "prime_nette": "9529064", "taxe": "142936", "ttc": "9672000"},
         ],
         "prime": {"nette": "11420690", "accessoires": "0", "taux_taxe": "1.5", "taxe": "171310", "ttc": "11592000"},
-        "echeances": [{"numero": n, "date": f"2026-{m:02d}-01", "montant": "2898000", "statut": "Non payé"} for n, m in ((1, 1), (2, 4), (3, 7), (4, 10))],
+        "echeances": [{"numero": n, "date": f"2026-{m:02d}-01", "montant": "2898000", "paye": "0", "restant": "2898000", "statut": "Non payé"} for n, m in ((1, 1), (2, 4), (3, 7), (4, 10))],
         "paiements": [],
         "solde": {"total_paye": "0", "restant_du": "11592000"},
         "societe": {
@@ -91,13 +91,33 @@ def test_facture_v2_apres_paiement_echeance_payee_et_restant_du() -> None:
         paiements=[{"numero": "REC-2026-10-0001", "date": "2026-10-08", "montant": "2898000", "canal": "Virement", "reference": "VIR-1", "payeur": "CGE-SN", "restant_du": "8694000"}],
         solde={"total_paye": "2898000", "restant_du": "8694000"},
     )
-    d["echeances"][0]["statut"] = "Payé"
+    d["echeances"][0].update(statut="Payé", paye="2898000", restant="0")
     d["doc"]["version"] = "v2"
     t = facture(d)
     assert "(v2)" in t
     assert [l.rsplit("– ", 1)[1] for l in t.splitlines() if l.startswith("Échéance")] == ["Payé", "Non payé", "Non payé", "Non payé"]
     assert f"Paiement REC-2026-10-0001 du 08/10/2026 : 2{NB}898{NB}000 F CFA (Virement)" in t
     assert f"Restant dû : 8{NB}694{NB}000 F CFA" in t
+
+
+def test_facture_echeance_payee_en_partie_session_6_1() -> None:
+    """4 × 25 111 (TTC 100 444), 50 000 payés : l'échéance 2 est « Partiellement payé » pour 222 restants."""
+    d = donnees_t2(
+        prime={"nette": "98960", "accessoires": "0", "taux_taxe": "1.5", "taxe": "1484", "ttc": "100444"},
+        echeances=[
+            {"numero": 1, "date": "2026-01-01", "montant": "25111", "paye": "25111", "restant": "0", "statut": "Payé"},
+            {"numero": 2, "date": "2026-04-01", "montant": "25111", "paye": "24889", "restant": "222", "statut": "Partiellement payé"},
+            {"numero": 3, "date": "2026-07-01", "montant": "25111", "paye": "0", "restant": "25111", "statut": "Non payé"},
+            {"numero": 4, "date": "2026-10-01", "montant": "25111", "paye": "0", "restant": "25111", "statut": "Non payé"},
+        ],
+        paiements=[{"numero": "REC-2026-10-0001", "date": "2026-10-08", "montant": "50000", "canal": "Virement", "reference": "VIR-1", "payeur": "CGE-SN", "restant_du": "50444"}],
+        solde={"total_paye": "50000", "restant_du": "50444"},
+    )
+    t = facture(d)
+    assert [l.rsplit("– ", 1)[1] for l in t.splitlines() if l.startswith("Échéance")] == ["Payé", "Partiellement payé", "Non payé", "Non payé"]
+    detail = [l for l in t.splitlines() if l.startswith("Détail de l'échéance")]
+    assert f"payé 24{NB}889 F CFA, restant 222 F CFA" in detail[1]
+    assert f"Restant dû : 50{NB}444 F CFA" in t
 
 
 def test_avoir_montants_negatifs_et_facture_d_origine() -> None:

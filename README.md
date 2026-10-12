@@ -21,6 +21,7 @@ Phases livrées, regroupées par lot du CDC (§17). Chaque phase a son compte re
 | Lot 4, masse et relances | 5a | Import en masse, file de tâches BullMQ et travailleur, stockage indisponible |
 | Lot 4, masse et relances | 5b | Avis d'échéance, relances, tableaux de bord |
 | Corrections | 6.0 | Réponses de la Technique : avoir sur facture payée, avance (trop-perçu), régime de taxe, numéros de certificat, intermédiaires, tâches d'import |
+| Corrections | 6.1 | Échéances payées en partie (statut « Partiellement payé »), avertissement sur les avances d'une facture annulée, script et guide de balisage des modèles réels |
 
 Cas de test du CDC (§16) :
 
@@ -127,8 +128,8 @@ Prérequis à fournir par l'administrateur :
 - Recette : [docs/recette.md](docs/recette.md) ; recette manuelle : [docs/recette-manuelle.md](docs/recette-manuelle.md) ; [plan de test des modèles Word](docs/plan-test-modeles.md)
 - Installation sans Docker : [docs/installation.md](docs/installation.md) ; déploiement : [docs/deploiement.md](docs/deploiement.md) ; [exigences pour le serveur](docs/exigences-serveur.md)
 - Cahier des charges : [docs/cdc.md](docs/cdc.md)
-- Aide à la rédaction des modèles Word : écran « Modèles › Aide » de l'application ([source](app/src/app/%28protege%29/modeles/aide/page.tsx))
-- Comptes rendus : [phase 2](docs/compte-rendu-phase-2.md), [3a](docs/compte-rendu-phase-3a.md), [3b](docs/compte-rendu-phase-3b.md), [4.0](docs/compte-rendu-phase-4.0.md), [4a](docs/compte-rendu-phase-4a.md), [4b](docs/compte-rendu-phase-4b.md), [5a](docs/compte-rendu-phase-5a.md), [5b](docs/compte-rendu-phase-5b.md), [6.0](docs/compte-rendu-phase-6.0.md)
+- Aide à la rédaction des modèles Word : écran « Modèles › Aide » de l'application ([source](app/src/app/%28protege%29/modeles/aide/page.tsx)) ; [guide de balisage](docs/guide-balisage.md) (méthode, pièges, anomalies A1 à A20) et script `generateur/scripts/verifier_modele.py` qui vérifie un modèle avant son dépôt
+- Comptes rendus : [phase 2](docs/compte-rendu-phase-2.md), [3a](docs/compte-rendu-phase-3a.md), [3b](docs/compte-rendu-phase-3b.md), [4.0](docs/compte-rendu-phase-4.0.md), [4a](docs/compte-rendu-phase-4a.md), [4b](docs/compte-rendu-phase-4b.md), [5a](docs/compte-rendu-phase-5a.md), [5b](docs/compte-rendu-phase-5b.md), [6.0](docs/compte-rendu-phase-6.0.md), [6.1](docs/compte-rendu-phase-6.1.md)
 
 ## Règles du dépôt
 

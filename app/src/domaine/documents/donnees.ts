@@ -1,6 +1,7 @@
 import type { DateIso } from "../calcul/dates";
 import { montant } from "../calcul/montant";
 import type { Assure, Beneficiaire, ContactUrgence, Risque, Souscripteur } from "../cotation/saisie";
+import type { StatutEcheance } from "../facturation/echeances";
 import type { IntermediaireDocument } from "../intermediaires";
 import { appliquerFacultatifs, champsInconnus, NON_FOURNI, type NonFourni } from "./dictionnaire";
 import { libelleDuree } from "./duree";
@@ -81,7 +82,8 @@ export type SourceDocument = {
 };
 
 export type Facturation = {
-  echeances: { numero: number; date: DateIso; montant: string; statut: "Payé" | "Non payé" }[];
+  /** Échéances de la facture : statut « Payé » / « Partiellement payé » / « Non payé », part payée et restant (session 6.1). */
+  echeances: { numero: number; date: DateIso; montant: string; paye: string; restant: string; statut: StatutEcheance }[];
   paiements: { numero: string; date: DateIso; montant: string; reference: string; canal: string; payeur: string; restantDu: string }[];
   solde: { totalPaye: string; restantDu: string };
   /** solde.avance (D28) : avance disponible de la police au moment du document ; absent pour un avoir. */
@@ -214,8 +216,8 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
     echeances: certificat
       ? NON_FOURNI
       : fa
-        ? fa.echeances.map((e) => ({ numero: e.numero, date: e.date, montant: e.montant, statut: e.statut }))
-        : s.echeances.map((e) => ({ numero: e.numero, date: e.date, montant: e.montant, statut: "À payer" })),
+        ? fa.echeances.map((e) => ({ numero: e.numero, date: e.date, montant: e.montant, statut: e.statut, paye: e.paye, restant: e.restant }))
+        : s.echeances.map((e) => ({ numero: e.numero, date: e.date, montant: e.montant, statut: "À payer", paye: "0", restant: e.montant })),
     paiements: (fa?.paiements ?? []).map((p) => ({ numero: p.numero, date: p.date, montant: p.montant, reference: p.reference, canal: p.canal, restant_du: p.restantDu, payeur: p.payeur })),
     solde: certificat
       ? NON_FOURNI

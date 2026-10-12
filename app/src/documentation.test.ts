@@ -37,7 +37,7 @@ function liensCasses(fichier: string): string[] {
 
 describe("documentation : liens et commandes", () => {
   it("chaque lien relatif du README, du guide d'installation, du guide de déploiement et de app/README.md existe", () => {
-    expect(["README.md", "app/README.md", "docs/installation.md", "docs/deploiement.md"].flatMap(liensCasses)).toEqual([]);
+    expect(["README.md", "app/README.md", "docs/installation.md", "docs/deploiement.md", "docs/guide-balisage.md"].flatMap(liensCasses)).toEqual([]);
   });
 
   it("chaque « npm run … » du README existe dans app/package.json", () => {

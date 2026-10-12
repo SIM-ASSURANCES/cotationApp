@@ -28,7 +28,7 @@ import {
   traiterLotEcheances,
   type ElementListe,
 } from "./echeances";
-import { creerFactureAffaireNouvelle, emettreAvoir, emettreFacture, enregistrerPaiement } from "./factures";
+import { creerFactureAffaireNouvelle, creerFactureRenouvellement, emettreAvoir, emettreFacture, enregistrerPaiement, imputerAvance, lireFacture } from "./factures";
 import { remplacerGenerateur, type DemandePdf } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
 import { aujourdhui, creerProduit, creerTaxe, creerVersion } from "./parametrage";
@@ -417,6 +417,59 @@ describe("liste quotidienne : tâche planifiée, aucune émission", () => {
     const traces = (await lireJournal({ action: "LISTE_ECHEANCES_ETABLIE" })).lignes.filter((l) => l.objet === `echeances liste ${date}`);
     expect(traces).toHaveLength(1);
     expect(await appels(f.id, "AVIS_ECHEANCE")).toEqual([]);
+  });
+});
+
+describe("échéances payées en partie (session 6.1) : une seule règle pour l'écran, le PDF, l'avis et la relance", () => {
+  /** Même cas que la recette du 09/10/2026 (échéance 2 : restant 222), sur le jeu T2 : 2 898 000 × 4. */
+  async function verifierLeCas(facture: { id: number; echeances: { date: string }[] }) {
+    const attendu = [
+      { numero: 1, montant: "2898000", paye: "2898000", restant: "0", statut: "Payé" },
+      { numero: 2, montant: "2898000", paye: "2897778", restant: "222", statut: "Partiellement payé" },
+      { numero: 3, montant: "2898000", paye: "0", restant: "2898000", statut: "Non payé" },
+      { numero: 4, montant: "2898000", paye: "0", restant: "2898000", statut: "Non payé" },
+    ];
+    // Écran de la facture.
+    const lue = (await lireFacture(comptable, facture.id))!;
+    expect(lue.etat!.echeances).toEqual(attendu.map((e) => expect.objectContaining(e)));
+    expect(lue.etat!.restantDu).toBe(String(4 * 2898000 - 2898000 - 2897778));
+    // Données du PDF de la dernière version de la facture.
+    expect(derniere("FACTURE").donnees.echeances).toEqual(attendu.map((e) => expect.objectContaining(e)));
+    // Liste du jour : l'avis et la relance de l'échéance 2 appellent son restant.
+    const e2 = facture.echeances[1].date;
+    const avisJ10 = (await listeDuJour(comptable, ajouterJours(e2, -10))).avis.filter(de(facture.id));
+    expect(avisJ10.map((a) => [a.echeance.numero, a.echeance.montant, a.echeance.restant])).toEqual([[2, "2898000", "222"]]);
+    const j8 = ajouterJours(e2, 8);
+    const relances = (await listeDuJour(comptable, j8)).relances.filter(de(facture.id));
+    expect(relances.map((r) => [r.echeance.numero, r.echeance.restant, r.niveau?.niveau])).toEqual([[2, "222", 1]]);
+    // Documents produits : le restant, pas le montant total de l'échéance.
+    expect(await genererAppel(comptable, { type: "AVIS_ECHEANCE", factureId: facture.id, echeanceNumero: 2, niveau: null }, null, ajouterJours(e2, -10))).toMatchObject({ statut: "PRODUIT" });
+    expect(derniere("AVIS_ECHEANCE").donnees.echeance_appelee).toEqual({ numero: 2, date: e2, montant: "2898000", restant_du: "222" });
+    expect(await genererAppel(comptable, { type: "RELANCE", factureId: facture.id, echeanceNumero: 2, niveau: 1 }, null, j8)).toMatchObject({ statut: "PRODUIT" });
+    expect(derniere("RELANCE").donnees.echeance_appelee).toEqual({ numero: 2, date: e2, montant: "2898000", restant_du: "222" });
+    // L'échéance 1, payée, n'appelle plus rien ; le restant dû du tableau de bord compte bien 222 sur l'échéance 2.
+    expect((await listeDuJour(comptable, ajouterJours(facture.echeances[0].date, 8))).relances.filter(de(facture.id))).toEqual([]);
+  }
+
+  it("deux paiements : 2 898 000 puis 2 897 778 : échéance 2 « Partiellement payé », 222 restant (écran, PDF, avis, relance)", async () => {
+    const p = await policeT2();
+    const f = await factureEmise(p.policeId);
+    await enregistrerPaiement(comptable, f.id, paiement("2898000"), null);
+    await enregistrerPaiement(comptable, f.id, paiement("2897778"), null);
+    await verifierLeCas(f);
+  });
+
+  it("avec une imputation d'avance (comptée comme un paiement) : même répartition, même relance de 222", async () => {
+    const p = await policeT2();
+    const f = await factureEmise(p.policeId);
+    // Renouvellement payé avec un trop-perçu : 14 500 000 − 11 592 000 = 2 908 000 F en avance sur la police.
+    const ren = await creerFactureRenouvellement(technique, p.policeId, { lignes: null, nombreTranches: 1, envoyeA: null }, null);
+    await emettreFacture(technique, ren, null);
+    expect((await enregistrerPaiement(comptable, ren, paiement("14500000"), null)).avance).toBe("2908000");
+    await enregistrerPaiement(comptable, f.id, paiement("2898000"), null);
+    expect(await imputerAvance(comptable, f.id, "2897778", null)).toMatchObject({ restantDu: "5796222", avance: "10222" });
+    await verifierLeCas(f);
+    expect((derniere("FACTURE").donnees.paiements as { canal: string }[]).map((x) => x.canal)).toEqual(["Virement", "Avance"]);
   });
 });
 

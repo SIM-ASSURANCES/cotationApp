@@ -3,7 +3,7 @@ import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 
 import type { DateIso } from "@/domaine/calcul/dates";
-import type { CanalPaiement, PaiementEnregistre } from "@/domaine/facturation/factures";
+import { avertissementReport, type CanalPaiement, type PaiementEnregistre } from "@/domaine/facturation/factures";
 
 /**
  * Sommes qui règlent une facture (session 6.0) : ses paiements (part hors excédent, H33) et les imputations de l'avance de la
@@ -62,4 +62,34 @@ export async function encaissementsDe(client: Client, factureId: number): Promis
 export async function avanceDisponible(client: Client, policeId: number): Promise<string> {
   const [ligne] = await client.$queryRaw<{ solde: Prisma.Decimal }[]>`SELECT avance_disponible(${policeId}::integer) AS solde`;
   return new Prisma.Decimal(ligne?.solde ?? 0).toFixed();
+}
+
+/** Somme reportée d'une facture annulée dont la facture de remplacement n'est pas encore émise (H73, session 6.1). */
+export type ReportEnAttente = { mouvementId: number; factureAnnulee: string; montant: string; date: DateIso; recu: string | null; avertissement: string };
+
+/**
+ * Sommes reportées (REPORT) d'une police dont la facture annulée n'a pas encore de facture de remplacement ÉMISE (une
+ * remplaçante en brouillon ou « À valider » compte pour absente : elle n'a pas encore repris les sommes). Lecture seule ; ne
+ * réserve rien (H73, option a).
+ */
+export async function reportsEnAttente(client: Client, policeId: number): Promise<ReportEnAttente[]> {
+  const reports = await client.mouvementAvance.findMany({
+    where: { policeId, type: "REPORT", factureAnnuleeId: { not: null } },
+    include: { paiement: { select: { numeroRecu: true } }, factureAnnulee: { select: { id: true, numero: true } } },
+    orderBy: { id: "asc" },
+  });
+  if (reports.length === 0) return [];
+  const remplacees = new Set(
+    (await client.facture.findMany({ where: { remplaceId: { in: reports.map((r) => r.factureAnnuleeId!) }, numero: { not: null } }, select: { remplaceId: true } })).map((r) => r.remplaceId),
+  );
+  return reports
+    .filter((r) => !remplacees.has(r.factureAnnuleeId))
+    .map((r) => ({
+      mouvementId: r.id,
+      factureAnnulee: r.factureAnnulee?.numero ?? "(sans numéro)",
+      montant: r.montant.toFixed(),
+      date: depuisDate(r.date),
+      recu: r.paiement?.numeroRecu ?? null,
+      avertissement: avertissementReport(r.factureAnnulee?.numero ?? "(sans numéro)"),
+    }));
 }

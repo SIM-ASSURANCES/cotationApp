@@ -1,5 +1,7 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 
+import { Bandeau, Bouton, Carte, Champ, EnTetePage, EtatVide, ListeDeroulante, Tableau, type ColonneTableau } from "@/composants/ui";
 import { dateValide } from "@/domaine/calcul/dates";
 import { formaterMontant, type Montant } from "@/domaine/calcul/montant";
 import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT, REGIMES_TAXE, estRegimeTaxe } from "@/domaine/calcul/taxes";
@@ -10,107 +12,120 @@ import { exigerUtilisateur } from "@/serveur/session";
 import { ErreurAcces, ErreurMetier } from "@/serveur/types";
 
 const premier = (valeur: string | string[] | undefined) => (Array.isArray(valeur) ? valeur[0] : valeur) ?? "";
-const entree = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2";
 const f = (m: Montant) => formaterMontant(m);
+
+/** Ligne du tableau des résultats : montants déjà formatés (séparateur de milliers inchangé), `total` pour la ligne de totaux. */
+type LigneResultat = { cle: string; libelle: string; effectif: string; nette: string; accessoires: string; taxe: string; ttc: string; parUnite: string; total?: boolean };
+/** Ligne de l'échéancier ; la dernière porte la somme des tranches. */
+type LigneTranche = { cle: string; numero: string; date: string; montant: string; total?: boolean };
+
+/** Les lignes de totaux et de sommes sont en gras : le `Tableau` n'a pas de pied, la ligne est la dernière de la liste. */
+const gras = (total: boolean | undefined, contenu: ReactNode) => (total ? <span className="font-semibold">{contenu}</span> : contenu);
 
 function Resultats({ r }: { r: ReponseCalcul }) {
   const { resultat: x } = r;
   const toutes = [...x.lignes, ...(x.fraisFractionnement ? [x.fraisFractionnement] : [])];
+
+  const lignesResultat: LigneResultat[] = [
+    ...toutes.map((l) => ({
+      cle: l.code,
+      libelle: r.libelles[l.code] ?? "Frais de fractionnement",
+      effectif: l.code === "FRAIS_FRACTIONNEMENT" ? "—" : String(l.effectif),
+      nette: f(l.arrondi.nette),
+      accessoires: f(l.arrondi.accessoires),
+      taxe: f(l.arrondi.taxe),
+      ttc: f(l.arrondi.ttc),
+      parUnite: l.code === "FRAIS_FRACTIONNEMENT" ? "—" : f(l.ttcParUnite),
+    })),
+    {
+      cle: "TOTAL",
+      libelle: "Total",
+      effectif: "",
+      nette: f(x.totaux.arrondi.nette),
+      accessoires: f(x.totaux.arrondi.accessoires),
+      taxe: f(x.totaux.arrondi.taxe),
+      ttc: f(x.totaux.arrondi.ttc),
+      parUnite: "",
+      total: true,
+    },
+  ];
+  const colonnesResultat: ColonneTableau<LigneResultat>[] = [
+    { cle: "formule", entete: "Formule", rendu: (l) => gras(l.total, l.libelle), className: "whitespace-nowrap" },
+    { cle: "effectif", entete: "Effectif", alignement: "droite", rendu: (l) => l.effectif },
+    { cle: "nette", entete: "Prime nette (HT)", alignement: "droite", rendu: (l) => gras(l.total, l.nette) },
+    { cle: "accessoires", entete: "Accessoires", alignement: "droite", rendu: (l) => gras(l.total, l.accessoires) },
+    { cle: "taxe", entete: "Taxe", alignement: "droite", rendu: (l) => gras(l.total, l.taxe) },
+    { cle: "ttc", entete: "TTC", alignement: "droite", rendu: (l) => <span className="font-semibold">{l.ttc}</span> },
+    { cle: "parUnite", entete: "TTC par unité", alignement: "droite", rendu: (l) => l.parUnite },
+  ];
+
+  // Montants exacts : 4 décimales, sans arrondi. Mêmes colonnes que ci-dessus moins l'effectif.
+  const lignesExactes = toutes.map((l) => ({
+    cle: l.code,
+    libelle: r.libelles[l.code] ?? "Frais de fractionnement",
+    nette: formaterMontant(l.exact.nette, 4),
+    accessoires: formaterMontant(l.exact.accessoires, 4),
+    taxe: formaterMontant(l.exact.taxe, 4),
+    ttc: formaterMontant(l.exact.ttc, 4),
+  }));
+  type LigneExacte = (typeof lignesExactes)[number];
+  const colonnesExactes: ColonneTableau<LigneExacte>[] = [
+    { cle: "formule", entete: "Formule", rendu: (l) => l.libelle },
+    { cle: "nette", entete: "Prime nette (HT)", alignement: "droite", rendu: (l) => l.nette },
+    { cle: "accessoires", entete: "Accessoires", alignement: "droite", rendu: (l) => l.accessoires },
+    { cle: "taxe", entete: "Taxe", alignement: "droite", rendu: (l) => l.taxe },
+    { cle: "ttc", entete: "TTC", alignement: "droite", rendu: (l) => l.ttc },
+  ];
+
+  const lignesTranches: LigneTranche[] | null = r.echeancier
+    ? [
+        ...r.echeancier.map((t) => ({ cle: String(t.numero), numero: String(t.numero), date: t.date, montant: f(t.montant) })),
+        {
+          cle: "SOMME",
+          numero: "Somme des tranches (= TTC)",
+          date: "",
+          montant: f(r.echeancier.reduce((s, t) => s.plus(t.montant), x.totaux.arrondi.ttc.minus(x.totaux.arrondi.ttc))),
+          total: true,
+        },
+      ]
+    : null;
+  const colonnesTranches: ColonneTableau<LigneTranche>[] = [
+    { cle: "numero", entete: "N°", rendu: (t) => gras(t.total, t.numero), className: "whitespace-nowrap" },
+    { cle: "date", entete: "Date", rendu: (t) => t.date },
+    { cle: "montant", entete: "Montant", alignement: "droite", rendu: (t) => gras(t.total, t.montant) },
+  ];
+
   return (
-    <section className="mt-8">
-      <h2 className="mb-1 text-lg font-semibold">Résultat</h2>
-      <p className="mb-3 text-sm text-neutral">
-        Paramétrage du produit en vigueur le {r.versionDu} · taxe {r.taxe.branche} ({r.taxe.typeContrat ? `régime ${LIBELLE_TYPE_CONTRAT[r.taxe.typeContrat].toLowerCase()}` : "tous régimes"}) {r.taxe.tauxPourcent.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "").replace(".", ",")} % (en vigueur le {r.taxe.dateEffet}) ·{" "}
-        {x.joursCouverts} jour(s) couverts, coefficient de prorata {x.coefProrata.toDecimalPlaces(5).toString().replace(".", ",")}
-      </p>
+    <Carte
+      titre="Résultat"
+      description={
+        <>
+          Paramétrage du produit en vigueur le {r.versionDu} · taxe {r.taxe.branche} ({r.taxe.typeContrat ? `régime ${LIBELLE_TYPE_CONTRAT[r.taxe.typeContrat].toLowerCase()}` : "tous régimes"}) {r.taxe.tauxPourcent.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "").replace(".", ",")} % (en vigueur le {r.taxe.dateEffet}) ·{" "}
+          {x.joursCouverts} jour(s) couverts, coefficient de prorata {x.coefProrata.toDecimalPlaces(5).toString().replace(".", ",")}
+        </>
+      }
+    >
       {r.doubleValidationRequise ? (
-        <p role="status" className="mb-3 rounded border border-warning-border bg-warning-bg p-3 text-sm font-medium">
+        <Bandeau ton="avertissement" role="status" className="mb-3">
           Le TTC dépasse le seuil du produit : ce document passerait en « À valider » (double validation, CDC §4.1).
-        </p>
+        </Bandeau>
       ) : null}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[44rem] border-collapse text-sm">
-          <thead>
-            <tr className="bg-primary text-right text-primary-foreground">
-              <th className="p-2 text-left">Formule</th>
-              <th className="p-2">Effectif</th>
-              <th className="p-2">Prime nette (HT)</th>
-              <th className="p-2">Accessoires</th>
-              <th className="p-2">Taxe</th>
-              <th className="p-2">TTC</th>
-              <th className="p-2">TTC par unité</th>
-            </tr>
-          </thead>
-          <tbody>
-            {toutes.map((l) => (
-              <tr key={l.code} className="border-b border-border text-right">
-                <td className="p-2 text-left font-medium">{r.libelles[l.code] ?? "Frais de fractionnement"}</td>
-                <td className="p-2">{l.code === "FRAIS_FRACTIONNEMENT" ? "—" : l.effectif}</td>
-                <td className="p-2">{f(l.arrondi.nette)}</td>
-                <td className="p-2">{f(l.arrondi.accessoires)}</td>
-                <td className="p-2">{f(l.arrondi.taxe)}</td>
-                <td className="p-2 font-semibold">{f(l.arrondi.ttc)}</td>
-                <td className="p-2">{l.code === "FRAIS_FRACTIONNEMENT" ? "—" : f(l.ttcParUnite)}</td>
-              </tr>
-            ))}
-            <tr className="bg-muted text-right font-semibold">
-              <td className="p-2 text-left">Total</td>
-              <td className="p-2" />
-              <td className="p-2">{f(x.totaux.arrondi.nette)}</td>
-              <td className="p-2">{f(x.totaux.arrondi.accessoires)}</td>
-              <td className="p-2">{f(x.totaux.arrondi.taxe)}</td>
-              <td className="p-2">{f(x.totaux.arrondi.ttc)}</td>
-              <td className="p-2" />
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <details className="mt-3 text-sm">
-        <summary className="cursor-pointer font-medium text-primary">Montants exacts avant arrondi</summary>
-        <table className="mt-2 w-full max-w-2xl border-collapse">
-          <tbody>
-            {toutes.map((l) => (
-              <tr key={l.code} className="border-b border-border text-right">
-                <td className="p-1 text-left">{r.libelles[l.code] ?? "Frais de fractionnement"}</td>
-                <td className="p-1">{formaterMontant(l.exact.nette, 4)}</td>
-                <td className="p-1">{formaterMontant(l.exact.accessoires, 4)}</td>
-                <td className="p-1">{formaterMontant(l.exact.taxe, 4)}</td>
-                <td className="p-1">{formaterMontant(l.exact.ttc, 4)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <Tableau colonnes={colonnesResultat} lignes={lignesResultat} cleLigne={(l) => l.cle} legende="Résultat du calcul" />
+      <details className="mt-4 text-sm">
+        <summary className="min-h-10 cursor-pointer py-2 font-medium text-primary lg:min-h-0 lg:py-0">Montants exacts avant arrondi</summary>
+        <div className="mt-2 max-w-3xl">
+          <Tableau colonnes={colonnesExactes} lignes={lignesExactes} cleLigne={(l) => l.cle} legende="Montants exacts avant arrondi" />
+        </div>
       </details>
-      {r.echeancier ? (
+      {lignesTranches && r.echeancier ? (
         <div className="mt-6">
-          <h3 className="mb-2 font-semibold">Échéancier ({r.echeancier.length} tranches)</h3>
-          <table className="w-full max-w-md border-collapse text-sm">
-            <thead>
-              <tr className="bg-primary text-left text-primary-foreground">
-                <th className="p-2">N°</th>
-                <th className="p-2">Date</th>
-                <th className="p-2 text-right">Montant</th>
-              </tr>
-            </thead>
-            <tbody>
-              {r.echeancier.map((t) => (
-                <tr key={t.numero} className="border-b border-border">
-                  <td className="p-2">{t.numero}</td>
-                  <td className="p-2">{t.date}</td>
-                  <td className="p-2 text-right">{f(t.montant)}</td>
-                </tr>
-              ))}
-              <tr className="bg-muted font-semibold">
-                <td className="p-2" colSpan={2}>
-                  Somme des tranches (= TTC)
-                </td>
-                <td className="p-2 text-right">{f(r.echeancier.reduce((s, t) => s.plus(t.montant), x.totaux.arrondi.ttc.minus(x.totaux.arrondi.ttc)))}</td>
-              </tr>
-            </tbody>
-          </table>
+          <h3 className="mb-2 text-base font-bold text-foreground">Échéancier ({r.echeancier.length} tranches)</h3>
+          <div className="max-w-md">
+            <Tableau colonnes={colonnesTranches} lignes={lignesTranches} cleLigne={(t) => t.cle} legende="Échéancier" />
+          </div>
         </div>
       ) : null}
-    </section>
+    </Carte>
   );
 }
 
@@ -122,9 +137,9 @@ export default async function PageCalcul(props: PageProps<"/calcul">) {
   ]);
   if (!peutLire(parametrage) && !peutLire(cotation)) {
     return (
-      <main>
-        <h1 className="mb-2 text-2xl font-semibold text-danger">Accès refusé</h1>
-        <p>Votre profil n'a pas accès au calcul.</p>
+      <main className="space-y-6">
+        <EnTetePage titre="Accès refusé" />
+        <Bandeau ton="danger">Votre profil n&apos;a pas accès au calcul.</Bandeau>
       </main>
     );
   }
@@ -134,23 +149,24 @@ export default async function PageCalcul(props: PageProps<"/calcul">) {
   const produits = await listerProduits(utilisateur);
 
   if (!codeProduit) {
+    const calculables = produits.filter((p) => p.actif && p.versions.length > 0);
+    type LigneProduit = (typeof calculables)[number];
+    const colonnesProduits: ColonneTableau<LigneProduit>[] = [
+      {
+        cle: "code",
+        entete: "Produit",
+        rendu: (p) => (
+          <Link className="font-medium text-primary underline" href={`/calcul?produit=${p.code}`}>
+            {p.code}
+          </Link>
+        ),
+      },
+      { cle: "libelle", entete: "Libellé", rendu: (p) => p.libelle },
+    ];
     return (
-      <main>
-        <h1 className="mb-2 text-2xl font-semibold text-primary">Calcul de prime</h1>
-        <p className="mb-4 text-sm text-neutral">Choisissez un produit. Les montants viennent du moteur de calcul, avec le paramétrage en vigueur.</p>
-        <ul className="list-disc pl-6">
-          {produits
-            .filter((p) => p.actif && p.versions.length > 0)
-            .map((p) => (
-              <li key={p.code}>
-                <Link className="font-medium text-primary underline" href={`/calcul?produit=${p.code}`}>
-                  {p.code}
-                </Link>{" "}
-                — {p.libelle}
-              </li>
-            ))}
-        </ul>
-        {produits.every((p) => !p.actif || p.versions.length === 0) ? <p className="text-sm text-neutral">Aucun produit paramétré pour l'instant.</p> : null}
+      <main className="space-y-6">
+        <EnTetePage titre="Calcul de prime" sousTitre="Choisissez un produit. Les montants viennent du moteur de calcul, avec le paramétrage en vigueur." />
+        <Tableau colonnes={colonnesProduits} lignes={calculables} cleLigne={(p) => p.code} messageVide="Aucun produit paramétré pour l'instant." legende="Produits calculables" />
       </main>
     );
   }
@@ -197,66 +213,39 @@ export default async function PageCalcul(props: PageProps<"/calcul">) {
   }
 
   return (
-    <main>
-      <p className="mb-2 text-sm">
-        <Link href="/calcul" className="text-primary underline">
-          ← Produits
-        </Link>
-      </p>
-      <h1 className="mb-4 text-2xl font-semibold text-primary">Calcul : {codeProduit}</h1>
+    <main className="space-y-6">
+      <EnTetePage filAriane={[{ libelle: "Produits", href: "/calcul" }, { libelle: codeProduit }]} titre={`Calcul : ${codeProduit}`} />
       {!donnees ? (
-        <p>Produit introuvable.</p>
+        <EtatVide message="Produit introuvable." />
       ) : (
-        <form method="get" className="max-w-3xl">
-          <input type="hidden" name="produit" value={codeProduit} />
-          <div className="grid gap-x-6 sm:grid-cols-2">
-            <label className="mb-4 block text-sm font-medium">
-              Date d'effet
-              <input name="dateEffet" defaultValue={dateEffet} placeholder="2026-07-22" required className={entree} />
-            </label>
-            <label className="mb-4 block text-sm font-medium">
-              Date d'échéance
-              <input name="dateEcheance" defaultValue={dateEcheance} placeholder="2026-12-31" required className={entree} />
-            </label>
-            <label className="mb-4 block text-sm font-medium">
-              Date du document (paramètres en vigueur à cette date)
-              <input name="dateDocument" defaultValue={dateDocument} className={entree} />
-            </label>
-            <label className="mb-4 block text-sm font-medium">
-              Régime de taxe (choisit le taux de taxe)
-              <select name="regimeTaxe" defaultValue={regimeTaxe} required className={entree}>
-                <option value="">— Choisir —</option>
-                {REGIMES_TAXE.map((t) => (
-                  <option key={t} value={t}>
-                    {LIBELLE_REGIME_TAXE[t]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="mb-4 block text-sm font-medium">
-              Nombre de tranches
-              <input name="tranches" defaultValue={tranches} inputMode="numeric" className={entree} />
-            </label>
-          </div>
-          <h2 className="mb-2 font-semibold">Effectifs (laisser vide pour exclure une formule)</h2>
-          <div className="mb-4 grid gap-x-6 sm:grid-cols-2">
-            {formules.map((fm) => (
-              <label key={fm.code} className="mb-3 block text-sm font-medium">
-                {fm.code} — {fm.libelle}
-                <input name={`eff_${fm.code}`} defaultValue={premier(q[`eff_${fm.code}`])} inputMode="numeric" className={entree} />
-              </label>
-            ))}
-          </div>
-          <button type="submit" className="rounded bg-primary px-4 py-2 font-semibold text-primary-foreground hover:bg-primary-hover">
-            Calculer
-          </button>
-        </form>
+        <Carte titre="Paramètres du calcul" className="max-w-3xl">
+          {/* Formulaire GET natif : le calcul se rejoue à chaque affichage de la page, rien n'est enregistré. */}
+          <form method="get">
+            <input type="hidden" name="produit" value={codeProduit} />
+            <div className="mb-6 grid gap-x-6 gap-y-4 sm:grid-cols-2">
+              <Champ label="Date d'effet" name="dateEffet" defaultValue={dateEffet} placeholder="2026-07-22" required />
+              <Champ label="Date d'échéance" name="dateEcheance" defaultValue={dateEcheance} placeholder="2026-12-31" required />
+              <Champ label="Date du document (paramètres en vigueur à cette date)" name="dateDocument" defaultValue={dateDocument} />
+              <ListeDeroulante
+                label="Régime de taxe (choisit le taux de taxe)"
+                name="regimeTaxe"
+                defaultValue={regimeTaxe}
+                required
+                options={[{ valeur: "", libelle: "— Choisir —" }, ...REGIMES_TAXE.map((t) => ({ valeur: t, libelle: LIBELLE_REGIME_TAXE[t] }))]}
+              />
+              <Champ label="Nombre de tranches" name="tranches" defaultValue={tranches} inputMode="numeric" />
+            </div>
+            <h3 className="mb-3 text-base font-bold text-foreground">Effectifs (laisser vide pour exclure une formule)</h3>
+            <div className="mb-6 grid gap-x-6 gap-y-4 sm:grid-cols-2">
+              {formules.map((fm) => (
+                <Champ key={fm.code} label={`${fm.code} — ${fm.libelle}`} name={`eff_${fm.code}`} defaultValue={premier(q[`eff_${fm.code}`])} inputMode="numeric" />
+              ))}
+            </div>
+            <Bouton type="submit">Calculer</Bouton>
+          </form>
+        </Carte>
       )}
-      {erreur ? (
-        <p role="alert" className="mt-4 font-medium text-danger">
-          {erreur}
-        </p>
-      ) : null}
+      {erreur ? <Bandeau ton="danger" role="alert">{erreur}</Bandeau> : null}
       {resultat ? <Resultats r={resultat} /> : null}
     </main>
   );

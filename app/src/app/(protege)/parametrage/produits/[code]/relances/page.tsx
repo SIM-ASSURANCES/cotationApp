@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { FormulaireAction } from "@/composants/FormulaireAction";
+import { Carte, Champ, EnTetePage, Tableau, type ColonneTableau } from "@/composants/ui";
 import { NIVEAUX_MAX } from "@/domaine/facturation/echeances";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
@@ -10,8 +10,6 @@ import { aujourdhui } from "@/serveur/parametrage";
 import { exigerDroit } from "@/serveur/session";
 
 import { enregistrerLesRelances } from "./actions";
-
-const entree = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2";
 
 /** Avis d'échéance et relances d'un produit (CDC §12) : délai J-x, niveaux J+x ; historisés. Un modèle Word par niveau (H16). */
 export default async function PageRelances(props: PageProps<"/parametrage/produits/[code]/relances">) {
@@ -22,72 +20,60 @@ export default async function PageRelances(props: PageProps<"/parametrage/produi
   const ecriture = peutAgir(await niveauDuProfil(utilisateur.profil, "PARAMETRER_PRODUITS"));
   const p = lu.enVigueur;
 
+  type Historique = (typeof lu.historique)[number];
+  const colonnesHistorique: ColonneTableau<Historique>[] = [
+    { cle: "dateEffet", entete: "Date d'effet", rendu: (h) => h.dateEffet },
+    { cle: "avis", entete: "Avis", rendu: (h) => `J-${h.valeur.delaiAvisJours}` },
+    { cle: "relances", entete: "Relances", rendu: (h) => h.valeur.niveaux.map((n) => `${n.niveau} : J+${n.jours} (${n.libelle})`).join(" ; ") },
+    { cle: "creePar", entete: "Saisi par", rendu: (h) => h.creePar },
+  ];
+  // Les cellules du formulaire portent des champs : le `Tableau` ne fait que les loger, les noms et valeurs sont ceux de l'ancien écran.
+  const colonnesNiveaux: ColonneTableau<number>[] = [
+    { cle: "niveau", entete: "Niveau", rendu: (i) => i },
+    {
+      cle: "jours",
+      entete: "Jours après l'échéance",
+      rendu: (i) => <Champ name={`jours${i}`} aria-label={`Jours du niveau ${i}`} defaultValue={p.niveaux[i - 1]?.jours ?? ""} inputMode="numeric" />,
+    },
+    {
+      cle: "libelle",
+      entete: "Libellé",
+      rendu: (i) => <Champ name={`libelle${i}`} aria-label={`Libellé du niveau ${i}`} defaultValue={p.niveaux[i - 1]?.libelle ?? ""} />,
+    },
+  ];
+
   return (
-    <main className="max-w-4xl">
-      <p className="mb-2 text-sm">
-        <Link href={`/parametrage/produits/${code}`} className="text-primary underline">← Produit {lu.produitCode}</Link>
-      </p>
-      <h1 className="mb-1 text-2xl font-semibold text-primary">Avis d&apos;échéance et relances — {lu.produitCode}</h1>
-      <p className="mb-6 text-sm text-neutral">
+    <main className="max-w-4xl space-y-6">
+      <EnTetePage
+        filAriane={[{ libelle: "Produits", href: "/parametrage/produits" }, { libelle: `Produit ${lu.produitCode}`, href: `/parametrage/produits/${code}` }, { libelle: "Relances" }]}
+        titre={`Avis d'échéance et relances — ${lu.produitCode}`}
+      />
+      <p className="text-sm text-muted-foreground">
         En vigueur aujourd&apos;hui{lu.parDefaut ? " (valeurs par défaut du CDC, jamais modifiées pour ce produit)" : ""} : avis à <strong>J-{p.delaiAvisJours}</strong> ;{" "}
         {p.niveaux.map((n) => `niveau ${n.niveau} à J+${n.jours} (${n.libelle})`).join(", ")}. Chaque niveau utilise le modèle Word de relance de
         ce niveau (Modèles Word, type « Relance »). Une modification s&apos;ajoute avec sa date d&apos;effet : jamais rétroactive.
       </p>
 
       {ecriture ? (
-        <section className="mb-8 rounded border border-border bg-surface p-5">
-          <h2 className="mb-3 text-lg font-semibold">Nouveaux paramètres</h2>
+        <Carte titre="Nouveaux paramètres">
           <FormulaireAction action={enregistrerLesRelances} libelleBouton="Enregistrer">
             <input type="hidden" name="produit" value={lu.produitCode} />
-            <div className="grid gap-x-6 sm:grid-cols-2">
-              <label className="mb-4 block text-sm font-medium">
-                Délai de l&apos;avis d&apos;échéance (jours avant l&apos;échéance)
-                <input name="delaiAvisJours" defaultValue={p.delaiAvisJours} inputMode="numeric" className={entree} required />
-              </label>
-              <label className="mb-4 block text-sm font-medium">
-                Date d&apos;effet (AAAA-MM-JJ)
-                <input name="dateEffet" defaultValue={aujourdhui()} className={entree} required />
-              </label>
+            <div className="mb-4 grid gap-x-6 gap-y-4 sm:grid-cols-2">
+              <Champ label="Délai de l'avis d'échéance (jours avant l'échéance)" name="delaiAvisJours" defaultValue={p.delaiAvisJours} inputMode="numeric" required />
+              <Champ label="Date d'effet (AAAA-MM-JJ)" name="dateEffet" defaultValue={aujourdhui()} required />
             </div>
-            <table className="mb-4 w-full border-collapse text-sm">
-              <thead>
-                <tr className="bg-primary text-left text-primary-foreground"><th className="p-2">Niveau</th><th className="p-2">Jours après l&apos;échéance</th><th className="p-2">Libellé</th></tr>
-              </thead>
-              <tbody>
-                {Array.from({ length: NIVEAUX_MAX }, (_, i) => i + 1).map((i) => (
-                  <tr key={i} className="border-b border-border">
-                    <td className="p-2">{i}</td>
-                    <td className="p-2"><input name={`jours${i}`} aria-label={`Jours du niveau ${i}`} defaultValue={p.niveaux[i - 1]?.jours ?? ""} inputMode="numeric" className={entree} /></td>
-                    <td className="p-2"><input name={`libelle${i}`} aria-label={`Libellé du niveau ${i}`} defaultValue={p.niveaux[i - 1]?.libelle ?? ""} className={entree} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="mb-3 text-sm text-neutral">Lignes vides ignorées ; les niveaux se suivent, chacun plus tardif que le précédent.</p>
+            <div className="mb-4">
+              <Tableau colonnes={colonnesNiveaux} lignes={Array.from({ length: NIVEAUX_MAX }, (_, i) => i + 1)} cleLigne={(i) => String(i)} legende="Niveaux de relance" zebre={false} />
+            </div>
+            <p className="mb-3 text-sm text-muted-foreground">Lignes vides ignorées ; les niveaux se suivent, chacun plus tardif que le précédent.</p>
           </FormulaireAction>
-        </section>
+        </Carte>
       ) : null}
 
-      <h2 className="mb-2 text-lg font-semibold">Historique</h2>
-      {lu.historique.length === 0 ? (
-        <p className="text-sm">Aucune modification : valeurs par défaut du CDC.</p>
-      ) : (
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="bg-primary text-left text-primary-foreground"><th className="p-2">Date d&apos;effet</th><th className="p-2">Avis</th><th className="p-2">Relances</th><th className="p-2">Saisi par</th></tr>
-          </thead>
-          <tbody>
-            {lu.historique.map((h) => (
-              <tr key={h.dateEffet} className="border-b border-border">
-                <td className="p-2">{h.dateEffet}</td>
-                <td className="p-2">J-{h.valeur.delaiAvisJours}</td>
-                <td className="p-2">{h.valeur.niveaux.map((n) => `${n.niveau} : J+${n.jours} (${n.libelle})`).join(" ; ")}</td>
-                <td className="p-2">{h.creePar}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <section className="space-y-3">
+        <h2 className="text-lg font-bold text-foreground">Historique</h2>
+        <Tableau colonnes={colonnesHistorique} lignes={lu.historique} cleLigne={(h) => h.dateEffet} messageVide="Aucune modification : valeurs par défaut du CDC." legende="Historique des paramètres de relance" />
+      </section>
     </main>
   );
 }

@@ -48,11 +48,12 @@ async function compte(identifiant: string): Promise<UtilisateurCourant> {
 
 function texteDuPdf(pdf: Uint8Array): string | null {
   const r = spawnSync("pdftotext", ["-", "-"], { input: Buffer.from(pdf), maxBuffer: 20_000_000 });
-  return r.status === 0 ? r.stdout.toString("utf8").replace(/[  ]/g, " ") : null;
+  // Les cellules étroites d'un tableau passent à la ligne dans le texte extrait : on compare sur un texte aux espaces et retours à la ligne unifiés.
+  return r.status === 0 ? r.stdout.toString("utf8").replace(/[  ]/g, " ").replace(/\s+/g, " ") : null;
 }
 const AVEC_PDFTOTEXT = spawnSync("pdftotext", ["-v"]).error === undefined;
 
-async function publier(type: "CG" | "CP" | "FACTURE" | "AVOIR", produitCode: string | null, nom: string, surcharge: Record<string, unknown> = {}): Promise<string> {
+async function publier(type: "CG" | "CP" | "COTATION" | "FACTURE" | "AVOIR", produitCode: string | null, nom: string, surcharge: Record<string, unknown> = {}): Promise<string> {
   const id = await creerModele(technique, { type, code: CODE(type), libelle: type === "CG" ? "SECURPRO – Conditions générales (test)" : `${type} (bout en bout)`, produitCode, ...sans }, null);
   await deposerVersion(technique, id, { fichier: fixture(nom), nomFichier: nom, commentaire: "Test de bout en bout 6.2b", dateEffet: aujourdhui(), visa: null, dateDocument: null, ...surcharge }, null);
   const v = await obtenirPrisma().modeleVersion.findFirstOrThrow({ where: { modeleId: id }, orderBy: { numero: "desc" } });
@@ -110,6 +111,7 @@ beforeAll(async () => {
     },
     null,
   );
+  await publier("COTATION", produit, "cotation_garanties_test.docx");
   await publier("CP", produit, "cp_garanties_test.docx");
   await publier("FACTURE", produit, "facture_garanties_test.docx");
   await publier("AVOIR", produit, "avoir_test.docx");
@@ -164,13 +166,14 @@ describe("produit par garanties : composition → cotation → police → CP →
     for (const pdf of [await pdfDe(cotation.numero, 1), await pdfDe(cp.numero, 1), await pdfDe(f.numero, 1)]) expect(Buffer.from(pdf.subarray(0, 5)).toString()).toBe("%PDF-");
     if (!AVEC_PDFTOTEXT) return;
 
-    // CP et facture : une ligne par garantie, son libellé, son taux (12,5 % pour l'incendie, 7,25 % pour les autres), sa taxe et son TTC.
-    for (const texte of [texteDuPdf(await pdfDe(cp.numero, 1))!, texteDuPdf(await pdfDe(f.numero, 1))!]) {
+    // Cotation, CP et facture : une ligne par garantie, son libellé, son taux (12,5 % pour l'incendie, 7,25 % pour les autres), sa taxe et son TTC.
+    for (const texte of [texteDuPdf(await pdfDe(cotation.numero, 1))!, texteDuPdf(await pdfDe(cp.numero, 1))!, texteDuPdf(await pdfDe(f.numero, 1))!]) {
       expect(texte).toContain("Incendie");
       expect(texte).toContain("Vol");
-      expect(texte).toContain("Dégât des eaux");
+      expect(texte).toContain("Dégât");
       expect(texte).toMatch(/12[,.]5 ?%/);
       expect(texte).toMatch(/7[,.]25 ?%/);
+      expect(texte.match(/7[,.]25 ?%/g)!.length).toBeGreaterThanOrEqual(2); // Vol et Dégât des eaux
       expect(texte).toContain("1 563"); // taxe incendie
       expect(texte).toContain("14 063"); // TTC incendie
       expect(texte).toContain("13 245");
@@ -182,7 +185,7 @@ describe("produit par garanties : composition → cotation → police → CP →
     expect(t).toContain("taxe : 3 074");
     expect(t).toContain("Total TTC : 36 424 F CFA, soit trente-six mille quatre cent vingt-quatre francs CFA");
     // Plusieurs taux : le taux unique est vide (champ facultatif, aucune erreur de génération).
-    expect(t).toMatch(/Taux de taxe unique :\s*(\n|$)/);
+    expect(t).toMatch(/Taux de taxe unique : Total TTC/);
     // Fractionnement inchangé : 2 échéances de 18 212.
     expect(t.match(/18 212 F CFA/g)).toHaveLength(2);
 

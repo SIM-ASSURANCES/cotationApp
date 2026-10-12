@@ -42,6 +42,9 @@ export function lireGaranties(texte: string): GarantieParametree[] {
 export function lireVersion(donnees: FormData): VersionSaisie {
   const colonne = (nom: string) => donnees.getAll(nom).map(String);
   const [libelles, taux, primes, modes, valeurs, agesMin, agesMax] = ["formule_libelle", "formule_taux", "formule_prime", "formule_mode", "formule_valeur", "formule_age_min", "formule_age_max"].map(colonne);
+  const vide = (v: string | undefined) => (v ?? "").trim() === "";
+  const ligneVide = (i: number) =>
+    vide(colonne("formule_code")[i]) && vide(libelles[i]) && vide(taux[i]) && vide(primes[i]) && (modes[i] ?? "AUCUN") === "AUCUN" && ["", "0"].includes((valeurs[i] ?? "").trim()) && vide(agesMin[i]) && vide(agesMax[i]);
   return {
     dateEffet: champ(donnees, "dateEffet"),
     arrondi: {
@@ -71,15 +74,20 @@ export function lireVersion(donnees: FormData): VersionSaisie {
       csModeleCode: champOuNull(donnees, "csModeleCode")?.toUpperCase() ?? null,
       csVisa: champOuNull(donnees, "csVisa"),
     },
-    formules: colonne("formule_code").map((code, i) => ({
-      code: code.trim().toUpperCase(),
-      libelle: libelles[i] ?? "",
-      tauxCouverture: mOuNull((taux[i] ?? "").trim() || null),
-      primeUnitaire: m(primes[i] ?? ""),
-      accessoireMode: (modes[i] ?? "AUCUN") as ModeAccessoire,
-      accessoireValeur: m((valeurs[i] ?? "0").trim() || "0"),
-      ageMin: age(agesMin[i]),
-      ageMax: age(agesMax[i]),
-    })),
+    // Une ligne de formule entièrement vide (la ligne affichée par défaut) est ignorée : en mode par garanties (6.2b), aucune formule n'est
+    // nécessaire ; en mode par formule, la validation exige au moins une formule.
+    formules: colonne("formule_code")
+      .map((code, i) => i)
+      .filter((i) => !ligneVide(i))
+      .map((i) => ({
+        code: colonne("formule_code")[i].trim().toUpperCase(),
+        libelle: libelles[i] ?? "",
+        tauxCouverture: mOuNull((taux[i] ?? "").trim() || null),
+        primeUnitaire: m(primes[i] ?? ""),
+        accessoireMode: (modes[i] ?? "AUCUN") as ModeAccessoire,
+        accessoireValeur: m((valeurs[i] ?? "0").trim() || "0"),
+        ageMin: age(agesMin[i]),
+        ageMax: age(agesMax[i]),
+      })),
   };
 }

@@ -75,6 +75,19 @@ describe("lireVersion : formulaire -> version saisie", () => {
 });
 
 describe("session 6.2b : garanties du produit", () => {
+  it("session 6.2b : la ligne de formule vide affichée par défaut est ignorée (mode par garanties sans formule) ; une ligne commencée est gardée, pour que la validation la signale", () => {
+    const d = new FormData();
+    for (const [k, v] of Object.entries({ dateEffet: "2026-01-01", precision: "1", sens: "PROCHE", niveau: "LIGNE", tranchesMax: "4", frais: "0", validiteMois: "3", formulesMax: "3", modeTarification: "GARANTIES" })) d.append(k, v);
+    const ligne = (code: string, libelle: string, prime: string) => {
+      d.append("formule_code", code); d.append("formule_libelle", libelle); d.append("formule_taux", ""); d.append("formule_prime", prime);
+      d.append("formule_mode", "AUCUN"); d.append("formule_valeur", "0"); d.append("formule_age_min", ""); d.append("formule_age_max", "");
+    };
+    ligne("", "", ""); // la ligne vide du formulaire
+    expect(lireVersion(d).formules).toEqual([]);
+    ligne("", "Solo", ""); // commencée : gardée (le code et la prime manquent : la validation le dit)
+    expect(lireVersion(d).formules.map((f) => f.libelle)).toEqual(["Solo"]);
+  });
+
   it("une garantie par ligne, « Libellé » ou « Libellé ; BRANCHE » (branche en majuscules), lignes vides ignorées", () => {
     expect(lireGaranties("Incendie ; incendie\n\n  Vol  \r\nBris de glace;IARD\n")).toEqual([
       { libelle: "Incendie", branche: "INCENDIE" },

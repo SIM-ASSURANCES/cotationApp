@@ -26,11 +26,11 @@ H82 à H86 et H88 validées ; H87 : « Abandonner le brouillon » (fait ici) ; l
 
 | Suite | Résultat |
 | --- | --- |
-| Unitaires (`npm test`) | RESULTAT_UNIT |
-| Intégration (`npm run test:integration`) | RESULTAT_INTEG |
-| Bout en bout (`npm run test:e2e`, vrai générateur) | RESULTAT_E2E |
-| Générateur (`pytest`) | RESULTAT_PYTEST |
-| `npm run lint`, `npm run typecheck`, `npm run build` | RESULTAT_QUALITE |
+| Unitaires (`npm test`) | **438 verts** (36 fichiers) |
+| Intégration (`npm run test:integration`) | **237 verts** (16 fichiers) |
+| Bout en bout (`npm run test:e2e`, vrai générateur) | **13 verts** (6 fichiers), dont `garanties.e2e.test.ts` (cotation composée → police → CP → facture → avoir, PDF relus par `pdftotext`) |
+| Générateur (`pytest`) | **231 verts** (dont 11 nouveaux : les trois modèles par garanties, une ligne par garantie avec son taux, taux global vide) |
+| `npm run lint`, `npm run typecheck`, `npm run build` | `npm run lint` sans avertissement, `npm run typecheck` propre, `npm run build` réussi |
 
 Cas des instructions couverts, chiffres inventés posés à la main :
 
@@ -71,9 +71,21 @@ Relecteurs indépendants par axe, puis un sceptique par constat : **46 constats 
 - H99 (abandon d'une demande « À valider » : son demandeur ou un profil qui peut décider), H100 (import en masse d'une police composée : colonne « formule » vide), H101 (modèles de cotation, CP et facture d'un produit par garanties : ils citent `garanties_souscrites[]`) : voir D32.
 - H89, H92 à H97 : voir D32.
 
+## Vérifié dans un navigateur
+
+Application construite (`npm run build`) et lancée contre une base de développement (comptes `test.*` du seed de développement, données inventées), pilotée par Playwright en 1 440 px et 390 px (script hors dépôt, 39 vérifications, captures relues) :
+
+- **Commercial** : formulaire d'une cotation par garanties (aucun bloc « Formules », aucune colonne « Formule » d'assuré), fiche « Prime à composer » (ni aperçu PDF, ni bouton « Soumettre »), liste (« À composer »), brouillon à formules d'un produit passé par garanties (« Brouillon à recréer », ni modification ni soumission, la page de modification renvoie à la fiche).
+- **Technique** : formulaire « Composer la prime » à trois lignes, motif, puis la fiche : 36 424 F, taxes 1 563 / 895 / 616 aux taux de chaque ligne, échéancier 12 141 / 12 141 / 12 142, « Prime composée par … ».
+- **Commercial, de nouveau** : « Soumettre (émettre) » → cotation émise avec son numéro, taux figés.
+- **Factures d'une police à garanties** : renouvellement et avenant non proposés (H90) ; facture en brouillon avec une ligne par garantie et son taux ; abandon (motif trop court refusé, puis « Abandonnée » avec son motif, plus de formulaire d'émission) ; une nouvelle facture peut être préparée.
+- **Version du produit** : liste des garanties et case « saisie libre ».
+
+Un **défaut d'écran** est sorti de cet essai (et d'aucun test) : la version d'un produit par garanties affichait une ligne de formule vide dont les champs étaient obligatoires, que le serveur n'ignorait pas : il fallait cliquer « Retirer » pour pouvoir enregistrer. Corrigé (champs obligatoires seulement une fois la ligne commencée ; ligne entièrement vide ignorée par le serveur, testé) et re-vérifié dans le navigateur.
+
 ## Non vérifié
 
-Les écrans (formulaire « Composer la prime », tableau des garanties, abandon d'un brouillon, version du produit avec la liste des garanties) n'ont pas été vus dans un navigateur : seul leur code a été relu et typé ; la logique est couverte par les tests de service. Le rendu de la facture et de la CP avec des modèles réels n'est pas essayé (modèles de test seulement).
+L'import en masse d'une police composée n'est testé que par les services (pas par l'écran) ; le rendu de la facture et de la CP avec des **modèles réels** n'est pas essayé (modèles de test seulement) ; aucune ouverture des PDF dans un lecteur graphique ; l'écran d'abandon n'a pas été vu sur téléphone.
 
 ## Pour Thierry : essai de la 6.2b
 

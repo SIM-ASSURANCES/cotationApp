@@ -580,3 +580,24 @@ Conséquences retenues pour le code (session 4.0) :
 | H89 à H101 (session 6.2b : voir D32), en particulier H90 (principe retenu : composition précédente proposée en brouillon et confirmée avec un motif, à mettre en œuvre en 6.2c ; en attendant, l'incorporation d'adhérents reste possible mais n'est pas facturée) et le taux de 12,5 % de l'incendie (date d'effet) | Thierry, puis Direction Technique | avant la recette |
 
 Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir), Q3 (plus de dossier partagé : D11), Q4 (`assures[].sexe` ajouté : D12), Q5 (Thierry balise d'abord, puis la Technique : D12), H6 (validité en mois : D10).
+
+## D33 — Refonte visuelle V2 : les pages métier prennent la bibliothèque d'interface
+
+- **Date** : 12/10/2026. Branche `refonte-v2`, **empilée sur `phase-6.2b-h98`** (elle-même sur `phase-6.2b`) : fusionner dans cet ordre. **Présentation seulement** : aucun changement dans `domaine/`, `serveur/`, le schéma Prisma, les migrations, le générateur, les droits ni la logique des Server Actions ; aucune dépendance npm (`git diff 3d7c80b..HEAD` sur ces dossiers : vide). Les 41 pages de `app/(protege)/` utilisent `EnTetePage`, `Carte`, `Tableau`, `PastilleStatut`, `Bandeau`, `LienBouton`, `ListeDefinitions` ; leurs formulaires gardent `FormulaireAction`, les mêmes `name` et le même envoi.
+- **Ajouts à la bibliothèque** (`composants/ui/`, à un seul endroit chacun) :
+  - `statuts.tsx` : **table unique** `TON_PAR_STATUT` (libellé affiché → ton, casse ignorée, complément après « – » ignoré, libellé inconnu = neutre) et `PastilleStatut`. Le ton ne porte jamais le sens seul : le libellé reste écrit.
+  - `LienBouton` (lien ayant l'aspect d'un `Bouton`), `Bandeau` (message info / succès / avertissement / danger, `role` adapté), `ListeDefinitions` (couples libellé / valeur).
+  - `stylesBouton.ts` : classes des boutons, **sans** `"use client"` ; `Bouton` (client) et `LienBouton` (serveur) s'en servent. Première version : `LienBouton` importait la fonction depuis le fichier client de `Bouton`, ce que Next interdit côté serveur (relecture, bloquant, corrigé).
+  - `Carte` accepte `titre`, `description`, `ton` ; `Tableau` accepte `zebre` (vrai par défaut) et sa zone défilante est `relative`.
+- **Écarts à valider par Thierry** :
+  - La table de la consigne (Brouillon, À valider, Émise, Acceptée, Refusée, Expirée, Annulée, Abandonnée, Payé, Partiellement payé, Non payé, PDF en attente, Publié, Soumis) est **étendue** aux libellés que les écrans affichaient déjà : Valide, Terminé, En cours, Traitement en cours, Contrôlé à confirmer, Abandonné, À faire, Produit, Déjà produit, Sans objet, En échec, Active / Actif, Désactivée / Désactivé, Verrouillé. Chaque ton se change dans la table, nulle part ailleurs.
+  - Un `Tableau` posé dans une `Carte` donne un cadre dans un cadre : accepté tel quel sur les fiches (cohérence avec le portail RH).
+  - **Zébrure désactivée** (`zebre={false}`) dans les tableaux qui contiennent des champs (droits, utilisateurs, formules, intermédiaires) : les champs ont un fond `primary-bg` et se confondraient avec une ligne teintée (règle « champs » de D30).
+  - Quelques textes ont changé pour les besoins de la mise en page : messages de tableau vide (`messageVide`), en-têtes de colonnes, « Derniers lots » de l'accueil présentés en tableau. Aucune donnée ni action n'a changé.
+  - Sur une version de produit en mode `GARANTIES`, le tableau des formules (toujours vide) n'est plus affiché.
+- **Règles tirées des défauts trouvés** (reprises dans `CLAUDE.md`) :
+  - Tout conteneur qui défile (`overflow-x-auto`) est `relative` : un `.sr-only` (position absolue) dans un conteneur non positionné élargit le document (12 pages débordaient à 390 px, 0 après correction).
+  - Une grille dont un enfant contient un tableau large déclare `grid-cols-1` (sinon la colonne s'élargit au contenu).
+  - Un `Bandeau` placé à côté d'un bouton passe en colonne sous `sm`.
+- **Revue contradictoire** : 5 relecteurs indépendants (un par lot). Aucune régression de comportement ; défauts réels corrigés avant commit : l'import serveur/client ci-dessus, statuts affichés sans ton, zébrure sur des lignes de champs, zones défilantes non positionnées, bandeau étroit sur mobile, zone d'envoi de la fiche cotation trop serrée sur mobile.
+- **Captures** : `docs/captures/refonte-v2/avant/` et `apres/`, 41 pages × 1440 px et 390 px (JPEG), données inventées. Chaque page « après » est chargée sans erreur HTTP, sans erreur de page et sans défilement horizontal.

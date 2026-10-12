@@ -23,6 +23,7 @@ Phases livrées, regroupées par lot du CDC (§17). Chaque phase a son compte re
 | Corrections | 6.0 | Réponses de la Technique : avoir sur facture payée, avance (trop-perçu), régime de taxe, numéros de certificat, intermédiaires, tâches d'import |
 | Corrections | 6.1 | Échéances payées en partie (statut « Partiellement payé »), avertissement sur les avances d'une facture annulée, script et guide de balisage des modèles réels |
 | Refonte visuelle | V1 | Apparence du portail RH : tokens, bibliothèque d'interface, coquille (barre latérale, barre du haut), connexion et page publique de vérification (D30) |
+| Refonte visuelle | V2 | Les 41 pages métier prennent la bibliothèque d'interface (`EnTetePage`, `Carte`, `Tableau`, table unique des statuts, `Bandeau`, `LienBouton`), sans changement de comportement (D33). **Branche `refonte-v2`, empilée sur `phase-6.2b-h98`, non fusionnée** |
 | Tarification par garanties | 6.2a | Mode de tarification d'une version de produit (`FORMULE` ou `GARANTIES`) : en mode `GARANTIES`, aucun montant automatique, le calcul est refusé (D31) |
 | Tarification par garanties | 6.2b | Composition manuelle de la prime par garantie (droit « Composer une prime », taxe par ligne selon sa branche, INCENDIE à 12,5 % et IARD à 7,25 %), `garanties_souscrites[]` dans les documents, abandon d'un brouillon de facture (D32). **Branche `phase-6.2b`, non fusionnée** |
 
@@ -133,7 +134,7 @@ Prérequis à fournir par l'administrateur :
 - Installation sans Docker : [docs/installation.md](docs/installation.md) ; déploiement : [docs/deploiement.md](docs/deploiement.md) ; [exigences pour le serveur](docs/exigences-serveur.md)
 - Cahier des charges : [docs/cdc.md](docs/cdc.md)
 - Aide à la rédaction des modèles Word : écran « Modèles › Aide » de l'application ([source](app/src/app/%28protege%29/modeles/aide/page.tsx)) ; [guide de balisage](docs/guide-balisage.md) (méthode, pièges, anomalies A1 à A20) et script `generateur/scripts/verifier_modele.py` qui vérifie un modèle avant son dépôt
-- Comptes rendus : [phase 2](docs/compte-rendu-phase-2.md), [3a](docs/compte-rendu-phase-3a.md), [3b](docs/compte-rendu-phase-3b.md), [4.0](docs/compte-rendu-phase-4.0.md), [4a](docs/compte-rendu-phase-4a.md), [4b](docs/compte-rendu-phase-4b.md), [5a](docs/compte-rendu-phase-5a.md), [5b](docs/compte-rendu-phase-5b.md), [6.0](docs/compte-rendu-phase-6.0.md), [6.1](docs/compte-rendu-phase-6.1.md), [refonte visuelle V1](docs/compte-rendu-refonte-v1.md), [6.2a](docs/compte-rendu-phase-6.2a.md), [6.2b](docs/compte-rendu-phase-6.2b.md)
+- Comptes rendus : [phase 2](docs/compte-rendu-phase-2.md), [3a](docs/compte-rendu-phase-3a.md), [3b](docs/compte-rendu-phase-3b.md), [4.0](docs/compte-rendu-phase-4.0.md), [4a](docs/compte-rendu-phase-4a.md), [4b](docs/compte-rendu-phase-4b.md), [5a](docs/compte-rendu-phase-5a.md), [5b](docs/compte-rendu-phase-5b.md), [6.0](docs/compte-rendu-phase-6.0.md), [6.1](docs/compte-rendu-phase-6.1.md), [refonte visuelle V1](docs/compte-rendu-refonte-v1.md), [refonte visuelle V2](docs/compte-rendu-refonte-v2.md), [6.2a](docs/compte-rendu-phase-6.2a.md), [6.2b](docs/compte-rendu-phase-6.2b.md)
 
 ## Règles du dépôt
 

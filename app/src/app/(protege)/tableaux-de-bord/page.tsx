@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { Bandeau, Bouton, Carte, CarteIndicateur, Champ, EnTetePage, tonDuStatut, Tableau, type ColonneTableau } from "@/composants/ui";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { LIBELLE_STATUT, STATUTS } from "@/domaine/cotation/statuts";
 import { DOCUMENTS, estTypeDocument } from "@/domaine/documents/emission";
@@ -9,25 +10,21 @@ import { tableauDeBord } from "@/serveur/tableaux-de-bord";
 import { ErreurAcces, ErreurMetier } from "@/serveur/types";
 
 const f = (m: string) => `${formaterMontant(montant(m))} F`;
-const entree = "mt-1 block rounded border border-border bg-surface px-3 py-2";
-const carte = "rounded border border-border p-4";
 
-function Transformation({ titre, lignes }: { titre: string; lignes: LigneTransformation[] }) {
+const TITRE_SOUS_SECTION = "mb-2 text-base font-semibold text-foreground";
+
+/** Taux de transformation d'un regroupement (produit, commercial, intermédiaire) : une ligne par clé. */
+function Transformation({ titre, entete, lignes }: { titre: string; entete: string; lignes: LigneTransformation[] }) {
+  const colonnes: ColonneTableau<LigneTransformation>[] = [
+    { cle: "cle", entete, rendu: (l) => l.cle },
+    { cle: "emises", entete: "Émises", alignement: "droite", rendu: (l) => l.emises },
+    { cle: "acceptees", entete: "Acceptées", alignement: "droite", rendu: (l) => l.acceptees },
+    { cle: "taux", entete: "Taux", alignement: "droite", rendu: (l) => (l.taux === null ? "—" : `${l.taux.replace(".", ",")} %`) },
+  ];
   return (
     <div>
-      <h3 className="mb-1 font-semibold">{titre}</h3>
-      {lignes.length === 0 ? (
-        <p className="text-sm">Aucune cotation émise sur la période.</p>
-      ) : (
-        <table className="w-full border-collapse text-sm">
-          <thead><tr className="bg-muted text-left"><th className="p-1" /><th className="p-1 text-right">Émises</th><th className="p-1 text-right">Acceptées</th><th className="p-1 text-right">Taux</th></tr></thead>
-          <tbody>
-            {lignes.map((l) => (
-              <tr key={l.cle} className="border-b border-border"><td className="p-1">{l.cle}</td><td className="p-1 text-right">{l.emises}</td><td className="p-1 text-right">{l.acceptees}</td><td className="p-1 text-right">{l.taux === null ? "—" : `${l.taux.replace(".", ",")} %`}</td></tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      <h3 className={TITRE_SOUS_SECTION}>{titre}</h3>
+      <Tableau legende={titre} lignes={lignes} cleLigne={(l) => l.cle} messageVide="Aucune cotation émise sur la période." colonnes={colonnes} />
     </div>
   );
 }
@@ -50,79 +47,106 @@ export default async function PageTableauxDeBord(props: PageProps<"/tableaux-de-
   const { cotations: c, facturation: fa, production: p } = t;
 
   return (
-    <main>
-      <h1 className="mb-1 text-2xl font-semibold text-primary">Tableaux de bord</h1>
-      <form className="mb-6 flex flex-wrap items-end gap-4 text-sm" method="get">
-        <label>Du (AAAA-MM-JJ)<input name="debut" defaultValue={t.periode.debut} className={entree} /></label>
-        <label>Au<input name="fin" defaultValue={t.periode.fin} className={entree} /></label>
-        <button type="submit" className="rounded bg-primary px-4 py-2 font-semibold text-primary-foreground">Afficher</button>
-        {erreur ? <p role="alert" className="text-danger">{erreur} Période par défaut affichée.</p> : null}
-      </form>
+    <main className="space-y-6">
+      <EnTetePage titre="Tableaux de bord" />
 
-      <section className={`${carte} mb-6`}>
-        <h2 className="mb-2 text-lg font-semibold">Cotations</h2>
-        <p className="mb-3 text-sm text-neutral">Créées du {t.periode.debut} au {t.periode.fin}, à leur statut d&apos;aujourd&apos;hui. Taux de transformation : cotations émises sur la période, acceptées à ce jour.</p>
-        <ul className="mb-4 flex flex-wrap gap-4 text-sm">
-          {STATUTS.map((s) => <li key={s}><strong>{c.parStatut[s]}</strong> {LIBELLE_STATUT[s]}</li>)}
-        </ul>
-        <div className="grid gap-6 md:grid-cols-3">
-          <Transformation titre="Par produit" lignes={c.transformation.parProduit} />
-          <Transformation titre="Par commercial (auteur de la cotation)" lignes={c.transformation.parCommercial} />
-          <Transformation titre="Par intermédiaire (une cotation compte pour chacun de ses intermédiaires)" lignes={c.transformation.parIntermediaire} />
+      <Carte>
+        <form className="flex flex-wrap items-end gap-4" method="get">
+          <div className="w-full sm:w-56">
+            <Champ label="Du (AAAA-MM-JJ)" name="debut" defaultValue={t.periode.debut} />
+          </div>
+          <div className="w-full sm:w-56">
+            <Champ label="Au" name="fin" defaultValue={t.periode.fin} />
+          </div>
+          <Bouton type="submit">Afficher</Bouton>
+        </form>
+        {erreur ? (
+          <Bandeau ton="danger" role="alert" className="mt-4">
+            {erreur} Période par défaut affichée.
+          </Bandeau>
+        ) : null}
+      </Carte>
+
+      <Carte
+        titre="Cotations"
+        description={`Créées du ${t.periode.debut} au ${t.periode.fin}, à leur statut d'aujourd'hui. Taux de transformation : cotations émises sur la période, acceptées à ce jour.`}
+      >
+        {/* Le ton de chaque indicateur vient de la table unique des statuts (ui/statuts.tsx), pas d'une table locale. */}
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          {STATUTS.map((s) => (
+            <CarteIndicateur key={s} icone="document" etiquette={LIBELLE_STATUT[s]} valeur={c.parStatut[s]} ton={tonDuStatut(LIBELLE_STATUT[s])} />
+          ))}
         </div>
-      </section>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+          <Transformation titre="Par produit" entete="Produit" lignes={c.transformation.parProduit} />
+          <Transformation titre="Par commercial (auteur de la cotation)" entete="Commercial" lignes={c.transformation.parCommercial} />
+          <Transformation titre="Par intermédiaire (une cotation compte pour chacun de ses intermédiaires)" entete="Intermédiaire" lignes={c.transformation.parIntermediaire} />
+        </div>
+      </Carte>
 
-      <section className={`${carte} mb-6`}>
-        <h2 className="mb-2 text-lg font-semibold">Facturation</h2>
-        <dl className="mb-4 grid gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
-          <div><dt className="inline font-medium">Émis sur la période (factures) : </dt><dd className="inline">{f(fa.emis)}</dd></div>
-          <div><dt className="inline font-medium">Avoirs sur la période : </dt><dd className="inline">{f(fa.avoirs)}</dd></div>
-          <div><dt className="inline font-medium">Encaissé sur la période : </dt><dd className="inline">{f(fa.encaisse)}</dd></div>
-          <div><dt className="inline font-medium">Restant dû à ce jour : </dt><dd className="inline">{f(fa.restantDu)}</dd></div>
-        </dl>
-        <div className="grid gap-6 md:grid-cols-2">
+      <Carte titre="Facturation">
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <CarteIndicateur icone="document" etiquette="Émis sur la période (factures)" valeur={f(fa.emis)} ton="info" />
+          <CarteIndicateur icone="recu" etiquette="Avoirs sur la période" valeur={f(fa.avoirs)} ton="neutre" />
+          <CarteIndicateur icone="portefeuille" etiquette="Encaissé sur la période" valeur={f(fa.encaisse)} ton="succes" />
+          <CarteIndicateur icone="horloge" etiquette="Restant dû à ce jour" valeur={f(fa.restantDu)} ton="avertissement" />
+        </div>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <div>
-            <h3 className="mb-1 font-semibold">Impayés par ancienneté (échéances échues)</h3>
-            <table className="w-full border-collapse text-sm">
-              <tbody>
-                {TRANCHES_ANCIENNETE.map((tr) => (
-                  <tr key={tr} className="border-b border-border"><td className="p-1">{LIBELLE_TRANCHE[tr]}</td><td className="p-1 text-right">{fa.impayes[tr].nombre} échéance(s)</td><td className="p-1 text-right">{f(fa.impayes[tr].montant)}</td></tr>
-                ))}
-              </tbody>
-            </table>
+            <h3 className={TITRE_SOUS_SECTION}>Impayés par ancienneté (échéances échues)</h3>
+            <Tableau
+              legende="Impayés par ancienneté"
+              lignes={TRANCHES_ANCIENNETE}
+              cleLigne={(tr) => tr}
+              colonnes={[
+                { cle: "tranche", entete: "Ancienneté", rendu: (tr) => LIBELLE_TRANCHE[tr] },
+                { cle: "nombre", entete: "Échéances", alignement: "droite", rendu: (tr) => `${fa.impayes[tr].nombre} échéance(s)` },
+                { cle: "montant", entete: "Montant", alignement: "droite", rendu: (tr) => f(fa.impayes[tr].montant) },
+              ]}
+            />
           </div>
           <div>
-            <h3 className="mb-1 font-semibold">Avis et relances produits sur la période</h3>
+            <h3 className={TITRE_SOUS_SECTION}>Avis et relances produits sur la période</h3>
             <p className="text-sm">Avis d&apos;échéance : {fa.avis}</p>
-            {fa.relancesParNiveau.length === 0 ? <p className="text-sm">Aucune relance.</p> : (
-              <ul className="list-disc pl-5 text-sm">{fa.relancesParNiveau.map((r) => <li key={r.niveau}>Niveau {r.niveau} : {r.nombre}</li>)}</ul>
+            {fa.relancesParNiveau.length === 0 ? (
+              <p className="text-sm">Aucune relance.</p>
+            ) : (
+              <ul className="list-disc pl-5 text-sm">
+                {fa.relancesParNiveau.map((r) => (
+                  <li key={r.niveau}>
+                    Niveau {r.niveau} : {r.nombre}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         </div>
-      </section>
+      </Carte>
 
-      <section className={carte}>
-        <h2 className="mb-2 text-lg font-semibold">Production</h2>
-        <div className="grid gap-6 md:grid-cols-2">
+      <Carte titre="Production">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <div>
-            <h3 className="mb-1 font-semibold">Documents émis par type et par mois</h3>
-            {p.documents.length === 0 ? <p className="text-sm">Aucun document émis sur la période.</p> : (
-              <table className="w-full border-collapse text-sm">
-                <thead><tr className="bg-muted text-left"><th className="p-1">Mois</th><th className="p-1">Type</th><th className="p-1 text-right">Nombre</th></tr></thead>
-                <tbody>
-                  {p.documents.map((d) => (
-                    <tr key={`${d.mois}-${d.type}`} className="border-b border-border"><td className="p-1">{d.mois}</td><td className="p-1">{estTypeDocument(d.type) ? DOCUMENTS[d.type].libelle : d.type}</td><td className="p-1 text-right">{d.nombre}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+            <h3 className={TITRE_SOUS_SECTION}>Documents émis par type et par mois</h3>
+            <Tableau
+              legende="Documents émis par type et par mois"
+              lignes={p.documents}
+              cleLigne={(d) => `${d.mois}-${d.type}`}
+              messageVide="Aucun document émis sur la période."
+              colonnes={[
+                { cle: "mois", entete: "Mois", rendu: (d) => d.mois },
+                { cle: "type", entete: "Type", rendu: (d) => (estTypeDocument(d.type) ? DOCUMENTS[d.type].libelle : d.type) },
+                { cle: "nombre", entete: "Nombre", alignement: "droite", rendu: (d) => d.nombre },
+              ]}
+            />
           </div>
           <div>
-            <h3 className="mb-1 font-semibold">Imports en masse confirmés sur la période</h3>
-            <p className="text-sm">{p.imports.lots} import(s) : {p.imports.traites} certificat(s) produit(s), {p.imports.enErreur} ligne(s) en erreur, {p.imports.enEchec} en échec.</p>
+            <h3 className={TITRE_SOUS_SECTION}>Imports en masse confirmés sur la période</h3>
+            <p className="text-sm">
+              {p.imports.lots} import(s) : {p.imports.traites} certificat(s) produit(s), {p.imports.enErreur} ligne(s) en erreur, {p.imports.enEchec} en échec.
+            </p>
           </div>
         </div>
-      </section>
+      </Carte>
     </main>
   );
 }

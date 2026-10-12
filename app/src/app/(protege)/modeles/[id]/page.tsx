@@ -106,7 +106,7 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
             </div>
 
             {v.peutPublier ? (
-              <div className="mt-4 grid gap-4 rounded bg-muted p-3 sm:grid-cols-2">
+              <div className="mt-4 grid gap-4 rounded border border-border bg-surface p-3 sm:grid-cols-2">
                 <FormulaireAction action={publierUneVersion} libelleBouton="Publier">
                   <input type="hidden" name="versionId" value={v.id} />
                   <input type="hidden" name="modeleId" value={m.id} />
@@ -124,7 +124,7 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
       </div>
 
       {m.droits.deposer ? (
-        <section className="max-w-2xl rounded border border-border bg-muted p-5">
+        <section className="max-w-2xl rounded border border-border bg-surface p-5">
           <h2 className="mb-1 text-lg font-semibold">Déposer une nouvelle version</h2>
           <p className="mb-4 text-sm text-neutral">
             Le fichier est contrôlé avant d'être enregistré (balises du dictionnaire, blocs bien fermés, champs Word, balises coupées…).

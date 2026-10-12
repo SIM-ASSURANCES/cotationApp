@@ -42,7 +42,7 @@ export default async function PageTaxes() {
       </p>
 
       {peutAgir(niveau) ? (
-        <section className="mb-8 max-w-md rounded border border-border bg-muted p-5">
+        <section className="mb-8 max-w-md rounded border border-border bg-surface p-5">
           <h2 className="mb-3 text-lg font-semibold">Ajouter une version de taux</h2>
           <FormulaireAction action={creerUneTaxe} libelleBouton="Ajouter">
             <label className="mb-4 block text-sm font-medium">

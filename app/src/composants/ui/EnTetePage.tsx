@@ -17,7 +17,7 @@ export function EnTetePage({ titre, sousTitre, actions, filAriane }: { titre: st
                 <li key={`${miette.libelle}-${i}`} className="flex items-center gap-1">
                   {i > 0 ? <Icone nom="chevron-droite" className="size-3.5" /> : null}
                   {miette.href ? (
-                    <Link href={miette.href} className="transition-colors hover:text-foreground">
+                    <Link href={miette.href} className="transition-colors duration-150 ease-out-strong hover:text-foreground">
                       {miette.libelle}
                     </Link>
                   ) : (

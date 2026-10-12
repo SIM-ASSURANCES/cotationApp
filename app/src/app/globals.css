@@ -44,7 +44,7 @@
   --color-danger-bg: #ffebeb;
   --color-danger-border: #ffb3b3;
 
-  /* warning dérive de l'orange « Accident » (3,15:1 avec du blanc) : assombri, 6,7:1 sur blanc. */
+  /* warning dérive de l'orange « Accident » (3,15:1 avec du blanc) : assombri, 5,1:1 sur blanc et 4,7:1 sur warning-bg. */
   --color-warning: #bf470c;
   --color-warning-bg: #fef3ed;
   --color-warning-border: #fbd1bd;
@@ -142,29 +142,40 @@ body {
   font-family: var(--font-sans);
 }
 
-/* Anneau de focus clavier, visible sur fond blanc comme sur fond bleu. */
-:focus-visible {
-  outline: 3px solid var(--color-sim-blue-light);
-  outline-offset: 2px;
+/* Calque « base » : ces règles passent APRÈS les utilitaires dans l'ordre de priorité, donc une classe (focus:outline-danger, shadow-none…)
+   peut toujours les surcharger. Écrites hors de tout calque, elles battraient les classes Tailwind. */
+@layer base {
+  /* Anneau de focus clavier : le bleu principal, 8,45:1 sur blanc (WCAG 1.4.11 : 3:1 au moins). Sur un fond bleu (en-tête du tiroir),
+     ajouter focus-visible:outline-primary-foreground. */
+  :focus-visible {
+    outline: 3px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  /* La barre du haut est collante : sans cette marge, un élément focalisé au clavier peut se retrouver entièrement caché dessous
+     (WCAG 2.4.11). 8 rem couvrent la barre (4 rem) et l'alerte de stockage sur deux lignes. */
+  html {
+    scroll-padding-top: 8rem;
+  }
 }
 
-/* Ombres « élevées » teintées du bleu principal, réservées aux surfaces de contenu (cartes, panneaux), jamais aux
-   boutons ni aux champs. Classes ordinaires : à écrire telles quelles, sans préfixe de variante (hover:…). */
-.shadow-elevated {
+/* Ombres « élevées » teintées du bleu principal, réservées aux surfaces de contenu (cartes, panneaux), jamais aux boutons ni aux
+   champs. @utility : elles rejoignent le calque des utilitaires (surchargeables, utilisables avec hover: et motion-safe:). */
+@utility shadow-elevated {
   box-shadow:
     0 1px 2px rgba(0, 75, 156, 0.06),
     0 10px 24px -8px rgba(0, 75, 156, 0.16);
 }
-.shadow-elevated-lg {
+@utility shadow-elevated-lg {
   box-shadow:
     0 2px 4px rgba(0, 75, 156, 0.08),
     0 18px 36px -10px rgba(0, 75, 156, 0.22);
 }
 
-/* Entrée en fondu avec léger décalage vertical (carte de connexion, bandeaux d'erreur). Neutralisée sous
-   prefers-reduced-motion : le contenu s'affiche directement dans son état final. */
-@media (prefers-reduced-motion: no-preference) {
-  .animate-fade-in-up {
+/* Entrée en fondu avec léger décalage vertical (carte de connexion, bandeaux d'erreur). Neutralisée sous prefers-reduced-motion :
+   le contenu s'affiche directement dans son état final. */
+@utility animate-fade-in-up {
+  @media (prefers-reduced-motion: no-preference) {
     animation: fade-in-up 0.25s var(--ease-out-strong) both;
   }
 }
@@ -180,10 +191,10 @@ body {
   }
 }
 
-/* Fondu pur (voile du tiroir mobile, panneaux repliables) : une simple variation d'opacité, tolérée même en mode
-   « mouvement réduit », mais coupée quand même pour ceux qui le demandent. */
-@media (prefers-reduced-motion: no-preference) {
-  .animate-fade-in {
+/* Fondu pur (voile du tiroir mobile, panneaux repliables) : une simple variation d'opacité, coupée tout de même pour ceux qui
+   demandent un mouvement réduit. */
+@utility animate-fade-in {
+  @media (prefers-reduced-motion: no-preference) {
     animation: fade-in 0.2s ease both;
   }
 }

@@ -21,7 +21,7 @@ export default async function PageBranches() {
       </p>
 
       {peutModifier ? (
-        <section className="mb-8 max-w-md rounded border border-border bg-muted p-5">
+        <section className="mb-8 max-w-md rounded border border-border bg-surface p-5">
           <h2 className="mb-3 text-lg font-semibold">Ajouter une branche</h2>
           <FormulaireAction action={creerUneBranche} libelleBouton="Ajouter">
             <Champ nom="code" libelle="Code (ex. SANTE, MOTO)" autoComplete="off" />

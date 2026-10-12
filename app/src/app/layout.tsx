@@ -14,8 +14,8 @@ const montserrat = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "SIM Documents",
-  description: "Génération des documents d'assurance de SIM Assurances CI",
+  title: "SIM Assurances — Documents",
+  description: "Module de génération des documents",
   robots: { index: false, follow: false }, // application interne : à l'écart des moteurs de recherche
 };
 

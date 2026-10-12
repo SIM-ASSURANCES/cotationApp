@@ -33,7 +33,7 @@ export default async function PageDocuments(props: PageProps<"/documents">) {
         Chaque document émis est conservé tel quel sur le stockage persistant, jamais écrasé : une réédition est une nouvelle version.
         Son empreinte est vérifiée à chaque téléchargement.
       </p>
-      <form method="get" className="mb-6 grid max-w-5xl gap-x-4 gap-y-2 rounded border border-border bg-muted p-4 text-sm sm:grid-cols-3">
+      <form method="get" className="mb-6 grid max-w-5xl gap-x-4 gap-y-2 rounded border border-border bg-surface p-4 text-sm sm:grid-cols-3">
         <label>N° de police<input name="police" defaultValue={filtres.policeNumero} className={entree} /></label>
         <label>N° du document<input name="numero" defaultValue={filtres.numero} className={entree} /></label>
         <label>Client (nom ou raison sociale)<input name="client" defaultValue={filtres.client} className={entree} /></label>

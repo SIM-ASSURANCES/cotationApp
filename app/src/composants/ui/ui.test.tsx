@@ -11,13 +11,20 @@ const rendre = (element: React.ReactElement) => renderToStaticMarkup(element);
 describe("Champ, ZoneTexte, ListeDeroulante : mêmes attributs qu'un champ natif (compatibles avec FormulaireAction)", () => {
   it("Champ : étiquette liée au champ, astérisque rouge si obligatoire, name / defaultValue / autoComplete transmis", () => {
     const html = rendre(<Champ label="Identifiant" name="identifiant" required autoComplete="username" defaultValue="abc" />);
-    expect(html).toMatch(/<label for="([^"]+)"[^>]*>Identifiant<span class="text-danger"> \*<\/span><\/label>/);
+    expect(html).toMatch(/<label for="([^"]+)"[^>]*>Identifiant<span aria-hidden="true" class="text-danger"> \*<\/span><\/label>/);
     const id = /<label for="([^"]+)"/.exec(html)![1];
     expect(html).toContain(`id="${id}"`);
     expect(html).toContain('name="identifiant"');
     expect(html).toMatch(/autocomplete="username"/i);
     expect(html).toContain('value="abc"');
     expect(html).toContain("required");
+  });
+
+  it("Champ : l'astérisque est décoratif (aria-hidden), 16 px sous sm (pas de zoom d'iOS), jamais un fond de panneau", () => {
+    const html = rendre(<Champ label="Nom" name="nom" required />);
+    expect(html).toContain('aria-hidden="true" class="text-danger"');
+    expect(html).toContain("text-base");
+    expect(html).toContain("sm:text-sm");
   });
 
   it("Champ : pas d'astérisque si facultatif ; erreur → aria-invalid et message relié par aria-describedby ; aide sans aria-invalid", () => {
@@ -122,6 +129,8 @@ describe("Tableau", () => {
     expect(html.match(/<tr/g)).toHaveLength(3); // en-tête + 2 lignes
     expect(html).toMatch(/text-right tabular-nums[^>]*>100</);
     expect(html).toContain('<caption class="sr-only">Factures</caption>');
+    // Région défilante focalisable au clavier (sinon un tableau plus large que l'écran ne se parcourt pas sans souris).
+    expect(html).toMatch(/<div tabindex="0" role="region" aria-label="Factures"/i);
   });
 
   it("sans ligne : l'état vide remplace le tableau", () => {

@@ -21,7 +21,7 @@ export default async function PageProduits() {
       </p>
 
       {peutAgir(niveau) ? (
-        <section className="mb-8 max-w-md rounded border border-border bg-muted p-5">
+        <section className="mb-8 max-w-md rounded border border-border bg-surface p-5">
           <h2 className="mb-3 text-lg font-semibold">Créer un produit</h2>
           <FormulaireAction action={creerUnProduit} libelleBouton="Créer">
             <Champ nom="code" libelle="Code (ex. RELAXSANTE)" autoComplete="off" />

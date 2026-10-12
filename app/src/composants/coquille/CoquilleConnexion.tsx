@@ -25,7 +25,7 @@ export function CoquilleConnexion({ children, pied, largeur = "md" }: { children
           <Image src="/logo-sim-couleur.svg" alt="SIM Assurances" width={176} height={26} priority />
           {children}
         </div>
-        {pied ? <div className={`w-full ${largeur === "lg" ? "max-w-xl" : "max-w-md"}`}>{pied}</div> : null}
+        {pied ? <footer className={`w-full ${largeur === "lg" ? "max-w-xl" : "max-w-md"}`}>{pied}</footer> : null}
       </div>
     </div>
   );

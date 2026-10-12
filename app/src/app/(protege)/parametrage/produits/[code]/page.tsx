@@ -86,7 +86,7 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
       </p>
 
       {peutAgir(niveau) ? (
-        <section className="mb-8 rounded border border-border bg-muted p-5">
+        <section className="mb-8 rounded border border-border bg-surface p-5">
           <h2 className="mb-1 text-lg font-semibold">Ajouter une version</h2>
           <p className="mb-4 text-sm text-neutral">
             Une version en vigueur ne se modifie jamais : on en ajoute une avec sa date d'effet

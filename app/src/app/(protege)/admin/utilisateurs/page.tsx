@@ -27,7 +27,7 @@ export default async function PageUtilisateurs() {
     <main>
       <h1 className="mb-6 text-2xl font-semibold text-primary">Utilisateurs</h1>
 
-      <section className="mb-10 max-w-md rounded border border-border bg-muted p-5">
+      <section className="mb-10 max-w-md rounded border border-border bg-surface p-5">
         <h2 className="mb-3 text-lg font-semibold">Créer un utilisateur</h2>
         <FormulaireAction action={creerUnUtilisateur} libelleBouton="Créer">
           <Champ nom="identifiant" libelle="Identifiant (3 à 64 caractères : lettres, chiffres, . _ - @)" autoComplete="off" />
@@ -57,8 +57,8 @@ export default async function PageUtilisateurs() {
               <tr key={u.id} className="border-b border-border align-top">
                 <td className="p-2">
                   <strong>{u.identifiant}</strong>
-                  {!u.actif ? <span className="ml-2 rounded bg-neutral-bg px-1 text-xs">désactivé</span> : null}
-                  {u.verrouille ? <span className="ml-2 rounded bg-warning-bg px-1 text-xs">verrouillé</span> : null}
+                  {!u.actif ? <span className="ml-2 rounded-full border border-neutral-border bg-neutral-bg px-2 py-0.5 text-xs font-medium text-neutral">désactivé</span> : null}
+                  {u.verrouille ? <span className="ml-2 rounded-full border border-warning-border bg-warning-bg px-2 py-0.5 text-xs font-medium text-warning">verrouillé</span> : null}
                 </td>
                 <td className="p-2">
                   <FormulaireAction action={modifierUnUtilisateur} libelleBouton="Enregistrer" discret className="flex flex-wrap items-center gap-2">

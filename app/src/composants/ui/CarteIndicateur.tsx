@@ -76,7 +76,7 @@ export function CarteIndicateur({
       >
         {filet}
         {contenu}
-        <span className="mt-auto flex items-center gap-1 pt-3 text-xs font-semibold text-muted-foreground transition-colors duration-200 group-hover:text-primary">
+        <span className="mt-auto flex items-center gap-1 pt-3 text-xs font-semibold text-muted-foreground transition-colors duration-200 ease-out-strong group-hover:text-primary">
           Voir le détail
           <Icone nom="fleche-haut-droite" className="size-3" />
         </span>

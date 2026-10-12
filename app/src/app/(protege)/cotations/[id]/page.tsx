@@ -72,7 +72,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         <span className="rounded bg-muted px-3 py-1 text-sm font-semibold">{LIBELLE_STATUT[c.statutEffectif]}</span>
       </div>
       {c.filigrane ? (
-        <p role="alert" className="mb-4 rounded border-2 border-danger-border p-3 text-center text-2xl font-bold tracking-widest text-danger">
+        <p role="alert" className="mb-4 rounded border-2 border-danger bg-danger-bg p-3 text-center text-2xl font-bold tracking-widest text-danger">
           {c.filigrane}
         </p>
       ) : null}

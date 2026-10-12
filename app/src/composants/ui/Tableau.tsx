@@ -39,7 +39,8 @@ export function Tableau<T>({
     );
   }
   return (
-    <div className="max-h-[calc(100vh-14rem)] overflow-auto rounded-md border border-border shadow-elevated">
+    // Région défilante : focalisable au clavier, sinon un tableau plus large que l'écran ne se parcourt pas sans souris.
+    <div tabIndex={0} role="region" aria-label={legende ?? "Tableau"} className="max-h-[calc(100vh-14rem)] overflow-auto rounded-md border border-border shadow-elevated">
       <table className="w-full min-w-full border-separate border-spacing-0 text-sm">
         {legende ? <caption className="sr-only">{legende}</caption> : null}
         <thead>

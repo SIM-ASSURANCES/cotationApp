@@ -83,7 +83,7 @@ export default async function PageModeles() {
 
       <div className="grid gap-8 lg:grid-cols-2">
         {peutAgir(depot) ? (
-          <section className="rounded border border-border bg-muted p-5">
+          <section className="rounded border border-border bg-surface p-5">
             <h2 className="mb-3 text-lg font-semibold">Créer un modèle</h2>
             <FormulaireAction action={creerUnModele} libelleBouton="Créer, puis déposer le fichier">
               <label className="mb-4 block text-sm font-medium">
@@ -133,7 +133,7 @@ export default async function PageModeles() {
           </section>
         ) : null}
 
-        <section className="rounded border border-border bg-muted p-5">
+        <section className="rounded border border-border bg-surface p-5">
           <h2 className="mb-1 text-lg font-semibold">Listes longues (CDC §6.5)</h2>
           <p className="mb-3 text-sm text-neutral">
             Au-delà de <strong>{seuil}</strong> lignes, une liste (assurés, bénéficiaires, formules, échéances) est remplacée dans le corps

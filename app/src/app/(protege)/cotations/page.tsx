@@ -9,12 +9,12 @@ import { exigerDroit } from "@/serveur/session";
 
 const formatDate = new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeZone: "Africa/Abidjan" });
 const COULEUR: Record<string, string> = {
-  BROUILLON: "bg-neutral-bg",
-  A_VALIDER: "bg-warning-bg",
-  EMISE: "bg-primary-bg",
-  ACCEPTEE: "bg-success-bg",
-  REFUSEE: "bg-danger-bg",
-  EXPIREE: "bg-neutral-bg",
+  BROUILLON: "border border-neutral-border bg-neutral-bg text-neutral",
+  A_VALIDER: "border border-warning-border bg-warning-bg text-warning",
+  EMISE: "border border-primary-border bg-primary-bg text-primary",
+  ACCEPTEE: "border border-success-border bg-success-bg text-success",
+  REFUSEE: "border border-danger-border bg-danger-bg text-danger",
+  EXPIREE: "border border-neutral-border bg-neutral-bg text-neutral",
 };
 
 export default async function PageCotations(props: PageProps<"/cotations">) {
@@ -68,7 +68,7 @@ export default async function PageCotations(props: PageProps<"/cotations">) {
                   </Link>
                 </td>
                 <td className="p-2">
-                  <span className={`rounded px-2 py-0.5 text-xs font-medium ${COULEUR[c.statut]}`}>{LIBELLE_STATUT[c.statut]}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${COULEUR[c.statut]}`}>{LIBELLE_STATUT[c.statut]}</span>
                 </td>
                 <td className="p-2">{c.produit}</td>
                 <td className="p-2">{c.souscripteur}</td>

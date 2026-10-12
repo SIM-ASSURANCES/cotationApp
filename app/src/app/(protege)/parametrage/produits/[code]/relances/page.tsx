@@ -35,7 +35,7 @@ export default async function PageRelances(props: PageProps<"/parametrage/produi
       </p>
 
       {ecriture ? (
-        <section className="mb-8 rounded border border-border bg-muted p-5">
+        <section className="mb-8 rounded border border-border bg-surface p-5">
           <h2 className="mb-3 text-lg font-semibold">Nouveaux paramètres</h2>
           <FormulaireAction action={enregistrerLesRelances} libelleBouton="Enregistrer">
             <input type="hidden" name="produit" value={lu.produitCode} />

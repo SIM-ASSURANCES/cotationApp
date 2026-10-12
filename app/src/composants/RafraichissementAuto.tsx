@@ -23,7 +23,7 @@ export function BarreProgression({ faits, total, libelle }: { faits: number; tot
         {libelle} : {faits} / {total} ({pourcent} %)
       </div>
       <div role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={faits} aria-label={libelle} className="h-3 w-full max-w-xl overflow-hidden rounded bg-muted">
-        <div className="h-3 bg-primary transition-all" style={{ width: `${pourcent}%` }} />
+        <div className="h-3 bg-primary motion-safe:transition-[width] motion-safe:duration-300 motion-safe:ease-out-strong" style={{ width: `${pourcent}%` }} />
       </div>
     </div>
   );

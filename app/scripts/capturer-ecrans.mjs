@@ -5,8 +5,9 @@
 // Usage :
 //   node scripts/capturer-ecrans.mjs <url-de-base> <dossier-de-sortie> <config.json> [--apres]
 // config.json (HORS du dépôt, avec des données de test inventées uniquement) :
-//   { "mdp": "…", "comptes": { "technique": "id1", "motDePasseAChanger": "id2", "commercial": "id3" },
+//   { "mdp": "…", "produit": "CODE_PRODUIT", "comptes": { "technique": "id1", "motDePasseAChanger": "id2", "commercial": "id3", "admin": "id4" },
 //     "jetons": { "valide": "…", "annule": "…", "expire": "…", "inconnu": "…" } }
+// "admin" (facultatif) : compte Admin système ; la capture « alerte-stockage » exige une écriture différée en base (T14).
 // --apres ajoute les captures de ce qui n'existait pas avant : barre latérale repliée, tiroir mobile, menu du profil.
 // Les animations sont coupées (prefers-reduced-motion) pour que les captures soient reproductibles.
 import { mkdirSync, readFileSync } from "node:fs";
@@ -104,6 +105,8 @@ for (const taille of TAILLES) {
   await page.goto(`${base}/cotations`);
   await photographier(page, "cotations-liste", taille);
   await page.goto(`${base}/cotations/nouvelle`);
+  await photographier(page, "cotation-choix-produit", taille);
+  await page.goto(`${base}/cotations/nouvelle?produit=${encodeURIComponent(config.produit)}`);
   await photographier(page, "cotation-formulaire", taille);
   await page.goto(`${base}/factures`);
   await photographier(page, "factures-liste", taille);
@@ -127,6 +130,16 @@ for (const taille of TAILLES) {
     await photographier(page, "menu-profil", taille, { pleinePage: false });
   }
   await ctx.close();
+
+  // --- Alerte de stockage (T14) : visible de l'administrateur seulement, tant qu'une écriture attend
+  if (config.comptes.admin) {
+    ctx = await contexte(taille);
+    page = await ctx.newPage();
+    await seConnecter(page, config.comptes.admin);
+    await page.goto(`${base}/`);
+    await photographier(page, "alerte-stockage-admin", taille, { pleinePage: false });
+    await ctx.close();
+  }
 }
 
 await navigateur.close();

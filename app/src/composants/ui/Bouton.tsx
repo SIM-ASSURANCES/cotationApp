@@ -38,7 +38,7 @@ export function Bouton({
       disabled={disabled || enAttente}
       aria-busy={enAttente}
       className={cx(
-        "inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-[background-color,color,transform] duration-150 ease-out-strong",
+        "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-[background-color,color,transform] duration-150 ease-out-strong sm:min-h-0",
         "motion-safe:active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-60 disabled:active:scale-100",
         CLASSES_VARIANTE[variante],
         className,

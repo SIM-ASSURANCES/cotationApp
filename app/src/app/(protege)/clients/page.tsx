@@ -23,7 +23,7 @@ export default async function PageClients() {
         Clients enregistrés, que l'on peut choisir à la cotation. Un prospect, lui, se saisit librement sur la cotation (CDC §9.1).
       </p>
       {peutAgir(niveau) ? (
-        <section className="mb-8 max-w-4xl rounded border border-border bg-muted p-5">
+        <section className="mb-8 max-w-4xl rounded border border-border bg-surface p-5">
           <h2 className="mb-3 text-lg font-semibold">Ajouter un client</h2>
           <FormulaireAction action={creerUnClient} libelleBouton="Ajouter">
             <label className="mb-4 block text-sm font-medium">

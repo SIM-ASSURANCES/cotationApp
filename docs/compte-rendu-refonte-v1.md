@@ -31,7 +31,7 @@ Quatre relecteurs indépendants ont relu le travail sans le modifier. Ils n'ont 
 | --- | --- |
 | Unitaires (`npm test`) | 401 verts (333 avant) : navigation (27), anti-couleurs (3), proxy (20), bibliothèque d'interface (19) |
 | Intégration (`npm run test:integration`) | 176 verts (inchangé) |
-| Bout en bout (`npm run test:e2e`, vrai générateur) | en cours au moment de ce commit (voir le commit suivant) |
+| Bout en bout (`npm run test:e2e`, vrai générateur) | 12 verts (5 fichiers), lancés sur le commit de la V1 une fois les corrections de la revue appliquées (inchangé) |
 | Générateur (`pytest`) | 220 verts (inchangé) |
 | `npm run lint`, `npm run typecheck`, `npm run build` | propres |
 

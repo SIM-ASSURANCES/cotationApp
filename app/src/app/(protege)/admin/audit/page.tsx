@@ -25,14 +25,14 @@ export default async function PageAudit(props: PageProps<"/admin/audit">) {
 
   return (
     <main>
-      <h1 className="mb-2 text-2xl font-semibold text-sim-bleu">Journal d'audit</h1>
-      <p className="mb-4 max-w-3xl text-sm text-zinc-700">
+      <h1 className="mb-2 text-2xl font-semibold text-primary">Journal d'audit</h1>
+      <p className="mb-4 max-w-3xl text-sm text-neutral">
         Lecture seule : le journal ne peut être ni modifié ni effacé, y compris par l'application.
       </p>
       <form method="get" className="mb-4 flex flex-wrap items-center gap-2 text-sm">
         <label>
           Action{" "}
-          <select name="action" defaultValue={actionConnue ?? ""} className="rounded border border-bordure bg-white px-2 py-1">
+          <select name="action" defaultValue={actionConnue ?? ""} className="rounded border border-border bg-surface px-2 py-1">
             <option value="">Toutes</option>
             {ACTIONS_AUDIT.map((a) => (
               <option key={a} value={a}>
@@ -41,7 +41,7 @@ export default async function PageAudit(props: PageProps<"/admin/audit">) {
             ))}
           </select>
         </label>
-        <button type="submit" className="rounded border border-sim-bleu px-3 py-1 font-medium text-sim-bleu hover:bg-surface">
+        <button type="submit" className="rounded border border-primary px-3 py-1 font-medium text-primary hover:bg-muted">
           Filtrer
         </button>
       </form>
@@ -49,7 +49,7 @@ export default async function PageAudit(props: PageProps<"/admin/audit">) {
       <div className="overflow-x-auto">
         <table className="w-full min-w-[60rem] border-collapse text-sm">
           <thead>
-            <tr className="bg-sim-bleu text-left text-white">
+            <tr className="bg-primary text-left text-primary-foreground">
               <th className="p-2">Date</th>
               <th className="p-2">Utilisateur</th>
               <th className="p-2">Action</th>
@@ -60,7 +60,7 @@ export default async function PageAudit(props: PageProps<"/admin/audit">) {
           </thead>
           <tbody>
             {lignes.map((l) => (
-              <tr key={l.id} className="border-b border-bordure align-top">
+              <tr key={l.id} className="border-b border-border align-top">
                 <td className="p-2 whitespace-nowrap">{formatDate.format(l.horodatage)}</td>
                 <td className="p-2">{l.utilisateur ?? "—"}</td>
                 <td className="p-2 font-medium">{l.action}</td>
@@ -73,7 +73,7 @@ export default async function PageAudit(props: PageProps<"/admin/audit">) {
             ))}
             {lignes.length === 0 ? (
               <tr>
-                <td colSpan={6} className="p-4 text-center text-zinc-600">
+                <td colSpan={6} className="p-4 text-center text-neutral">
                   Aucune entrée.
                 </td>
               </tr>
@@ -83,7 +83,7 @@ export default async function PageAudit(props: PageProps<"/admin/audit">) {
       </div>
       {lienSuivant ? (
         <p className="mt-4">
-          <Link href={lienSuivant} className="font-medium text-sim-bleu underline">
+          <Link href={lienSuivant} className="font-medium text-primary underline">
             Entrées plus anciennes →
           </Link>
         </p>

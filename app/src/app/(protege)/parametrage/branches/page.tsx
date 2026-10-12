@@ -13,15 +13,15 @@ export default async function PageBranches() {
 
   return (
     <main>
-      <h1 className="mb-2 text-2xl font-semibold text-sim-bleu">Branches fiscales</h1>
-      <p className="mb-6 max-w-3xl text-sm text-zinc-700">
+      <h1 className="mb-2 text-2xl font-semibold text-primary">Branches fiscales</h1>
+      <p className="mb-6 max-w-3xl text-sm text-neutral">
         La branche d'un produit détermine son taux de taxe (écran « Taxes »). Cette liste est paramétrable : un code ne change jamais et ne se
         supprime pas. Une branche désactivée garde ses taux et ses produits, mais ne peut plus en recevoir de nouveaux. Chaque modification est
         journalisée.
       </p>
 
       {peutModifier ? (
-        <section className="mb-8 max-w-md rounded border border-bordure bg-surface p-5">
+        <section className="mb-8 max-w-md rounded border border-border bg-muted p-5">
           <h2 className="mb-3 text-lg font-semibold">Ajouter une branche</h2>
           <FormulaireAction action={creerUneBranche} libelleBouton="Ajouter">
             <Champ nom="code" libelle="Code (ex. SANTE, MOTO)" autoComplete="off" />
@@ -32,7 +32,7 @@ export default async function PageBranches() {
 
       <table className="w-full max-w-4xl border-collapse text-sm">
         <thead>
-          <tr className="bg-sim-bleu text-left text-white">
+          <tr className="bg-primary text-left text-primary-foreground">
             <th className="p-2">Code</th>
             <th className="p-2">Libellé</th>
             <th className="p-2">État</th>
@@ -41,7 +41,7 @@ export default async function PageBranches() {
         </thead>
         <tbody>
           {branches.map((b) => (
-            <tr key={b.code} className="border-b border-bordure align-top">
+            <tr key={b.code} className="border-b border-border align-top">
               <td className="p-2 font-medium">{b.code}</td>
               <td className="p-2">{b.libelle}</td>
               <td className="p-2">{b.actif ? "Active" : "Désactivée"}</td>
@@ -60,7 +60,7 @@ export default async function PageBranches() {
           ))}
           {branches.length === 0 ? (
             <tr>
-              <td colSpan={4} className="p-4 text-center text-zinc-600">
+              <td colSpan={4} className="p-4 text-center text-neutral">
                 Aucune branche. Lancez « npm run initialiser » ou ajoutez-en une.
               </td>
             </tr>

@@ -22,8 +22,8 @@ export function BarreProgression({ faits, total, libelle }: { faits: number; tot
       <div className="mb-1 text-sm font-medium">
         {libelle} : {faits} / {total} ({pourcent} %)
       </div>
-      <div role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={faits} aria-label={libelle} className="h-3 w-full max-w-xl overflow-hidden rounded bg-surface">
-        <div className="h-3 bg-sim-bleu transition-all" style={{ width: `${pourcent}%` }} />
+      <div role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={faits} aria-label={libelle} className="h-3 w-full max-w-xl overflow-hidden rounded bg-muted">
+        <div className="h-3 bg-primary transition-all" style={{ width: `${pourcent}%` }} />
       </div>
     </div>
   );

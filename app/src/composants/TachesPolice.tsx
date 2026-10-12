@@ -14,16 +14,16 @@ export function TachesPolice({ taches, cotationId, chemin }: { taches: TacheLue[
   if (taches.length === 0) return null;
   const lien = (t: TacheLue) => (t.type === "CP_A_EMETTRE" ? `/cotations/${cotationId}/adherents` : `/cotations/${cotationId}/factures`);
   return (
-    <section role="status" aria-label="Tâches de la police" className="mb-6 max-w-4xl rounded border border-amber-600 bg-amber-50 p-3 text-sm">
+    <section role="status" aria-label="Tâches de la police" className="mb-6 max-w-4xl rounded border border-warning-border bg-warning-bg p-3 text-sm">
       <h2 className="mb-1 font-semibold">À faire sur cette police</h2>
       <ul className="list-disc pl-5">
         {taches.map((t) => (
           <li key={t.id} className="mb-2">
-            <Link href={lien(t)} className="text-sim-bleu underline">{t.libelle}</Link> — liste des adhérents version {t.versionAdherents} (import du{" "}
+            <Link href={lien(t)} className="text-primary underline">{t.libelle}</Link> — liste des adhérents version {t.versionAdherents} (import du{" "}
             {new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeZone: "UTC" }).format(t.creeLe)} par {t.creePar})
             {t.fermable ? (
               <details className="mt-1">
-                <summary className="cursor-pointer text-zinc-700">Fermer sans émettre la pièce</summary>
+                <summary className="cursor-pointer text-neutral">Fermer sans émettre la pièce</summary>
                 <FormulaireAction action={fermerLaTache} libelleBouton="Fermer la tâche" discret>
                   <input type="hidden" name="tacheId" value={t.id} />
                   <input type="hidden" name="retour" value={chemin} />

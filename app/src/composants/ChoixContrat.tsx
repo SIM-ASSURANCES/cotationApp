@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT, REGIME_PAR_DEFAUT, REGIMES_TAXE, TYPES_CONTRAT, estTypeContrat } from "@/domaine/calcul/taxes";
 
-const entree = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2";
+const entree = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2";
 
 /**
  * Type de contrat et régime de taxe (session 6.0, H29 fermée). Le régime est proposé selon le type (INDIVIDUEL, FAMILLE →

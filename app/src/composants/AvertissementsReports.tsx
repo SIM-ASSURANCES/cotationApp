@@ -10,7 +10,7 @@ export type ReportAffiche = { mouvementId: number; avertissement: string; montan
 export function AvertissementsReports({ reports }: { reports: readonly ReportAffiche[] }) {
   if (reports.length === 0) return null;
   return (
-    <div role="note" className="mb-3 rounded border border-amber-400 bg-amber-50 p-3 text-sm">
+    <div role="note" className="mb-3 rounded border border-warning-border bg-warning-bg p-3 text-sm">
       <p className="mb-1 font-medium">Attention : une partie de l&apos;avance est destinée à une facture de remplacement non émise.</p>
       <ul className="list-disc pl-5">
         {reports.map((r) => (
@@ -19,7 +19,7 @@ export function AvertissementsReports({ reports }: { reports: readonly ReportAff
           </li>
         ))}
       </ul>
-      <p className="mt-1 text-zinc-700">Rien n&apos;est réservé : si vous imputez ou restituez cette avance, la facture de remplacement ne la retrouvera pas.</p>
+      <p className="mt-1 text-neutral">Rien n&apos;est réservé : si vous imputez ou restituez cette avance, la facture de remplacement ne la retrouvera pas.</p>
     </div>
   );
 }

@@ -17,7 +17,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
     // Lancés par npm run test:integration (base de test) et npm run test:e2e (base et générateur).
     exclude: ["src/**/*.integration.test.ts", "src/**/*.e2e.test.ts", "node_modules/**"],
   },

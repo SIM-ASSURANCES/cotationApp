@@ -20,7 +20,7 @@ function Tableau({ lignes, agit, relances }: { lignes: ElementListe[]; agit: boo
     <div className="mb-6 overflow-x-auto">
       <table className="w-full min-w-[56rem] border-collapse text-sm">
         <thead>
-          <tr className="bg-sim-bleu text-left text-white">
+          <tr className="bg-primary text-left text-primary-foreground">
             {agit ? <th className="p-2">Lot</th> : null}
             <th className="p-2">Facture</th><th className="p-2">Police</th><th className="p-2">Souscripteur</th><th className="p-2">Échéance</th><th className="p-2">Date</th>
             <th className="p-2 text-right">Montant</th><th className="p-2 text-right">Reste dû</th>
@@ -30,15 +30,15 @@ function Tableau({ lignes, agit, relances }: { lignes: ElementListe[]; agit: boo
         </thead>
         <tbody>
           {lignes.map((e) => (
-            <tr key={valeur(e)} className="border-b border-bordure">
+            <tr key={valeur(e)} className="border-b border-border">
               {agit ? <td className="p-2"><input type="checkbox" name="selection" value={valeur(e)} defaultChecked aria-label={`Inclure ${e.factureNumero} échéance ${e.echeance.numero} dans le lot`} /></td> : null}
-              <td className="p-2"><Link href={`/factures/${e.factureId}`} className="text-sim-bleu underline">{e.factureNumero}</Link></td>
+              <td className="p-2"><Link href={`/factures/${e.factureId}`} className="text-primary underline">{e.factureNumero}</Link></td>
               <td className="p-2">{e.policeNumero}</td><td className="p-2">{e.souscripteur}</td><td className="p-2">n° {e.echeance.numero}</td><td className="p-2">{e.echeance.date}</td>
               <td className="p-2 text-right">{f(e.echeance.montant)}</td><td className="p-2 text-right">{f(e.echeance.restant)}</td>
               {relances ? <><td className="p-2">{e.joursRetard} j</td><td className="p-2">{e.niveau?.niveau} — {e.niveau?.libelle}</td></> : <td className="p-2">{-e.joursRetard} j</td>}
               {agit ? (
                 <td className="p-2">
-                  <button type="submit" name="un" value={valeur(e)} className="rounded border border-sim-bleu px-3 py-1 text-sm font-medium text-sim-bleu hover:bg-surface">Générer</button>
+                  <button type="submit" name="un" value={valeur(e)} className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">Générer</button>
                 </td>
               ) : null}
             </tr>
@@ -64,8 +64,8 @@ export default async function PageEcheances() {
 
   return (
     <main>
-      <h1 className="mb-1 text-2xl font-semibold text-sim-bleu">Avis d&apos;échéance et relances du {liste.date}</h1>
-      <p className="mb-6 text-sm text-zinc-700">
+      <h1 className="mb-1 text-2xl font-semibold text-primary">Avis d&apos;échéance et relances du {liste.date}</h1>
+      <p className="mb-6 text-sm text-neutral">
         Échéances non payées des factures émises et non annulées, selon les délais de chaque produit (Produits → Avis et relances). Une échéance payée,
         ou dont la facture est annulée par un avoir, ne produit plus rien : c&apos;est vérifié aussi au moment de la génération. Un seul avis par
         échéance, une seule relance par niveau. Aucun envoi automatique : les PDF se téléchargent depuis « Documents émis ».
@@ -75,7 +75,7 @@ export default async function PageEcheances() {
         <Tableau lignes={liste.avis} agit={agit} relances={false} />
         <h2 className="mb-2 text-lg font-semibold">Relances à produire ({liste.relances.length})</h2>
         <Tableau lignes={liste.relances} agit={agit} relances />
-        {!agit || total === 0 ? <p className="mb-2 text-sm text-zinc-600">{agit ? "Rien à générer aujourd'hui." : "Consultation seule."}</p> : null}
+        {!agit || total === 0 ? <p className="mb-2 text-sm text-neutral">{agit ? "Rien à générer aujourd'hui." : "Consultation seule."}</p> : null}
       </FormulaireAction>
 
       <h2 className="mb-2 mt-8 text-lg font-semibold">Derniers lots</h2>
@@ -85,7 +85,7 @@ export default async function PageEcheances() {
         <ul className="list-disc pl-5 text-sm">
           {lots.map((l) => (
             <li key={l.id}>
-              <Link href={`/echeances/lots/${l.id}`} className="text-sim-bleu underline">Lot n° {l.id}</Link> du {l.dateListe}, {l.total} document(s), {l.statut === "TERMINE" ? "terminé" : "en cours"}, par {l.creePar}
+              <Link href={`/echeances/lots/${l.id}`} className="text-primary underline">Lot n° {l.id}</Link> du {l.dateListe}, {l.total} document(s), {l.statut === "TERMINE" ? "terminé" : "en cours"}, par {l.creePar}
             </li>
           ))}
         </ul>

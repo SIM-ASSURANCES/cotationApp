@@ -11,7 +11,7 @@ import { exigerDroit } from "@/serveur/session";
 
 import { enregistrerLesRelances } from "./actions";
 
-const entree = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2";
+const entree = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2";
 
 /** Avis d'échéance et relances d'un produit (CDC §12) : délai J-x, niveaux J+x ; historisés. Un modèle Word par niveau (H16). */
 export default async function PageRelances(props: PageProps<"/parametrage/produits/[code]/relances">) {
@@ -25,17 +25,17 @@ export default async function PageRelances(props: PageProps<"/parametrage/produi
   return (
     <main className="max-w-4xl">
       <p className="mb-2 text-sm">
-        <Link href={`/parametrage/produits/${code}`} className="text-sim-bleu underline">← Produit {lu.produitCode}</Link>
+        <Link href={`/parametrage/produits/${code}`} className="text-primary underline">← Produit {lu.produitCode}</Link>
       </p>
-      <h1 className="mb-1 text-2xl font-semibold text-sim-bleu">Avis d&apos;échéance et relances — {lu.produitCode}</h1>
-      <p className="mb-6 text-sm text-zinc-700">
+      <h1 className="mb-1 text-2xl font-semibold text-primary">Avis d&apos;échéance et relances — {lu.produitCode}</h1>
+      <p className="mb-6 text-sm text-neutral">
         En vigueur aujourd&apos;hui{lu.parDefaut ? " (valeurs par défaut du CDC, jamais modifiées pour ce produit)" : ""} : avis à <strong>J-{p.delaiAvisJours}</strong> ;{" "}
         {p.niveaux.map((n) => `niveau ${n.niveau} à J+${n.jours} (${n.libelle})`).join(", ")}. Chaque niveau utilise le modèle Word de relance de
         ce niveau (Modèles Word, type « Relance »). Une modification s&apos;ajoute avec sa date d&apos;effet : jamais rétroactive.
       </p>
 
       {ecriture ? (
-        <section className="mb-8 rounded border border-bordure bg-surface p-5">
+        <section className="mb-8 rounded border border-border bg-muted p-5">
           <h2 className="mb-3 text-lg font-semibold">Nouveaux paramètres</h2>
           <FormulaireAction action={enregistrerLesRelances} libelleBouton="Enregistrer">
             <input type="hidden" name="produit" value={lu.produitCode} />
@@ -51,11 +51,11 @@ export default async function PageRelances(props: PageProps<"/parametrage/produi
             </div>
             <table className="mb-4 w-full border-collapse text-sm">
               <thead>
-                <tr className="bg-sim-bleu text-left text-white"><th className="p-2">Niveau</th><th className="p-2">Jours après l&apos;échéance</th><th className="p-2">Libellé</th></tr>
+                <tr className="bg-primary text-left text-primary-foreground"><th className="p-2">Niveau</th><th className="p-2">Jours après l&apos;échéance</th><th className="p-2">Libellé</th></tr>
               </thead>
               <tbody>
                 {Array.from({ length: NIVEAUX_MAX }, (_, i) => i + 1).map((i) => (
-                  <tr key={i} className="border-b border-bordure">
+                  <tr key={i} className="border-b border-border">
                     <td className="p-2">{i}</td>
                     <td className="p-2"><input name={`jours${i}`} aria-label={`Jours du niveau ${i}`} defaultValue={p.niveaux[i - 1]?.jours ?? ""} inputMode="numeric" className={entree} /></td>
                     <td className="p-2"><input name={`libelle${i}`} aria-label={`Libellé du niveau ${i}`} defaultValue={p.niveaux[i - 1]?.libelle ?? ""} className={entree} /></td>
@@ -63,7 +63,7 @@ export default async function PageRelances(props: PageProps<"/parametrage/produi
                 ))}
               </tbody>
             </table>
-            <p className="mb-3 text-sm text-zinc-700">Lignes vides ignorées ; les niveaux se suivent, chacun plus tardif que le précédent.</p>
+            <p className="mb-3 text-sm text-neutral">Lignes vides ignorées ; les niveaux se suivent, chacun plus tardif que le précédent.</p>
           </FormulaireAction>
         </section>
       ) : null}
@@ -74,11 +74,11 @@ export default async function PageRelances(props: PageProps<"/parametrage/produi
       ) : (
         <table className="w-full border-collapse text-sm">
           <thead>
-            <tr className="bg-sim-bleu text-left text-white"><th className="p-2">Date d&apos;effet</th><th className="p-2">Avis</th><th className="p-2">Relances</th><th className="p-2">Saisi par</th></tr>
+            <tr className="bg-primary text-left text-primary-foreground"><th className="p-2">Date d&apos;effet</th><th className="p-2">Avis</th><th className="p-2">Relances</th><th className="p-2">Saisi par</th></tr>
           </thead>
           <tbody>
             {lu.historique.map((h) => (
-              <tr key={h.dateEffet} className="border-b border-bordure">
+              <tr key={h.dateEffet} className="border-b border-border">
                 <td className="p-2">{h.dateEffet}</td>
                 <td className="p-2">J-{h.valeur.delaiAvisJours}</td>
                 <td className="p-2">{h.valeur.niveaux.map((n) => `${n.niveau} : J+${n.jours} (${n.libelle})`).join(" ; ")}</td>

@@ -9,7 +9,7 @@ import type { DetailCotation } from "@/serveur/cotations";
 
 import { enregistrerCotation } from "./actions";
 
-const entree = "mt-1 block w-full rounded border border-bordure bg-white px-3 py-2";
+const entree = "mt-1 block w-full rounded border border-border bg-surface px-3 py-2";
 const LIBELLE_MODE_ACCESSOIRE: Record<string, string> = { AUCUN: "aucun", FIXE: "F par contrat", PAR_TETE: "F par tête", PAR_FAMILLE: "F par famille", POURCENT: "% de la nette" };
 
 /** Formulaire de cotation, pour une création ou la modification d'un brouillon (valeurs par défaut dans `base`). */
@@ -97,7 +97,7 @@ export function FormulaireCotation({
       </div>
 
       <h2 className="mb-1 text-lg font-semibold">Formules</h2>
-      <p className="mb-2 text-sm text-zinc-700">
+      <p className="mb-2 text-sm text-neutral">
         Saisissez l'effectif des formules à chiffrer (de 1 à {formulesMax}) ; laissez vide pour exclure une formule. La prime forcée est
         facultative : elle remplace le tarif, exige un motif et passe la cotation « À valider ». Les accessoires reprennent la valeur du
         paramétrage ; vous pouvez la modifier (la modification est journalisée, les seuils de validation s'appliquent au TTC obtenu).
@@ -105,7 +105,7 @@ export function FormulaireCotation({
       <div className="mb-4 overflow-x-auto">
         <table className="w-full min-w-[40rem] border-collapse text-sm">
           <thead>
-            <tr className="bg-sim-bleu text-left text-white">
+            <tr className="bg-primary text-left text-primary-foreground">
               <th className="p-2">Formule</th>
               <th className="p-2">Prime unitaire (tarif)</th>
               <th className="p-2">Effectif</th>
@@ -117,16 +117,16 @@ export function FormulaireCotation({
             {formules.map((f) => {
               const forcee = ligneDe(f.code)?.primeForcee;
               return (
-                <tr key={f.code} className="border-b border-bordure">
+                <tr key={f.code} className="border-b border-border">
                   <td className="p-2 font-medium">
                     {f.code} — {f.libelle}
                   </td>
                   <td className="p-2">{montant(f.primeUnitaire).toString().replace(".", ",")}</td>
                   <td className="p-1">
-                    <input name={`eff_${f.code}`} defaultValue={ligneDe(f.code)?.effectif} inputMode="numeric" aria-label={`Effectif ${f.code}`} className="w-28 rounded border border-bordure px-2 py-1" />
+                    <input name={`eff_${f.code}`} defaultValue={ligneDe(f.code)?.effectif} inputMode="numeric" aria-label={`Effectif ${f.code}`} className="w-28 rounded border border-border px-2 py-1" />
                   </td>
                   <td className="p-1">
-                    <input name={`forcee_${f.code}`} defaultValue={forcee ? montant(forcee).toString() : ""} inputMode="decimal" aria-label={`Prime forcée ${f.code}`} className="w-40 rounded border border-bordure px-2 py-1" />
+                    <input name={`forcee_${f.code}`} defaultValue={forcee ? montant(forcee).toString() : ""} inputMode="decimal" aria-label={`Prime forcée ${f.code}`} className="w-40 rounded border border-border px-2 py-1" />
                   </td>
                   <td className="p-1">
                     <input
@@ -134,9 +134,9 @@ export function FormulaireCotation({
                       defaultValue={montant(ligneDe(f.code)?.accessoireSaisi ?? f.accessoireValeur).toString().replace(".", ",")}
                       inputMode="decimal"
                       aria-label={`Accessoires ${f.code}`}
-                      className="w-32 rounded border border-bordure px-2 py-1"
+                      className="w-32 rounded border border-border px-2 py-1"
                     />
-                    <span className="ml-1 text-xs text-zinc-600">{LIBELLE_MODE_ACCESSOIRE[f.accessoireMode] ?? f.accessoireMode}</span>
+                    <span className="ml-1 text-xs text-neutral">{LIBELLE_MODE_ACCESSOIRE[f.accessoireMode] ?? f.accessoireMode}</span>
                   </td>
                 </tr>
               );
@@ -153,7 +153,7 @@ export function FormulaireCotation({
       />
 
       <h2 className="mb-2 text-lg font-semibold">Bénéficiaires (SECURVIE, RELAXACCIDENT)</h2>
-      <p className="mb-2 text-sm text-zinc-700">Facultatif à ce stade : ils peuvent aussi être saisis à l'acceptation. Dès qu'il y en a, la somme des quotes-parts doit faire 100 %.</p>
+      <p className="mb-2 text-sm text-neutral">Facultatif à ce stade : ils peuvent aussi être saisis à l'acceptation. Dès qu'il y en a, la somme des quotes-parts doit faire 100 %.</p>
       <LignesBeneficiaires initiales={(base?.beneficiaires ?? []).map((b) => ({ nom: b.nom_prenoms, lien: b.lien, contact: b.contact, quote: b.quote_part }))} />
 
       <h2 className="mb-2 text-lg font-semibold">Contacts d'urgence (RELAXVOYAGE)</h2>

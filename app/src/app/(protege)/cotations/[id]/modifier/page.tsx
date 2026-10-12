@@ -33,11 +33,11 @@ export default async function PageModifierCotation(props: PageProps<"/cotations/
   return (
     <main>
       <p className="mb-2 text-sm">
-        <Link href={`/cotations/${cotation.id}`} className="text-sim-bleu underline">
+        <Link href={`/cotations/${cotation.id}`} className="text-primary underline">
           ← Fiche de la cotation
         </Link>
       </p>
-      <h1 className="mb-4 text-2xl font-semibold text-sim-bleu">Modifier le brouillon n° {cotation.id}</h1>
+      <h1 className="mb-4 text-2xl font-semibold text-primary">Modifier le brouillon n° {cotation.id}</h1>
       <FormulaireCotation
         produit={donnees.produit}
         formules={version.formules}

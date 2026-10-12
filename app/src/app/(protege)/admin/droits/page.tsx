@@ -11,8 +11,8 @@ export default async function PageDroits() {
 
   return (
     <main>
-      <h1 className="mb-2 text-2xl font-semibold text-sim-bleu">Droits par profil</h1>
-      <p className="mb-6 max-w-3xl text-sm text-zinc-700">
+      <h1 className="mb-2 text-2xl font-semibold text-primary">Droits par profil</h1>
+      <p className="mb-6 max-w-3xl text-sm text-neutral">
         Tableau du cahier des charges (§4), modifiable. Chaque changement est journalisé. L'Admin système garde
         toujours la gestion des utilisateurs, pour ne jamais se verrouiller hors de l'administration.
       </p>
@@ -20,7 +20,7 @@ export default async function PageDroits() {
         <div className="mb-4 overflow-x-auto">
           <table className="w-full min-w-[60rem] border-collapse text-sm">
             <thead>
-              <tr className="bg-sim-bleu text-left text-white">
+              <tr className="bg-primary text-left text-primary-foreground">
                 <th className="p-2">Action</th>
                 {PROFILS.map((p) => (
                   <th key={p.code} className="p-2">
@@ -31,7 +31,7 @@ export default async function PageDroits() {
             </thead>
             <tbody>
               {ACTIONS.map((action) => (
-                <tr key={action.code} className="border-b border-bordure">
+                <tr key={action.code} className="border-b border-border">
                   <th scope="row" className="p-2 text-left font-medium">
                     {action.libelle}
                   </th>
@@ -44,7 +44,7 @@ export default async function PageDroits() {
                           defaultValue={matrice[profil.code][action.code]}
                           disabled={verrouille}
                           aria-label={`${action.libelle} : ${profil.libelle}`}
-                          className="w-full rounded border border-bordure bg-white px-1 py-1 disabled:bg-zinc-100"
+                          className="w-full rounded border border-border bg-surface px-1 py-1 disabled:bg-neutral-bg"
                         >
                           {NIVEAUX.map((n) => (
                             <option key={n.code} value={n.code}>

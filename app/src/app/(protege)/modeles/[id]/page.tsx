@@ -30,14 +30,14 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
   return (
     <main>
       <p className="mb-2 text-sm">
-        <Link href="/modeles" className="text-sim-bleu underline">
+        <Link href="/modeles" className="text-primary underline">
           ← Modèles Word
         </Link>
       </p>
-      <h1 className="mb-1 text-2xl font-semibold text-sim-bleu">
-        {m.code} <span className="text-base font-normal text-zinc-700">— {m.libelle}</span>
+      <h1 className="mb-1 text-2xl font-semibold text-primary">
+        {m.code} <span className="text-base font-normal text-neutral">— {m.libelle}</span>
       </h1>
-      <p className="mb-6 text-sm text-zinc-700">
+      <p className="mb-6 text-sm text-neutral">
         {m.libelleType}
         {m.precision ? ` : ${m.precision}` : ""} · {m.produitCode ? `produit ${m.produitCode}` : "commun à tous les produits"} ·{" "}
         {m.enVigueur ? `version en vigueur : v${m.enVigueur.numero}` : "aucune version en vigueur"}
@@ -45,14 +45,14 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
       </p>
 
       <h2 className="mb-2 text-lg font-semibold">Versions</h2>
-      {m.versions.length === 0 ? <p className="mb-6 text-sm text-zinc-600">Aucune version déposée.</p> : null}
+      {m.versions.length === 0 ? <p className="mb-6 text-sm text-neutral">Aucune version déposée.</p> : null}
       <div className="mb-8 space-y-4">
         {m.versions.map((v) => (
-          <article key={v.id} className="rounded border border-bordure p-4">
+          <article key={v.id} className="rounded border border-border p-4">
             <div className="mb-2 flex flex-wrap items-center gap-3">
               <h3 className="text-base font-semibold">Version {v.numero}</h3>
-              <span className="rounded bg-surface px-2 py-0.5 text-sm font-semibold">{v.libelleStatut}</span>
-              <span className="text-sm text-zinc-700">date d'effet {v.dateEffet}</span>
+              <span className="rounded bg-muted px-2 py-0.5 text-sm font-semibold">{v.libelleStatut}</span>
+              <span className="text-sm text-neutral">date d'effet {v.dateEffet}</span>
             </div>
             <dl className="mb-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
               <div><dt className="inline font-medium">Commentaire : </dt><dd className="inline">{v.commentaire}</dd></div>
@@ -62,9 +62,9 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
               {v.visa ? <div><dt className="inline font-medium">Visa : </dt><dd className="inline">{v.visa}{v.dateDocument ? ` du ${v.dateDocument}` : ""}</dd></div> : null}
               <div className="sm:col-span-2"><dt className="inline font-medium">Empreinte SHA-256 : </dt><dd className="inline break-all font-mono text-xs">{v.empreinte}</dd></div>
             </dl>
-            {v.motifRenvoi ? <p className="mb-2 text-sm text-red-700"><strong>Renvoyé en brouillon :</strong> {v.motifRenvoi}</p> : null}
+            {v.motifRenvoi ? <p className="mb-2 text-sm text-danger"><strong>Renvoyé en brouillon :</strong> {v.motifRenvoi}</p> : null}
             {v.avertissements.length > 0 ? (
-              <ul className="mb-3 list-disc pl-5 text-sm text-amber-800">
+              <ul className="mb-3 list-disc pl-5 text-sm text-warning">
                 {v.avertissements.map((a, i) => (
                   <li key={i}>{a.message}{a.emplacement ? ` — ${a.emplacement}` : ""}</li>
                 ))}
@@ -72,17 +72,17 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
             ) : null}
             {v.champsUtilises.length > 0 ? (
               <details className="mb-3 text-sm">
-                <summary className="cursor-pointer text-sim-bleu">Champs utilisés ({v.champsUtilises.length})</summary>
+                <summary className="cursor-pointer text-primary">Champs utilisés ({v.champsUtilises.length})</summary>
                 <p className="mt-1 font-mono text-xs">{v.champsUtilises.join(", ")}</p>
               </details>
             ) : null}
 
             <div className="flex flex-wrap items-end gap-4">
-              <a href={`/api/modeles/versions/${v.id}/fichier`} className="rounded border border-sim-bleu px-3 py-1 text-sm font-medium text-sim-bleu hover:bg-surface">
+              <a href={`/api/modeles/versions/${v.id}/fichier`} className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
                 Télécharger le .docx
               </a>
               {v.aUnPdf ? (
-                <a href={`/api/modeles/versions/${v.id}/pdf`} className="rounded border border-sim-bleu px-3 py-1 text-sm font-medium text-sim-bleu hover:bg-surface">
+                <a href={`/api/modeles/versions/${v.id}/pdf`} className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
                   PDF publié
                 </a>
               ) : null}
@@ -90,10 +90,10 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
                 {regle.fixe ? null : (
                   <label className="text-sm">
                     Assurés fictifs
-                    <input name="assures" type="number" min={0} max={200} defaultValue={2} className="ml-2 w-20 rounded border border-bordure px-2 py-1" />
+                    <input name="assures" type="number" min={0} max={200} defaultValue={2} className="ml-2 w-20 rounded border border-border px-2 py-1" />
                   </label>
                 )}
-                <button type="submit" className="rounded border border-sim-bleu px-3 py-1 text-sm font-medium text-sim-bleu hover:bg-surface">
+                <button type="submit" className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
                   Aperçu PDF (données fictives)
                 </button>
               </form>
@@ -106,7 +106,7 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
             </div>
 
             {v.peutPublier ? (
-              <div className="mt-4 grid gap-4 rounded bg-surface p-3 sm:grid-cols-2">
+              <div className="mt-4 grid gap-4 rounded bg-muted p-3 sm:grid-cols-2">
                 <FormulaireAction action={publierUneVersion} libelleBouton="Publier">
                   <input type="hidden" name="versionId" value={v.id} />
                   <input type="hidden" name="modeleId" value={m.id} />
@@ -124,9 +124,9 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
       </div>
 
       {m.droits.deposer ? (
-        <section className="max-w-2xl rounded border border-bordure bg-surface p-5">
+        <section className="max-w-2xl rounded border border-border bg-muted p-5">
           <h2 className="mb-1 text-lg font-semibold">Déposer une nouvelle version</h2>
-          <p className="mb-4 text-sm text-zinc-700">
+          <p className="mb-4 text-sm text-neutral">
             Le fichier est contrôlé avant d'être enregistré (balises du dictionnaire, blocs bien fermés, champs Word, balises coupées…).
             En cas de refus, rien n'est enregistré : chaque problème est indiqué avec son emplacement dans le Word.
           </p>

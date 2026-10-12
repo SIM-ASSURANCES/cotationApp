@@ -28,7 +28,7 @@ export function ComplementsSouscripteur({ valeurs }: { valeurs?: SouscripteurCom
         <Champ nom="souscripteur_nb_enfants" libelle={`Nombre d'enfants (0 à ${NOMBRE_MAX_ENFANTS})`} requis={false} valeur={v.nb_enfants == null ? "" : String(v.nb_enfants)} autoComplete="off" />
         <label className="mb-4 block text-sm font-medium">
           Groupe sanguin
-          <select name="souscripteur_groupe_sanguin" defaultValue={v.groupe_sanguin ?? ""} className="mt-1 block w-full rounded border border-bordure bg-white px-3 py-2 text-base">
+          <select name="souscripteur_groupe_sanguin" defaultValue={v.groupe_sanguin ?? ""} className="mt-1 block w-full rounded border border-border bg-surface px-3 py-2 text-base">
             <option value="">—</option>
             {GROUPES_SANGUINS.map((g) => (
               <option key={g} value={g}>

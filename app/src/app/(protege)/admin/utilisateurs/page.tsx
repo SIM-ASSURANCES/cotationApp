@@ -9,7 +9,7 @@ const formatDate = new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeSt
 
 function SelectProfil({ defaut }: { defaut?: string }) {
   return (
-    <select name="profil" defaultValue={defaut} className="rounded border border-bordure bg-white px-2 py-1">
+    <select name="profil" defaultValue={defaut} className="rounded border border-border bg-surface px-2 py-1">
       {PROFILS.map((p) => (
         <option key={p.code} value={p.code}>
           {p.libelle}
@@ -25,9 +25,9 @@ export default async function PageUtilisateurs() {
 
   return (
     <main>
-      <h1 className="mb-6 text-2xl font-semibold text-sim-bleu">Utilisateurs</h1>
+      <h1 className="mb-6 text-2xl font-semibold text-primary">Utilisateurs</h1>
 
-      <section className="mb-10 max-w-md rounded border border-bordure bg-surface p-5">
+      <section className="mb-10 max-w-md rounded border border-border bg-muted p-5">
         <h2 className="mb-3 text-lg font-semibold">Créer un utilisateur</h2>
         <FormulaireAction action={creerUnUtilisateur} libelleBouton="Créer">
           <Champ nom="identifiant" libelle="Identifiant (3 à 64 caractères : lettres, chiffres, . _ - @)" autoComplete="off" />
@@ -45,7 +45,7 @@ export default async function PageUtilisateurs() {
       <div className="overflow-x-auto">
         <table className="w-full min-w-[56rem] border-collapse text-sm">
           <thead>
-            <tr className="bg-sim-bleu text-left text-white">
+            <tr className="bg-primary text-left text-primary-foreground">
               <th className="p-2">Compte</th>
               <th className="p-2">Modifier</th>
               <th className="p-2">Dernière connexion</th>
@@ -54,16 +54,16 @@ export default async function PageUtilisateurs() {
           </thead>
           <tbody>
             {utilisateurs.map((u) => (
-              <tr key={u.id} className="border-b border-bordure align-top">
+              <tr key={u.id} className="border-b border-border align-top">
                 <td className="p-2">
                   <strong>{u.identifiant}</strong>
-                  {!u.actif ? <span className="ml-2 rounded bg-zinc-200 px-1 text-xs">désactivé</span> : null}
-                  {u.verrouille ? <span className="ml-2 rounded bg-amber-200 px-1 text-xs">verrouillé</span> : null}
+                  {!u.actif ? <span className="ml-2 rounded bg-neutral-bg px-1 text-xs">désactivé</span> : null}
+                  {u.verrouille ? <span className="ml-2 rounded bg-warning-bg px-1 text-xs">verrouillé</span> : null}
                 </td>
                 <td className="p-2">
                   <FormulaireAction action={modifierUnUtilisateur} libelleBouton="Enregistrer" discret className="flex flex-wrap items-center gap-2">
                     <input type="hidden" name="id" value={u.id} />
-                    <input name="nom" defaultValue={u.nom} aria-label="Nom" required className="rounded border border-bordure px-2 py-1" />
+                    <input name="nom" defaultValue={u.nom} aria-label="Nom" required className="rounded border border-border px-2 py-1" />
                     <SelectProfil defaut={u.profil} />
                     <label className="flex items-center gap-1">
                       <input type="checkbox" name="actif" defaultChecked={u.actif} /> actif
@@ -80,7 +80,7 @@ export default async function PageUtilisateurs() {
                       autoComplete="new-password"
                       aria-label={`Mot de passe provisoire de ${u.identifiant}`}
                       required
-                      className="rounded border border-bordure px-2 py-1"
+                      className="rounded border border-border px-2 py-1"
                     />
                   </FormulaireAction>
                 </td>

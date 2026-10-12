@@ -76,7 +76,8 @@ const CONTENU_FACTURE = [
   "police.date_echeance",
   SOUSCRIPTEUR,
   "souscripteur.adresse",
-  "prime.taux_taxe",
+  // Un seul taux, ou (produit par garanties, plusieurs taux) le taux de chaque garantie.
+  ["prime.taux_taxe", "garanties_souscrites[].taux_taxe"],
   "prime.taxe",
   "prime.ttc",
   "societe.rccm",

@@ -381,11 +381,16 @@ export async function creerFactureAvenant(acteur: UtilisateurCourant, policeId: 
  * de la facture se libère : on peut préparer une nouvelle facture pour la même période. Même droit que la modification d'un brouillon.
  */
 export async function abandonnerFacture(acteur: UtilisateurCourant, factureId: number, motif: string, adresseIp: string | null): Promise<void> {
-  await exiger(acteur, "EMETTRE_FACTURE", "émission de facture");
+  const niveau = await exiger(acteur, "EMETTRE_FACTURE", "émission de facture");
   await obtenirPrisma().$transaction(async (tx) => {
     const f = await verrouiller(tx, factureId);
     const problemes = problemesAbandon(f, motif);
     if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
+    // Une demande « À valider » est retirée par son demandeur, ou par un profil qui peut décider (au-dessus du seuil, « Oui » seulement) :
+    // un profil « Oui (sous seuil) » qui n'est pas le demandeur ne détruit pas la demande d'un autre avant que la Technique l'ait vue.
+    if (f.statut === "A_VALIDER" && f.demandeParId !== acteur.id && validationContratRequise(niveau, f.ttc.toFixed(), await seuilDe(f.produitId, f.versionDateEffet))) {
+      throw new ErreurMetier(`Cette demande de validation a été faite par ${f.demandePar} : seul son demandeur, ou un profil qui peut émettre au-dessus du seuil, l'abandonne.`);
+    }
     const maintenant = new Date();
     await tx.facture.update({ where: { id: f.id }, data: { statut: "ABANDONNEE", abandonneParId: acteur.id, abandonnePar: acteur.identifiant, abandonneLe: maintenant, motifAbandon: motif.trim() } });
     await journaliser(
@@ -575,9 +580,20 @@ export async function emettreFacture(acteur: UtilisateurCourant, factureId: numb
 
   const date = aujourdhui();
   const modele = await modeleRetenu("FACTURE", lue.produitId, date);
+  // Session 6.2b : la facture d'un produit par garanties se détaille garantie par garantie. Un modèle (par exemple le modèle commun, fait pour
+  // les produits à la formule) qui ne cite aucun champ `garanties_souscrites[]` produirait un document numéroté sans détail ni taux : refusé
+  // AVANT l'attribution du numéro, comme l'absence de modèle.
+  if ((contenuDe(lue).garanties ?? []).length > 0) {
+    const { analyse } = await prisma.modeleVersion.findUniqueOrThrow({ where: { id: modele.modeleVersionId }, select: { analyse: true } });
+    const champs = ((analyse as unknown as { champs?: string[] }).champs ?? []).filter((c) => c.startsWith("garanties_souscrites"));
+    if (champs.length === 0) {
+      throw new ErreurMetier("Le modèle de facture retenu ne détaille pas les garanties (aucun champ garanties_souscrites[]) : déposez et faites publier le modèle de facture de ce produit. Aucun numéro n'a été consommé.");
+    }
+  }
   const commun = await lireParametresSociete(date);
   const resultat = await prisma.$transaction(async (tx) => {
     const f = await verrouiller(tx, factureId);
+    if (f.statut === "ABANDONNEE") throw new ErreurMetier("Ce brouillon vient d'être abandonné : rechargez la page.");
     if (f.statut !== "BROUILLON" && f.statut !== "A_VALIDER") throw new ErreurMetier("Cette facture vient d'être émise par quelqu'un d'autre.");
     const police = (await chargerPolice(tx, f.policeId))!;
     const contenu = contenuDe(f);
@@ -643,7 +659,15 @@ export async function emettreAvoir(acteur: UtilisateurCourant, factureId: number
   const commun = await lireParametresSociete(date);
   const resultat = await prisma.$transaction(async (tx) => {
     const f = await verrouiller(tx, factureId);
-    if (f.statut !== "EMISE" || !f.numero) throw new ErreurMetier(f.statut === "ANNULEE" ? "Cette facture est déjà annulée par un avoir." : "Seule une facture émise s'annule par un avoir ; un brouillon reste sans suite.");
+    if (f.statut !== "EMISE" || !f.numero) {
+      throw new ErreurMetier(
+        f.statut === "ANNULEE"
+          ? "Cette facture est déjà annulée par un avoir."
+          : f.statut === "ABANDONNEE"
+            ? "Cette facture a été abandonnée : elle n'a jamais été émise, il n'y a rien à annuler."
+            : "Seule une facture émise s'annule par un avoir ; un brouillon reste sans suite.",
+      );
+    }
     const police = (await chargerPolice(tx, f.policeId))!;
     const contenu = contenuAvoir(contenuDe(f));
     const numero = await allouerNumero(tx, "AV", date);
@@ -1093,7 +1117,8 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
     f.factureOrigineId ? prisma.facture.findUnique({ where: { id: f.factureOrigineId }, select: { id: true, numero: true } }) : null,
     f.annuleeParId ? prisma.facture.findUnique({ where: { id: f.annuleeParId }, select: { id: true, numero: true } }) : null,
     f.remplaceId ? prisma.facture.findUnique({ where: { id: f.remplaceId }, select: { id: true, numero: true } }) : null,
-    prisma.facture.findFirst({ where: { remplaceId: f.id }, select: { id: true, numero: true, statut: true }, orderBy: { id: "desc" } }),
+    // Un brouillon de remplacement abandonné ne remplace rien.
+    prisma.facture.findFirst({ where: { remplaceId: f.id, statut: { not: "ABANDONNEE" } }, select: { id: true, numero: true, statut: true }, orderBy: { id: "desc" } }),
   ]);
   const seuil = f.type === "AVOIR" ? null : await seuilDe(f.produitId, f.versionDateEffet);
   const disponible = await avanceDisponible(prisma, f.policeId);
@@ -1122,7 +1147,8 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
     abandon: f.statut === "ABANDONNEE" && f.abandonnePar && f.abandonneLe && f.motifAbandon ? { par: f.abandonnePar, le: f.abandonneLe, motif: f.motifAbandon } : null,
     actions: {
       // Un brouillon ou une demande « À valider » s'abandonne (H87) ; jamais un avoir ni une facture émise.
-      abandonner: ouverte && f.type !== "AVOIR" && peutAgir(d.facture),
+      // Une demande « À valider » d'un autre ne s'abandonne que par un profil qui peut décider (voir abandonnerFacture).
+      abandonner: ouverte && f.type !== "AVOIR" && peutAgir(d.facture) && !(f.statut === "A_VALIDER" && sousSeuil && f.demandeParId !== acteur.id),
       modifier: f.statut === "BROUILLON" && peutAgir(d.facture),
       // Le demandeur d'une validation ne l'émet pas lui-même ; une demande « À valider » ne se refait pas.
       emettre: ouverte && peutAgir(d.facture) && !(f.statut === "A_VALIDER" && (sousSeuil || f.demandeParId === acteur.id)),
@@ -1137,7 +1163,8 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
 }
 
 export type FacturesDePolice = {
-  police: { id: number; numero: string; cotationId: number; typeContrat: string | null; dateEffet: DateIso; dateEcheance: DateIso; souscripteur: string; cpEmises: boolean };
+  /** `composee` : la prime de la police est celle d'une composition (6.2b) ; son renouvellement et ses avenants ne sont pas gérés (H90). */
+  police: { id: number; numero: string; cotationId: number; typeContrat: string | null; dateEffet: DateIso; dateEcheance: DateIso; souscripteur: string; cpEmises: boolean; composee: boolean };
   factures: LigneFactureLue[];
   possibles: { affaireNouvelle: boolean; renouvellement: { dateEffet: DateIso; dateEcheance: DateIso } | null; avenants: { numero: number; dateEffet: DateIso; adherents: number }[] };
   /** Avance de la police (H33, H47) : solde créditeur et mouvements. */
@@ -1166,6 +1193,7 @@ export async function facturesDePolice(acteur: UtilisateurCourant, cotationId: n
       dateEcheance: depuisDate(police.dateEcheance),
       souscripteur: nomFacture(police.souscripteur as unknown as Souscripteur),
       cpEmises,
+      composee: estComposition(police.donneesCalcul as unknown as DonneesCalcul),
     },
     factures: toutes.map(sansEtat),
     possibles: {

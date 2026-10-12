@@ -359,6 +359,9 @@ async function journaliserAccessoires(tx: Tx, acteur: UtilisateurCourant, id: nu
   );
 }
 
+/** TTC à journaliser : une prime « à composer » n'a pas de TTC (jamais un « 0 » qui passerait pour un montant). */
+const ttcAJournaliser = (c: Calcul): string | null => (estNonComposee(c.entree) ? null : c.resultat.totaux.arrondi.ttc.toFixed());
+
 /** Colonne JSON facultative : « jamais fournie » s'écrit NULL en base, « saisie vide » s'écrit []. */
 const listeOuNull = (liste: unknown[] | null) => (liste === null ? Prisma.DbNull : (liste as unknown as Prisma.InputJsonValue));
 
@@ -383,7 +386,8 @@ function donneesAEcrire(saisie: SaisieCotation, c: Calcul) {
     resultat: serialiser(c.resultat) as unknown as Prisma.InputJsonValue,
     // Une prime « à composer » n'a pas de TTC (jamais un 0 affiché comme un montant).
     ttcTotal: estNonComposee(c.entree) ? null : c.resultat.totaux.arrondi.ttc.toFixed(),
-    echeancier: (tranchesVersJson(c.echeancier) ?? undefined) as Prisma.InputJsonValue | undefined,
+    // Explicite : `undefined` voudrait dire « ne pas toucher » et laisserait l'échéancier d'une saisie précédente quand on repasse à une tranche.
+    echeancier: c.echeancier ? (tranchesVersJson(c.echeancier) as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
     raisonsValidation: c.raisons as unknown as Prisma.InputJsonValue,
   };
 }
@@ -405,7 +409,7 @@ export async function creerBrouillon(acteur: UtilisateurCourant, saisie: SaisieC
         action: "COTATION_CREEE",
         objetType: "cotation",
         objetId: cree.id,
-        apres: { produit: saisie.codeProduit, typeContrat: c.typeContrat, regimeTaxe: c.regimeTaxe, intermediaires: intermediaires.map((i) => i.code), ttc: c.resultat.totaux.arrondi.ttc.toFixed() },
+        apres: { produit: saisie.codeProduit, typeContrat: c.typeContrat, regimeTaxe: c.regimeTaxe, intermediaires: intermediaires.map((i) => i.code), ttc: ttcAJournaliser(c) },
         adresseIp,
       },
       tx,
@@ -416,10 +420,19 @@ export async function creerBrouillon(acteur: UtilisateurCourant, saisie: SaisieC
 }
 
 /**
+ * Verrou de la ligne de la cotation jusqu'à la fin de la transaction : modification, composition, soumission, validation et renvoi
+ * en brouillon passent l'un après l'autre (sinon une soumission pourrait écrire par-dessus une composition faite entre-temps).
+ */
+async function verrouillerCotation(tx: Tx, id: number): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM cotations WHERE id = ${id} FOR UPDATE`;
+}
+
+/**
  * H9 (D18) : tout utilisateur qui a le droit de créer (donc de modifier) une cotation peut modifier ou
  * soumettre un brouillon, pas seulement son auteur. Le droit est contrôlé par l'appelant (exigerAgir).
  */
 async function chargerPourModification(tx: Tx, id: number) {
+  await verrouillerCotation(tx, id);
   const cotation = await tx.cotation.findUnique({ where: { id }, include: { produit: true } });
   if (!cotation) throw new ErreurMetier("Cotation introuvable.");
   if (!peutModifier(cotation.statut as StatutCotation)) {
@@ -436,6 +449,11 @@ export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, 
     // Qui modifie un brouillon composé (souscripteur, dates, assurés…) ne touche pas à la composition : ses lignes sont reprises telles quelles,
     // leurs taux sont résolus de nouveau à la (nouvelle) date d'effet. Seule l'action « Composer une prime » change les lignes.
     const anciennes = avant.donneesCalcul as unknown as DonneesCalcul | null;
+    // Un brouillon préparé avec des formules ne se convertit pas en brouillon « à composer » (H89) : l'écran de modification d'un produit passé
+    // « par garanties » n'envoie plus de formule, donc ce n'est pas le contenu de la saisie qui le trahit, mais la nature de l'enregistré.
+    if (anciennes && !estComposition(anciennes) && compositionPossible((await resoudreVersion(tx, saisie.codeProduit, aujourdhui())).version.modeTarification)) {
+      throw new ErreurMetier(MESSAGE_BROUILLON_A_FORMULES);
+    }
     if (saisie.composition === undefined && anciennes && estComposition(anciennes)) saisie = { ...saisie, composition: saisieDesLignes(anciennes.lignes) };
     const c = await calculerSaisie(tx, acteur, saisie, aujourdhui());
     const intermediairesAvant = (await tx.cotationIntermediaire.findMany({ where: { cotationId: id }, orderBy: { ordre: "asc" } })).map((i) => i.code);
@@ -450,11 +468,23 @@ export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, 
         action: "COTATION_MODIFIEE",
         objetType: "cotation",
         objetId: id,
-        avant: { ttc: avant.ttcTotal?.toFixed() ?? null, typeContrat: avant.typeContrat, regimeTaxe: avant.regimeTaxe, intermediaires: intermediairesAvant },
+        avant: {
+          ttc: avant.ttcTotal?.toFixed() ?? null,
+          typeContrat: avant.typeContrat,
+          regimeTaxe: avant.regimeTaxe,
+          // La période et le nombre de tranches comptent pour une prime composée (aucun prorata : les montants sont ceux de la période, H93).
+          dateEffet: depuisDate(avant.dateEffet),
+          dateEcheance: depuisDate(avant.dateEcheance),
+          nombreTranches: avant.nombreTranches,
+          intermediaires: intermediairesAvant,
+        },
         apres: {
-          ttc: c.resultat.totaux.arrondi.ttc.toFixed(),
+          ttc: ttcAJournaliser(c),
           typeContrat: c.typeContrat,
           regimeTaxe: c.regimeTaxe,
+          dateEffet: saisie.dateEffet,
+          dateEcheance: saisie.dateEcheance,
+          nombreTranches: saisie.nombreTranches,
           intermediaires: intermediaires === null ? intermediairesAvant : intermediaires.map((i) => i.code),
           auteurDuBrouillon: avant.auteurIdentifiant,
         },
@@ -630,6 +660,7 @@ export async function valider(acteur: UtilisateurCourant, id: number, adresseIp:
     throw new ErreurAcces("Droit insuffisant : validation de cotation.");
   }
   return obtenirPrisma().$transaction(async (tx) => {
+    await verrouillerCotation(tx, id);
     const cotation = await tx.cotation.findUnique({ where: { id }, include: { produit: true } });
     if (!cotation) throw new ErreurMetier("Cotation introuvable.");
     if (!peutEtreValidee(cotation.statut as StatutCotation)) throw new ErreurMetier("Cette cotation n'est pas à valider.");
@@ -650,6 +681,7 @@ export async function valider(acteur: UtilisateurCourant, id: number, adresseIp:
  */
 export async function renvoyerEnBrouillon(acteur: UtilisateurCourant, id: number, commentaire: string, adresseIp: string | null): Promise<void> {
   await obtenirPrisma().$transaction(async (tx) => {
+    await verrouillerCotation(tx, id);
     const cotation = await tx.cotation.findUnique({ where: { id } });
     if (!cotation) throw new ErreurMetier("Cotation introuvable.");
     if (!peutEtreRenvoyee(cotation.statut as StatutCotation)) throw new ErreurMetier("Cette cotation n'est pas à valider.");
@@ -831,6 +863,8 @@ export type LigneCotation = {
   produit: string;
   souscripteur: string;
   ttc: string | null;
+  /** Produit par garanties dont la prime n'est pas encore composée (6.2b) : la Technique repère ainsi les brouillons à traiter. */
+  aComposer: boolean;
   auteur: string;
   dateValidite: DateIso | null;
   creeLe: Date;
@@ -854,6 +888,7 @@ export async function listerCotations(acteur: UtilisateurCourant, filtre: { stat
     produit: c.produit.code,
     souscripteur: nomSouscripteur(c.souscripteur as unknown as Souscripteur),
     ttc: c.ttcTotal?.toFixed(0) ?? null,
+    aComposer: c.donneesCalcul !== null && estNonComposee(c.donneesCalcul as unknown as DonneesCalcul),
     auteur: c.auteurIdentifiant,
     dateValidite: c.dateValidite ? depuisDate(c.dateValidite) : null,
     creeLe: c.creeLe,
@@ -908,6 +943,8 @@ export type DetailCotation = {
   /** Garanties paramétrées du produit (suggestions de libellé) et saisie libre autorisée ou non. */
   garantiesDuProduit: GarantieParametree[];
   garantiesSaisieLibre: boolean;
+  /** Brouillon préparé avec des formules alors que le produit se tarife désormais par garanties : il ne se modifie ni ne se soumet (H89), on le recrée. */
+  brouillonAFormulesSousGaranties: boolean;
 };
 
 /** Lignes de prime d'une cotation composée, avec le taux résolu et figé de chacune ; `lignes` vide : la prime est « à composer ». */
@@ -934,6 +971,9 @@ export async function lireCotation(acteur: UtilisateurCourant, id: number): Prom
   const statut = c.statut as StatutCotation;
   const dateValidite = c.dateValidite ? depuisDate(c.dateValidite) : null;
   const effectif = statutEffectif(statut, dateValidite, aujourdhui());
+  // Un brouillon à formules n'est un cas à part que si le produit est, AUJOURD'HUI, tarifé par garanties (la version figée sur le brouillon, elle, est ancienne).
+  const donneesCalcul = c.donneesCalcul as unknown as DonneesCalcul | null;
+  const versionEnVigueur = peutModifier(statut) && donneesCalcul !== null && !estComposition(donneesCalcul) ? await resoudreVersion(obtenirPrisma(), c.produit.code, aujourdhui()).catch(() => null) : null;
   return {
     id: c.id,
     numero: c.numero,
@@ -964,6 +1004,7 @@ export async function lireCotation(acteur: UtilisateurCourant, id: number): Prom
     composition: lireComposition(c),
     garantiesDuProduit: (version.garanties as GarantieParametree[] | null) ?? [],
     garantiesSaisieLibre: version.garantiesSaisieLibre,
+    brouillonAFormulesSousGaranties: versionEnVigueur !== null && compositionPossible(versionEnVigueur.version.modeTarification),
     echeancier: jsonVersTranches(c.echeancier),
     auteurId: c.auteurId,
     auteurIdentifiant: c.auteurIdentifiant,

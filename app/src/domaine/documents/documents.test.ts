@@ -223,7 +223,7 @@ describe("contrôles au dépôt (CDC §6.7)", () => {
       manque("police.date_echeance"),
       "Champ obligatoire pour un modèle de facture absent : {{ souscripteur.nom }} ou {{ souscripteur.raison_sociale }}.",
       manque("souscripteur.adresse"),
-      manque("prime.taux_taxe"),
+      "Champ obligatoire pour un modèle de facture absent : {{ prime.taux_taxe }} ou {{ garanties_souscrites[].taux_taxe }}.",
       manque("prime.taxe"),
       manque("societe.rccm"),
       manque("societe.ncc"),
@@ -240,6 +240,9 @@ describe("contrôles au dépôt (CDC §6.7)", () => {
     ];
     const ok = analyse({ references: refs(complete), filtres: ["lettres", "montant"], textes: [{ texte: "Art. 13 du code CIMA : la prise d'effet est subordonnée au paiement.", emplacement: ici(9) }] });
     expect(controlerDepot("FACTURE", ok).rejets).toEqual([]);
+    // Produit par garanties (6.2b) : le taux de chaque garantie suffit, le taux global est vide dès qu'il y a plusieurs taux.
+    const parGaranties = complete.map((c) => (c === "prime.taux_taxe" ? "garanties_souscrites[].taux_taxe" : c));
+    expect(controlerDepot("FACTURE", analyse({ references: refs(parGaranties), filtres: ["lettres", "montant"], textes: [{ texte: "Art. 13 du code CIMA : la prise d'effet est subordonnée au paiement.", emplacement: ici(9) }] })).rejets).toEqual([]);
   });
 
   it("avoir : numéro, facture d'origine, police, souscripteur, TTC, date et QR code", () => {

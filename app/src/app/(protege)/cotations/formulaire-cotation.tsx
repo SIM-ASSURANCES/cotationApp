@@ -161,7 +161,8 @@ export function FormulaireCotation({
 
       <h2 className="mb-2 mt-2 text-lg font-semibold">Assurés (facultatif)</h2>
       <LignesAssures
-        formules={formules}
+        // Par garanties (6.2b) : pas de formule d'assuré (la composition ne distingue pas de formules) ; la colonne n'est pas proposée.
+        formules={parGaranties ? [] : formules}
         initiales={(base?.assures ?? []).map((a) => ({ nom: a.nom_prenoms, naissance: a.date_naissance, sexe: a.sexe, lien: a.lien, identification: a.num_identification ?? "", formule: a.formule }))}
       />
 

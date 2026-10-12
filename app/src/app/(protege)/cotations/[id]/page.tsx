@@ -11,6 +11,7 @@ import { formaterMontant, montant, type Montant } from "@/domaine/calcul/montant
 import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
 import { avertissementNumeroContrat, FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
+import { MESSAGE_BROUILLON_A_FORMULES } from "@/domaine/calcul/parametrage";
 import { LIBELLE_STATUT, peutAccepter, peutEtreValidee, peutModifier } from "@/domaine/cotation/statuts";
 import { LIBELLE_RAISON } from "@/domaine/cotation/validation";
 import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
@@ -82,6 +83,11 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
       {c.filigrane ? (
         <p role="alert" className="mb-4 rounded border-2 border-danger bg-danger-bg p-3 text-center text-2xl font-bold tracking-widest text-danger">
           {c.filigrane}
+        </p>
+      ) : null}
+      {c.brouillonAFormulesSousGaranties ? (
+        <p role="alert" className="mb-4 rounded border border-warning-border bg-warning-bg p-3 text-sm">
+          <strong>Brouillon à recréer.</strong> {MESSAGE_BROUILLON_A_FORMULES}.
         </p>
       ) : null}
       <TachesPolice taches={taches} cotationId={c.id} chemin={`/cotations/${c.id}`} />
@@ -200,8 +206,10 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
       {composition && !aComposer && composition.composePar ? (
         <p className="mt-3 rounded border border-border bg-muted p-3 text-sm">
           <strong>Prime composée par {composition.composePar}</strong>
-          {composition.composeLe ? ` le ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }).format(composition.composeLe)}` : ""}. Motif : {composition.motif}. Les taux de taxe ont été
-          résolus à la date d&apos;effet de la police (branche de chaque ligne, régime de taxe de la cotation) et sont figés avec la cotation.
+          {composition.composeLe ? ` le ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }).format(composition.composeLe)}` : ""}. Motif : {composition.motif}.{" "}
+          {peutModifier(c.statut)
+            ? "Brouillon : les taux de taxe sont résolus de nouveau à chaque modification et à la soumission (branche de chaque ligne, régime de taxe, date d'effet) ; ils sont figés à l'émission."
+            : "Les taux de taxe ont été résolus à la date d'effet de la police (branche de chaque ligne, régime de taxe de la cotation) et sont figés avec la cotation."}
         </p>
       ) : null}
       {forcees.length > 0 ? (
@@ -286,9 +294,11 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         <div className="rounded border border-border p-4">
           <h2 className="mb-2 font-semibold">Documents PDF</h2>
           <div className="mb-3 flex flex-wrap items-end gap-4">
-            <a href={`/api/cotations/${c.id}/apercu`} target="_blank" className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
-              Aperçu PDF (filigrane « APERÇU »)
-            </a>
+            {aComposer ? null : (
+              <a href={`/api/cotations/${c.id}/apercu`} target="_blank" className="rounded border border-primary px-3 py-1 text-sm font-medium text-primary hover:bg-muted">
+                Aperçu PDF (filigrane « APERÇU »)
+              </a>
+            )}
             {emise && pdfCotation.length === 0 && agit ? (
               <FormulaireAction action={emettrePdfDeCotation} libelleBouton="Émettre le PDF de la cotation" discret>
                 <input type="hidden" name="id" value={c.id} />
@@ -375,19 +385,21 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           </div>
         ) : null}
 
-        {peutModifier(c.statut) && agit ? (
+        {peutModifier(c.statut) && agit && !c.brouillonAFormulesSousGaranties ? (
           <div className="flex flex-wrap items-start gap-4 rounded border border-border p-4">
             <Link href={`/cotations/${c.id}/modifier`} className="rounded border border-primary px-4 py-2 font-semibold text-primary hover:bg-muted">Modifier le brouillon</Link>
-            <FormulaireAction action={soumettreCotation} libelleBouton="Soumettre (émettre)">
-              <input type="hidden" name="id" value={c.id} />
-              <p className="mb-2 text-sm text-neutral">
-                {composition
-                  ? aComposer
-                    ? "La prime n'est pas encore composée : la soumission est impossible tant que la Technique ne l'a pas composée."
-                    : "Les taux de taxe sont résolus de nouveau avec les paramètres du jour (les montants saisis ne changent pas). Sous le seuil, la cotation est émise tout de suite ; sinon elle passe « À valider »."
-                  : "Le calcul est refait avec les paramètres du jour. Sous le seuil et sans forçage, la cotation est émise tout de suite ; sinon elle passe « À valider »."}
-              </p>
-            </FormulaireAction>
+            {aComposer ? (
+              <p role="status" className="text-sm text-neutral">La prime n&apos;est pas encore composée : la soumission (et l&apos;aperçu PDF) sont impossibles tant que la Technique ne l&apos;a pas composée.</p>
+            ) : (
+              <FormulaireAction action={soumettreCotation} libelleBouton="Soumettre (émettre)">
+                <input type="hidden" name="id" value={c.id} />
+                <p className="mb-2 text-sm text-neutral">
+                  {composition
+                    ? "Les taux de taxe sont résolus de nouveau avec les paramètres du jour (les montants saisis ne changent pas). Sous le seuil, la cotation est émise tout de suite ; sinon elle passe « À valider »."
+                    : "Le calcul est refait avec les paramètres du jour. Sous le seuil et sans forçage, la cotation est émise tout de suite ; sinon elle passe « À valider »."}
+                </p>
+              </FormulaireAction>
+            )}
           </div>
         ) : null}
 

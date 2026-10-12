@@ -72,7 +72,7 @@ export default async function PageCotations(props: PageProps<"/cotations">) {
                 </td>
                 <td className="p-2">{c.produit}</td>
                 <td className="p-2">{c.souscripteur}</td>
-                <td className="p-2 text-right">{c.ttc ? formaterMontant(montant(c.ttc)) : "—"}</td>
+                <td className="p-2 text-right tabular-nums">{c.aComposer ? "À composer" : c.ttc ? formaterMontant(montant(c.ttc)) : "—"}</td>
                 <td className="p-2">{c.dateValidite ? formatDate.format(new Date(`${c.dateValidite}T00:00:00Z`)) : "—"}</td>
                 <td className="p-2">{c.auteur}</td>
               </tr>

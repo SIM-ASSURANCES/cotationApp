@@ -23,6 +23,10 @@ export default async function PageModifierCotation(props: PageProps<"/cotations/
   if (!peutModifier(cotation.statut)) {
     redirect(`/cotations/${cotation.id}`);
   }
+  // Brouillon à formules d'un produit passé « par garanties » (H89) : la fiche explique pourquoi il ne se modifie plus.
+  if (cotation.brouillonAFormulesSousGaranties) {
+    redirect(`/cotations/${cotation.id}`);
+  }
   const donnees = await listerVersions(utilisateur, cotation.produit.code);
   const version = donnees ? enVigueur(donnees.versions, aujourdhui()) : null;
   if (!donnees || !version) {

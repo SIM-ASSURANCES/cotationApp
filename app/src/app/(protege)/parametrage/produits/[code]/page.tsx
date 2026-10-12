@@ -99,7 +99,8 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
           <p className="mb-4 text-sm text-neutral">
             Un produit tarifé par garanties (SECURPRO, SECURHOME, SECURHOME +, RELAXACCIDENTS) a son mode « Par garanties » dès sa première version : une
             version « Par formule » plus ancienne resterait en vigueur, et calculée, pour tout document daté avant la date d&apos;effet de la suivante.
-            Une version « Par garanties » ne calcule rien : elle garde pourtant une formule de forme (prime unitaire 0, sans accessoires).
+            Une version « Par garanties » ne calcule rien : la prime est composée par la Technique, garantie par garantie, sur chaque cotation. Elle n&apos;a besoin d&apos;aucune
+            formule (la liste des garanties ci-dessous est facultative) ; un assuré n&apos;y a pas de formule.
           </p>
           <FormulaireAction action={ajouterUneVersion} libelleBouton="Enregistrer la version">
             <input type="hidden" name="codeProduit" value={produit.code} />

@@ -4,28 +4,13 @@ import {
   DUREE_VERROUILLAGE_MINUTES,
   MAX_ECHECS_CONSECUTIFS,
   estVerrouille,
-  IDENTIFIANT_SAISI_INVALIDE,
   etatApresEchec,
-  identifiantSaisiPourJournal,
   identifiantValide,
   normaliserIdentifiant,
   problemesMotDePasse,
 } from "./securite";
 
 const maintenant = new Date("2026-10-05T10:00:00Z");
-
-describe("identifiant saisi à journaliser (audit M4)", () => {
-  it("un identifiant de la forme habituelle est gardé (utile pour repérer une attaque sur un compte)", () => {
-    expect(identifiantSaisiPourJournal("kouame.thierry")).toBe("kouame.thierry");
-    expect(identifiantSaisiPourJournal("admin@sim.exemple")).toBe("admin@sim.exemple");
-  });
-
-  it("une phrase de passe, une saisie avec espace ou trop longue n'est jamais écrite au journal", () => {
-    for (const saisie of ["ma phrase de passe inventee 2026", "Phrase!De#Passe$Inventee", "a".repeat(65), "ab", "", "mot de passe: x"]) {
-      expect(identifiantSaisiPourJournal(saisie)).toBe(IDENTIFIANT_SAISI_INVALIDE);
-    }
-  });
-});
 
 describe("etatApresEchec", () => {
   it("compte les échecs sans verrouiller avant le seuil", () => {

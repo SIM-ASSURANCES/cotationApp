@@ -11,18 +11,6 @@ export function normaliserIdentifiant(identifiant: string): string {
   return identifiant.trim().toLowerCase();
 }
 
-/** Ce qu'on écrit au journal d'un identifiant INCONNU (audit M4) : jamais une saisie qui n'a pas la forme d'un identifiant. */
-export const IDENTIFIANT_SAISI_INVALIDE = "(saisie qui n'a pas la forme d'un identifiant)";
-
-/**
- * Identifiant saisi à journaliser quand le compte n'existe pas. Une saisie de plus de 64 caractères, ou avec des espaces ou des
- * caractères que n'autorise aucun identifiant, est écartée : un mot de passe ou une phrase collés dans le champ « identifiant »
- * ne doivent jamais se retrouver, en clair, dans un journal en ajout seul que l'on ne peut pas effacer.
- */
-export function identifiantSaisiPourJournal(identifiantNormalise: string): string {
-  return identifiantValide(identifiantNormalise) ? identifiantNormalise : IDENTIFIANT_SAISI_INVALIDE;
-}
-
 /** Identifiant valide : 3 à 64 caractères parmi lettres, chiffres, point, tiret, tiret bas, arobase. */
 export function identifiantValide(identifiant: string): boolean {
   return /^[a-z0-9._@-]{3,64}$/.test(identifiant);

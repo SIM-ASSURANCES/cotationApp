@@ -6,7 +6,6 @@ import { estCodeProfil, peutAgir, type CodeProfil } from "@/domaine/droits";
 import {
   estVerrouille,
   etatApresEchec,
-  identifiantSaisiPourJournal,
   identifiantValide,
   normaliserIdentifiant,
   problemesMotDePasse,
@@ -98,7 +97,7 @@ export async function verifierIdentifiants(
     await journaliser({
       acteur: null,
       action: "CONNEXION_ECHEC",
-      apres: { identifiantSaisi: identifiantSaisiPourJournal(identifiant) },
+      apres: { raison: "identifiant inconnu" }, // rien de ce qui a été tapé (audit M4) : une saisie peut être un mot de passe
       adresseIp,
     });
     return null;

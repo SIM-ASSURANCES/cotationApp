@@ -4,8 +4,7 @@ import { LIBELLE_STATUT, STATUTS } from "@/domaine/cotation/statuts";
 import { DOCUMENTS, estTypeDocument } from "@/domaine/documents/emission";
 import { LIBELLE_TRANCHE, TRANCHES_ANCIENNETE, type LigneTransformation } from "@/domaine/tableaux/indicateurs";
 import { exigerUtilisateur } from "@/serveur/session";
-import { tableauCommercial } from "@/serveur/tableau-commercial";
-import { tableauDeBord } from "@/serveur/tableaux-de-bord";
+import { tableauCommercialMemorise, tableauDeBordMemorise } from "@/serveur/tableaux-memorises";
 import { ErreurAcces, ErreurMetier } from "@/serveur/types";
 
 import { TableauDeBordCommercial } from "./tableau-commercial";
@@ -54,24 +53,24 @@ export default async function PageTableauDeBord(props: PageProps<"/">) {
     let perso;
     let erreurPerso: string | null = null;
     try {
-      perso = await tableauCommercial(utilisateur, periode);
+      perso = await tableauCommercialMemorise(utilisateur, periode);
     } catch (e) {
       if (!(e instanceof ErreurMetier)) throw e;
       erreurPerso = e.message;
-      perso = await tableauCommercial(utilisateur);
+      perso = await tableauCommercialMemorise(utilisateur);
     }
     return <TableauDeBordCommercial t={perso} erreur={erreurPerso} />;
   }
   let t;
   let erreur: string | null = null;
   try {
-    t = await tableauDeBord(utilisateur, periode);
+    t = await tableauDeBordMemorise(utilisateur, periode);
   } catch (e) {
     // Profil sans le droit « Consulter les tableaux de bord » (droits personnalisés) : simple page de bienvenue.
     if (e instanceof ErreurAcces) return <Bienvenue nom={utilisateur.nom} profil={utilisateur.libelleProfil} />;
     if (!(e instanceof ErreurMetier)) throw e;
     erreur = e.message;
-    t = await tableauDeBord(utilisateur);
+    t = await tableauDeBordMemorise(utilisateur);
   }
   const { cotations: c, facturation: fa, production: p } = t;
 

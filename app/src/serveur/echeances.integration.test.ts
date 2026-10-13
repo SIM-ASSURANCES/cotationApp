@@ -38,6 +38,7 @@ import { obtenirPrisma } from "./prisma";
 import { assurerSignature } from "./societe-test";
 import { remplacerStockage } from "./stockage";
 import { tableauCommercial } from "./tableau-commercial";
+import { tableauCommercialMemorise, tableauDeBordMemorise, viderMemoireTableaux } from "./tableaux-memorises";
 import { tableauDeBord } from "./tableaux-de-bord";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
@@ -536,6 +537,32 @@ describe("tableau de bord du commercial : ses chiffres seulement", () => {
     // La Technique n'a produit aucune police : son tableau personnel (mêmes règles) ne voit rien de celles du commercial.
     expect((await tableauCommercial(technique)).production.polices).toBe(0);
     await expect(tableauCommercial(commercial, { debut: "2026-12-01", fin: "2026-01-01" })).rejects.toThrow(/début est après la fin/);
+  });
+});
+
+describe("tableaux de bord de la page d'arrivée : mémoire de 60 s (audit M7)", () => {
+  it("sert la mémoire sans relire la base, ne contourne aucun droit et ne mélange pas deux commerciaux", async () => {
+    viderMemoireTableaux();
+    const premier = await tableauDeBordMemorise(comptable);
+    // Une nouvelle cotation acceptée change les chiffres de la base, pas ceux de la mémoire (moins d'une minute plus tard).
+    await policeT3();
+    const memorise = await tableauDeBordMemorise(dg);
+    expect(memorise).toBe(premier); // même objet : rien n'a été recalculé
+    expect((await tableauDeBord(comptable)).cotations.parStatut.ACCEPTEE).toBeGreaterThan(premier.cotations.parStatut.ACCEPTEE);
+
+    // Le droit est vérifié avant la mémoire : un profil sans droit n'y lit rien, même remplie.
+    await expect(tableauDeBordMemorise(commercial)).rejects.toThrow(ErreurAcces);
+
+    // Une période refusée n'est pas gardée en mémoire.
+    await expect(tableauDeBordMemorise(comptable, { debut: "2026-12-01", fin: "2026-01-01" })).rejects.toThrow(/début est après la fin/);
+    await expect(tableauDeBordMemorise(comptable, { debut: "2026-12-01", fin: "2026-01-01" })).rejects.toThrow(/début est après la fin/);
+
+    // Deux commerciaux : chacun garde ses propres chiffres.
+    const moi = await tableauCommercialMemorise(commercial);
+    const autre = await tableauCommercialMemorise(technique);
+    expect(autre).not.toBe(moi);
+    expect(await tableauCommercialMemorise(commercial)).toBe(moi);
+    viderMemoireTableaux();
   });
 });
 

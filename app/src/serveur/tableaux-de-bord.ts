@@ -99,8 +99,13 @@ export async function montantsFacturation(p: Periode, jour: DateIso, auteur?: st
   return { emis, avoirs, encaisse, restantDu, echeances };
 }
 
-export async function tableauDeBord(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauDeBord> {
+/** Droit « Consulter les tableaux de bord » (lecture) : à vérifier AVANT toute lecture, y compris dans la mémoire de tableaux-memorises.ts. */
+export async function exigerDroitTableauxDeBord(acteur: Pick<UtilisateurCourant, "profil">): Promise<void> {
   if (!peutLire(await niveauDuProfil(acteur.profil, "CONSULTER_TABLEAUX_DE_BORD"))) throw new ErreurAcces("Droit insuffisant : tableaux de bord.");
+}
+
+export async function tableauDeBord(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauDeBord> {
+  await exigerDroitTableauxDeBord(acteur);
   const jour = aujourdhui();
   const p: Periode = { debut: periode?.debut || `${jour.slice(0, 4)}-01-01`, fin: periode?.fin || jour };
   const problemes = problemesPeriode(p, dateValide);

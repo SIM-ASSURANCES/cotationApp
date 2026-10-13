@@ -374,6 +374,10 @@ model Cotation {
   @@index([statut])
   @@index([dateValidite])
   @@index([produitId])
+  @@index([auteurIdentifiant])
+  @@index([creeLe])
+  @@index([emiseLe])
+  @@index([accepteeLe])
   @@map("cotations")
 }
 
@@ -593,6 +597,7 @@ model DocumentEmis {
   @@index([policeNumero])
   @@index([souscripteurNom])
   @@index([dateEmission])
+  @@index([cotationId])
   @@map("documents_emis")
 }
 
@@ -662,6 +667,7 @@ model Facture {
 
   @@index([policeId])
   @@index([statut])
+  @@index([dateEmission])
   @@map("factures")
 }
 
@@ -687,6 +693,7 @@ model Paiement {
   mouvementsAvance MouvementAvance[]
 
   @@index([factureId])
+  @@index([date])
   @@map("paiements")
 }
 

@@ -56,7 +56,7 @@ export const ACTIONS_DE_NAVIGATION = [
 
 export type NiveauxNavigation = Record<(typeof ACTIONS_DE_NAVIGATION)[number], CodeNiveau>;
 
-const ACCUEIL: LienNavigation = { href: "/", libelle: "Accueil", icone: "maison" };
+const ACCUEIL: LienNavigation = { href: "/", libelle: "Tableau de bord", icone: "maison" };
 
 /**
  * Pages qui ne sont pas dans le menu (« Mon compte » s'ouvre depuis le menu du profil, « Clients » depuis la liste des cotations)

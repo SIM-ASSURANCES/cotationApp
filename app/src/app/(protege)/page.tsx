@@ -4,8 +4,11 @@ import { LIBELLE_STATUT, STATUTS } from "@/domaine/cotation/statuts";
 import { DOCUMENTS, estTypeDocument } from "@/domaine/documents/emission";
 import { LIBELLE_TRANCHE, TRANCHES_ANCIENNETE, type LigneTransformation } from "@/domaine/tableaux/indicateurs";
 import { exigerUtilisateur } from "@/serveur/session";
+import { tableauCommercial } from "@/serveur/tableau-commercial";
 import { tableauDeBord } from "@/serveur/tableaux-de-bord";
 import { ErreurAcces, ErreurMetier } from "@/serveur/types";
+
+import { TableauDeBordCommercial } from "./tableau-commercial";
 
 const f = (m: string) => `${formaterMontant(montant(m))} F`;
 
@@ -41,14 +44,28 @@ function Bienvenue({ nom, profil }: { nom: string; profil: string }) {
 }
 
 /** Accueil = tableaux de bord (session 5b) : cotations (§9.4), facturation et relances (§11, §12), production. Recalculés depuis la base à chaque affichage. */
-export default async function Accueil(props: PageProps<"/">) {
+export default async function PageTableauDeBord(props: PageProps<"/">) {
   const recherche = await props.searchParams;
   const texte = (v: string | string[] | undefined) => (typeof v === "string" ? v : undefined);
   const utilisateur = await exigerUtilisateur();
+  const periode = { debut: texte(recherche.debut), fin: texte(recherche.fin) };
+  // Profil Commercial (H102) : son tableau personnel, jamais le tableau général (qui montre le travail de tous), quels que soient ses droits.
+  if (utilisateur.profil === "COMMERCIAL") {
+    let perso;
+    let erreurPerso: string | null = null;
+    try {
+      perso = await tableauCommercial(utilisateur, periode);
+    } catch (e) {
+      if (!(e instanceof ErreurMetier)) throw e;
+      erreurPerso = e.message;
+      perso = await tableauCommercial(utilisateur);
+    }
+    return <TableauDeBordCommercial t={perso} erreur={erreurPerso} />;
+  }
   let t;
   let erreur: string | null = null;
   try {
-    t = await tableauDeBord(utilisateur, { debut: texte(recherche.debut), fin: texte(recherche.fin) });
+    t = await tableauDeBord(utilisateur, periode);
   } catch (e) {
     // Profil sans le droit « Consulter les tableaux de bord » (droits personnalisés) : simple page de bienvenue.
     if (e instanceof ErreurAcces) return <Bienvenue nom={utilisateur.nom} profil={utilisateur.libelleProfil} />;

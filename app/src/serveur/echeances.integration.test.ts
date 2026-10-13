@@ -37,6 +37,7 @@ import { montant } from "@/domaine/calcul/montant";
 import { obtenirPrisma } from "./prisma";
 import { assurerSignature } from "./societe-test";
 import { remplacerStockage } from "./stockage";
+import { tableauCommercial } from "./tableau-commercial";
 import { tableauDeBord } from "./tableaux-de-bord";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
@@ -511,6 +512,30 @@ describe("tableaux de bord : chiffres recalculés depuis la base", () => {
     const mois = aujourdhui().slice(0, 7);
     const factures = (t: typeof avant) => t.production.documents.find((d) => d.mois === mois && d.type === "FACTURE")?.nombre ?? 0;
     expect(factures(apres) - factures(avant)).toBe(1);
+  });
+});
+
+describe("tableau de bord du commercial : ses chiffres seulement", () => {
+  it("compte ses cotations, ses polices et l'encaissement de ses polices, jamais ceux d'un autre auteur", async () => {
+    const avant = await tableauCommercial(commercial);
+    const p = await policeT3();
+    const f = await factureEmise(p.policeId);
+    await enregistrerPaiement(comptable, f.id, paiement("41000"), null);
+    // Un brouillon d'un AUTRE auteur (la Technique) ne change rien à ses chiffres.
+    await creerBrouillon(technique, { codeProduit: produitIndividuel, typeContrat: "INDIVIDUEL", souscripteur: { type: "PHYSIQUE", nom: "KONE", prenoms: "Awa (inventée)", raison_sociale: "", telephone: "", email: "", adresse: "" }, dateEffet: "2026-01-01", dateEcheance: "2026-12-31", nombreTranches: 1, lignes: [{ codeFormule: "F", effectif: 1 }], assures: [], clientId: null, motifForcage: null, beneficiaires: [], contactsUrgence: [], risque: {} }, null);
+
+    const apres = await tableauCommercial(commercial);
+    const ecart = (a: string, b: string) => montant(a).minus(montant(b)).toFixed();
+    expect(apres.production.polices - avant.production.polices).toBe(1);
+    expect(apres.cotations.parStatut.ACCEPTEE - avant.cotations.parStatut.ACCEPTEE).toBe(1);
+    expect(apres.cotations.parStatut.BROUILLON).toBe(avant.cotations.parStatut.BROUILLON);
+    expect(ecart(apres.encaissement.emis, avant.encaissement.emis)).toBe("122442");
+    expect(ecart(apres.encaissement.encaisse, avant.encaissement.encaisse)).toBe("41000");
+    expect(ecart(apres.encaissement.restantDu, avant.encaissement.restantDu)).toBe("81442");
+    expect(apres.enCours.every((c) => c.statut !== "ACCEPTEE")).toBe(true);
+    // La Technique n'a produit aucune police : son tableau personnel (mêmes règles) ne voit rien de celles du commercial.
+    expect((await tableauCommercial(technique)).production.polices).toBe(0);
+    await expect(tableauCommercial(commercial, { debut: "2026-12-01", fin: "2026-01-01" })).rejects.toThrow(/début est après la fin/);
   });
 });
 

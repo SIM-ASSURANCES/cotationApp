@@ -24,7 +24,7 @@ function Pictogramme({ className }: { className?: string }) {
 }
 
 /**
- * Barre latérale : « Accueil » épinglé, puis les branches en accordéon (une seule ouverte à la fois ; celle de la page affichée
+ * Barre latérale : « Tableau de bord » épinglé, puis les branches en accordéon (une seule ouverte à la fois ; celle de la page affichée
  * l'est au chargement), pied avec la bascule « Réduire » et la déconnexion.
  *
  * - Repliée (à partir de lg) : colonne d'icônes, branches séparées par un filet, libellés portés par `title`.

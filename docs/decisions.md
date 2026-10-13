@@ -601,3 +601,12 @@ Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir)
   - Un `Bandeau` placé à côté d'un bouton passe en colonne sous `sm`.
 - **Revue contradictoire** : 5 relecteurs indépendants (un par lot). Aucune régression de comportement ; défauts réels corrigés avant commit : l'import serveur/client ci-dessus, statuts affichés sans ton, zébrure sur des lignes de champs, zones défilantes non positionnées, bandeau étroit sur mobile, zone d'envoi de la fiche cotation trop serrée sur mobile.
 - **Captures** : `docs/captures/refonte-v2/avant/` et `apres/`, 41 pages × 1440 px et 390 px (JPEG), données inventées. Chaque page « après » est chargée sans erreur HTTP, sans erreur de page et sans défilement horizontal.
+
+## D34 — Page d'arrivée = tableau de bord, et tableau de bord du commercial
+
+- **Date** : 13/10/2026. Branche `accueil-tableau-de-bord`. La page `/` (ancien « Accueil ») est le tableau de bord ; son lien de menu s'appelle « Tableau de bord ». La branche « Pilotage » disparaît du menu ; « Journal d'audit » ferme le menu, sous Administration (même condition d'affichage). `/tableaux-de-bord` redirige vers `/` en gardant la période. Un profil sans le droit « Consulter les tableaux de bord » (droits personnalisés) voit une page de bienvenue, pas un refus.
+- **Profil Commercial** : `/` affiche **son** tableau (`serveur/tableau-commercial.ts`), jamais le tableau général, qui montre le travail de tous et dont il n'a pas le droit. Aucun droit nouveau : le périmètre est l'auteur de la cotation (`auteurIdentifiant`), pris dans la session, jamais dans l'adresse.
+- **H102** : sa **production** = ses cotations **acceptées** dans la période (une police naît de l'acceptation), comptées pour leur TTC. Les montants du moteur ne sont pas recalculés. À confirmer par Thierry : si la production doit se compter à l'émission du contrat ou en prime nette, c'est un seul endroit à changer.
+- **H103** : son **encaissement** = factures, paiements et échéances des polices issues de **ses** cotations (facturé, encaissé, restant dû, impayés par ancienneté), avec le calcul du tableau général (`montantsFacturation`, extrait sans changement de règle). Le commissionnement n'existe pas dans l'application : aucun chiffre de commission.
+- **H104** : son **suivi** = ses 10 cotations non terminées les plus récentes (brouillon, à valider, émise) et son taux de transformation (règle H70, par produit).
+- **Jamais** : cotations d'un autre auteur. Test d'intégration : un brouillon de la Technique ne change rien aux chiffres du commercial.

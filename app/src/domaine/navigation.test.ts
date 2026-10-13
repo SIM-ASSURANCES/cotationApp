@@ -43,7 +43,7 @@ function hrefsAncienLayout(niveaux: NiveauxNavigation): string[] {
   return hrefs;
 }
 
-/** Tous les href de la navigation : « Accueil » puis les liens de chaque branche, dans l'ordre du menu. */
+/** Tous les href de la navigation : « Tableau de bord » puis les liens de chaque branche, dans l'ordre du menu. */
 function hrefsDeLaNavigation(navigation: Navigation): string[] {
   return [navigation.accueil.href, ...navigation.branches.flatMap((b) => b.groupes.flatMap((g) => g.liens.map((l) => l.href)))];
 }
@@ -128,9 +128,9 @@ describe("navigation : toutes les combinaisons de niveaux utiles", () => {
 });
 
 describe("navigation : aucun droit", () => {
-  it("« Accueil » seulement, aucune branche (l'utilisateur qui doit changer son mot de passe, lui, n'a pas de menu : voir le layout)", () => {
+  it("« Tableau de bord » seulement, aucune branche (l'utilisateur qui doit changer son mot de passe, lui, n'a pas de menu : voir le layout)", () => {
     const navigation = construireNavigation(niveauxVides("AUCUN"));
-    expect(navigation.accueil).toEqual({ href: "/", libelle: "Accueil", icone: "maison" });
+    expect(navigation.accueil).toEqual({ href: "/", libelle: "Tableau de bord", icone: "maison" });
     expect(navigation.branches).toEqual([]);
     expect(hrefsDeLaNavigation(navigation)).toEqual(hrefsAncienLayout(niveauxVides("AUCUN")));
   });
@@ -249,8 +249,8 @@ describe("brancheContientChemin", () => {
 describe("titreDeLaPage", () => {
   const navigation = construireNavigation(niveauxVides("OUI"));
 
-  it("« / » : Accueil", () => {
-    expect(titreDeLaPage(navigation, "/")).toBe("Accueil");
+  it("« / » : Tableau de bord", () => {
+    expect(titreDeLaPage(navigation, "/")).toBe("Tableau de bord");
   });
 
   it("une sous-page prend le titre de son lien", () => {

@@ -57,6 +57,48 @@ export type TableauDeBord = {
 /** Libellé des cotations émises sans intermédiaire (affaires directes). */
 export const SANS_INTERMEDIAIRE = "Sans intermédiaire";
 
+/**
+ * Montants de facturation d'une période (émis, avoirs, encaissé) et échéances restant dues à ce jour. Sans `auteur`, toute la base
+ * (tableau de bord général) ; avec `auteur`, seulement les polices dont la cotation est de cet auteur (tableau de bord du commercial).
+ */
+export async function montantsFacturation(p: Periode, jour: DateIso, auteur?: string) {
+  const prisma = obtenirPrisma();
+  const entreDates = { gte: versDate(p.debut), lte: versDate(p.fin) };
+  const deLAuteur = auteur === undefined ? {} : { police: { cotation: { auteurIdentifiant: auteur } } };
+  const factures = await prisma.facture.findMany({
+    where: { numero: { not: null }, ...deLAuteur },
+    select: {
+      type: true,
+      statut: true,
+      ttc: true,
+      contenu: true,
+      dateEmission: true,
+      paiements: { select: { montant: true, excedent: true } },
+      imputations: { where: { type: "IMPUTATION" }, select: { montant: true } },
+    },
+  });
+  const dansLaPeriode = factures.filter((f) => f.dateEmission !== null && depuisDate(f.dateEmission) >= p.debut && depuisDate(f.dateEmission) <= p.fin);
+  const emis = somme(dansLaPeriode.filter((f) => f.type !== "AVOIR").map((f) => f.ttc.toFixed()));
+  const avoirs = somme(dansLaPeriode.filter((f) => f.type === "AVOIR").map((f) => f.ttc.toFixed()));
+  const encaisse = somme(
+    (await prisma.paiement.findMany({ where: { date: entreDates, ...(auteur === undefined ? {} : { facture: deLAuteur }) }, select: { montant: true } })).map((x) => x.montant.toFixed()),
+  );
+  // Restant dû et impayés : à ce jour, sur les factures émises et non annulées (une facture annulée par un avoir ne doit plus rien).
+  const appelables = factures.filter((f) => factureAppelable(f));
+  const echeances = appelables.flatMap((f) => {
+    const contenu = f.contenu as unknown as ContenuFacture;
+    // Réglé = part des paiements hors excédent (H33) + imputations d'avance, reports compris (session 6.0).
+    const sommes = [
+      ...f.paiements.map((x) => ({ montant: x.montant.toFixed(), excedent: x.excedent.toFixed() })),
+      ...f.imputations.map((x) => ({ montant: x.montant.toFixed(), excedent: "0" })),
+    ];
+    const paye = etatPaiements(f.ttc.toFixed(), [], sommes.map((x, i) => ({ numero: String(i), date: "", reference: "", canal: "ESPECES" as const, payeur: "", ...x }))).totalPaye;
+    return echeancesDe({ statut: f.statut, type: f.type, dateEffet: contenu.dateEffet, ttc: f.ttc.toFixed(), echeances: contenu.echeances }, paye);
+  });
+  const restantDu = somme(echeances.map((e) => e.restant));
+  return { emis, avoirs, encaisse, restantDu, echeances };
+}
+
 export async function tableauDeBord(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauDeBord> {
   if (!peutLire(await niveauDuProfil(acteur.profil, "CONSULTER_TABLEAUX_DE_BORD"))) throw new ErreurAcces("Droit insuffisant : tableaux de bord.");
   const jour = aujourdhui();
@@ -94,35 +136,7 @@ export async function tableauDeBord(acteur: UtilisateurCourant, periode?: Partia
   };
 
   // ------------------------------------------------ Facturation
-  const factures = await prisma.facture.findMany({
-    where: { numero: { not: null } },
-    select: {
-      type: true,
-      statut: true,
-      ttc: true,
-      contenu: true,
-      dateEmission: true,
-      paiements: { select: { montant: true, excedent: true } },
-      imputations: { where: { type: "IMPUTATION" }, select: { montant: true } },
-    },
-  });
-  const dansLaPeriode = factures.filter((f) => f.dateEmission !== null && depuisDate(f.dateEmission) >= p.debut && depuisDate(f.dateEmission) <= p.fin);
-  const emis = somme(dansLaPeriode.filter((f) => f.type !== "AVOIR").map((f) => f.ttc.toFixed()));
-  const avoirs = somme(dansLaPeriode.filter((f) => f.type === "AVOIR").map((f) => f.ttc.toFixed()));
-  const encaisse = somme((await prisma.paiement.findMany({ where: { date: entreDates }, select: { montant: true } })).map((x) => x.montant.toFixed()));
-  // Restant dû et impayés : à ce jour, sur les factures émises et non annulées (une facture annulée par un avoir ne doit plus rien).
-  const appelables = factures.filter((f) => factureAppelable(f));
-  const echeances = appelables.flatMap((f) => {
-    const contenu = f.contenu as unknown as ContenuFacture;
-    // Réglé = part des paiements hors excédent (H33) + imputations d'avance, reports compris (session 6.0).
-    const sommes = [
-      ...f.paiements.map((x) => ({ montant: x.montant.toFixed(), excedent: x.excedent.toFixed() })),
-      ...f.imputations.map((x) => ({ montant: x.montant.toFixed(), excedent: "0" })),
-    ];
-    const paye = etatPaiements(f.ttc.toFixed(), [], sommes.map((x, i) => ({ numero: String(i), date: "", reference: "", canal: "ESPECES" as const, payeur: "", ...x }))).totalPaye;
-    return echeancesDe({ statut: f.statut, type: f.type, dateEffet: contenu.dateEffet, ttc: f.ttc.toFixed(), echeances: contenu.echeances }, paye);
-  });
-  const restantDu = somme(echeances.map((e) => e.restant));
+  const { emis, avoirs, encaisse, restantDu, echeances } = await montantsFacturation(p, jour);
   const appels = await prisma.documentAProduire.findMany({ where: { type: { in: ["AVIS_ECHEANCE", "RELANCE"] }, version: 1, dateEmission: entreDates }, select: { type: true, niveauRelance: true } });
   const niveaux = new Map<number, number>();
   for (const a of appels) if (a.type === "RELANCE" && a.niveauRelance !== null) niveaux.set(a.niveauRelance, (niveaux.get(a.niveauRelance) ?? 0) + 1);

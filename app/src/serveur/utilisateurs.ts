@@ -6,6 +6,7 @@ import { estCodeProfil, peutAgir, type CodeProfil } from "@/domaine/droits";
 import {
   estVerrouille,
   etatApresEchec,
+  identifiantSaisiPourJournal,
   identifiantValide,
   normaliserIdentifiant,
   problemesMotDePasse,
@@ -97,7 +98,7 @@ export async function verifierIdentifiants(
     await journaliser({
       acteur: null,
       action: "CONNEXION_ECHEC",
-      apres: { identifiantSaisi: identifiant.slice(0, 64) },
+      apres: { identifiantSaisi: identifiantSaisiPourJournal(identifiant) },
       adresseIp,
     });
     return null;

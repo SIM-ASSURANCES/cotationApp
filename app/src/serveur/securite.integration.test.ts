@@ -67,6 +67,21 @@ describe("journal d'audit en ajout seul (déclencheur PostgreSQL)", () => {
   });
 });
 
+describe("connexion : journal des identifiants inconnus (audit M4)", () => {
+  it("un mot de passe tapé dans le champ identifiant n'est jamais écrit au journal ; un identifiant de forme normale l'est", async () => {
+    const phrase = `ma phrase de passe inventee ${Math.random().toString(36).slice(2, 8)}`;
+    expect(await verifierIdentifiants({ identifiant: phrase, motDePasse: "x" }, "10.0.0.9")).toBeNull();
+    const inconnu = unique("inconnu");
+    expect(await verifierIdentifiants({ identifiant: inconnu, motDePasse: "x" }, "10.0.0.9")).toBeNull();
+
+    const { lignes } = await lireJournal({ action: "CONNEXION_ECHEC" });
+    const saisies = lignes.map((l) => (l.apres as { identifiantSaisi?: string } | null)?.identifiantSaisi);
+    expect(saisies).toContain(inconnu);
+    expect(saisies.some((s) => s?.includes("phrase de passe"))).toBe(false);
+    expect(saisies).toContain("(saisie qui n'a pas la forme d'un identifiant)");
+  });
+});
+
 describe("connexion", () => {
   it("accepte le bon mot de passe, refuse le mauvais et journalise les deux", async () => {
     const admin = await nouvelAdmin();

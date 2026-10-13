@@ -16,6 +16,20 @@ export function estRoutePublique(chemin: string): boolean {
   );
 }
 
+/**
+ * Après un changement de mot de passe (obligatoire ou volontaire), la session est fermée et l'utilisateur revient sur la page de
+ * connexion avec ce paramètre. Un SEUL message est possible, jamais un texte venu de l'adresse.
+ */
+export const PARAMETRE_MOT_DE_PASSE_MODIFIE = "motdepasse";
+export const VALEUR_MOT_DE_PASSE_MODIFIE = "modifie";
+export const ADRESSE_MOT_DE_PASSE_MODIFIE = `/connexion?${PARAMETRE_MOT_DE_PASSE_MODIFIE}=${VALEUR_MOT_DE_PASSE_MODIFIE}`;
+export const MESSAGE_MOT_DE_PASSE_MODIFIE = "Mot de passe modifié. Reconnectez-vous avec votre nouveau mot de passe.";
+
+/** Message de succès de la page de connexion pour la valeur du paramètre, ou null. */
+export function messageDeConnexion(valeur: string | string[] | undefined): string | null {
+  return valeur === VALEUR_MOT_DE_PASSE_MODIFIE ? MESSAGE_MOT_DE_PASSE_MODIFIE : null;
+}
+
 /** Adresse de retour acceptée après connexion : un chemin interne uniquement (anti redirection ouverte). */
 export function destinationSure(destination: string | null | undefined): string {
   if (!destination || !destination.startsWith("/") || destination.startsWith("//") || destination.includes("\\")) {

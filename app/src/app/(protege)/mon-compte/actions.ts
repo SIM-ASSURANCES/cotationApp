@@ -1,8 +1,8 @@
 "use server";
 
-import { redirect } from "next/navigation";
-
 import type { EtatFormulaire } from "@/composants/types";
+import { ADRESSE_MOT_DE_PASSE_MODIFIE } from "@/domaine/acces";
+import { signOut } from "@/serveur/auth";
 import { adresseIpCourante } from "@/serveur/requete";
 import { exigerUtilisateur } from "@/serveur/session";
 import { ErreurMetier } from "@/serveur/types";
@@ -23,5 +23,8 @@ export async function changerSonMotDePasse(_etat: EtatFormulaire, donnees: FormD
     }
     throw erreur;
   }
-  redirect("/");
+  // Le changement ferme la session (obligatoire ou volontaire : une seule règle) : la page « / » n'est jamais rendue dans l'ancienne
+  // coquille, et l'ancienne session ne survit pas. Reconnexion avec le nouveau mot de passe.
+  await signOut({ redirectTo: ADRESSE_MOT_DE_PASSE_MODIFIE });
+  return {};
 }

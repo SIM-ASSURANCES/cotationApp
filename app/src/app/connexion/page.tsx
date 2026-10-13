@@ -1,14 +1,17 @@
 import { redirect } from "next/navigation";
 
-import { cheminDeRetour } from "@/domaine/acces";
+import { cheminDeRetour, messageDeConnexion, PARAMETRE_MOT_DE_PASSE_MODIFIE } from "@/domaine/acces";
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { CoquilleConnexion } from "@/composants/coquille/CoquilleConnexion";
+import { Bandeau } from "@/composants/ui";
 import { obtenirUtilisateurCourant } from "@/serveur/session";
 
 import { connecter } from "./actions";
 
 export default async function PageConnexion(props: PageProps<"/connexion">) {
-  const { callbackUrl } = await props.searchParams;
+  const recherche = await props.searchParams;
+  const { callbackUrl } = recherche;
+  const messageSucces = messageDeConnexion(recherche[PARAMETRE_MOT_DE_PASSE_MODIFIE]);
   const destination = cheminDeRetour(typeof callbackUrl === "string" ? callbackUrl : undefined);
 
   if (await obtenirUtilisateurCourant()) {
@@ -25,6 +28,11 @@ export default async function PageConnexion(props: PageProps<"/connexion">) {
             <span className="font-semibold">Documents</span> — portail interne SIM Assurances
           </p>
         </div>
+        {messageSucces ? (
+          <Bandeau ton="succes" role="status">
+            {messageSucces}
+          </Bandeau>
+        ) : null}
         <FormulaireAction action={connecter} libelleBouton="Se connecter" pleineLargeur>
           <input type="hidden" name="destination" value={destination} />
           <Champ nom="identifiant" libelle="Identifiant" autoComplete="username" />

@@ -75,3 +75,6 @@ generateur/polices/*
 # --- Redis lancé depuis le dépôt (développement) : instantané local -----
 dump.rdb
 /docs/captures/
+
+# --- Rapport d'audit avant mise en production : local, non versionné ---
+docs/audit-pre-production.md

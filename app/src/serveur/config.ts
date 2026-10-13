@@ -2,6 +2,8 @@ import "server-only";
 
 import { z } from "zod";
 
+import { proxiesDeConfianceValide } from "@/domaine/adresse-client";
+
 /**
  * Configuration de l'application, lue dans les variables d'environnement
  * (fichier app/.env en développement) et validée au démarrage du serveur
@@ -45,6 +47,13 @@ const schemaConfig = z.object({
   CONVERSIONS_SIMULTANEES: z.preprocess(
     (v) => (v === undefined || v === "" ? "2" : v),
     z.coerce.number({ error: "doit être un nombre entier de 1 à 16" }).int({ error: "doit être un nombre entier de 1 à 16" }).min(1, { error: "doit être un nombre entier de 1 à 16" }).max(16, { error: "doit être un nombre entier de 1 à 16" }),
+  ),
+  // Nombre de proxys inverses de confiance devant l'application (audit M1) : sert à retrouver l'adresse du client dans
+  // X-Forwarded-For. 1 par défaut (un seul proxy : Dokploy/Traefik, Caddy ou nginx) ; 0 : l'en-tête n'est pas lu. À faire
+  // vérifier sur le proxy réellement installé. Lue directement par domaine/adresse-client.ts (le proxy de Next n'importe pas ce fichier).
+  PROXIES_DE_CONFIANCE: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().refine(proxiesDeConfianceValide, { error: "doit être un entier de 0 à 5" }).optional(),
   ),
   // Clé de signature des sessions : Auth.js la lit lui-même, on exige sa présence au démarrage.
   AUTH_SECRET: z

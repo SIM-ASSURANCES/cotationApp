@@ -113,6 +113,9 @@ services:
       URL_PUBLIQUE: ${URL_PUBLIQUE:-}
       # Derrière le proxy HTTPS : Auth.js fait confiance à l'hôte transmis par le proxy.
       AUTH_TRUST_HOST: "true"
+      # Nombre de proxys inverses entre Internet et l'application (audit M1) : sert à lire la vraie adresse du client dans
+      # X-Forwarded-For. À faire vérifier sur le proxy réellement installé (voir docs/deploiement.md).
+      PROXIES_DE_CONFIANCE: ${PROXIES_DE_CONFIANCE:-1}
       # File de tâches (D24) : l'application y dépose les imports confirmés et les écritures différées (T14).
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
     ports:

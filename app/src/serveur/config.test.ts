@@ -60,4 +60,12 @@ describe("validerConfig", () => {
     expect(message).toContain("GENERATEUR_SECRET : obligatoire");
     expect(message).toContain("AUTH_SECRET : obligatoire");
   });
+  it("PROXIES_DE_CONFIANCE (audit M1) : absent ou vide accepté, entier de 0 à 5 accepté, le reste refuse le démarrage", () => {
+    expect(() => validerConfig(configComplete)).not.toThrow();
+    expect(() => validerConfig({ ...configComplete, PROXIES_DE_CONFIANCE: "" })).not.toThrow();
+    expect(() => validerConfig({ ...configComplete, PROXIES_DE_CONFIANCE: "2" })).not.toThrow();
+    for (const mauvais of ["6", "-1", "un"]) {
+      expect(messageDErreur(() => validerConfig({ ...configComplete, PROXIES_DE_CONFIANCE: mauvais }))).toContain("PROXIES_DE_CONFIANCE : doit être un entier de 0 à 5");
+    }
+  });
 });

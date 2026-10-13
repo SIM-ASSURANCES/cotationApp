@@ -3,13 +3,14 @@ import "server-only";
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 
+import { adresseDuClient, proxiesDeConfiance } from "@/domaine/adresse-client";
+
 import { authConfig } from "./auth.config";
 import { verifierIdentifiants } from "./utilisateurs";
 
-/** Adresse du client, transmise par le proxy HTTPS (à ne croire que derrière lui). */
+/** Adresse du client, ajoutée par notre proxy HTTPS (audit M1 : voir domaine/adresse-client.ts). */
 function adresseIp(requete: Request | undefined): string | null {
-  const transmise = requete?.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return (transmise || requete?.headers.get("x-real-ip") || null)?.slice(0, 64) ?? null;
+  return adresseDuClient(requete?.headers.get("x-forwarded-for"), proxiesDeConfiance(process.env.PROXIES_DE_CONFIANCE));
 }
 
 export const { handlers, auth, signIn, signOut } = NextAuth({

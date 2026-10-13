@@ -1,6 +1,7 @@
 import type { NextAuthConfig } from "next-auth";
 
 import { estRoutePublique } from "@/domaine/acces";
+import { adresseDuClient, proxiesDeConfiance } from "@/domaine/adresse-client";
 import { LimiteRequetes } from "@/domaine/limite";
 import { SESSION_DUREE_MAX_HEURES } from "@/domaine/securite";
 
@@ -22,8 +23,8 @@ export const authConfig = {
   callbacks: {
     authorized({ auth, request }) {
       if (request.nextUrl.pathname.startsWith("/verif/")) {
-        // Derrière le proxy HTTPS, l'adresse du client est la première de x-forwarded-for.
-        const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "inconnue";
+        // Derrière le proxy HTTPS : l'adresse AJOUTÉE par notre proxy (audit M1), jamais celle que le client écrit lui-même.
+        const ip = adresseDuClient(request.headers.get("x-forwarded-for"), proxiesDeConfiance(process.env.PROXIES_DE_CONFIANCE)) ?? "inconnue";
         if (!limiteVerification.accepter(ip, Date.now())) {
           return new Response("Trop de vérifications depuis cette adresse : réessayez dans une minute.", {
             status: 429,

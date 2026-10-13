@@ -70,6 +70,16 @@ describe("app/Dockerfile : OpenSSL dans toutes les images Node", () => {
   });
 });
 
+describe("dépendances de sécurité figées", () => {
+  it("jszip est déclaré à une version EXACTE (sans ^ ni ~), identique à celle du lockfile : une mise à jour ne passe jamais en silence", () => {
+    const paquet = JSON.parse(lire("app/package.json")) as { dependencies: Record<string, string> };
+    const verrou = JSON.parse(lire("app/package-lock.json")) as { packages: Record<string, { version?: string; dependencies?: Record<string, string> }> };
+    expect(paquet.dependencies.jszip).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(verrou.packages[""].dependencies?.jszip).toBe(paquet.dependencies.jszip);
+    expect(verrou.packages["node_modules/jszip"].version).toBe(paquet.dependencies.jszip);
+  });
+});
+
 describe("documentation : liens et commandes", () => {
   it("chaque lien relatif du README, du guide d'installation, du guide de déploiement et de app/README.md existe", () => {
     expect(["README.md", "app/README.md", "docs/installation.md", "docs/deploiement.md", "docs/guide-balisage.md"].flatMap(liensCasses)).toEqual([]);

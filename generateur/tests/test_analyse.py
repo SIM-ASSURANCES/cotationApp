@@ -153,3 +153,54 @@ def test_modele_sans_balise() -> None:
 def test_polices_utilisees() -> None:
     analyse = analyser(document("Texte", police="Tahoma"))
     assert "Tahoma" in analyse.polices
+
+
+# ------------------------------------------------------------------ Archive piégée (audit M6)
+
+
+def _docx_avec_xml_repete(octets_decompresses: int) -> bytes:
+    """Un .docx valide dont word/document.xml est gonflé de paragraphes identiques (très compressible)."""
+    import io
+    import zipfile
+
+    from docx import Document
+
+    tampon = io.BytesIO()
+    Document().save(tampon)
+    entree = zipfile.ZipFile(io.BytesIO(tampon.getvalue()))
+    sortie = io.BytesIO()
+    paragraphe = "<w:p><w:r><w:t>ligne de remplissage inventée</w:t></w:r></w:p>"
+    with zipfile.ZipFile(sortie, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        for info in entree.infolist():
+            donnees = entree.read(info.filename)
+            if info.filename == "word/document.xml":
+                donnees = donnees.decode("utf-8").replace("<w:body>", "<w:body>" + paragraphe * (octets_decompresses // len(paragraphe)), 1).encode("utf-8")
+            z.writestr(info, donnees)
+    return sortie.getvalue()
+
+
+def test_archive_de_plus_de_30_mo_decompresses_est_refusee_tout_de_suite() -> None:
+    import time
+
+    from app.analyse import TAILLE_DECOMPRESSEE_MAX
+
+    piege = _docx_avec_xml_repete(TAILLE_DECOMPRESSEE_MAX + 1024 * 1024)
+    assert len(piege) < 1024 * 1024  # moins de 1 Mo : la limite de dépôt (15 Mo) ne la voit pas
+    debut = time.monotonic()
+    analyse = analyser(piege)
+    assert analyse.docx_valide is False
+    assert analyse.erreur and "trop volumineux" in analyse.erreur
+    assert time.monotonic() - debut < 2  # avant : 94 s pour 150 Mo
+
+
+def test_taux_de_compression_anormal_est_refuse() -> None:
+    piege = _docx_avec_xml_repete(25 * 1024 * 1024)  # sous la limite de taille, mais compressé plus de 100 fois
+    analyse = analyser(piege)
+    assert analyse.docx_valide is False
+    assert analyse.erreur and "taux de compression" in analyse.erreur
+
+
+def test_un_modele_ordinaire_passe_toujours() -> None:
+    assert analyser(document("Prime : {{ prime.ttc | montant }}")).docx_valide is True
+    # Un document de quelques Mo de texte réel (taux modéré) n'est pas pris pour un piège.
+    assert analyser(_docx_avec_xml_repete(1024 * 1024)).docx_valide is True

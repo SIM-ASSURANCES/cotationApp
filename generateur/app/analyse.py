@@ -30,8 +30,14 @@ A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 MC = "http://schemas.openxmlformats.org/markup-compatibility/2006"
 w = lambda nom: f"{{{W}}}{nom}"  # noqa: E731
 
-# Au-delà, le fichier est refusé avant toute lecture (archive piégée).
-TAILLE_DECOMPRESSEE_MAX = 200 * 1024 * 1024
+# Au-delà, le fichier est refusé avant toute lecture (archive piégée). Audit M6 : un .docx de 0,5 Mo qui se décompressait en 150 Mo
+# de XML occupait le générateur 94 s à l'analyse (la limite était de 200 Mo) ; un modèle réel de 15 Mo au plus en fait bien moins de 30.
+TAILLE_DECOMPRESSEE_MAX = 30 * 1024 * 1024
+# Rapport taille décompressée / taille du fichier au-delà duquel une archive est refusée (XML répétitif fabriqué pour peser lourd).
+# Un document Word ordinaire se compresse de 3 à 10 fois ; les images sont déjà compressées. Contrôle appliqué au-dessus de 5 Mo
+# décompressés seulement : un petit fichier très compressible ne coûte rien.
+TAUX_COMPRESSION_MAX = 100
+SEUIL_CONTROLE_TAUX = 5 * 1024 * 1024
 
 # Filtres Jinja utilisables en plus de ceux du module. « default » est exclu : il masquerait une
 # donnée absente (un blanc silencieux), ce que la fusion interdit.
@@ -532,8 +538,11 @@ def analyser(contenu: bytes) -> Analyse:
     """Analyse un .docx (octets). Ne lève pas d'exception sur un fichier invalide : le dit."""
     try:
         with zipfile.ZipFile(io.BytesIO(contenu)) as archive:
-            if sum(i.file_size for i in archive.infolist()) > TAILLE_DECOMPRESSEE_MAX:
+            decompressee = sum(i.file_size for i in archive.infolist())
+            if decompressee > TAILLE_DECOMPRESSEE_MAX:
                 return Analyse(docx_valide=False, erreur="fichier trop volumineux une fois décompressé")
+            if decompressee > SEUIL_CONTROLE_TAUX and decompressee / max(len(contenu), 1) > TAUX_COMPRESSION_MAX:
+                return Analyse(docx_valide=False, erreur="fichier suspect : taux de compression anormalement élevé")
         Document(io.BytesIO(contenu))  # refuse ce que Word ne considère pas comme un .docx
         archive = zipfile.ZipFile(io.BytesIO(contenu))
         parties = _parties(archive)

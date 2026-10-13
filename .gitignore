@@ -74,3 +74,5 @@ generateur/polices/*
 
 # --- Redis lancé depuis le dépôt (développement) : instantané local -----
 dump.rdb
+/docs/captures/
+/docs/compte-rendu/

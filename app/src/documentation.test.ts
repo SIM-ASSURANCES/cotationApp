@@ -55,6 +55,21 @@ describe("docker-compose.yml : limites de ressources (audit M5)", () => {
   });
 });
 
+describe("app/Dockerfile : OpenSSL dans toutes les images Node", () => {
+  it("l'étape commune installe openssl, et les images de construction (outils, travailleur) et d'exécution (app) en héritent", () => {
+    const dockerfile = lire("app/Dockerfile").replace(/\r\n/g, "\n");
+    const debut = dockerfile.indexOf(" AS base\n");
+    const fin = dockerfile.indexOf("\nFROM ", debut);
+    expect(debut, "étape « base » absente").toBeGreaterThan(-1);
+    const base = dockerfile.slice(debut, fin);
+    expect(base).toContain("apt-get install -y --no-install-recommends openssl");
+    expect(base).toContain("rm -rf /var/lib/apt/lists/*");
+    expect(dockerfile).toMatch(/^FROM base AS dependances$/m); // construction, outils, travailleur
+    expect(dockerfile).toMatch(/^FROM base AS execution$/m); // app
+    expect(dockerfile.match(/^FROM node:/gm)).toHaveLength(1); // plus aucune image Node sans OpenSSL
+  });
+});
+
 describe("documentation : liens et commandes", () => {
   it("chaque lien relatif du README, du guide d'installation, du guide de déploiement et de app/README.md existe", () => {
     expect(["README.md", "app/README.md", "docs/installation.md", "docs/deploiement.md", "docs/guide-balisage.md"].flatMap(liensCasses)).toEqual([]);

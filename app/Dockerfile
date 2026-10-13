@@ -4,7 +4,12 @@
 # Contexte de construction : le dossier app/ (voir docker-compose.yml).
 # La police Montserrat est hébergée dans le dépôt (src/app/polices, licence OFL) : rien à télécharger pour elle.
 
-FROM node:24-bookworm-slim AS dependances
+# Base commune de TOUTES les images Node (application, outils, travailleur). OpenSSL : l'image « slim » ne l'a pas, et Prisma
+# ne peut alors pas détecter la version de libssl (avertissement « failed to detect the libssl/openssl version »).
+FROM node:24-bookworm-slim AS base
+RUN apt-get update  && apt-get install -y --no-install-recommends openssl  && rm -rf /var/lib/apt/lists/*
+
+FROM base AS dependances
 WORKDIR /app
 # On copie d'abord ce dont `npm ci` a besoin (dont le schéma Prisma : le script postinstall
 # lance « prisma generate ») : tant que ces fichiers ne changent pas, cette couche reste en cache.
@@ -25,7 +30,7 @@ USER node
 CMD ["npm", "run", "migrate:deploy"]
 
 # Image finale de l'application.
-FROM node:24-bookworm-slim AS execution
+FROM base AS execution
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \

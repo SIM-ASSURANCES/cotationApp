@@ -43,4 +43,4 @@ L'apparence reprend celle du portail RH de SIM Assurances. Les règles ci-dessou
 
 - Une branche `phase-…` par session ; rien dans `main` sans l'accord de Thierry, qui fusionne lui-même.
 - Tests dans le conteneur : unitaires (`npm test`), intégration (`npm run test:integration`), bout en bout (`npm run test:e2e`), `pytest` (generateur), `npm run lint`, `npm run typecheck`, `npm run build`.
-- Fin de session : tests verts, commit, compte rendu court `docs/compte-rendu-<session>.md` (fichiers, tests, écarts, hypothèses ouvertes).
+- Fin de session : tests verts, commit, compte rendu court `docs/compte-rendu/compte-rendu-<session>.md` (fichiers, tests, écarts, hypothèses ouvertes).

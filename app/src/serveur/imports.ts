@@ -173,7 +173,7 @@ async function lireTableau(nom: string, contenu: Uint8Array): Promise<Tableau> {
   }
   if (!/\.xlsx$/i.test(nom)) throw new ErreurMetier("Format non pris en charge : déposez un fichier .xlsx (Excel) ou .csv.");
   // Avant tout chargement (audit B2) : un .xlsx de 8 Mo pouvait contenir un million de lignes et saturer la mémoire du serveur.
-  const problemesArchive = problemesArchiveXlsx(contenu);
+  const problemesArchive = await problemesArchiveXlsx(contenu);
   if (problemesArchive.length > 0) throw new ErreurMetier(problemesArchive.join(" "));
   const classeur = new ExcelJS.Workbook();
   try {

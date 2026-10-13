@@ -24,6 +24,7 @@ import {
   type LigneBrute,
   type LigneControlee,
 } from "@/domaine/imports/adherents";
+import { problemesArchiveXlsx } from "@/domaine/imports/archive";
 
 import { incorporerDansTransaction } from "./adherents";
 import { journaliser, type ActeurAudit } from "./audit";
@@ -171,6 +172,9 @@ async function lireTableau(nom: string, contenu: Uint8Array): Promise<Tableau> {
     };
   }
   if (!/\.xlsx$/i.test(nom)) throw new ErreurMetier("Format non pris en charge : déposez un fichier .xlsx (Excel) ou .csv.");
+  // Avant tout chargement (audit B2) : un .xlsx de 8 Mo pouvait contenir un million de lignes et saturer la mémoire du serveur.
+  const problemesArchive = problemesArchiveXlsx(contenu);
+  if (problemesArchive.length > 0) throw new ErreurMetier(problemesArchive.join(" "));
   const classeur = new ExcelJS.Workbook();
   try {
     await classeur.xlsx.load(Buffer.from(contenu) as unknown as ArrayBuffer);

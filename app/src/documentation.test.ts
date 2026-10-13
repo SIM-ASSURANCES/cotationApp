@@ -35,6 +35,26 @@ function liensCasses(fichier: string): string[] {
   return casses;
 }
 
+describe("docker-compose.yml : limites de ressources (audit M5)", () => {
+  it("chaque service a une limite de mémoire et de processeur (le VPS est partagé avec le portail RH)", () => {
+    const lignes = lire("docker-compose.yml").split(/\r?\n/);
+    const debut = lignes.indexOf("services:");
+    const fin = lignes.indexOf("volumes:");
+    const blocs: Record<string, string[]> = {};
+    let courant = "";
+    for (const ligne of lignes.slice(debut + 1, fin)) {
+      const titre = /^ {2}([a-z]+):$/.exec(ligne);
+      if (titre) blocs[(courant = titre[1])] = [];
+      else if (courant) blocs[courant].push(ligne);
+    }
+    expect(Object.keys(blocs).sort()).toEqual(["app", "generateur", "outils", "postgres", "redis", "travailleur"]);
+    const sansLimite = Object.entries(blocs)
+      .filter(([, l]) => !l.some((x) => /^ {4}mem_limit: \S+$/.test(x)) || !l.some((x) => /^ {4}cpus: [\d.]+$/.test(x)))
+      .map(([nom]) => nom);
+    expect(sansLimite).toEqual([]);
+  });
+});
+
 describe("documentation : liens et commandes", () => {
   it("chaque lien relatif du README, du guide d'installation, du guide de déploiement et de app/README.md existe", () => {
     expect(["README.md", "app/README.md", "docs/installation.md", "docs/deploiement.md", "docs/guide-balisage.md"].flatMap(liensCasses)).toEqual([]);

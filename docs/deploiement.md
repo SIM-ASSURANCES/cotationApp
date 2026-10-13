@@ -32,6 +32,7 @@ Volumes persistants : `donnees_postgres`, `donnees_redis`, `documents` (document
 - **Domaine** et certificat HTTPS de l'application : `URL_PUBLIQUE` (les QR codes y renvoient ; vide, aucun document ne peut être émis).
 - **Port libre** sur l'hôte : `APP_PORT` (3000 par défaut ; le VPS est partagé avec le portail RH).
 - **Ressources du VPS** (processeurs, mémoire) : elles fixent `CONVERSIONS_SIMULTANEES` (autour du nombre de processeurs moins un).
+- **Limites par service** (audit M5, `docker-compose.yml`) : `generateur` 2 Go / 2 processeurs, `app`, `travailleur`, `postgres` et `outils` 1 Go / 1 processeur, `redis` 256 Mo / 0,5. Valeurs de départ pour un VPS partagé avec le portail RH : les contrôler avec `docker stats` pendant la recette (import de 500 adhérents compris) et les ajuster dans le fichier.
 - **Polices des modèles** (Tahoma notamment) dans `generateur/polices/`, sous licence, jamais dans le dépôt (question Q2).
 - **Sauvegarde quotidienne** de la base **et** du volume `documents`, copiée hors du VPS, avec un test de restauration.
 

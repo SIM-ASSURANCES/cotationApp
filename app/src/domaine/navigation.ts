@@ -102,9 +102,8 @@ export function construireNavigation(niveaux: NiveauxNavigation): Navigation {
   }
   if (lit("DEPOSER_MODELE") || lit("PUBLIER_MODELE")) documents.push({ href: "/modeles", libelle: "Modèles Word", icone: "livre" });
 
-  const pilotage: LienNavigation[] = [];
-  if (lit("CONSULTER_TABLEAUX_DE_BORD")) pilotage.push({ href: "/tableaux-de-bord", libelle: "Tableaux de bord", icone: "graphique" });
-  if (lit("CONSULTER_AUDIT")) pilotage.push({ href: "/admin/audit", libelle: "Journal d'audit", icone: "journal" });
+  // Les tableaux de bord sont la page d'accueil (« / ») : plus de branche Pilotage. Le journal d'audit ferme le menu.
+  const audit: LienNavigation[] = lit("CONSULTER_AUDIT") ? [{ href: "/admin/audit", libelle: "Journal d'audit", icone: "journal" }] : [];
 
   const parametrer: LienNavigation[] = parametrage
     ? [
@@ -130,9 +129,9 @@ export function construireNavigation(niveaux: NiveauxNavigation): Navigation {
     { cle: "production", libelle: "Production", icone: "couches", liens: production },
     { cle: "facturation", libelle: "Facturation", icone: "portefeuille", liens: facturation },
     { cle: "documents", libelle: "Documents", icone: "arborescence", liens: documents },
-    { cle: "pilotage", libelle: "Pilotage", icone: "graphique", liens: pilotage },
     { cle: "parametrage", libelle: "Paramétrage", icone: "reglages", liens: parametrer },
     { cle: "administration", libelle: "Administration", icone: "bouclier", liens: administration },
+    { cle: "audit", libelle: "Journal d'audit", icone: "journal", liens: audit },
   ];
 
   return {

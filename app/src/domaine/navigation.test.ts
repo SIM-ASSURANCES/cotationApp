@@ -39,7 +39,6 @@ function hrefsAncienLayout(niveaux: NiveauxNavigation): string[] {
   }
   if (peutLire(parametrage) || peutLire(cotation)) hrefs.push("/calcul");
   if (niveaux.GERER_UTILISATEURS === "OUI") hrefs.push("/admin/utilisateurs", "/admin/droits", "/admin/stockage");
-  if (peutLire(niveaux.CONSULTER_TABLEAUX_DE_BORD)) hrefs.push("/tableaux-de-bord");
   if (peutLire(niveaux.CONSULTER_AUDIT)) hrefs.push("/admin/audit");
   return hrefs;
 }
@@ -78,7 +77,7 @@ describe("navigation : mêmes liens que l'ancien bandeau, profil par défaut par
     // Admin système : administration et journal d'audit, aucun écran métier.
     expect(trie(hrefs("ADMIN_SYSTEME"))).toEqual(trie(["/", "/admin/utilisateurs", "/admin/droits", "/admin/stockage", "/admin/audit"]));
     // Comptabilité : facturation et tableaux de bord, paramétrage en lecture (D21).
-    expect(hrefs("COMPTABILITE")).toEqual(expect.arrayContaining(["/factures", "/echeances", "/tableaux-de-bord", "/parametrage/taxes", "/calcul"]));
+    expect(hrefs("COMPTABILITE")).toEqual(expect.arrayContaining(["/factures", "/echeances", "/parametrage/taxes", "/calcul"]));
     expect(hrefs("COMPTABILITE")).not.toContain("/admin/utilisateurs");
   });
 });
@@ -138,10 +137,10 @@ describe("navigation : aucun droit", () => {
 });
 
 describe("navigation : branches", () => {
-  it("toutes les branches, dans l'ordre Production, Facturation, Documents, Pilotage, Paramétrage, Administration", () => {
+  it("toutes les branches, dans l'ordre Production, Facturation, Documents, Paramétrage, Administration, Journal d'audit", () => {
     const navigation = construireNavigation(niveauxVides("OUI"));
-    expect(navigation.branches.map((b) => b.cle)).toEqual(["production", "facturation", "documents", "pilotage", "parametrage", "administration"]);
-    expect(navigation.branches.map((b) => b.libelle)).toEqual(["Production", "Facturation", "Documents", "Pilotage", "Paramétrage", "Administration"]);
+    expect(navigation.branches.map((b) => b.cle)).toEqual(["production", "facturation", "documents", "parametrage", "administration", "audit"]);
+    expect(navigation.branches.map((b) => b.libelle)).toEqual(["Production", "Facturation", "Documents", "Paramétrage", "Administration", "Journal d'audit"]);
   });
 
   it("liens de chaque branche, dans l'ordre demandé", () => {
@@ -158,10 +157,7 @@ describe("navigation : branches", () => {
       ["Documents émis", "/documents"],
       ["Modèles Word", "/modeles"],
     ]);
-    expect(liensDe("pilotage")).toEqual([
-      ["Tableaux de bord", "/tableaux-de-bord"],
-      ["Journal d'audit", "/admin/audit"],
-    ]);
+    expect(liensDe("audit")).toEqual([["Journal d'audit", "/admin/audit"]]);
     expect(liensDe("parametrage")).toEqual([
       ["Produits", "/parametrage/produits"],
       ["Branches", "/parametrage/branches"],
@@ -238,7 +234,7 @@ describe("brancheContientChemin", () => {
     expect(brancheContientChemin(branche("production"), "/cotations/12")).toBe(true);
     expect(brancheContientChemin(branche("production"), "/echeances/lots/7")).toBe(true);
     expect(brancheContientChemin(branche("parametrage"), "/parametrage/produits/XYZ/relances")).toBe(true);
-    expect(brancheContientChemin(branche("pilotage"), "/admin/audit")).toBe(true);
+    expect(brancheContientChemin(branche("audit"), "/admin/audit")).toBe(true);
     expect(brancheContientChemin(branche("administration"), "/admin/audit")).toBe(false);
   });
 

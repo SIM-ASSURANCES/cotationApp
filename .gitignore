@@ -78,3 +78,4 @@ dump.rdb
 
 # --- Rapport d'audit avant mise en production : local, non versionné ---
 docs/audit-pre-production.md
+docker-compose.reseau.yml

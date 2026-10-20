@@ -552,7 +552,26 @@ export async function creerVersion(acteur: UtilisateurCourant, codeProduit: stri
         formulesMax: saisie.cotation.formulesMax,
         seuilValidationTtc: canoniqueOuNull(saisie.seuilValidationTtc),
         modeTarification: saisie.modeTarification ?? "FORMULE",
-        garanties: (saisie.garanties ?? []).map((g) => ({ libelle: g.libelle.trim(), branche: g.branche })) as unknown as Prisma.InputJsonValue,
+        garanties: (saisie.garanties ?? []).map((g) => {
+          const mg =
+            g.montantGaranti !== undefined && g.montantGaranti !== null && g.montantGaranti.trim() !== ""
+              ? canonique(g.montantGaranti)
+              : g.montantGaranti === null
+                ? null
+                : undefined;
+          const acc =
+            g.accessoires !== undefined && g.accessoires !== null && g.accessoires.trim() !== ""
+              ? canonique(g.accessoires)
+              : g.accessoires === null
+                ? null
+                : undefined;
+          return {
+            libelle: g.libelle.trim(),
+            branche: g.branche,
+            ...(mg !== undefined ? { montantGaranti: mg } : {}),
+            ...(acc !== undefined ? { accessoires: acc } : {}),
+          };
+        }) as unknown as Prisma.InputJsonValue,
         garantiesSaisieLibre: saisie.garantiesSaisieLibre ?? true,
         cgModeleCode: saisie.references?.cgModeleCode ?? null,
         cgVisa: saisie.references?.cgVisa?.trim() ?? null,
@@ -716,7 +735,21 @@ export async function figerLesTaux(client: Pick<Prisma.TransactionClient, "taxe"
   }
   return lignes.map((l) => {
     const t = taux.get(l.branche)!;
-    return { libelle: l.libelle.trim(), branche: l.branche, primeNette: canonique(l.primeNette), accessoires: canonique(l.accessoires), tauxPourcent: canonique(t.tauxPourcent), assiette: t.assiette };
+    const mg =
+      l.montantGaranti !== undefined && l.montantGaranti !== null && l.montantGaranti.trim() !== ""
+        ? canonique(l.montantGaranti)
+        : l.montantGaranti === null
+          ? null
+          : undefined;
+    return {
+      libelle: l.libelle.trim(),
+      branche: l.branche,
+      ...(mg !== undefined ? { montantGaranti: mg } : {}),
+      primeNette: canonique(l.primeNette),
+      accessoires: canonique(l.accessoires),
+      tauxPourcent: canonique(t.tauxPourcent),
+      assiette: t.assiette,
+    };
   });
 }
 

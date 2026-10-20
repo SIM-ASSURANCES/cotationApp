@@ -8,6 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { estComposition, type EntreeComposition } from "@/domaine/calcul/composition";
 import { MESSAGE_COMPOSITION_IMPOSSIBLE, type VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Souscripteur } from "@/domaine/cotation/saisie";
+import { donneesDocument } from "@/domaine/documents/donnees";
 
 import { lireJournal } from "./audit";
 import { assurerBranche } from "./branches-test";
@@ -744,5 +745,127 @@ describe("H98 : changer la période, le régime ou le type de contrat vide la co
     const { code, id } = await composee();
     expect(await modifierBrouillon(technique, id, saisie(code, { dateEcheance: "2027-03-31" }), null)).toEqual({ compositionVidee: true });
     expect((await lireCotation(technique, id))!.composition!.lignes).toEqual([]);
+  });
+});
+
+describe("D37 : montant garanti et accessoires par défaut sur les garanties du produit", () => {
+  it("reprend le montant garanti et les accessoires par défaut à la composition, permet de modifier le montant garanti (journalisé), fige à l'émission (T10) et alimente garanties_souscrites[].montant_garanti", async () => {
+    const code = await produitGaranties({
+      garanties: [
+        { libelle: "Incendie", branche: INCENDIE, montantGaranti: "50000000", accessoires: "2500" },
+        { libelle: "Vol", branche: IARD, montantGaranti: "10000000", accessoires: "2500" },
+        { libelle: "Responsabilité civile", branche: IARD, montantGaranti: null, accessoires: "1000" },
+      ],
+    });
+    const id = await creerBrouillon(commercial, saisie(code), null);
+
+    // 1. Première composition : montants garantis et accessoires par défaut repris quand non surchargés.
+    await composerLaPrime(
+      technique,
+      id,
+      [
+        { libelle: "Incendie", branche: INCENDIE, primeNette: "10000", accessoires: "" },
+        { libelle: "Vol", branche: IARD, primeNette: "9850", accessoires: "" },
+        { libelle: "Responsabilité civile", branche: IARD, primeNette: "6000", accessoires: "" },
+      ],
+      "Composition initiale avec défauts (inventé)",
+      null,
+    );
+    const lue1 = (await lireCotation(commercial, id))!;
+    expect(lue1.composition!.lignes.map((l) => [l.libelle, l.montantGaranti ?? null, l.accessoires])).toEqual([
+      ["Incendie", "50000000", "2500"],
+      ["Vol", "10000000", "2500"],
+      ["Responsabilité civile", null, "1000"],
+    ]);
+
+    // 2. Recomposition : la Technique modifie le montant garanti de « Vol » (15 000 000 au lieu de 10 000 000) ; le journal garde avant / après.
+    await composerLaPrime(
+      technique,
+      id,
+      [
+        { libelle: "Incendie", branche: INCENDIE, montantGaranti: "50000000", primeNette: "10000", accessoires: "2500" },
+        { libelle: "Vol", branche: IARD, montantGaranti: "15000000", primeNette: "9850", accessoires: "2500" },
+        { libelle: "Responsabilité civile", branche: IARD, montantGaranti: null, primeNette: "6000", accessoires: "2500" },
+      ],
+      "Modification du capital Vol (inventé)",
+      null,
+    );
+    const journal = (await lireJournal({ action: "COTATION_COMPOSEE" })).lignes.filter((l) => l.objet === `cotation ${id}`);
+    expect(journal.length).toBeGreaterThanOrEqual(2);
+    const derniereEntree = journal[0];
+    expect((derniereEntree.avant as { lignes: { libelle: string; montantGaranti?: string | null }[] }).lignes.find((l) => l.libelle === "Vol")?.montantGaranti).toBe("10000000");
+    expect((derniereEntree.apres as { lignes: { libelle: string; montantGaranti?: string | null }[] }).lignes.find((l) => l.libelle === "Vol")?.montantGaranti).toBe("15000000");
+
+    // 3. Émission de la cotation, puis ajout d'une nouvelle version du produit avec d'autres montants garantis par défaut : cotation émise figée (T10).
+    expect((await soumettre(commercial, id, null)).statut).toBe("EMISE");
+    await creerVersion(
+      technique,
+      code,
+      versionGaranties({
+        dateEffet: "2026-06-01",
+        garanties: [
+          { libelle: "Incendie", branche: INCENDIE, montantGaranti: "99000000", accessoires: "9000" },
+          { libelle: "Vol", branche: IARD, montantGaranti: "88000000", accessoires: "9000" },
+        ],
+      }),
+      null,
+    );
+    const lueApresNouvelleVersion = (await lireCotation(commercial, id))!;
+    expect(lueApresNouvelleVersion.composition!.lignes.map((l) => [l.libelle, l.montantGaranti ?? null, l.accessoires])).toEqual([
+      ["Incendie", "50000000", "2500"],
+      ["Vol", "15000000", "2500"],
+      ["Responsabilité civile", null, "2500"],
+    ]);
+
+    // 4. Données du PDF : garanties_souscrites[].montant_garanti présent (vide pour une garantie sans capital).
+    const cotation = await obtenirPrisma().cotation.findUniqueOrThrow({ where: { id } });
+    const contexte = await contexteProduit(cotation.produitId, cotation.versionDateEffet);
+    const m = montantsDu(cotation.donneesCalcul as unknown as EntreeComposition, contexte);
+    expect(m.garanties.map((g) => [g.libelle, g.montantGaranti ?? null, g.ttc])).toEqual([
+      ["Incendie", "50000000", "14063"],
+      ["Vol", "15000000", "13245"],
+      ["Responsabilité civile", null, "9116"],
+    ]);
+    const donnees = donneesDocument({
+      type: "COTATION",
+      numero: cotation.numero!,
+      version: 1,
+      dateEmission: "2026-01-01",
+      dateValidite: "2026-04-01",
+      policeNumero: null,
+      produit: contexte.produit,
+      cg: null,
+      cs: null,
+      souscripteur: prospect,
+      assures: [],
+      ordresSansPrime: [],
+      beneficiaires: null,
+      contactsUrgence: null,
+      policeMere: null,
+      risque: {},
+      dateEffet: "2026-01-01",
+      dateEcheance: "2026-12-31",
+      joursCouverts: m.resultat.joursCouverts,
+      formules: m.formules,
+      garanties: m.garanties,
+      totaux: m.totaux,
+      taxe: m.taxe,
+      echeances: [],
+      forcee: false,
+      motifForcage: null,
+      societe: { raison_sociale: "SIM", rccm: "", ncc: "", agrement: "", capital: "", adresse: "Abidjan", telephone: "" },
+      mentions: { mention_courtier: "", pied_page: "", texte_clause_beneficiaire_type: "" },
+      urlVerification: null,
+      typeContrat: "INDIVIDUEL",
+    }) as {
+      produit: { branche_libelle: string };
+      garanties_souscrites: { libelle: string; montant_garanti: string; nette: string; accessoires: string; taxe: string; ttc: string }[];
+    };
+    expect(donnees.produit.branche_libelle).toBe("Incendie et dommages aux biens");
+    expect(donnees.garanties_souscrites.map((g) => [g.libelle, g.montant_garanti, g.ttc])).toEqual([
+      ["Incendie", "50000000", "14063"],
+      ["Vol", "15000000", "13245"],
+      ["Responsabilité civile", null, "9116"],
+    ]);
   });
 });

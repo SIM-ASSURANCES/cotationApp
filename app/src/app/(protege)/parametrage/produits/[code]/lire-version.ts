@@ -19,8 +19,9 @@ const parmi = <T extends string>(valeur: string, autorisees: readonly T[]): T =>
   (autorisees as readonly string[]).includes(valeur) ? (valeur as T) : ("INVALIDE" as T);
 
 /**
- * Garanties du produit (session 6.2b) : une par ligne, « Libellé » ou « Libellé ; BRANCHE » (branche fiscale proposée sur la ligne de prime).
- * Les lignes vides sont ignorées ; le contrôle (doublons, code de branche) est fait par la validation du domaine.
+ * Garanties du produit (session 6.2b, D37) : une par ligne, « Libellé [; BRANCHE [; MONTANT_GARANTI [; ACCESSOIRES]]] »
+ * (catégorie de taxe proposée, montant garanti par défaut facultatif, accessoires par défaut facultatifs).
+ * Les lignes vides sont ignorées ; le contrôle (doublons, code de branche, montants >= 0) est fait par la validation du domaine.
  */
 export function lireGaranties(texte: string): GarantieParametree[] {
   return texte
@@ -28,8 +29,13 @@ export function lireGaranties(texte: string): GarantieParametree[] {
     .map((ligne) => ligne.trim())
     .filter((ligne) => ligne !== "")
     .map((ligne) => {
-      const [libelle, branche] = ligne.split(";").map((x) => x.trim());
-      return { libelle, branche: branche ? branche.toUpperCase() : null };
+      const [libelle, branche, montantGaranti, accessoires] = ligne.split(";").map((x) => x.trim());
+      return {
+        libelle,
+        branche: branche ? branche.toUpperCase() : null,
+        ...(montantGaranti ? { montantGaranti: m(montantGaranti) } : {}),
+        ...(accessoires ? { accessoires: m(accessoires) } : {}),
+      };
     });
 }
 

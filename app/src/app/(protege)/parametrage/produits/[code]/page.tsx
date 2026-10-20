@@ -33,13 +33,28 @@ const COLONNES_FORMULES: ColonneTableau<Formule>[] = [
   { cle: "ages", entete: "Âges", rendu: (f) => (f.ageMin == null && f.ageMax == null ? "–" : `${f.ageMin ?? 0} à ${f.ageMax ?? "…"} ans`) },
 ];
 
+function formaterGarantieResume(g: NonNullable<VersionProduit["garanties"]>[number]): string {
+  const details = [
+    g.branche,
+    g.montantGaranti != null ? `capital ${net(g.montantGaranti)} F` : null,
+    g.accessoires != null ? `acc. ${net(g.accessoires)} F` : null,
+  ].filter(Boolean);
+  return details.length > 0 ? `${g.libelle} (${details.join(", ")})` : g.libelle;
+}
+
+function formaterGarantieSaisie(g: NonNullable<VersionProduit["garanties"]>[number]): string {
+  if (g.accessoires != null) return `${g.libelle} ; ${g.branche ?? ""} ; ${g.montantGaranti != null ? net(g.montantGaranti) : ""} ; ${net(g.accessoires)}`;
+  if (g.montantGaranti != null) return `${g.libelle} ; ${g.branche ?? ""} ; ${net(g.montantGaranti)}`;
+  return g.branche ? `${g.libelle} ; ${g.branche}` : g.libelle;
+}
+
 function Resume({ v }: { v: VersionProduit }) {
   return (
     <Carte>
       <h3 className="mb-2 text-base font-bold text-foreground">Version en vigueur depuis le {v.dateEffet}</h3>
       <p className="mb-3 text-sm text-muted-foreground">
         Tarification : {LIBELLE_MODE[v.modeTarification] ?? v.modeTarification}
-        {v.garanties && v.garanties.length > 0 ? ` — garanties : ${v.garanties.map((g) => (g.branche ? `${g.libelle} (${g.branche})` : g.libelle)).join(", ")}${v.garantiesSaisieLibre === false ? " ; saisie libre interdite" : ""}` : ""} ·{" "}
+        {v.garanties && v.garanties.length > 0 ? ` — garanties : ${v.garanties.map(formaterGarantieResume).join(", ")}${v.garantiesSaisieLibre === false ? " ; saisie libre interdite" : ""}` : ""} ·{" "}
         Arrondi : {v.arrondi.precision} F, {LIBELLE_SENS[v.arrondi.sens].toLowerCase()}, {LIBELLE_NIVEAU[v.arrondi.niveau].toLowerCase()} · Prorata {v.prorata.actif ? "actif" : "inactif"}
         {v.prorata.primeMinimale ? `, prime minimale ${net(v.prorata.primeMinimale)}` : ""} · Fractionnement jusqu'à {v.fractionnement.tranchesMax} tranche(s)
         {net(v.fractionnement.frais) !== "0" ? `, frais ${net(v.fractionnement.frais)}` : ""} · Validité {v.cotation.validiteMois} mois
@@ -170,8 +185,8 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
             </div>
             <h3 className={SOUS_TITRE}>Garanties du produit (mode « Par garanties » seulement)</h3>
             <p className="mb-2 text-sm text-muted-foreground">
-              Une garantie par ligne : « Libellé » ou « Libellé ; BRANCHE » (la branche fiscale est alors proposée sur la ligne de prime). Elles servent de suggestions à la
-              composition de la prime. Aucune formule n&apos;est nécessaire dans ce mode.
+              Une garantie par ligne : « Libellé ; CATÉGORIE_TAXE ; MONTANT_GARANTI ; ACCESSOIRES » (catégorie de taxe proposée, montant garanti par défaut en FCFA ≥ 0 facultatif,
+              accessoires par défaut en FCFA ≥ 0 facultatifs). Elles pré-remplissent la composition de la prime. Aucune formule n&apos;est nécessaire dans ce mode.
             </p>
             <div className="mb-4 max-w-4xl">
               <input type="hidden" name="garantiesPresentes" value="1" />
@@ -180,8 +195,8 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
                   label="Garanties"
                   name="garanties"
                   rows={6}
-                  defaultValue={(base?.garanties ?? []).map((g) => (g.branche ? `${g.libelle} ; ${g.branche}` : g.libelle)).join("\n")}
-                  placeholder={"Incendie ; INCENDIE\nVol ; IARD"}
+                  defaultValue={(base?.garanties ?? []).map(formaterGarantieSaisie).join("\n")}
+                  placeholder={"Incendie ; INCENDIE ; 50000000 ; 5000\nVol ; IARD ; 10000000 ; 2500"}
                 />
               </div>
               <label className="flex min-h-10 items-center gap-2 text-sm font-medium lg:min-h-0">

@@ -36,4 +36,25 @@ describe("lireLignesDePrime : formulaire -> lignes de prime", () => {
     expect(l[0].primeNette).toBe("1.234,5");
     expect(problemesLignesDePrime(l).join(" ")).toContain("Montant invalide");
   });
+
+  it("lit le montant garanti facultatif (en écriture canonique, ou null s'il est laissé vide)", () => {
+    const d = new FormData();
+    d.append("ligne_libelle", "Incendie");
+    d.append("ligne_branche", "INCENDIE");
+    d.append("ligne_montant_garanti", "50 000 000");
+    d.append("ligne_nette", "100 000");
+    d.append("ligne_accessoires", "5 000");
+    d.append("ligne_libelle", "Responsabilité civile");
+    d.append("ligne_branche", "IARD");
+    d.append("ligne_montant_garanti", "");
+    d.append("ligne_nette", "25 000");
+    d.append("ligne_accessoires", "2 500");
+
+    const l = lireLignesDePrime(d);
+    expect(l).toEqual([
+      { libelle: "Incendie", branche: "INCENDIE", montantGaranti: "50000000", primeNette: "100000", accessoires: "5000" },
+      { libelle: "Responsabilité civile", branche: "IARD", montantGaranti: null, primeNette: "25000", accessoires: "2500" },
+    ]);
+    expect(problemesLignesDePrime(l)).toEqual([]);
+  });
 });

@@ -43,6 +43,8 @@ export type FormuleSource = {
 export type GarantieSource = {
   libelle: string;
   branche: string;
+  /** Montant garanti (capital ou 1er risque, en FCFA, ≥ 0, D37) : facultatif (null ou absent pour une garantie sans capital). */
+  montantGaranti?: string | null;
   nette: string;
   accessoires: string;
   tauxTaxe: string;
@@ -228,7 +230,16 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
     // Une ligne par garantie souscrite (session 6.2b) ; liste vide pour un produit à la formule (champ facultatif).
     garanties_souscrites: certificat
       ? NON_FOURNI
-      : (s.garanties ?? []).map((g) => ({ libelle: g.libelle, branche: g.branche, prime_nette: g.nette, accessoires: g.accessoires, taux_taxe: g.tauxTaxe, taxe: g.taxe, ttc: g.ttc })),
+      : (s.garanties ?? []).map((g) => ({
+          libelle: g.libelle,
+          branche: g.branche,
+          montant_garanti: g.montantGaranti ?? null,
+          prime_nette: g.nette,
+          accessoires: g.accessoires,
+          taux_taxe: g.tauxTaxe,
+          taxe: g.taxe,
+          ttc: g.ttc,
+        })),
     prime: certificat
       ? NON_FOURNI
       : {

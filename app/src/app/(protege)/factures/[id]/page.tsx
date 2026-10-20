@@ -18,7 +18,7 @@ const f = (m: string) => formaterMontant(montant(m));
 
 /** Ligne des tableaux de montants : les lignes de détail, puis une ligne « Total » (en gras, sans zébrure propre). */
 type LigneMontant = { cle: string; total: boolean };
-type LigneGarantie = LigneMontant & { libelle: string; branche: string; nette: string; accessoires: string; taux: string; taxe: string; ttc: string };
+type LigneGarantie = LigneMontant & { libelle: string; branche: string; montantGaranti: string; nette: string; accessoires: string; taux: string; taxe: string; ttc: string };
 type LigneFormule = LigneMontant & { libelle: string; effectif: number | null; nette: string; accessoires: string; taxe: string; ttc: string };
 
 /** Contenu d'une cellule de tableau de montants : en gras sur la ligne « Total ». */
@@ -71,16 +71,18 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
     total: false,
     libelle: g.libelle,
     branche: g.branche,
+    montantGaranti: g.montantGaranti != null ? f(g.montantGaranti) : "—",
     nette: g.nette,
     accessoires: g.accessoires,
     taux: `${montant(g.tauxTaxe).toString().replace(".", ",")} %`,
     taxe: g.taxe,
     ttc: g.ttc,
   }));
-  if (modeGaranties) lignesGaranties.push({ cle: "total", total: true, libelle: "Total", branche: "", nette: c.totaux.nette, accessoires: c.totaux.accessoires, taux: "", taxe: c.totaux.taxe, ttc: c.totaux.ttc });
+  if (modeGaranties) lignesGaranties.push({ cle: "total", total: true, libelle: "Total", branche: "", montantGaranti: "", nette: c.totaux.nette, accessoires: c.totaux.accessoires, taux: "", taxe: c.totaux.taxe, ttc: c.totaux.ttc });
   const colonnesGaranties: ColonneTableau<LigneGarantie>[] = [
     { cle: "garantie", entete: "Garantie", rendu: (l) => cellule(l, l.libelle) },
-    { cle: "branche", entete: "Branche", rendu: (l) => cellule(l, l.branche) },
+    { cle: "branche", entete: "Catégorie de taxe", rendu: (l) => cellule(l, l.branche) },
+    { cle: "montantGaranti", entete: "Montant garanti", alignement: "droite", rendu: (l) => cellule(l, l.montantGaranti) },
     { cle: "nette", entete: "Prime nette (HT)", alignement: "droite", rendu: (l) => cellule(l, f(l.nette)) },
     { cle: "accessoires", entete: "Accessoires", alignement: "droite", rendu: (l) => cellule(l, f(l.accessoires)) },
     { cle: "taux", entete: "Taux", alignement: "droite", rendu: (l) => cellule(l, l.taux) },

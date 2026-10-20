@@ -9,14 +9,25 @@ const colonne = (d: FormData, nom: string) => d.getAll(nom).map((v) => String(v)
  * lisibles. Une ligne entièrement vide est ignorée.
  */
 export function lireLignesDePrime(d: FormData): LigneDePrime[] {
-  const [libelles, branches, nettes, accessoires] = ["ligne_libelle", "ligne_branche", "ligne_nette", "ligne_accessoires"].map((n) => colonne(d, n));
+  const [libelles, branches, montantsGarantis, nettes, accessoires] = [
+    "ligne_libelle",
+    "ligne_branche",
+    "ligne_montant_garanti",
+    "ligne_nette",
+    "ligne_accessoires",
+  ].map((n) => colonne(d, n));
+  const aMontantGaranti = d.has("ligne_montant_garanti");
   return libelles
-    .map((libelle, i) => ({
-      libelle,
-      branche: branches[i] ?? "",
-      primeNette: normaliserMontantSaisi(nettes[i] ?? ""),
-      // Accessoires laissés vides : zéro (aucun accessoire), pas une erreur.
-      accessoires: (accessoires[i] ?? "") === "" ? "0" : normaliserMontantSaisi(accessoires[i]),
-    }))
-    .filter((l) => !(l.libelle === "" && l.branche === "" && l.primeNette === "" && l.accessoires === "0"));
+    .map((libelle, i) => {
+      const mg = (montantsGarantis[i] ?? "").trim();
+      return {
+        libelle,
+        branche: branches[i] ?? "",
+        ...(aMontantGaranti ? { montantGaranti: mg === "" ? null : normaliserMontantSaisi(mg) } : {}),
+        primeNette: normaliserMontantSaisi(nettes[i] ?? ""),
+        // Accessoires laissés vides : zéro (aucun accessoire), pas une erreur.
+        accessoires: (accessoires[i] ?? "") === "" ? "0" : normaliserMontantSaisi(accessoires[i]),
+      };
+    })
+    .filter((l) => !(l.libelle === "" && l.branche === "" && (l.montantGaranti ?? null) === null && l.primeNette === "" && l.accessoires === "0"));
 }

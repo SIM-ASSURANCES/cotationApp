@@ -134,7 +134,17 @@ export function montantsDu(donnees: DonneesCalcul, contexte: ContexteProduit) {
       const ligne = donnees.lignes[i];
       const baseLigne = ligne.assiette === "NETTE_ACCESSOIRES" ? l.arrondi.nette.plus(l.arrondi.accessoires) : l.arrondi.nette;
       base = base.plus(baseLigne);
-      return { libelle: ligne.libelle, branche: ligne.branche, nette: t(l.arrondi.nette), accessoires: t(l.arrondi.accessoires), tauxTaxe: ligne.tauxPourcent, taxe: t(l.arrondi.taxe), ttc: t(l.arrondi.ttc), baseTaxe: t(baseLigne) };
+      return {
+        libelle: ligne.libelle,
+        branche: ligne.branche,
+        ...(ligne.montantGaranti !== undefined ? { montantGaranti: ligne.montantGaranti } : {}),
+        nette: t(l.arrondi.nette),
+        accessoires: t(l.arrondi.accessoires),
+        tauxTaxe: ligne.tauxPourcent,
+        taxe: t(l.arrondi.taxe),
+        ttc: t(l.arrondi.ttc),
+        baseTaxe: t(baseLigne),
+      };
     });
     const a = resultat.totaux.arrondi;
     const assiettes = new Set(donnees.lignes.map((l) => l.assiette));

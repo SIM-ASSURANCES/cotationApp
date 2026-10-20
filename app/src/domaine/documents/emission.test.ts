@@ -127,6 +127,7 @@ describe("données d'une cotation T1 (dictionnaire, montants du moteur)", () => 
       "doc.empreinte",
       "formules[].taux_couverture",
       "garanties_souscrites",
+      "garanties_souscrites[].montant_garanti",
       "intermediaires",
       "police.nantissement",
       "police.police_mere",

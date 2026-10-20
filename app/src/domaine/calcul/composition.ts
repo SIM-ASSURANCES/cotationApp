@@ -30,6 +30,8 @@ export type LigneDePrime = {
   libelle: string;
   /** Code de la branche fiscale de la ligne (INCENDIE, IARD, IA, DECES, SANTE…) : elle choisit le taux de taxe. */
   branche: string;
+  /** Montant garanti (capital ou 1er risque, en FCFA, ≥ 0, D37) : facultatif (null ou absent pour une garantie sans capital). */
+  montantGaranti?: string | null;
   /** Prime nette HT de la ligne, texte décimal. */
   primeNette: string;
   /** Accessoires de la ligne, texte décimal (« 0 » s'il n'y en a pas). */
@@ -88,6 +90,14 @@ export function problemesLignesDePrime(lignes: LigneDePrime[], options: { exiger
     if (libelle === "") p.push(`${nom} : le libellé de la garantie est obligatoire.`);
     else if (libelle.length > LONGUEUR_MAX_LIBELLE_LIGNE) p.push(`${nom} : libellé trop long (${LONGUEUR_MAX_LIBELLE_LIGNE} caractères au plus).`);
     if (!CODE_BRANCHE.test(l.branche)) p.push(`${nom} : choisissez la branche fiscale de la ligne.`);
+    if (l.montantGaranti !== undefined && l.montantGaranti !== null && l.montantGaranti.trim() !== "") {
+      try {
+        const mg = montant(l.montantGaranti);
+        if (mg.isNegative()) p.push(`${nom} (montant garanti) : un montant négatif n'est pas accepté.`);
+      } catch (erreur) {
+        p.push(`${nom} (montant garanti) : ${erreur instanceof Error ? erreur.message : "montant invalide."}`);
+      }
+    }
     for (const [valeur, champ, strict] of [[l.primeNette, "prime nette", true], [l.accessoires, "accessoires", false]] as const) {
       try {
         const m = montant(valeur);
@@ -147,7 +157,13 @@ export function tauxUnique(lignes: Pick<LigneComposee, "tauxPourcent">[]): strin
 
 /** Les mêmes lignes, sans le taux ni l'assiette : ce que la Technique a réellement saisi. */
 export const saisieDesLignes = (lignes: LigneComposee[]): LigneDePrime[] =>
-  lignes.map(({ libelle, branche, primeNette, accessoires }) => ({ libelle, branche, primeNette, accessoires }));
+  lignes.map(({ libelle, branche, montantGaranti, primeNette, accessoires }) => ({
+    libelle,
+    branche,
+    ...(montantGaranti !== undefined ? { montantGaranti } : {}),
+    primeNette,
+    accessoires,
+  }));
 
 /**
  * Recalcul à l'identique d'un calcul figé (cotation, police, facture), quelle que soit sa nature : composition manuelle ou calcul

@@ -94,8 +94,16 @@ export const MESSAGE_RENOUVELLEMENT_GARANTIES =
 export const MESSAGE_AVENANT_GARANTIES =
   "L'incorporation d'adhérents dans une police d'un produit tarifé par garanties n'est pas encore facturée automatiquement : la prime d'un avenant à garanties n'est pas gérée";
 
-/** Une garantie paramétrée du produit : son libellé et, facultativement, la branche fiscale proposée sur la ligne de prime. */
-export type GarantieParametree = { libelle: string; branche: string | null };
+/**
+ * Une garantie paramétrée du produit : son libellé, la catégorie de taxe proposée, le montant garanti par défaut (capital ou 1er risque,
+ * en FCFA, ≥ 0, facultatif : vide/null pour une garantie sans capital) et les accessoires par défaut (en FCFA, ≥ 0).
+ */
+export type GarantieParametree = {
+  libelle: string;
+  branche: string | null;
+  montantGaranti?: string | null;
+  accessoires?: string | null;
+};
 
 export type VersionSaisie = {
   dateEffet: DateIso;
@@ -225,6 +233,12 @@ export function problemesVersion(v: VersionSaisie): string[] {
     else if (libellesVus.has(libelle.toLowerCase())) p.push(`Garantie « ${libelle} » en double.`);
     libellesVus.add(libelle.toLowerCase());
     if (g.branche !== null && !codeValide(g.branche)) p.push(`Garantie « ${libelle} » : code de branche invalide.`);
+    if (g.montantGaranti !== undefined && g.montantGaranti !== null && g.montantGaranti.trim() !== "") {
+      montantPositifOuNul(g.montantGaranti, `Garantie « ${libelle} » : le montant garanti par défaut`, p);
+    }
+    if (g.accessoires !== undefined && g.accessoires !== null && g.accessoires.trim() !== "") {
+      montantPositifOuNul(g.accessoires, `Garantie « ${libelle} » : les accessoires par défaut`, p);
+    }
   }
   if (parGaranties && v.garantiesSaisieLibre === false && garanties.length === 0) p.push("La saisie libre est interdite : la liste des garanties du produit ne peut pas être vide.");
   const codes = new Set<string>();

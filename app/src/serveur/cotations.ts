@@ -294,7 +294,16 @@ async function calculerComposition(tx: Tx, saisie: SaisieCotation, dateDocument:
   const contexte = await resoudreContexteComposition(tx, saisie.codeProduit, dateDocument);
   const { version } = contexte;
   const souscripteur = await souscripteurDe(tx, saisie);
-  const lignesSaisies = saisie.composition ?? [];
+  const lignesSaisies: LigneDePrime[] = (saisie.composition ?? []).map((l) => {
+    const g = (version.garanties ?? []).find((x) => x.libelle.trim().toLowerCase() === l.libelle.trim().toLowerCase());
+    const montantGaranti = l.montantGaranti !== undefined ? l.montantGaranti : g?.montantGaranti;
+    const accessoires = l.accessoires !== undefined && l.accessoires.trim() !== "" ? l.accessoires : (g?.accessoires ?? "0");
+    return {
+      ...l,
+      ...(montantGaranti !== undefined ? { montantGaranti } : {}),
+      accessoires,
+    };
+  });
   const problemes = [
     ...problemesSouscripteur(souscripteur, dateDocument),
     ...(saisie.lignes.length > 0 ? [MESSAGE_BROUILLON_A_FORMULES] : []),
@@ -572,8 +581,7 @@ export async function composerLaPrime(acteur: UtilisateurCourant, id: number, li
   const motifPropre = motif.trim();
   if (motifPropre.length < LONGUEUR_MIN_MOTIF_COMPOSITION) throw new ErreurMetier(`Le motif de la composition est obligatoire (${LONGUEUR_MIN_MOTIF_COMPOSITION} caractères au moins).`);
   if (motifPropre.length > LONGUEUR_MAX_MOTIF_COMPOSITION) throw new ErreurMetier(`Le motif de la composition est trop long (${LONGUEUR_MAX_MOTIF_COMPOSITION} caractères au plus).`);
-  const problemes = problemesLignesDePrime(lignes);
-  if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
+  if (lignes.length === 0) throw new ErreurMetier("Saisissez au moins une ligne de prime.");
 
   return obtenirPrisma().$transaction(async (tx) => {
     const avant = await chargerPourModification(tx, id);

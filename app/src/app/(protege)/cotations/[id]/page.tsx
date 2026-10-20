@@ -72,16 +72,18 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
   const titre = c.numero ?? `Brouillon n° ${c.id}`;
 
   // Le Tableau n'a pas de pied : le total général est une dernière ligne repérée par `total` (rendue en gras).
-  type LignePrime = { cle: string; total: boolean; libelle: string; branche: string; effectif: string; nette: string; accessoires: string; taux: string; taxe: string; ttc: string; ttcParUnite: string };
+  type LignePrime = { cle: string; total: boolean; libelle: string; branche: string; montantGaranti: string; effectif: string; nette: string; accessoires: string; taux: string; taxe: string; ttc: string; ttcParUnite: string };
   const gras = (total: boolean, contenu: string) => (total ? <strong>{contenu}</strong> : contenu);
   const totalGeneral: LignePrime = {
-    cle: "TOTAL", total: true, libelle: "Total général", branche: "", effectif: "", taux: "", ttcParUnite: "",
+    cle: "TOTAL", total: true, libelle: "Total général", branche: "", montantGaranti: "", effectif: "", taux: "", ttcParUnite: "",
     nette: f(x.totaux.arrondi.nette), accessoires: f(x.totaux.arrondi.accessoires), taxe: f(x.totaux.arrondi.taxe), ttc: f(x.totaux.arrondi.ttc),
   };
   const lignesGaranties: LignePrime[] = composition
     ? [
         ...x.lignes.map((l, i) => ({
-          cle: l.code, total: false, libelle: composition.lignes[i].libelle, branche: composition.lignes[i].branche, effectif: "",
+          cle: l.code, total: false, libelle: composition.lignes[i].libelle, branche: composition.lignes[i].branche,
+          montantGaranti: composition.lignes[i].montantGaranti != null ? f(montant(composition.lignes[i].montantGaranti!)) : "—",
+          effectif: "",
           nette: f(l.arrondi.nette), accessoires: f(l.arrondi.accessoires), taux: `${montant(composition.lignes[i].tauxPourcent).toString().replace(".", ",")} %`,
           taxe: f(l.arrondi.taxe), ttc: f(l.arrondi.ttc), ttcParUnite: "",
         })),
@@ -90,7 +92,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
     : [];
   const lignesFormules: LignePrime[] = [
     ...[...x.lignes, ...(x.fraisFractionnement ? [x.fraisFractionnement] : [])].map((l) => ({
-      cle: l.code, total: false, libelle: c.libelles[l.code] ?? "Frais de fractionnement", branche: "",
+      cle: l.code, total: false, libelle: c.libelles[l.code] ?? "Frais de fractionnement", branche: "", montantGaranti: "",
       effectif: l.code === "FRAIS_FRACTIONNEMENT" ? "—" : String(l.effectif),
       nette: f(l.arrondi.nette), accessoires: f(l.arrondi.accessoires), taux: "", taxe: f(l.arrondi.taxe), ttc: f(l.arrondi.ttc),
       ttcParUnite: l.code === "FRAIS_FRACTIONNEMENT" ? "—" : f(l.ttcParUnite),
@@ -187,7 +189,8 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
               cleLigne={(l) => l.cle}
               colonnes={[
                 { cle: "garantie", entete: "Garantie", className: "font-medium", rendu: (l) => gras(l.total, l.libelle) },
-                { cle: "branche", entete: "Branche", rendu: (l) => l.branche },
+                { cle: "branche", entete: "Catégorie de taxe", rendu: (l) => l.branche },
+                { cle: "montantGaranti", entete: "Montant garanti", alignement: "droite", rendu: (l) => l.montantGaranti },
                 { cle: "nette", entete: "Prime nette (HT)", alignement: "droite", rendu: (l) => gras(l.total, l.nette) },
                 { cle: "accessoires", entete: "Accessoires", alignement: "droite", rendu: (l) => gras(l.total, l.accessoires) },
                 { cle: "taux", entete: "Taux", alignement: "droite", rendu: (l) => l.taux },
@@ -381,8 +384,19 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
             <input type="hidden" name="id" value={c.id} />
             <div className="mb-4">
               <LignesComposition
-                initiales={(composition?.lignes ?? []).map((l) => ({ libelle: l.libelle, branche: l.branche, primeNette: montant(l.primeNette).toString(), accessoires: montant(l.accessoires).toString() }))}
-                garanties={c.garantiesDuProduit}
+                initiales={(composition?.lignes ?? []).map((l) => ({
+                  libelle: l.libelle,
+                  branche: l.branche,
+                  montantGaranti: l.montantGaranti != null ? montant(l.montantGaranti).toString() : "",
+                  primeNette: montant(l.primeNette).toString(),
+                  accessoires: montant(l.accessoires).toString(),
+                }))}
+                garanties={c.garantiesDuProduit.map((g) => ({
+                  libelle: g.libelle,
+                  branche: g.branche,
+                  montantGaranti: g.montantGaranti != null ? montant(g.montantGaranti).toString() : null,
+                  accessoires: g.accessoires != null ? montant(g.accessoires).toString() : null,
+                }))}
                 branches={branchesActives.map((b) => ({ code: b.code, libelle: b.libelle }))}
                 saisieLibre={c.garantiesSaisieLibre}
               />

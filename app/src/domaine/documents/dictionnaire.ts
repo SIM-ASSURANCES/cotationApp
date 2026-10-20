@@ -166,6 +166,7 @@ export const CHAMPS: readonly Champ[] = [
   c("garanties_souscrites", "liste", "Une ligne par garantie souscrite d'un produit tarifé par garanties (extension D32) ; liste vide pour un produit à la formule", undefined, S3, FACULTATIF),
   c("garanties_souscrites[].libelle", "texte", "Libellé de la garantie, de la surprime ou de la majoration (extension D32)", "Incendie", S3),
   c("garanties_souscrites[].branche", "texte", "Branche fiscale de la ligne : INCENDIE, IARD, IA, DECES… (extension D32)", "INCENDIE", S3),
+  c("garanties_souscrites[].montant_garanti", "montant", "Montant garanti de la garantie : capital ou 1er risque en FCFA ; vide pour une garantie sans capital (extension D37)", "10000000", S3, FACULTATIF),
   c("garanties_souscrites[].prime_nette", "montant", "Prime nette de la garantie (extension D32)", "10000", S3),
   c("garanties_souscrites[].accessoires", "montant", "Accessoires de la garantie (extension D32)", "2500", S3),
   c("garanties_souscrites[].taux_taxe", "pourcentage", "Taux de taxe de la garantie, selon sa branche (extension D32)", "12.5", S3),

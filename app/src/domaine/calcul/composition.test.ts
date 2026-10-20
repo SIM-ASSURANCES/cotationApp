@@ -181,8 +181,11 @@ describe("composition vide, taux unique, saisie", () => {
     expect(tauxUnique([])).toBeNull();
   });
 
-  it("la saisie des lignes retire le taux et l'assiette", () => {
+  it("la saisie des lignes retire le taux et l'assiette et conserve le montant garanti quand il est présent", () => {
     expect(saisieDesLignes([IARD[0]])).toEqual([{ libelle: "Incendie", branche: "INCENDIE", primeNette: "10000", accessoires: "2500" }]);
+    expect(saisieDesLignes([{ ...IARD[0], montantGaranti: "50000000" }])).toEqual([
+      { libelle: "Incendie", branche: "INCENDIE", montantGaranti: "50000000", primeNette: "10000", accessoires: "2500" },
+    ]);
   });
 
   it("estComposition distingue l'entrée du moteur à la formule ; recalculer aiguille vers le bon calcul", () => {
@@ -232,10 +235,13 @@ describe("validation de la saisie des lignes de prime", () => {
     expect(problemesLignesDePrime([{ ...ok, branche: "A".repeat(30) }])).toEqual([]);
     expect(problemesLignesDePrime([{ ...ok, branche: "A".repeat(31) }])).toHaveLength(1);
   });
-  it("libellé obligatoire et borné, branche en code valide, 30 lignes au plus", () => {
+  it("libellé obligatoire et borné, branche en code valide, 30 lignes au plus, montant garanti facultatif >= 0", () => {
     expect(problemesLignesDePrime([{ ...ok, libelle: "  " }]).join()).toContain("le libellé de la garantie est obligatoire");
     expect(problemesLignesDePrime([{ ...ok, libelle: "x".repeat(101) }]).join()).toContain("libellé trop long");
     expect(problemesLignesDePrime([{ ...ok, branche: "incendie" }]).join()).toContain("choisissez la branche fiscale");
     expect(problemesLignesDePrime(Array.from({ length: MAX_LIGNES_DE_PRIME + 1 }, () => ok)).join()).toContain(`Au plus ${MAX_LIGNES_DE_PRIME} lignes`);
+    expect(problemesLignesDePrime([{ ...ok, montantGaranti: "50 000 000" }, { ...ok, montantGaranti: "0" }, { ...ok, montantGaranti: null }])).toEqual([]);
+    expect(problemesLignesDePrime([{ ...ok, montantGaranti: "-1" }]).join()).toContain("Ligne 1 (montant garanti) : un montant négatif n'est pas accepté");
+    expect(problemesLignesDePrime([{ ...ok, montantGaranti: "abc" }]).join()).toContain("Ligne 1 (montant garanti) : Montant invalide");
   });
 });

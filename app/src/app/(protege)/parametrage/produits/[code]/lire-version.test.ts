@@ -88,11 +88,11 @@ describe("session 6.2b : garanties du produit", () => {
     expect(lireVersion(d).formules.map((f) => f.libelle)).toEqual(["Solo"]);
   });
 
-  it("une garantie par ligne, « Libellé » ou « Libellé ; BRANCHE » (branche en majuscules), lignes vides ignorées", () => {
-    expect(lireGaranties("Incendie ; incendie\n\n  Vol  \r\nBris de glace;IARD\n")).toEqual([
-      { libelle: "Incendie", branche: "INCENDIE" },
+  it("une garantie par ligne, « Libellé [; BRANCHE [; MONTANT_GARANTI [; ACCESSOIRES]]] », lignes vides ignorées", () => {
+    expect(lireGaranties("Incendie ; incendie ; 50 000 000 ; 5 000\n\n  Vol  \r\nBris de glace;IARD;;2500\n")).toEqual([
+      { libelle: "Incendie", branche: "INCENDIE", montantGaranti: "50000000", accessoires: "5000" },
       { libelle: "Vol", branche: null },
-      { libelle: "Bris de glace", branche: "IARD" },
+      { libelle: "Bris de glace", branche: "IARD", accessoires: "2500" },
     ]);
     expect(lireGaranties("")).toEqual([]);
   });

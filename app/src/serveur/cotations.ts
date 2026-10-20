@@ -16,7 +16,7 @@ import {
   type LigneDePrime,
 } from "@/domaine/calcul/composition";
 import { compositionPossible, MESSAGE_BROUILLON_A_FORMULES, problemesLibellesGaranties, type GarantieParametree } from "@/domaine/calcul/parametrage";
-import type { DateIso } from "@/domaine/calcul/dates";
+import { problemesDateEffetCotation, type DateIso } from "@/domaine/calcul/dates";
 import type { Tranche } from "@/domaine/calcul/echeancier";
 import { montant } from "@/domaine/calcul/montant";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
@@ -405,6 +405,8 @@ function donneesAEcrire(saisie: SaisieCotation, c: Calcul) {
 
 export async function creerBrouillon(acteur: UtilisateurCourant, saisie: SaisieCotation, adresseIp: string | null): Promise<number> {
   await exigerAgir(acteur);
+  const problemesDateEffet = problemesDateEffetCotation(saisie.dateEffet);
+  if (problemesDateEffet.length > 0) throw new ErreurMetier(problemesDateEffet.join(" "));
   return obtenirPrisma().$transaction(async (tx) => {
     const c = await calculerSaisie(tx, acteur, saisie, aujourdhui());
     const intermediaires = await resoudreIntermediaires(tx, saisie.intermediaires ?? []);
@@ -458,6 +460,8 @@ async function chargerPourModification(tx: Tx, id: number) {
  */
 export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, saisie: SaisieCotation, adresseIp: string | null): Promise<{ compositionVidee: boolean }> {
   await exigerAgir(acteur);
+  const problemesDateEffet = problemesDateEffetCotation(saisie.dateEffet);
+  if (problemesDateEffet.length > 0) throw new ErreurMetier(problemesDateEffet.join(" "));
   return obtenirPrisma().$transaction(async (tx) => {
     const avant = await chargerPourModification(tx, id);
     if (avant.produit.code !== saisie.codeProduit) throw new ErreurMetier("Le produit d'une cotation ne se change pas : créez une nouvelle cotation.");

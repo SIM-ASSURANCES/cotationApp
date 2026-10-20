@@ -6,6 +6,7 @@ process.env.URL_PUBLIQUE = "https://documents.exemple.ci";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { fixerDateMinimumEffetPourTests } from "@/domaine/calcul/dates";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Analyse } from "@/domaine/documents/analyse";
 
@@ -122,6 +123,7 @@ const ouvertes = (policeId: number) => obtenirPrisma().validationContrat.findMan
 const journal = async (action: string, policeId: number) => (await lireJournal({ action })).lignes.filter((l) => l.objet === `police ${policeId}`);
 
 beforeAll(async () => {
+  fixerDateMinimumEffetPourTests("2026-01-01");
   remplacerGenerateur({ analyser: async () => prochaineAnalyse, genererPdf: async () => texte("%PDF-1.7 simulé") });
   const fichiers = new Map<string, Uint8Array>();
   remplacerStockage({
@@ -159,6 +161,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  fixerDateMinimumEffetPourTests(null);
   remplacerGenerateur(null);
   remplacerStockage(null);
   await obtenirPrisma().$disconnect();

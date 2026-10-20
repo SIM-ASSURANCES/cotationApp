@@ -4,6 +4,7 @@ export { classesBouton, type VarianteBouton } from "./stylesBouton";
 export { Carte } from "./Carte";
 export { CarteIndicateur, type TonIndicateur } from "./CarteIndicateur";
 export { Champ } from "./Champ";
+export { ChampDate } from "./ChampDate";
 export { ChampFormulaire } from "./ChampFormulaire";
 export { EnTetePage, type MiettePage } from "./EnTetePage";
 export { EtatVide } from "./EtatVide";

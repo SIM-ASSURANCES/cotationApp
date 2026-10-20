@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
+import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
 import { LignesAssures } from "@/composants/LignesDynamiques";
 import { TachesPolice } from "@/composants/TachesPolice";
 import { Carte, Champ as ChampSaisie, EnTetePage, ListeDeroulante, PastilleStatut, Tableau } from "@/composants/ui";
+import { aujourdhui, formaterDate } from "@/domaine/calcul/dates";
 import { LIBELLE_MOTIF_ADHERENTS } from "@/domaine/cotation/adherents";
 import { numeroCertificatParDefaut, racineCertificat } from "@/domaine/cotation/police";
 import { peutAgir, peutLire } from "@/domaine/droits";
@@ -34,7 +35,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
     <main className="space-y-6">
       <EnTetePage
         titre={`Adhérents de la police mère ${vue.police.numero}`}
-        sousTitre={`Période de la police : du ${vue.police.dateEffet} au ${vue.police.dateEcheance}. La liste évolue par versions : chaque incorporation ou retrait crée une nouvelle version, l'historique reste consultable. Les conditions particulières de la police mère reprennent la liste courante en annexe.`}
+        sousTitre={`Période de la police : du ${formaterDate(vue.police.dateEffet)} au ${formaterDate(vue.police.dateEcheance)}. La liste évolue par versions : chaque incorporation ou retrait crée une nouvelle version, l'historique reste consultable. Les conditions particulières de la police mère reprennent la liste courante en annexe.`}
         filAriane={[{ libelle: "Cotations", href: "/cotations" }, { libelle: "Cotation", href: `/cotations/${cotationId}` }, { libelle: "Adhérents" }]}
       />
       <TachesPolice taches={taches} cotationId={cotationId} chemin={`/cotations/${cotationId}/adherents`} />
@@ -55,7 +56,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
                   : []),
                 { cle: "ordre", entete: "N°", rendu: (a) => a.ordre },
                 { cle: "nom", entete: "Nom et prénoms", rendu: (a) => a.nom_prenoms },
-                { cle: "naissance", entete: "Naissance", rendu: (a) => a.date_naissance || "—" },
+                { cle: "naissance", entete: "Naissance", rendu: (a) => formaterDate(a.date_naissance) },
                 { cle: "sexe", entete: "Sexe", rendu: (a) => a.sexe || "—" },
                 { cle: "lien", entete: "Lien", rendu: (a) => a.lien || "—" },
                 { cle: "identification", entete: "Pièce d'identité", rendu: (a) => a.num_identification || "—" },
@@ -79,7 +80,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
           </div>
           {agit ? (
             <div className="max-w-xs">
-              <Champ nom="dateEffet" libelle="Date d'effet du retrait (AAAA-MM-JJ)" autoComplete="off" valeur={derniere?.dateEffet} />
+              <ChampDate nom="dateEffet" libelle="Date d'effet du retrait (JJ/MM/AAAA)" valeur={derniere?.dateEffet} min={vue.police.dateEffet} max={vue.police.dateEcheance} />
             </div>
           ) : null}
         </FormulaireAction>
@@ -94,7 +95,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
               <LignesAssures initiales={[{ nom: "", naissance: "", sexe: "", lien: "", identification: "", formule: "" }]} formules={vue.formules.map((code) => ({ code, libelle: code }))} />
             </div>
             <div className="max-w-xs">
-              <Champ nom="dateEffet" libelle="Date d'effet de l'incorporation (AAAA-MM-JJ)" autoComplete="off" valeur={derniere?.dateEffet} />
+              <ChampDate nom="dateEffet" libelle="Date d'effet de l'incorporation (JJ/MM/AAAA)" valeur={derniere?.dateEffet} min={vue.police.dateEffet} max={vue.police.dateEcheance} />
             </div>
           </FormulaireAction>
         </Carte>
@@ -128,7 +129,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
               />
             </div>
             <div className="max-w-xs">
-              <Champ nom="dateEffet" libelle="Date d'effet de l'incorporation (AAAA-MM-JJ)" autoComplete="off" valeur={derniere?.dateEffet} />
+              <ChampDate nom="dateEffet" libelle="Date d'effet de l'incorporation (JJ/MM/AAAA)" valeur={derniere?.dateEffet} min={vue.police.dateEffet} max={aujourdhui()} />
             </div>
           </FormulaireAction>
           {lots.length > 0 ? (
@@ -209,7 +210,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
           colonnes={[
             { cle: "version", entete: "Version", rendu: (v) => v.numero },
             { cle: "changement", entete: "Changement", rendu: (v) => LIBELLE_MOTIF_ADHERENTS[v.motif] },
-            { cle: "effet", entete: "Prend effet le", rendu: (v) => v.dateEffet },
+            { cle: "effet", entete: "Prend effet le", rendu: (v) => formaterDate(v.dateEffet) },
             { cle: "concernes", entete: "Adhérents concernés", rendu: (v) => (v.concernes.length > 0 ? v.concernes.join(", ") : "—") },
             { cle: "total", entete: "Total", alignement: "droite", rendu: (v) => v.adherents.length },
             { cle: "par", entete: "Par", rendu: (v) => v.creePar },

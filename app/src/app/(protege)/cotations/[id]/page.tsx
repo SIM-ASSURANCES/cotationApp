@@ -7,6 +7,7 @@ import { LignesBeneficiaires, LignesContactsUrgence } from "@/composants/LignesD
 import { LignesComposition } from "@/composants/LignesComposition";
 import { TachesPolice } from "@/composants/TachesPolice";
 import { Bandeau, Carte, Champ, EnTetePage, LienBouton, ListeDefinitions, ListeDeroulante, PastilleStatut, Tableau, type ElementDefinition } from "@/composants/ui";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { formaterMontant, montant, type Montant } from "@/domaine/calcul/montant";
 import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
@@ -28,8 +29,8 @@ import { lireValidationContrat } from "@/serveur/validation-contrat";
 import { accepterCotation, composerPrime, emettreCpDeCotation, emettrePdfDeCotation, reediterDocument, refuserCotation, renvoyerCotation, soumettreCotation, validerCotation } from "../actions";
 
 const f = (m: Montant) => formaterMontant(m);
-const formatDateHeure = (d: Date) => new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }).format(d);
-const formatDate = (iso: string | null) => (iso ? new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeZone: "UTC" }).format(new Date(`${iso}T00:00:00Z`)) : "—");
+const formatDateHeure = (d: Date) => new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short", timeZone: "Africa/Abidjan" }).format(d);
+const formatDate = (iso: string | null) => formaterDate(iso);
 
 export default async function PageCotation(props: PageProps<"/cotations/[id]">) {
   const { id } = await props.params;
@@ -262,7 +263,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
             colonnes={[
               { cle: "ordre", entete: "N°", rendu: (a) => a.ordre },
               { cle: "nom", entete: "Nom et prénoms", rendu: (a) => a.nom_prenoms },
-              { cle: "naissance", entete: "Naissance", rendu: (a) => a.date_naissance || "—" },
+              { cle: "naissance", entete: "Naissance", rendu: (a) => formaterDate(a.date_naissance) },
               { cle: "sexe", entete: "Sexe", rendu: (a) => a.sexe || "—" },
               { cle: "lien", entete: "Lien", rendu: (a) => a.lien || "—" },
               { cle: "identification", entete: "Pièce d'identité", rendu: (a) => a.num_identification || "—" },
@@ -335,7 +336,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
             cleLigne={(d) => String(d.id)}
             colonnes={[
               { cle: "document", entete: "Document", rendu: (d) => `${d.libelleType} ${d.numero} v${d.version}${d.filigrane ? ` (${d.filigrane})` : ""}` },
-              { cle: "date", entete: "Émis le", rendu: (d) => d.dateEmission },
+              { cle: "date", entete: "Émis le", rendu: (d) => formaterDate(d.dateEmission) },
               { cle: "statut", entete: "Statut", rendu: (d) => <PastilleStatut libelle={d.statut.libelle} /> },
               {
                 cle: "pdf",

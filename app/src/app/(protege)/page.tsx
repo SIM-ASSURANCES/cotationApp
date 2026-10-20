@@ -1,4 +1,5 @@
-import { Bandeau, Bouton, Carte, CarteIndicateur, Champ, EnTetePage, tonDuStatut, Tableau, type ColonneTableau } from "@/composants/ui";
+import { Bandeau, Bouton, Carte, CarteIndicateur, ChampDate, EnTetePage, tonDuStatut, Tableau, type ColonneTableau } from "@/composants/ui";
+import { formaterDate, normaliserDateSaisie } from "@/domaine/calcul/dates";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { LIBELLE_STATUT, STATUTS } from "@/domaine/cotation/statuts";
 import { DOCUMENTS, estTypeDocument } from "@/domaine/documents/emission";
@@ -45,7 +46,7 @@ function Bienvenue({ nom, profil }: { nom: string; profil: string }) {
 /** Accueil = tableaux de bord (session 5b) : cotations (§9.4), facturation et relances (§11, §12), production. Recalculés depuis la base à chaque affichage. */
 export default async function PageTableauDeBord(props: PageProps<"/">) {
   const recherche = await props.searchParams;
-  const texte = (v: string | string[] | undefined) => (typeof v === "string" ? v : undefined);
+  const texte = (v: string | string[] | undefined) => (typeof v === "string" ? normaliserDateSaisie(v) : undefined);
   const utilisateur = await exigerUtilisateur();
   const periode = { debut: texte(recherche.debut), fin: texte(recherche.fin) };
   // Profil Commercial (H102) : son tableau personnel, jamais le tableau général (qui montre le travail de tous), quels que soient ses droits.
@@ -81,10 +82,10 @@ export default async function PageTableauDeBord(props: PageProps<"/">) {
       <Carte>
         <form className="flex flex-wrap items-end gap-4" method="get">
           <div className="w-full sm:w-56">
-            <Champ label="Du (AAAA-MM-JJ)" name="debut" defaultValue={t.periode.debut} />
+            <ChampDate label="Du (JJ/MM/AAAA)" name="debut" defaultValue={t.periode.debut} />
           </div>
           <div className="w-full sm:w-56">
-            <Champ label="Au" name="fin" defaultValue={t.periode.fin} />
+            <ChampDate label="Au (JJ/MM/AAAA)" name="fin" defaultValue={t.periode.fin} />
           </div>
           <Bouton type="submit">Afficher</Bouton>
         </form>
@@ -97,7 +98,7 @@ export default async function PageTableauDeBord(props: PageProps<"/">) {
 
       <Carte
         titre="Cotations"
-        description={`Créées du ${t.periode.debut} au ${t.periode.fin}, à leur statut d'aujourd'hui. Taux de transformation : cotations émises sur la période, acceptées à ce jour.`}
+        description={`Créées du ${formaterDate(t.periode.debut)} au ${formaterDate(t.periode.fin)}, à leur statut d'aujourd'hui. Taux de transformation : cotations émises sur la période, acceptées à ce jour.`}
       >
         {/* Le ton de chaque indicateur vient de la table unique des statuts (ui/statuts.tsx), pas d'une table locale. */}
         <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">

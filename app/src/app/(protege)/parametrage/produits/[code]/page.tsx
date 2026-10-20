@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
 
-import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
+import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
 import { LignesFormules } from "@/composants/LignesFormules";
 import { Bandeau, Carte, EnTetePage, EtatVide, LienBouton, ListeDeroulante, Tableau, ZoneTexte, type ColonneTableau } from "@/composants/ui";
 import { NIVEAUX_ARRONDI } from "@/domaine/calcul/calcul";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { PRECISIONS, SENS_ARRONDI, montant } from "@/domaine/calcul/montant";
 import { MODES_TARIFICATION } from "@/domaine/calcul/parametrage";
 import { peutAgir, peutLire } from "@/domaine/droits";
@@ -51,7 +52,7 @@ function formaterGarantieSaisie(g: NonNullable<VersionProduit["garanties"]>[numb
 function Resume({ v }: { v: VersionProduit }) {
   return (
     <Carte>
-      <h3 className="mb-2 text-base font-bold text-foreground">Version en vigueur depuis le {v.dateEffet}</h3>
+      <h3 className="mb-2 text-base font-bold text-foreground">Version en vigueur depuis le {formaterDate(v.dateEffet)}</h3>
       <p className="mb-3 text-sm text-muted-foreground">
         Tarification : {LIBELLE_MODE[v.modeTarification] ?? v.modeTarification}
         {v.garanties && v.garanties.length > 0 ? ` — garanties : ${v.garanties.map(formaterGarantieResume).join(", ")}${v.garantiesSaisieLibre === false ? " ; saisie libre interdite" : ""}` : ""} ·{" "}
@@ -62,7 +63,7 @@ function Resume({ v }: { v: VersionProduit }) {
       </p>
       {/* Une version « Par garanties » n'a pas de formule (6.2b) : pas de tableau vide à lire. */}
       {v.formules.length > 0 || v.modeTarification !== "GARANTIES" ? (
-        <Tableau colonnes={COLONNES_FORMULES} lignes={v.formules} cleLigne={(f) => f.code} messageVide="Aucune formule." legende={`Formules de la version du ${v.dateEffet}`} />
+        <Tableau colonnes={COLONNES_FORMULES} lignes={v.formules} cleLigne={(f) => f.code} messageVide="Aucune formule." legende={`Formules de la version du ${formaterDate(v.dateEffet)}`} />
       ) : null}
     </Carte>
   );
@@ -138,7 +139,7 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
           <FormulaireAction action={ajouterUneVersion} libelleBouton="Enregistrer la version">
             <input type="hidden" name="codeProduit" value={produit.code} />
             <div className="mb-4 grid max-w-4xl gap-x-6 sm:grid-cols-2">
-              <Champ nom="dateEffet" libelle="Date d'effet (AAAA-MM-JJ)" autoComplete="off" />
+              <ChampDate nom="dateEffet" libelle="Date d'effet (JJ/MM/AAAA)" />
               <div className="mb-4">
                 <ListeDeroulante
                   label="Mode de tarification"

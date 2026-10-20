@@ -4,11 +4,10 @@ import type { ReactNode } from "react";
 
 import { CoquilleConnexion } from "@/composants/coquille/CoquilleConnexion";
 import { Icone, Pastille, type TonPastille } from "@/composants/ui";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { verifierJeton } from "@/serveur/documents";
 
 export const metadata: Metadata = { title: "Vérification d'un document – SIM Assurances", robots: { index: false, follow: false } };
-
-const formatDate = (iso: string) => new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeZone: "UTC" }).format(new Date(`${iso}T00:00:00Z`));
 
 // Codes de `vue.statut.code` (domaine/documents/emission.ts, statutPublic). Expiré est neutre (consigne de la refonte ; avant, tout ce
 // qui n'était pas « valide » était rouge, le libellé reste écrit). Un code inconnu est présenté en danger, comme avant : la page ne
@@ -50,7 +49,7 @@ export default async function PageVerification(props: PageProps<"/verif/[jeton]"
               <Ligne terme="Numéro">
                 {vue.numero} (version {vue.version})
               </Ligne>
-              <Ligne terme="Émis le">{formatDate(vue.dateEmission)}</Ligne>
+              <Ligne terme="Émis le">{formaterDate(vue.dateEmission)}</Ligne>
               <Ligne terme="Produit">{vue.produit}</Ligne>
               <Ligne terme="Souscripteur">{vue.souscripteur}</Ligne>
               <Ligne terme="Empreinte SHA-256" classeValeur="break-all font-mono text-xs">

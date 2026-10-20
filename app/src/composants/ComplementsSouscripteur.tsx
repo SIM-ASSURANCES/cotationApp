@@ -1,6 +1,7 @@
+import { aujourdhui } from "@/domaine/calcul/dates";
 import { GROUPES_SANGUINS, NOMBRE_MAX_ENFANTS, type SouscripteurComplements } from "@/domaine/cotation/saisie";
 
-import { Champ } from "./FormulaireAction";
+import { Champ, ChampDate } from "./FormulaireAction";
 import { ListeDeroulante } from "./ui";
 
 /**
@@ -15,7 +16,7 @@ export function ComplementsSouscripteur({ valeurs }: { valeurs?: SouscripteurCom
       <summary className="mb-2 cursor-pointer text-sm font-semibold">Compléments du souscripteur (facultatifs)</summary>
       <div className="grid gap-x-6 sm:grid-cols-2">
         <Champ nom="souscripteur_num_identification" libelle="N° de pièce d'identité" requis={false} valeur={v.num_identification} autoComplete="off" />
-        <Champ nom="souscripteur_date_naissance" libelle="Date de naissance (AAAA-MM-JJ)" requis={false} valeur={v.date_naissance} autoComplete="off" />
+        <ChampDate nom="souscripteur_date_naissance" libelle="Date de naissance (JJ/MM/AAAA)" requis={false} valeur={v.date_naissance} max={aujourdhui()} />
         <Champ nom="souscripteur_lieu_naissance" libelle="Lieu de naissance" requis={false} valeur={v.lieu_naissance} autoComplete="off" />
         <Champ nom="souscripteur_profession" libelle="Profession" requis={false} valeur={v.profession} autoComplete="off" />
         <Champ nom="souscripteur_activite" libelle="Activité" requis={false} valeur={v.activite} autoComplete="off" />

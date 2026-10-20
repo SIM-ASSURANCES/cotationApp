@@ -1,8 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { Bandeau, Bouton, Carte, Champ, EnTetePage, EtatVide, ListeDeroulante, Tableau, type ColonneTableau } from "@/composants/ui";
-import { dateValide } from "@/domaine/calcul/dates";
+import { Bandeau, Bouton, Carte, Champ, ChampDate, EnTetePage, EtatVide, ListeDeroulante, Tableau, type ColonneTableau } from "@/composants/ui";
+import { dateValide, formaterDate, normaliserDateSaisie } from "@/domaine/calcul/dates";
 import { formaterMontant, type Montant } from "@/domaine/calcul/montant";
 import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT, REGIMES_TAXE, estRegimeTaxe } from "@/domaine/calcul/taxes";
 import { peutLire } from "@/domaine/droits";
@@ -79,7 +79,7 @@ function Resultats({ r }: { r: ReponseCalcul }) {
 
   const lignesTranches: LigneTranche[] | null = r.echeancier
     ? [
-        ...r.echeancier.map((t) => ({ cle: String(t.numero), numero: String(t.numero), date: t.date, montant: f(t.montant) })),
+        ...r.echeancier.map((t) => ({ cle: String(t.numero), numero: String(t.numero), date: formaterDate(t.date), montant: f(t.montant) })),
         {
           cle: "SOMME",
           numero: "Somme des tranches (= TTC)",
@@ -100,7 +100,7 @@ function Resultats({ r }: { r: ReponseCalcul }) {
       titre="Résultat"
       description={
         <>
-          Paramétrage du produit en vigueur le {r.versionDu} · taxe {r.taxe.branche} ({r.taxe.typeContrat ? `régime ${LIBELLE_TYPE_CONTRAT[r.taxe.typeContrat].toLowerCase()}` : "tous régimes"}) {r.taxe.tauxPourcent.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "").replace(".", ",")} % (en vigueur le {r.taxe.dateEffet}) ·{" "}
+          Paramétrage du produit en vigueur le {formaterDate(r.versionDu)} · taxe {r.taxe.branche} ({r.taxe.typeContrat ? `régime ${LIBELLE_TYPE_CONTRAT[r.taxe.typeContrat].toLowerCase()}` : "tous régimes"}) {r.taxe.tauxPourcent.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "").replace(".", ",")} % (en vigueur le {formaterDate(r.taxe.dateEffet)}) ·{" "}
           {x.joursCouverts} jour(s) couverts, coefficient de prorata {x.coefProrata.toDecimalPlaces(5).toString().replace(".", ",")}
         </>
       }
@@ -172,9 +172,9 @@ export default async function PageCalcul(props: PageProps<"/calcul">) {
   }
 
   const donnees = await listerVersions(utilisateur, codeProduit);
-  const dateEffet = premier(q.dateEffet);
-  const dateEcheance = premier(q.dateEcheance);
-  const dateDocument = premier(q.dateDocument) || aujourdhui();
+  const dateEffet = normaliserDateSaisie(premier(q.dateEffet));
+  const dateEcheance = normaliserDateSaisie(premier(q.dateEcheance));
+  const dateDocument = normaliserDateSaisie(premier(q.dateDocument)) || aujourdhui();
   const tranches = premier(q.tranches) || "1";
   const regimeTaxe = premier(q.regimeTaxe);
   const formules = donnees?.versions[0]?.formules ?? [];
@@ -223,9 +223,9 @@ export default async function PageCalcul(props: PageProps<"/calcul">) {
           <form method="get">
             <input type="hidden" name="produit" value={codeProduit} />
             <div className="mb-6 grid gap-x-6 gap-y-4 sm:grid-cols-2">
-              <Champ label="Date d'effet" name="dateEffet" defaultValue={dateEffet} placeholder="2026-07-22" required />
-              <Champ label="Date d'échéance" name="dateEcheance" defaultValue={dateEcheance} placeholder="2026-12-31" required />
-              <Champ label="Date du document (paramètres en vigueur à cette date)" name="dateDocument" defaultValue={dateDocument} />
+              <ChampDate label="Date d'effet (JJ/MM/AAAA)" name="dateEffet" defaultValue={dateEffet} required />
+              <ChampDate label="Date d'échéance (JJ/MM/AAAA)" name="dateEcheance" defaultValue={dateEcheance} required />
+              <ChampDate label="Date du document (paramètres en vigueur à cette date)" name="dateDocument" defaultValue={dateDocument} />
               <ListeDeroulante
                 label="Régime de taxe (choisit le taux de taxe)"
                 name="regimeTaxe"

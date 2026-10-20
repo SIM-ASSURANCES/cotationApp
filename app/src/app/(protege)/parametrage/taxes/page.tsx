@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 
-import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
+import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
 import { Bandeau, Carte, EnTetePage, EtatVide, ListeDeroulante, Tableau, type ColonneTableau } from "@/composants/ui";
 import { ASSIETTES_TAXE } from "@/domaine/calcul/calcul";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { montant } from "@/domaine/calcul/montant";
 import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT, REGIMES_TAXE, enVigueurLe, estRegimeTaxe, type TypeContrat } from "@/domaine/calcul/taxes";
 import { peutAgir, peutLire } from "@/domaine/droits";
@@ -35,7 +36,7 @@ export default async function PageTaxes() {
     {
       cle: "periode",
       entete: "Période",
-      rendu: (t) => gras(t, `du ${t.dateEffet} ${t.dateFin ? `au ${t.dateFin}` : "(sans date de fin)"}${enVigueurLe(t, jour) ? " · en vigueur" : ""}`),
+      rendu: (t) => gras(t, `du ${formaterDate(t.dateEffet)} ${t.dateFin ? `au ${formaterDate(t.dateFin)}` : "(sans date de fin)"}${enVigueurLe(t, jour) ? " · en vigueur" : ""}`),
     },
     { cle: "taux", entete: "Taux", rendu: (t) => gras(t, taux(t)) },
     { cle: "assiette", entete: "Assiette", rendu: (t) => gras(t, LIBELLE_ASSIETTE[t.assiette]) },
@@ -93,8 +94,8 @@ export default async function PageTaxes() {
                 options={ASSIETTES_TAXE.map((a) => ({ valeur: a, libelle: LIBELLE_ASSIETTE[a] }))}
               />
             </div>
-            <Champ nom="dateEffet" libelle="Date d'effet (AAAA-MM-JJ)" autoComplete="off" />
-            <Champ nom="dateFin" libelle="Date de fin (facultative)" requis={false} autoComplete="off" />
+            <ChampDate nom="dateEffet" libelle="Date d'effet (JJ/MM/AAAA)" />
+            <ChampDate nom="dateFin" libelle="Date de fin (facultative)" requis={false} />
           </FormulaireAction>
         </Carte>
       ) : (

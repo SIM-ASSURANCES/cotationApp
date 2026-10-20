@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 
 import { BarreProgression, RafraichissementAuto } from "@/composants/RafraichissementAuto";
 import { Bandeau, Carte, EnTetePage, PastilleStatut, Tableau, type ColonneTableau } from "@/composants/ui";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { lireLotEcheances } from "@/serveur/echeances";
 import { exigerUtilisateur } from "@/serveur/session";
 import { ErreurAcces } from "@/serveur/types";
@@ -40,7 +41,7 @@ export default async function PageLotEcheances(props: PageProps<"/echeances/lots
       <RafraichissementAuto actif={enCours} />
       <EnTetePage
         titre={`Lot n° ${lot.id} d'avis et de relances`}
-        sousTitre={`Liste du ${lot.dateListe}, lancé par ${lot.creePar}. Vous pouvez continuer à travailler : le lot tourne en tâche de fond.`}
+        sousTitre={`Liste du ${formaterDate(lot.dateListe)}, lancé par ${lot.creePar}. Vous pouvez continuer à travailler : le lot tourne en tâche de fond.`}
         filAriane={[{ libelle: "Liste du jour", href: "/echeances" }, { libelle: `Lot n° ${lot.id}` }]}
       />
       {horsFile ? (

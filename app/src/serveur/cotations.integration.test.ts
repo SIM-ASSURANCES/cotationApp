@@ -1,7 +1,7 @@
 // Tests d'intégration : vraie base PostgreSQL de test (npm run test:integration).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { ajouterMois } from "@/domaine/calcul/dates";
+import { ajouterJours, ajouterMois, fixerDateMinimumEffetPourTests, MESSAGE_DATE_EFFET_PASSEE } from "@/domaine/calcul/dates";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 import { FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
 import type { Souscripteur } from "@/domaine/cotation/saisie";
@@ -101,6 +101,7 @@ async function emise(auteur = commercial, s = saisie()): Promise<number> {
 }
 
 beforeAll(async () => {
+  fixerDateMinimumEffetPourTests("2026-01-01");
   await initialiserProfilsEtDroits();
   await initialiserMotifsRefus();
   const id = unique("admin");
@@ -121,6 +122,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  fixerDateMinimumEffetPourTests(null);
   await obtenirPrisma().$disconnect();
 });
 
@@ -578,5 +580,26 @@ describe("saisie, droits et traçabilité", () => {
 
     expect(actions.size).toBeGreaterThan(0);
     expect([...plusLoin].sort()).toEqual(["COTATION_ACCEPTEE", "COTATION_CREEE", "COTATION_REFUSEE", "COTATION_RENVOYEE", "COTATION_SOUMISE", "DOCUMENT_EMIS", "DOCUMENT_VALIDE", "POLICE_CREEE", "PRIME_FORCEE"]);
+  });
+
+  it("D37 / H107 : refuse une date d'effet antérieure à aujourd'hui à la création et à la modification, mais n'empêche pas d'émettre une cotation déjà saisie", async () => {
+    const hier = ajouterJours(aujourdhui(), -1);
+    const finAnnee = ajouterJours(aujourdhui(), 364);
+    // Cotation existante saisie avant que sa date d'effet ne passe dans le passé (H107).
+    fixerDateMinimumEffetPourTests("2026-01-01");
+    const existante = await creerBrouillon(commercial, saisie({ dateEffet: hier, dateEcheance: finAnnee }), null);
+
+    // En conditions réelles (aucune surcharge de test) : la saisie d'une date d'effet passée est refusée, mais la cotation existante s'émet.
+    fixerDateMinimumEffetPourTests(null);
+    try {
+      await expect(creerBrouillon(commercial, saisie({ dateEffet: hier, dateEcheance: finAnnee }), null)).rejects.toThrow(MESSAGE_DATE_EFFET_PASSEE);
+      const duJour = await creerBrouillon(commercial, saisie({ dateEffet: aujourdhui(), dateEcheance: finAnnee }), null);
+      await expect(modifierBrouillon(commercial, duJour, saisie({ dateEffet: hier, dateEcheance: finAnnee }), null)).rejects.toThrow(MESSAGE_DATE_EFFET_PASSEE);
+
+      const soumise = await soumettre(commercial, existante, null);
+      expect(soumise.statut).toBe("EMISE");
+    } finally {
+      fixerDateMinimumEffetPourTests("2026-01-01");
+    }
   });
 });

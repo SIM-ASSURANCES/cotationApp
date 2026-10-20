@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 
 import { FormulaireAction } from "@/composants/FormulaireAction";
-import { Carte, Champ, EnTetePage, Tableau, type ColonneTableau } from "@/composants/ui";
+import { Carte, Champ, ChampDate, EnTetePage, Tableau, type ColonneTableau } from "@/composants/ui";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { NIVEAUX_MAX } from "@/domaine/facturation/echeances";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
@@ -22,7 +23,7 @@ export default async function PageRelances(props: PageProps<"/parametrage/produi
 
   type Historique = (typeof lu.historique)[number];
   const colonnesHistorique: ColonneTableau<Historique>[] = [
-    { cle: "dateEffet", entete: "Date d'effet", rendu: (h) => h.dateEffet },
+    { cle: "dateEffet", entete: "Date d'effet", rendu: (h) => formaterDate(h.dateEffet) },
     { cle: "avis", entete: "Avis", rendu: (h) => `J-${h.valeur.delaiAvisJours}` },
     { cle: "relances", entete: "Relances", rendu: (h) => h.valeur.niveaux.map((n) => `${n.niveau} : J+${n.jours} (${n.libelle})`).join(" ; ") },
     { cle: "creePar", entete: "Saisi par", rendu: (h) => h.creePar },
@@ -60,7 +61,7 @@ export default async function PageRelances(props: PageProps<"/parametrage/produi
             <input type="hidden" name="produit" value={lu.produitCode} />
             <div className="mb-4 grid gap-x-6 gap-y-4 sm:grid-cols-2">
               <Champ label="Délai de l'avis d'échéance (jours avant l'échéance)" name="delaiAvisJours" defaultValue={p.delaiAvisJours} inputMode="numeric" required />
-              <Champ label="Date d'effet (AAAA-MM-JJ)" name="dateEffet" defaultValue={aujourdhui()} required />
+              <ChampDate label="Date d'effet (JJ/MM/AAAA)" name="dateEffet" defaultValue={aujourdhui()} min={aujourdhui()} required />
             </div>
             <div className="mb-4">
               <Tableau colonnes={colonnesNiveaux} lignes={Array.from({ length: NIVEAUX_MAX }, (_, i) => i + 1)} cleLigne={(i) => String(i)} legende="Niveaux de relance" zebre={false} />

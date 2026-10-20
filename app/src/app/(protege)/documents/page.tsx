@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 
-import { Bouton, Carte, Champ, EnTetePage, ListeDeroulante, PastilleStatut, Tableau, type ColonneTableau } from "@/composants/ui";
+import { Bouton, Carte, Champ, ChampDate, EnTetePage, ListeDeroulante, PastilleStatut, Tableau, type ColonneTableau } from "@/composants/ui";
+import { formaterDate, normaliserDateSaisie } from "@/domaine/calcul/dates";
 import { DOCUMENTS, TYPES_DOCUMENT } from "@/domaine/documents/emission";
 import { rechercherDocuments, type DocumentLu } from "@/serveur/documents";
 import { exigerUtilisateur } from "@/serveur/session";
@@ -29,7 +30,7 @@ const COLONNES: ColonneTableau<DocumentLu>[] = [
   { cle: "version", entete: "Version", rendu: (d) => `v${d.version}${d.filigrane ? ` (${d.filigrane})` : ""}` },
   { cle: "client", entete: "Client", rendu: (d) => d.souscripteur },
   { cle: "police", entete: "Police", rendu: (d) => d.policeNumero ?? "—" },
-  { cle: "emis", entete: "Émis", rendu: (d) => `${d.dateEmission} par ${d.emisPar}` },
+  { cle: "emis", entete: "Émis", rendu: (d) => `${formaterDate(d.dateEmission)} par ${d.emisPar}` },
   { cle: "statut", entete: "Statut", rendu: (d) => <PastilleStatut libelle={cleDeStatut(d.statut)}>{d.statut.libelle}</PastilleStatut> },
   { cle: "fichier", entete: "Fichier", rendu: (d) => <><a href={`/api/documents/${d.id}`} className="text-primary underline">PDF</a> ({taille(d.taille)})</> },
 ];
@@ -39,7 +40,7 @@ export default async function PageDocuments(props: PageProps<"/documents">) {
   const utilisateur = await exigerUtilisateur();
   const q = await props.searchParams;
   const lire = (nom: string) => (typeof q[nom] === "string" ? (q[nom] as string).trim() : "");
-  const filtres = { policeNumero: lire("police"), numero: lire("numero"), client: lire("client"), type: lire("type"), du: lire("du"), au: lire("au") };
+  const filtres = { policeNumero: lire("police"), numero: lire("numero"), client: lire("client"), type: lire("type"), du: normaliserDateSaisie(lire("du")), au: normaliserDateSaisie(lire("au")) };
   let documents: DocumentLu[];
   try {
     documents = await rechercherDocuments(utilisateur, {
@@ -69,8 +70,8 @@ export default async function PageDocuments(props: PageProps<"/documents">) {
             defaultValue={filtres.type}
             options={[{ valeur: "", libelle: "Tous" }, ...TYPES_DOCUMENT.map((t) => ({ valeur: t, libelle: DOCUMENTS[t].libelle }))]}
           />
-          <Champ label="Émis du (AAAA-MM-JJ)" name="du" defaultValue={filtres.du} />
-          <Champ label="au (AAAA-MM-JJ)" name="au" defaultValue={filtres.au} />
+          <ChampDate label="Émis du (JJ/MM/AAAA)" name="du" defaultValue={filtres.du} />
+          <ChampDate label="au (JJ/MM/AAAA)" name="au" defaultValue={filtres.au} />
           <div className="sm:col-span-3">
             <Bouton type="submit">Rechercher</Bouton>
           </div>

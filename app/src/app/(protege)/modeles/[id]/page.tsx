@@ -1,7 +1,8 @@
 import { notFound, redirect } from "next/navigation";
 
-import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
+import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
 import { Bandeau, Bouton, Carte, Champ as ChampSaisie, EnTetePage, EtatVide, ListeDefinitions, classesBouton } from "@/composants/ui";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { REGLES } from "@/domaine/documents/modeles";
 import { lireModele } from "@/serveur/modeles";
 import { aujourdhui } from "@/serveur/parametrage";
@@ -46,7 +47,7 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
             <div className="flex flex-wrap items-center gap-3">
               <h3 className="text-base font-semibold text-foreground">Version {v.numero}</h3>
               <PastilleVersion statut={v.statut} libelle={v.libelleStatut} />
-              <span className="text-sm text-muted-foreground">date d'effet {v.dateEffet}</span>
+              <span className="text-sm text-muted-foreground">date d'effet {formaterDate(v.dateEffet)}</span>
             </div>
             <ListeDefinitions
               elements={[
@@ -54,7 +55,7 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
                 { libelle: "Fichier", valeur: `${v.nomFichier} (${taille(v.taille)})` },
                 { libelle: "Déposé", valeur: `${formatMoment(v.deposeLe)} par ${v.auteur}` },
                 { libelle: "Publié", valeur: v.publieLe ? `${formatMoment(v.publieLe)} par ${v.valideur}` : "—" },
-                ...(v.visa ? [{ libelle: "Visa", valeur: `${v.visa}${v.dateDocument ? ` du ${v.dateDocument}` : ""}` }] : []),
+                ...(v.visa ? [{ libelle: "Visa", valeur: `${v.visa}${v.dateDocument ? ` du ${formaterDate(v.dateDocument)}` : ""}` }] : []),
               ]}
             />
             <ListeDefinitions colonnes={1} elements={[{ libelle: "Empreinte SHA-256", valeur: <span className="break-all font-mono text-xs">{v.empreinte}</span> }]} />
@@ -115,7 +116,7 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
                 <FormulaireAction action={publierUneVersion} libelleBouton="Publier">
                   <input type="hidden" name="versionId" value={v.id} />
                   <input type="hidden" name="modeleId" value={m.id} />
-                  <Champ nom="dateEffet" libelle="Date d'effet (AAAA-MM-JJ, aujourd'hui ou plus tard)" valeur={v.dateEffet >= jour ? v.dateEffet : jour} autoComplete="off" />
+                  <ChampDate nom="dateEffet" libelle="Date d'effet (JJ/MM/AAAA, aujourd'hui ou plus tard)" valeur={v.dateEffet >= jour ? v.dateEffet : jour} min={jour} />
                 </FormulaireAction>
                 <FormulaireAction action={renvoyerUneVersion} libelleBouton="Renvoyer en brouillon" discret>
                   <input type="hidden" name="versionId" value={v.id} />
@@ -147,11 +148,11 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
               />
             </div>
             <Champ nom="commentaire" libelle="Commentaire de modification" autoComplete="off" />
-            <Champ nom="dateEffet" libelle="Date d'effet proposée (AAAA-MM-JJ ; fixée à la publication)" valeur={jour} autoComplete="off" />
+            <ChampDate nom="dateEffet" libelle="Date d'effet proposée (JJ/MM/AAAA ; fixée à la publication)" valeur={jour} />
             {regle.fixe ? (
               <>
                 <Champ nom="visa" libelle="Visa (ex. MFB/DGTCP/DA/N° 01498)" autoComplete="off" />
-                <Champ nom="dateDocument" libelle={m.type === "CG" ? "Date des conditions générales (AAAA-MM-JJ)" : "Date du document (facultative)"} requis={m.type === "CG"} autoComplete="off" />
+                <ChampDate nom="dateDocument" libelle={m.type === "CG" ? "Date des conditions générales (JJ/MM/AAAA)" : "Date du document (facultative)"} requis={m.type === "CG"} />
               </>
             ) : null}
           </FormulaireAction>

@@ -3,8 +3,9 @@ import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { AvertissementsReports } from "@/composants/AvertissementsReports";
-import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
+import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
 import { Bandeau, Carte, Champ as ChampSaisie, EnTetePage, ListeDefinitions, ListeDeroulante, PastilleStatut, Tableau, type ColonneTableau, type ElementDefinition } from "@/composants/ui";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { CANAUX_PAIEMENT, LIBELLE_CANAL, LONGUEUR_MIN_MOTIF_ABANDON, LONGUEUR_MIN_MOTIF_AVOIR } from "@/domaine/facturation/factures";
 import { aujourdhui } from "@/serveur/parametrage";
@@ -54,8 +55,8 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
     { libelle: "Police", valeur: `${x.policeNumero} (${x.produitCode})` },
     { libelle: "Facturé à", valeur: `${x.souscripteur}${c.souscripteur.adresse ? `, ${c.souscripteur.adresse}` : ""}` },
     { libelle: "Envoyé à", valeur: c.envoyeA ? `${c.envoyeA.nom}, ${c.envoyeA.adresse}` : "— (identique ou non saisi : bloc masqué)" },
-    { libelle: "Période", valeur: `du ${c.dateEffet} au ${c.dateEcheance} (${c.joursCouverts} jours)` },
-    { libelle: "Émise le", valeur: `${x.dateEmission ?? "—"}${x.emisePar ? ` par ${x.emisePar}` : ""}` },
+    { libelle: "Période", valeur: `du ${formaterDate(c.dateEffet)} au ${formaterDate(c.dateEcheance)} (${c.joursCouverts} jours)` },
+    { libelle: "Émise le", valeur: `${formaterDate(x.dateEmission)}${x.emisePar ? ` par ${x.emisePar}` : ""}` },
     { libelle: "Préparée par", valeur: x.creePar },
     ...(x.factureOrigine ? [{ libelle: "Facture annulée", valeur: <Link href={`/factures/${x.factureOrigine.id}`} className="text-primary underline">{x.factureOrigine.numero}</Link> }] : []),
     ...(x.motif ? [{ libelle: "Motif de l'avoir", valeur: x.motif }] : []),
@@ -106,7 +107,7 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
   type Echeance = NonNullable<typeof x.etat>["echeances"][number];
   const colonnesEcheances: ColonneTableau<Echeance>[] = [
     { cle: "numero", entete: "Échéance", rendu: (e) => e.numero },
-    { cle: "date", entete: "Date", rendu: (e) => e.date },
+    { cle: "date", entete: "Date", rendu: (e) => formaterDate(e.date) },
     { cle: "montant", entete: "Montant", alignement: "droite", rendu: (e) => f(e.montant) },
     { cle: "paye", entete: "Payé", alignement: "droite", rendu: (e) => f(e.paye) },
     { cle: "restant", entete: "Restant", alignement: "droite", rendu: (e) => f(e.restant) },
@@ -118,7 +119,7 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
   const lignesPaiements = (x.etat?.paiements ?? []).map((p, i) => ({ p, i }));
   const colonnesPaiements: ColonneTableau<{ p: Paiement; i: number }>[] = [
     { cle: "recu", entete: "Reçu", rendu: ({ p }) => p.numero || "—" },
-    { cle: "date", entete: "Date", rendu: ({ p }) => p.date },
+    { cle: "date", entete: "Date", rendu: ({ p }) => formaterDate(p.date) },
     {
       cle: "montant",
       entete: "Montant",
@@ -203,7 +204,7 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
             {x.remplace ? <p className="text-sm text-neutral">Les paiements de la facture annulée {x.remplace.numero} sont repris ici à l&apos;émission (leurs reçus restent valables).</p> : null}
             {x.reports.length > 0 ? (
               <p className="text-sm text-neutral">
-                Sommes reportées en avance sur la police à l&apos;annulation : {x.reports.map((r) => `${f(r.montant)} F (${r.recu ?? "avance"}, ${r.date})`).join(" ; ")}. La facture de remplacement les reprend à son émission.
+                Sommes reportées en avance sur la police à l&apos;annulation : {x.reports.map((r) => `${f(r.montant)} F (${r.recu ?? "avance"}, ${formaterDate(r.date)})`).join(" ; ")}. La facture de remplacement les reprend à son émission.
               </p>
             ) : null}
           </div>
@@ -280,7 +281,7 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
             <FormulaireAction action={enregistrerLePaiement} libelleBouton="Enregistrer le paiement">
               {cache}
               <div className="grid gap-x-4 sm:grid-cols-2">
-                <Champ nom="date" libelle="Date (AAAA-MM-JJ)" valeur={aujourdhui()} autoComplete="off" />
+                <ChampDate nom="date" libelle="Date (JJ/MM/AAAA)" valeur={aujourdhui()} max={aujourdhui()} />
                 <Champ nom="montant" libelle={`Montant (restant dû : ${x.etat ? f(x.etat.restantDu) : "?"} F)`} autoComplete="off" />
                 <div className="mb-4">
                   <ListeDeroulante label="Canal" name="canal" required invite="— Choisir —" options={CANAUX_PAIEMENT.map((k) => ({ valeur: k, libelle: LIBELLE_CANAL[k] }))} />

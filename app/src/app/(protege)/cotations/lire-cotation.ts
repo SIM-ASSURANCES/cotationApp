@@ -1,3 +1,4 @@
+import { normaliserDateSaisie } from "@/domaine/calcul/dates";
 import { normaliserMontantSaisi } from "@/domaine/calcul/montant";
 import type { Assure, Beneficiaire, ContactUrgence, Risque, Souscripteur } from "@/domaine/cotation/saisie";
 
@@ -51,7 +52,7 @@ export function lireCotation(d: FormData): SaisieFormulaire {
   const assures: Assure[] = noms
     .map((nom, i) => ({
       nom_prenoms: nom,
-      date_naissance: (naissances[i] ?? "") as Assure["date_naissance"],
+      date_naissance: normaliserDateSaisie(naissances[i] ?? "") as Assure["date_naissance"],
       sexe: (sexes[i] ?? "") as Assure["sexe"],
       lien: liens[i] ?? "",
       num_identification: identifications[i] ?? "",
@@ -84,8 +85,8 @@ export function lireCotation(d: FormData): SaisieFormulaire {
       adresse: champ(d, "souscripteur_adresse"),
       ...lireComplementsSouscripteur(d),
     },
-    dateEffet: champ(d, "dateEffet"),
-    dateEcheance: champ(d, "dateEcheance"),
+    dateEffet: normaliserDateSaisie(champ(d, "dateEffet")),
+    dateEcheance: normaliserDateSaisie(champ(d, "dateEcheance")),
     nombreTranches: Number(champ(d, "nombreTranches") || "1"),
     lignes,
     motifForcage: champ(d, "motifForcage") || null,

@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { FormulaireAction } from "@/composants/FormulaireAction";
 import { BarreProgression, RafraichissementAuto } from "@/composants/RafraichissementAuto";
 import { Bandeau, Carte, EnTetePage, LienBouton, PastilleStatut, Tableau, type ColonneTableau } from "@/composants/ui";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { peutAgir } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
 import { lireLot, type VueLot } from "@/serveur/imports";
@@ -55,7 +56,7 @@ export default async function PageImport(props: PageProps<"/imports/[id]">) {
       <EnTetePage
         filAriane={[{ libelle: "Tous les imports", href: "/imports" }, { libelle: `Import n° ${lot.id}` }]}
         titre={`Import n° ${lot.id} : ${LIBELLE_STATUT_LOT[lot.statut]}`}
-        sousTitre={`Fichier « ${lot.fichierNom} », déposé par ${lot.creePar} le ${heure(lot.creeLe)} ; incorporation au ${lot.dateEffet} dans la police mère ${lot.police.numero} (${lot.produitCode}).`}
+        sousTitre={`Fichier « ${lot.fichierNom} », déposé par ${lot.creePar} le ${heure(lot.creeLe)} ; incorporation au ${formaterDate(lot.dateEffet)} dans la police mère ${lot.police.numero} (${lot.produitCode}).`}
         actions={
           <>
             <PastilleStatut libelle={LIBELLE_STATUT_LOT[lot.statut]} />

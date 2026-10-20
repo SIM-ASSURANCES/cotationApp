@@ -1,7 +1,8 @@
-import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
+import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
 import { Bandeau, Carte, Champ as ChampSaisie, ListeDeroulante } from "@/composants/ui";
 import { ComplementsSouscripteur } from "@/composants/ComplementsSouscripteur";
 import { LignesAssures, LignesBeneficiaires, LignesContactsUrgence, LignesRisque } from "@/composants/LignesDynamiques";
+import { aujourdhui } from "@/domaine/calcul/dates";
 import { montant } from "@/domaine/calcul/montant";
 import { ChoixContrat } from "@/composants/ChoixContrat";
 import type { LigneClient } from "@/serveur/clients";
@@ -101,8 +102,8 @@ export function FormulaireCotation({
 
       <Carte titre="Période et fractionnement">
         <div className="grid max-w-4xl gap-x-6 sm:grid-cols-3">
-          <Champ nom="dateEffet" libelle="Date d'effet (AAAA-MM-JJ)" valeur={base?.dateEffet} autoComplete="off" />
-          <Champ nom="dateEcheance" libelle="Date d'échéance (AAAA-MM-JJ)" valeur={base?.dateEcheance} autoComplete="off" />
+          <ChampDate nom="dateEffet" libelle="Date d'effet (JJ/MM/AAAA)" valeur={base?.dateEffet ?? aujourdhui()} min={aujourdhui()} />
+          <ChampDate nom="dateEcheance" libelle="Date d'échéance (JJ/MM/AAAA)" valeur={base?.dateEcheance} min={aujourdhui()} />
           <Champ nom="nombreTranches" libelle={`Nombre de tranches (1 à ${tranchesMax})`} valeur={String(base?.nombreTranches ?? 1)} autoComplete="off" />
         </div>
       </Carte>

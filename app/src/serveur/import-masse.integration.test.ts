@@ -8,6 +8,7 @@ process.env.URL_PUBLIQUE = "https://documents.exemple.ci";
 import ExcelJS from "exceljs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { fixerDateMinimumEffetPourTests } from "@/domaine/calcul/dates";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Analyse } from "@/domaine/documents/analyse";
 import type { Assure } from "@/domaine/cotation/saisie";
@@ -159,6 +160,7 @@ const journal = async (action: string, objetType: "lot_import" | "document", obj
 const certificats = (policeId: number) => obtenirPrisma().documentEmis.count({ where: { policeId, type: "CERTIFICAT" } });
 
 beforeAll(async () => {
+  fixerDateMinimumEffetPourTests("2026-01-01");
   remplacerGenerateur({
     analyser: async () => prochaineAnalyse,
     genererPdf: async () => texte(`%PDF-1.7 simulé ${++generes}`),
@@ -225,6 +227,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  fixerDateMinimumEffetPourTests(null);
   await travailleur?.fermer();
   await fermerFiles();
   remplacerGenerateur(null);

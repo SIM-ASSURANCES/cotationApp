@@ -5,7 +5,7 @@ import { Prisma } from "@/generated/prisma/client";
 import type { EntreeCalcul } from "@/domaine/calcul/calcul";
 import { estComposition, type DonneesCalcul } from "@/domaine/calcul/composition";
 import { compositionPossible, MESSAGE_AVENANT_GARANTIES, MESSAGE_RENOUVELLEMENT_GARANTIES, MESSAGE_TARIFICATION_PAR_GARANTIES } from "@/domaine/calcul/parametrage";
-import type { DateIso } from "@/domaine/calcul/dates";
+import { problemesDateEffetCotation, type DateIso } from "@/domaine/calcul/dates";
 import { montant } from "@/domaine/calcul/montant";
 import { estRegimeTaxe, estTypeContrat, REGIME_PAR_DEFAUT } from "@/domaine/calcul/taxes";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
@@ -270,6 +270,8 @@ async function dernierePeriode(tx: Tx, policeId: number) {
 async function calculRenouvellement(tx: Tx, police: PoliceChargee, precedente: LigneFacture, saisie: SaisieRenouvellement) {
   if (!police.typeContrat || !estTypeContrat(police.typeContrat)) throw new ErreurMetier("Police sans type de contrat (antérieure à la session 4.0) : le taux de taxe du renouvellement ne peut pas être choisi.");
   const { dateEffet, dateEcheance } = periodeRenouvellement(depuisDate(precedente.dateEcheance));
+  const problemesDateEffet = problemesDateEffetCotation(dateEffet);
+  if (problemesDateEffet.length > 0) throw new ErreurMetier(problemesDateEffet.join(" "));
   // Régime de taxe de la cotation (session 6.0) ; cotation plus ancienne : le régime proposé pour son type de contrat.
   const regime = police.cotation.regimeTaxe && estRegimeTaxe(police.cotation.regimeTaxe) ? police.cotation.regimeTaxe : REGIME_PAR_DEFAUT[police.typeContrat];
   // Session 6.2b (H90) : le renouvellement d'une police à garanties n'est pas géré (la composition de la nouvelle période non plus), que la période

@@ -1,13 +1,13 @@
 import Link from "next/link";
 
-import { Bandeau, Bouton, Carte, CarteIndicateur, Champ, EnTetePage, LienBouton, PastilleStatut, Tableau } from "@/composants/ui";
+import { Bandeau, Bouton, Carte, CarteIndicateur, ChampDate, EnTetePage, LienBouton, PastilleStatut, Tableau } from "@/composants/ui";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { LIBELLE_STATUT, STATUTS } from "@/domaine/cotation/statuts";
 import { LIBELLE_TRANCHE, TRANCHES_ANCIENNETE } from "@/domaine/tableaux/indicateurs";
 import type { TableauCommercial } from "@/serveur/tableau-commercial";
 
 const f = (m: string) => `${formaterMontant(montant(m))} F`;
-const formatDate = new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeZone: "Africa/Abidjan" });
 const TITRE_SOUS_SECTION = "mb-2 text-base font-semibold text-foreground";
 const taux = (t: string | null) => (t === null ? "—" : `${t.replace(".", ",")} %`);
 
@@ -29,10 +29,10 @@ export function TableauDeBordCommercial({ t, erreur }: { t: TableauCommercial; e
       <Carte>
         <form className="flex flex-wrap items-end gap-4" method="get">
           <div className="w-full sm:w-56">
-            <Champ label="Du (AAAA-MM-JJ)" name="debut" defaultValue={t.periode.debut} />
+            <ChampDate label="Du (JJ/MM/AAAA)" name="debut" defaultValue={t.periode.debut} />
           </div>
           <div className="w-full sm:w-56">
-            <Champ label="Au" name="fin" defaultValue={t.periode.fin} />
+            <ChampDate label="Au (JJ/MM/AAAA)" name="fin" defaultValue={t.periode.fin} />
           </div>
           <Bouton type="submit">Afficher</Bouton>
         </form>
@@ -43,7 +43,7 @@ export function TableauDeBordCommercial({ t, erreur }: { t: TableauCommercial; e
         ) : null}
       </Carte>
 
-      <Carte titre="Mes cotations" description={`Créées du ${t.periode.debut} au ${t.periode.fin}, à leur statut d'aujourd'hui.`}>
+      <Carte titre="Mes cotations" description={`Créées du ${formaterDate(t.periode.debut)} au ${formaterDate(t.periode.fin)}, à leur statut d'aujourd'hui.`}>
         <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
           {STATUTS.map((s) => (
             <CarteIndicateur key={s} icone="document" etiquette={LIBELLE_STATUT[s]} valeur={c.parStatut[s]} ton="neutre" />
@@ -131,7 +131,7 @@ export function TableauDeBordCommercial({ t, erreur }: { t: TableauCommercial; e
             { cle: "produit", entete: "Produit", rendu: (l) => l.produit },
             { cle: "souscripteur", entete: "Souscripteur", rendu: (l) => l.souscripteur },
             { cle: "ttc", entete: "TTC (F CFA)", alignement: "droite", rendu: (l) => (l.ttc ? formaterMontant(montant(l.ttc)) : "—") },
-            { cle: "validite", entete: "Valide jusqu'au", rendu: (l) => (l.dateValidite ? formatDate.format(new Date(`${l.dateValidite}T00:00:00Z`)) : "—") },
+            { cle: "validite", entete: "Valide jusqu'au", rendu: (l) => formaterDate(l.dateValidite) },
           ]}
         />
       </Carte>

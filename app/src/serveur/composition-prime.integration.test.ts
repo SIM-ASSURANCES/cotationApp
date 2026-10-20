@@ -6,9 +6,11 @@ import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { estComposition, type EntreeComposition } from "@/domaine/calcul/composition";
+import { fixerDateMinimumEffetPourTests } from "@/domaine/calcul/dates";
 import { MESSAGE_COMPOSITION_IMPOSSIBLE, type VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Souscripteur } from "@/domaine/cotation/saisie";
 import { donneesDocument } from "@/domaine/documents/donnees";
+import { SOCIETE_DEFAUT } from "@/domaine/documents/societe";
 
 import { lireJournal } from "./audit";
 import { assurerBranche } from "./branches-test";
@@ -102,6 +104,7 @@ async function produitGaranties(surcharge: Partial<VersionSaisie> = {}): Promise
 }
 
 beforeAll(async () => {
+  fixerDateMinimumEffetPourTests("2026-01-01");
   await initialiserProfilsEtDroits();
   const id = unique("admin");
   await creerAdministrateurInitial({ identifiant: id, nom: "Admin", motDePasse: MDP });
@@ -149,6 +152,7 @@ const repasserALaFormule = (code: string) =>
   creerVersion(technique, code, { ...versionGaranties(), dateEffet: aujourdhui(), modeTarification: "FORMULE", garanties: [], formules: [{ ...LIGNE_FORMULE }] }, null);
 
 afterAll(async () => {
+  fixerDateMinimumEffetPourTests(null);
   await obtenirPrisma().$disconnect();
 });
 
@@ -853,10 +857,11 @@ describe("D37 : montant garanti et accessoires par défaut sur les garanties du 
       echeances: [],
       forcee: false,
       motifForcage: null,
-      societe: { raison_sociale: "SIM", rccm: "", ncc: "", agrement: "", capital: "", adresse: "Abidjan", telephone: "" },
-      mentions: { mention_courtier: "", pied_page: "", texte_clause_beneficiaire_type: "" },
+      societe: SOCIETE_DEFAUT.societe,
+      mentions: SOCIETE_DEFAUT.document,
       urlVerification: null,
       typeContrat: "INDIVIDUEL",
+      auteurNom: "Commercial",
     }) as {
       produit: { branche_libelle: string };
       garanties_souscrites: { libelle: string; montant_garanti: string; nette: string; accessoires: string; taxe: string; ttc: string }[];

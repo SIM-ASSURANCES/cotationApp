@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 
-import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
+import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
 import { Carte, Champ as ChampSaisie, EnTetePage, ListeDeroulante, Tableau, ZoneTexte, type ColonneTableau } from "@/composants/ui";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { peutAgir } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
 import { aujourdhui } from "@/serveur/parametrage";
@@ -29,7 +30,7 @@ export default async function PageSociete() {
 
   type HistoriquePolice = (typeof lu.formatPolice.historique)[number];
   const colonnesPolice: ColonneTableau<HistoriquePolice>[] = [
-    { cle: "dateEffet", entete: "À partir du", rendu: (h) => h.dateEffet },
+    { cle: "dateEffet", entete: "À partir du", rendu: (h) => formaterDate(h.dateEffet) },
     { cle: "format", entete: "Format", rendu: (h) => <span className={MONO}>{h.valeur}</span> },
     { cle: "creePar", entete: "Saisi par", rendu: (h) => h.creePar },
     { cle: "creeLe", entete: "Saisi le", rendu: (h) => h.creeLe.toISOString().slice(0, 16).replace("T", " ") },
@@ -42,7 +43,7 @@ export default async function PageSociete() {
     {
       cle: "historique",
       entete: "Historique",
-      rendu: (x) => <span className="text-xs">{x.historique.length === 0 ? "défaut" : x.historique.map((h) => `${h.dateEffet} : ${h.valeur} (${h.creePar})`).join(" ; ")}</span>,
+      rendu: (x) => <span className="text-xs">{x.historique.length === 0 ? "défaut" : x.historique.map((h) => `${formaterDate(h.dateEffet)} : ${h.valeur} (${h.creePar})`).join(" ; ")}</span>,
     },
   ];
 
@@ -81,7 +82,7 @@ export default async function PageSociete() {
             <Champ nom="lieu_emission" libelle="Lieu d'émission des documents" valeur={m.lieu_emission} autoComplete="off" />
             <Champ nom="signataire_nom" libelle="Signataire (nom)" requis={false} valeur={m.signataire_nom} autoComplete="off" />
             <Champ nom="signataire_fonction" libelle="Signataire (fonction)" requis={false} valeur={m.signataire_fonction} autoComplete="off" />
-            <Champ nom="dateEffet" libelle="À partir du (AAAA-MM-JJ)" valeur={aujourdhui()} autoComplete="off" />
+            <ChampDate nom="dateEffet" libelle="À partir du (JJ/MM/AAAA)" valeur={aujourdhui()} min={aujourdhui()} />
           </fieldset>
         </FormulaireAction>
       </Carte>
@@ -114,7 +115,7 @@ export default async function PageSociete() {
                 required
                 className="file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-1 file:text-sm file:font-medium file:text-secondary-foreground"
               />
-              <Champ nom="dateEffet" libelle="À partir du (AAAA-MM-JJ)" valeur={aujourdhui()} autoComplete="off" />
+              <ChampDate nom="dateEffet" libelle="À partir du (JJ/MM/AAAA)" valeur={aujourdhui()} min={aujourdhui()} />
             </div>
           </FormulaireAction>
         ) : null}
@@ -135,7 +136,7 @@ export default async function PageSociete() {
               <div className="sm:col-span-2">
                 <Champ nom="format" libelle="Expression régulière (commence par ^, finit par $)" valeur={lu.formatPolice.enVigueur} autoComplete="off" />
               </div>
-              <Champ nom="dateEffet" libelle="À partir du (AAAA-MM-JJ)" valeur={aujourdhui()} autoComplete="off" />
+              <ChampDate nom="dateEffet" libelle="À partir du (JJ/MM/AAAA)" valeur={aujourdhui()} min={aujourdhui()} />
             </div>
           </FormulaireAction>
         ) : null}
@@ -165,7 +166,7 @@ export default async function PageSociete() {
             <div className="mb-4 grid gap-x-6 gap-y-4 sm:grid-cols-3">
               <ListeDeroulante label="Document" name="prefixe" required invite="— Choisir —" options={lu.formats.map((x) => ({ valeur: x.prefixe, libelle: x.libelle }))} />
               <Champ nom="format" libelle="Format (ex. FAC-{AAAA}-{MM}-{NNNN})" autoComplete="off" />
-              <Champ nom="dateEffet" libelle="À partir du (AAAA-MM-JJ)" valeur={aujourdhui()} autoComplete="off" />
+              <ChampDate nom="dateEffet" libelle="À partir du (JJ/MM/AAAA)" valeur={aujourdhui()} min={aujourdhui()} />
             </div>
           </FormulaireAction>
         ) : null}

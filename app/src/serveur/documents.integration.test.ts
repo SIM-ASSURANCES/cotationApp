@@ -5,6 +5,7 @@ process.env.URL_PUBLIQUE = "https://documents.exemple.ci";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { fixerDateMinimumEffetPourTests } from "@/domaine/calcul/dates";
 import type { Analyse } from "@/domaine/documents/analyse";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 
@@ -135,6 +136,7 @@ async function cotationT1(produitCode: string, intermediaires?: string[]): Promi
 }
 
 beforeAll(async () => {
+  fixerDateMinimumEffetPourTests("2026-01-01");
   remplacerGenerateur({
     analyser: async () => prochaineAnalyse,
     genererPdf: async (demande) => {
@@ -172,6 +174,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  fixerDateMinimumEffetPourTests(null);
   remplacerGenerateur(null);
   remplacerStockage(null);
   await obtenirPrisma().$disconnect();

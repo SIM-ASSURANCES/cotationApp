@@ -32,7 +32,7 @@ import { creerFactureAffaireNouvelle, creerFactureRenouvellement, emettreAvoir, 
 import { remplacerGenerateur, type DemandePdf } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
 import { aujourdhui, creerProduit, creerTaxe, creerVersion } from "./parametrage";
-import { ajouterJours } from "@/domaine/calcul/dates";
+import { ajouterJours, fixerDateMinimumEffetPourTests } from "@/domaine/calcul/dates";
 import { montant } from "@/domaine/calcul/montant";
 import { obtenirPrisma } from "./prisma";
 import { assurerSignature } from "./societe-test";
@@ -177,6 +177,7 @@ const doc = (d: DemandePdf) => d.donnees.doc as Record<string, string>;
 const paiement = (montant: string, canal = "VIREMENT") => ({ date: aujourdhui(), montant, canal, reference: canal === "ESPECES" ? "" : "VIR-INVENTE-001", payeur: "" });
 
 beforeAll(async () => {
+  fixerDateMinimumEffetPourTests("2026-01-01");
   remplacerGenerateur({
     analyser: async () => prochaineAnalyse,
     genererPdf: async (demande) => {
@@ -276,6 +277,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  fixerDateMinimumEffetPourTests(null);
   remplacerGenerateur(null);
   remplacerStockage(null);
   await obtenirPrisma().$disconnect();

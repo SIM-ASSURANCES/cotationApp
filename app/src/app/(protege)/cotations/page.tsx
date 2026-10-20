@@ -1,14 +1,13 @@
 import Link from "next/link";
 
 import { EnTetePage, LienBouton, PastilleStatut, Tableau } from "@/composants/ui";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { LIBELLE_STATUT, STATUTS, estStatut } from "@/domaine/cotation/statuts";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { listerCotations } from "@/serveur/cotations";
 import { niveauDuProfil } from "@/serveur/droits";
 import { exigerDroit } from "@/serveur/session";
-
-const formatDate = new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeZone: "Africa/Abidjan" });
 
 export default async function PageCotations(props: PageProps<"/cotations">) {
   const utilisateur = await exigerDroit("CREER_COTATION", peutLire);
@@ -57,7 +56,7 @@ export default async function PageCotations(props: PageProps<"/cotations">) {
           { cle: "produit", entete: "Produit", rendu: (c) => c.produit },
           { cle: "souscripteur", entete: "Souscripteur", rendu: (c) => c.souscripteur },
           { cle: "ttc", entete: "TTC (F CFA)", alignement: "droite", rendu: (c) => (c.aComposer ? "À composer" : c.ttc ? formaterMontant(montant(c.ttc)) : "—") },
-          { cle: "validite", entete: "Valide jusqu'au", rendu: (c) => (c.dateValidite ? formatDate.format(new Date(`${c.dateValidite}T00:00:00Z`)) : "—") },
+          { cle: "validite", entete: "Valide jusqu'au", rendu: (c) => formaterDate(c.dateValidite) },
           { cle: "auteur", entete: "Auteur", rendu: (c) => c.auteur },
         ]}
       />

@@ -2,8 +2,9 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { AvertissementsReports } from "@/composants/AvertissementsReports";
-import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
+import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
 import { Carte, Champ as ChampSaisie, EnTetePage, ListeDeroulante, PastilleStatut, Tableau } from "@/composants/ui";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { MESSAGE_AVENANT_GARANTIES, MESSAGE_RENOUVELLEMENT_GARANTIES } from "@/domaine/calcul/parametrage";
 import { CANAUX_PAIEMENT, LIBELLE_CANAL } from "@/domaine/facturation/factures";
@@ -50,7 +51,7 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
     <main className="space-y-6">
       <EnTetePage
         titre={`Factures de la police ${police.numero}`}
-        sousTitre={`${police.souscripteur}, du ${police.dateEffet} au ${police.dateEcheance}. Une facture se prépare en brouillon (sans numéro) ; son numéro FAC est attribué à l'émission. Émise, elle ne se modifie plus : une correction passe par un avoir puis une nouvelle facture.`}
+        sousTitre={`${police.souscripteur}, du ${formaterDate(police.dateEffet)} au ${formaterDate(police.dateEcheance)}. Une facture se prépare en brouillon (sans numéro) ; son numéro FAC est attribué à l'émission. Émise, elle ne se modifie plus : une correction passe par un avoir puis une nouvelle facture.`}
         filAriane={[{ libelle: "Cotations", href: "/cotations" }, { libelle: "Cotation", href: `/cotations/${police.cotationId}` }, { libelle: "Factures" }]}
       />
 
@@ -72,7 +73,7 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
             },
             { cle: "type", entete: "Type", rendu: (x) => x.libelleType },
             { cle: "statut", entete: "Statut", rendu: (x) => <PastilleStatut libelle={x.libelleStatut} /> },
-            { cle: "periode", entete: "Période", rendu: (x) => `${x.dateEffet} → ${x.dateEcheance}` },
+            { cle: "periode", entete: "Période", rendu: (x) => `${formaterDate(x.dateEffet)} → ${formaterDate(x.dateEcheance)}` },
             { cle: "ttc", entete: "TTC", alignement: "droite", rendu: (x) => f(x.ttc) },
             { cle: "restant", entete: "Restant dû", alignement: "droite", rendu: (x) => (x.restantDu === null ? "—" : f(x.restantDu)) },
             { cle: "pdf", entete: "PDF", rendu: (x) => (x.pdfEnAttente > 0 ? "En attente" : x.numero ? "Produit" : "—") },
@@ -92,7 +93,7 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
               lignes={vue.avance.mouvements}
               cleLigne={(m) => String(m.id)}
               colonnes={[
-                { cle: "date", entete: "Date", rendu: (m) => m.date },
+                { cle: "date", entete: "Date", rendu: (m) => formaterDate(m.date) },
                 { cle: "mouvement", entete: "Mouvement", rendu: (m) => m.libelle },
                 { cle: "montant", entete: "Montant", alignement: "droite", rendu: (m) => `${m.credit ? "+" : "−"} ${f(m.montant)}` },
                 { cle: "facture", entete: "Facture", rendu: (m) => m.facture ?? "—" },
@@ -111,7 +112,7 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
               <input type="hidden" name="policeId" value={police.id} />
               <input type="hidden" name="cotationId" value={police.cotationId} />
               <div className="grid gap-x-4 sm:grid-cols-2">
-                <Champ nom="date" libelle="Date (AAAA-MM-JJ)" valeur={aujourdhui()} autoComplete="off" />
+                <ChampDate nom="date" libelle="Date (JJ/MM/AAAA)" valeur={aujourdhui()} max={aujourdhui()} />
                 <Champ nom="montant" libelle={`Montant (au plus ${f(vue.avance.disponible)} F)`} valeur={vue.avance.disponible} autoComplete="off" />
                 <div className="mb-4">
                   <ListeDeroulante label="Canal" name="canal" required defaultValue="" invite="— Choisir —" options={CANAUX_PAIEMENT.map((k) => ({ valeur: k, libelle: LIBELLE_CANAL[k] }))} />
@@ -144,7 +145,7 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
               <FormulaireAction action={creerFacture} libelleBouton="Préparer le renouvellement (brouillon)">
                 {cache("RENOUVELLEMENT")}
                 <p className="mb-3 text-sm text-neutral">
-                  Période proposée : du {possibles.renouvellement.dateEffet} au {possibles.renouvellement.dateEcheance}, au tarif en vigueur à cette date. Formules et effectifs de la période précédente, modifiables dans le brouillon.
+                  Période proposée : du {formaterDate(possibles.renouvellement.dateEffet)} au {formaterDate(possibles.renouvellement.dateEcheance)}, au tarif en vigueur à cette date. Formules et effectifs de la période précédente, modifiables dans le brouillon.
                 </p>
                 <EnvoyeA />
               </FormulaireAction>
@@ -166,7 +167,7 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
                     required
                     defaultValue=""
                     invite="— Choisir —"
-                    options={possibles.avenants.map((a) => ({ valeur: String(a.numero), libelle: `Version ${a.numero} : ${a.adherents} adhérent(s), effet le ${a.dateEffet}` }))}
+                    options={possibles.avenants.map((a) => ({ valeur: String(a.numero), libelle: `Version ${a.numero} : ${a.adherents} adhérent(s), effet le ${formaterDate(a.dateEffet)}` }))}
                   />
                 </div>
                 <p className="mb-3 text-sm text-neutral">Prime additionnelle au prorata, du jour de l'incorporation à l'échéance de la période facturée.</p>

@@ -4,7 +4,7 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import { peutAgir, peutLire, type CodeAction } from "@/domaine/droits";
 import { calculer, VERSION_MOTEUR, type EntreeCalcul, type AssietteTaxe, type ModeAccessoire, type ResultatCalcul, type RegleArrondi } from "@/domaine/calcul/calcul";
-import { ajouterJours, dateValide, type DateIso } from "@/domaine/calcul/dates";
+import { ajouterJours, aujourdhui, dateValide, type DateIso } from "@/domaine/calcul/dates";
 import { genererEcheancier, type Tranche } from "@/domaine/calcul/echeancier";
 import { composer, VERSION_COMPOSITION, estComposition, type DonneesCalcul, type EntreeComposition, type LigneComposee, type LigneDePrime } from "@/domaine/calcul/composition";
 import { ErreurCalcul, montant, type Precision } from "@/domaine/calcul/montant";
@@ -51,7 +51,7 @@ const canoniqueOuNull = (t: string | null): string | null => (t === null ? null 
 /** Décimal Prisma en texte exact (jamais de notation exponentielle). */
 const texte = (d: { toFixed(): string }) => d.toFixed();
 
-export const aujourdhui = (): DateIso => new Date().toISOString().slice(0, 10);
+export { aujourdhui };
 
 async function exigerEcriture(acteur: UtilisateurCourant): Promise<void> {
   // « Oui » (Technique) ou « Valide » (DG). La Comptabilité est en « Lecture » (D21) : elle ne peut pas écrire.

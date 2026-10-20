@@ -1,3 +1,4 @@
+import { normaliserDateSaisie } from "@/domaine/calcul/dates";
 import { CHAMPS_TEXTE_COMPLEMENTS, type Beneficiaire, type ContactUrgence, type SouscripteurComplements } from "@/domaine/cotation/saisie";
 
 const champ = (d: FormData, nom: string) => String(d.get(nom) ?? "").trim();
@@ -13,7 +14,7 @@ export function lireComplementsSouscripteur(d: FormData): Required<SouscripteurC
   const enfants = champ(d, "souscripteur_nb_enfants");
   return {
     ...(Object.fromEntries(CHAMPS_TEXTE_COMPLEMENTS.map((nom) => [nom, champ(d, `souscripteur_${nom}`)])) as Record<(typeof CHAMPS_TEXTE_COMPLEMENTS)[number], string>),
-    date_naissance: champ(d, "souscripteur_date_naissance") as Required<SouscripteurComplements>["date_naissance"],
+    date_naissance: normaliserDateSaisie(champ(d, "souscripteur_date_naissance")) as Required<SouscripteurComplements>["date_naissance"],
     nb_enfants: enfants === "" ? null : /^\d+$/.test(enfants) ? Number(enfants) : Number.NaN,
   };
 }

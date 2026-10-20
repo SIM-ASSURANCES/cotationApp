@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
+import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
 import { Carte, EnTetePage, LienBouton, ListeDeroulante, Tableau, type ColonneTableau } from "@/composants/ui";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { LISTES_ANNEXE, REGLES, TYPES_MODELE } from "@/domaine/documents/modeles";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
@@ -35,7 +36,7 @@ const COLONNES: ColonneTableau<LigneModele>[] = [
   },
   { cle: "libelle", entete: "Libellé", rendu: (m) => m.libelle },
   { cle: "produit", entete: "Produit", rendu: (m) => m.produitCode ?? "commun" },
-  { cle: "vigueur", entete: "En vigueur", rendu: (m) => (m.enVigueur ? `v${m.enVigueur.numero} depuis le ${m.enVigueur.dateEffet}` : "aucune") },
+  { cle: "vigueur", entete: "En vigueur", rendu: (m) => (m.enVigueur ? `v${m.enVigueur.numero} depuis le ${formaterDate(m.enVigueur.dateEffet)}` : "aucune") },
   {
     cle: "derniere",
     entete: "Dernière version",
@@ -134,7 +135,7 @@ export default async function PageModeles() {
             <ul className="mb-4 space-y-1 text-sm text-foreground">
               {historique.map((h) => (
                 <li key={h.dateEffet}>
-                  {h.valeur} à partir du {h.dateEffet} (par {h.creePar})
+                  {h.valeur} à partir du {formaterDate(h.dateEffet)} (par {h.creePar})
                 </li>
               ))}
             </ul>
@@ -144,7 +145,7 @@ export default async function PageModeles() {
           {peutAgir(parametrage) ? (
             <FormulaireAction action={enregistrerLeSeuil} libelleBouton="Enregistrer le seuil">
               <Champ nom="seuil" libelle="Nouveau seuil (nombre de lignes)" autoComplete="off" />
-              <Champ nom="dateEffet" libelle="À partir du (AAAA-MM-JJ, jamais dans le passé)" valeur={aujourdhui()} autoComplete="off" />
+              <ChampDate nom="dateEffet" libelle="À partir du (JJ/MM/AAAA, jamais dans le passé)" valeur={aujourdhui()} min={aujourdhui()} />
             </FormulaireAction>
           ) : null}
         </Carte>

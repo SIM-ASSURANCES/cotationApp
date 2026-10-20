@@ -5,6 +5,7 @@ import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { EntreeCalcul } from "@/domaine/calcul/calcul";
+import { fixerDateMinimumEffetPourTests } from "@/domaine/calcul/dates";
 import { MESSAGE_BROUILLON_A_FORMULES, MESSAGE_TARIFICATION_PAR_GARANTIES, type VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Souscripteur } from "@/domaine/cotation/saisie";
 
@@ -112,6 +113,7 @@ let brancheSante: string;
 let brancheMixte: string;
 
 beforeAll(async () => {
+  fixerDateMinimumEffetPourTests("2026-01-01");
   await initialiserProfilsEtDroits();
   const id = unique("admin");
   await creerAdministrateurInitial({ identifiant: id, nom: "Admin", motDePasse: MDP });
@@ -122,6 +124,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  fixerDateMinimumEffetPourTests(null);
   await obtenirPrisma().$disconnect();
 });
 

@@ -2,6 +2,7 @@
 // Vraie base PostgreSQL de test (npm run test:integration).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { fixerDateMinimumEffetPourTests } from "@/domaine/calcul/dates";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Assure, Souscripteur } from "@/domaine/cotation/saisie";
 
@@ -86,6 +87,7 @@ async function emise(s: SaisieCotation): Promise<number> {
 const police = (numero: string) => obtenirPrisma().police.findUniqueOrThrow({ where: { numero }, include: { adherents: { orderBy: { numero: "asc" } } } });
 
 beforeAll(async () => {
+  fixerDateMinimumEffetPourTests("2026-01-01");
   await initialiserProfilsEtDroits();
   const admin = unique("admin");
   await creerAdministrateurInitial({ identifiant: admin, nom: "Admin", motDePasse: MDP });
@@ -104,6 +106,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  fixerDateMinimumEffetPourTests(null);
   await obtenirPrisma().$disconnect();
 });
 

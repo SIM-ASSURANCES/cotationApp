@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 
-import { Bouton, Champ, ListeDeroulante } from "@/composants/ui";
+import { Bouton, Champ, ChampDate, ListeDeroulante } from "@/composants/ui";
+import { aujourdhui } from "@/domaine/calcul/dates";
 
 // Tableau manuel (cellules = champs) aux classes du composant Tableau. Pas de zébrure : un champ teinté ne doit pas reposer sur un fond bg-muted.
 const ENTETE = "border-b border-border bg-muted px-3 py-2 text-left font-medium text-neutral";
@@ -25,7 +26,7 @@ export function LignesAssures({ initiales, formules }: { initiales: LigneAssure[
             <thead>
               <tr>
                 <th scope="col" className={ENTETE}>Nom et prénoms</th>
-                <th scope="col" className={ENTETE}>Naissance (AAAA-MM-JJ)</th>
+                <th scope="col" className={ENTETE}>Naissance (JJ/MM/AAAA)</th>
                 <th scope="col" className={ENTETE}>Sexe</th>
                 <th scope="col" className={ENTETE}>Lien (filiation)</th>
                 <th scope="col" className={ENTETE}>Pièce d&apos;identité (facultatif)</th>
@@ -37,7 +38,7 @@ export function LignesAssures({ initiales, formules }: { initiales: LigneAssure[
               {lignes.map((l, i) => (
                 <tr key={i}>
                   <td className={CELLULE}><Champ name="assure_nom" value={l.nom} onChange={(e) => modifier(i, "nom", e.target.value)} aria-label="Nom et prénoms" /></td>
-                  <td className={CELLULE}><Champ name="assure_naissance" value={l.naissance} onChange={(e) => modifier(i, "naissance", e.target.value)} aria-label="Date de naissance" placeholder="1990-05-15" /></td>
+                  <td className={CELLULE}><ChampDate name="assure_naissance" value={l.naissance} max={aujourdhui()} onChange={(e) => modifier(i, "naissance", e.target.value)} aria-label="Date de naissance" /></td>
                   <td className={CELLULE}>
                     <ListeDeroulante
                       name="assure_sexe"

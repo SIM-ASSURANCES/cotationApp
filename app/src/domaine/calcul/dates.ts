@@ -49,3 +49,60 @@ export function ajouterMois(date: DateIso, mois: number): DateIso {
 export function ajouterJours(date: DateIso, jours: number): DateIso {
   return new Date(enUtc(date) + jours * MS_PAR_JOUR).toISOString().slice(0, 10);
 }
+
+export const FUSEAU_ABIDJAN = "Africa/Abidjan";
+
+const formateurAbidjan = new Intl.DateTimeFormat("fr-FR", {
+  timeZone: FUSEAU_ABIDJAN,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/** Date du jour dans le fuseau de la compagnie (Africa/Abidjan, UTC+0 sans heure d'été), en AAAA-MM-JJ. */
+export function aujourdhui(maintenant: Date = new Date()): DateIso {
+  const parties = formateurAbidjan.formatToParts(maintenant);
+  const annee = parties.find((p) => p.type === "year")?.value ?? "";
+  const mois = parties.find((p) => p.type === "month")?.value ?? "";
+  const jour = parties.find((p) => p.type === "day")?.value ?? "";
+  return `${annee}-${mois}-${jour}`;
+}
+
+/** Affiche une date ISO (AAAA-MM-JJ) au format français JJ/MM/AAAA, ou « — » si absente. */
+export function formaterDate(date: DateIso | null | undefined): string {
+  if (!date) return "—";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date.trim());
+  if (!m) return date;
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+/** Accepte une saisie en JJ/MM/AAAA ou AAAA-MM-JJ et la renvoie en AAAA-MM-JJ (ou telle quelle si non reconnue). */
+export function normaliserDateSaisie(texte: string): string {
+  const propre = texte.trim();
+  const fr = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(propre);
+  if (fr) return `${fr[3]}-${fr[2]}-${fr[1]}`;
+  return propre;
+}
+
+export const MESSAGE_DATE_EFFET_PASSEE = "La date d'effet ne peut pas être antérieure à aujourd'hui.";
+
+let dateMinimumEffetTest: DateIso | null = null;
+
+/** Réservé aux suites de tests rejouant des cas historiques du CDC (2026) : surcharge la date minimale d'effet. */
+export function fixerDateMinimumEffetPourTests(date: DateIso | null): void {
+  dateMinimumEffetTest = date;
+}
+
+export function dateMinimumEffetCotation(maintenant?: Date): DateIso {
+  return dateMinimumEffetTest ?? aujourdhui(maintenant);
+}
+
+/**
+ * D37 / H107 : la date d'effet d'une cotation (création, modification, renouvellement) ne peut pas être
+ * antérieure à aujourd'hui (fuseau Africa/Abidjan). Seule la saisie est contrôlée : une cotation existante
+ * dont la date d'effet est passée n'est pas bloquée à la soumission, validation ou émission.
+ */
+export function problemesDateEffetCotation(dateEffet: DateIso, dateDuJour: DateIso = dateMinimumEffetCotation()): string[] {
+  if (!dateValide(dateEffet) || !dateValide(dateDuJour)) return [];
+  return dateEffet < dateDuJour ? [MESSAGE_DATE_EFFET_PASSEE] : [];
+}

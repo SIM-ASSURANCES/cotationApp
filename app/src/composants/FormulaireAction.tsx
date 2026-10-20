@@ -2,7 +2,7 @@
 
 import { useActionState, type ReactNode } from "react";
 
-import { Bouton, Champ as ChampSaisie, Icone } from "@/composants/ui";
+import { Bouton, Champ as ChampSaisie, ChampDate as ChampDateSaisie, Icone } from "@/composants/ui";
 
 import type { ActionFormulaire, EtatFormulaire } from "./types";
 
@@ -96,6 +96,30 @@ export function Champ({
   return (
     <div className="mb-4">
       <ChampSaisie name={nom} label={libelle} type={type} required={requis} autoComplete={autoComplete} defaultValue={valeur} />
+    </div>
+  );
+}
+
+export function ChampDate({
+  nom,
+  libelle,
+  requis = true,
+  valeur,
+  min,
+  max,
+  aide,
+}: {
+  nom: string;
+  libelle: string;
+  requis?: boolean;
+  valeur?: string;
+  min?: string;
+  max?: string;
+  aide?: string;
+}) {
+  return (
+    <div className="mb-4">
+      <ChampDateSaisie name={nom} label={libelle} required={requis} defaultValue={valeur} min={min} max={max} aide={aide} />
     </div>
   );
 }

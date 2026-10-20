@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { FormulaireAction } from "@/composants/FormulaireAction";
 import { Bouton, Carte, EnTetePage, PastilleStatut, Tableau, type ColonneTableau } from "@/composants/ui";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { peutAgir } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
@@ -39,7 +40,7 @@ function TableauAProduire({ lignes, agit, relances, legende }: { lignes: Element
     { cle: "police", entete: "Police", rendu: (e) => e.policeNumero },
     { cle: "souscripteur", entete: "Souscripteur", rendu: (e) => e.souscripteur },
     { cle: "echeance", entete: "Échéance", rendu: (e) => `n° ${e.echeance.numero}` },
-    { cle: "date", entete: "Date", rendu: (e) => e.echeance.date },
+    { cle: "date", entete: "Date", rendu: (e) => formaterDate(e.echeance.date) },
     { cle: "montant", entete: "Montant", alignement: "droite", rendu: (e) => f(e.echeance.montant) },
     { cle: "reste", entete: "Reste dû", alignement: "droite", rendu: (e) => f(e.echeance.restant) },
     ...(relances
@@ -81,7 +82,7 @@ export default async function PageEcheances() {
   return (
     <main className="space-y-6">
       <EnTetePage
-        titre={`Avis d'échéance et relances du ${liste.date}`}
+        titre={`Avis d'échéance et relances du ${formaterDate(liste.date)}`}
         sousTitre={
           "Échéances non payées des factures émises et non annulées, selon les délais de chaque produit (Produits → Avis et relances). Une échéance payée, " +
           "ou dont la facture est annulée par un avoir, ne produit plus rien : c'est vérifié aussi au moment de la génération. Un seul avis par " +
@@ -104,7 +105,7 @@ export default async function PageEcheances() {
         <Tableau
           colonnes={[
             { cle: "lot", entete: "Lot", rendu: (l) => <Link href={`/echeances/lots/${l.id}`} className="text-primary underline">Lot n° {l.id}</Link> },
-            { cle: "liste", entete: "Liste du", rendu: (l) => l.dateListe },
+            { cle: "liste", entete: "Liste du", rendu: (l) => formaterDate(l.dateListe) },
             { cle: "documents", entete: "Documents", alignement: "droite", rendu: (l) => l.total },
             { cle: "etat", entete: "État", rendu: (l) => <PastilleStatut libelle={l.statut === "TERMINE" ? "Terminé" : "En cours"} /> },
             { cle: "par", entete: "Lancé par", rendu: (l) => l.creePar },

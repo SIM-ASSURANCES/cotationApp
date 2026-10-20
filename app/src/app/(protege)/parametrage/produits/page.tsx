@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
 import { Bouton, Carte, EnTetePage, LienBouton, ListeDeroulante, PastilleStatut, Tableau, type ColonneTableau } from "@/composants/ui";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
 import { listerBranches, listerBranchesPrincipales, listerProduits } from "@/serveur/parametrage";
@@ -39,7 +40,7 @@ const COLONNES: ColonneTableau<LigneProduit>[] = [
   {
     cle: "versions",
     entete: "Versions",
-    rendu: (p) => (p.versions.length === 0 ? "aucune" : `${p.versions.length} (depuis le ${p.versions[p.versions.length - 1]}, dernière du ${p.versions[0]})`),
+    rendu: (p) => (p.versions.length === 0 ? "aucune" : `${p.versions.length} (depuis le ${formaterDate(p.versions[p.versions.length - 1])}, dernière du ${formaterDate(p.versions[0])})`),
   },
 ];
 
@@ -103,7 +104,7 @@ export default async function PageProduits({ searchParams }: { searchParams?: Pr
             Filtrer
           </Bouton>
           {filtreBranche ? (
-            <LienBouton href="/parametrage/produits" variante="fantome">
+            <LienBouton href="/parametrage/produits" variante="secondaire">
               Tout afficher
             </LienBouton>
           ) : null}

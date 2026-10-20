@@ -8,6 +8,7 @@ process.env.URL_PUBLIQUE = "https://documents.exemple.ci";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { fixerDateMinimumEffetPourTests } from "@/domaine/calcul/dates";
 import { MESSAGE_AVENANT_GARANTIES, MESSAGE_RENOUVELLEMENT_GARANTIES, MESSAGE_TARIFICATION_PAR_GARANTIES, type VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Analyse } from "@/domaine/documents/analyse";
 import type { Assure } from "@/domaine/cotation/saisie";
@@ -175,6 +176,7 @@ async function sql(requete: string): Promise<string> {
 }
 
 beforeAll(async () => {
+  fixerDateMinimumEffetPourTests("2026-01-01");
   remplacerGenerateur({
     analyser: async () => prochaineAnalyse,
     genererPdf: async (demande) => {
@@ -273,6 +275,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  fixerDateMinimumEffetPourTests(null);
   remplacerGenerateur(null);
   remplacerStockage(null);
   await obtenirPrisma().$disconnect();

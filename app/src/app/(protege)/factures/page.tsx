@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Bouton, Carte, Champ, EnTetePage, ListeDeroulante, PastilleStatut, Tableau, type ColonneTableau } from "@/composants/ui";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { LIBELLE_STATUT_FACTURE, STATUTS_FACTURE } from "@/domaine/facturation/factures";
 import { listerFactures, type LigneFactureLue } from "@/serveur/factures";
@@ -16,7 +17,7 @@ const COLONNES: ColonneTableau<LigneFactureLue>[] = [
   { cle: "statut", entete: "Statut", rendu: (x) => <PastilleStatut libelle={x.libelleStatut} /> },
   { cle: "police", entete: "Police", rendu: (x) => <Link href={`/cotations/${x.cotationId}/factures`} className="text-primary underline">{x.policeNumero}</Link> },
   { cle: "souscripteur", entete: "Souscripteur", rendu: (x) => x.souscripteur },
-  { cle: "emission", entete: "Émise le", rendu: (x) => x.dateEmission ?? "—" },
+  { cle: "emission", entete: "Émise le", rendu: (x) => formaterDate(x.dateEmission) },
   { cle: "ttc", entete: "TTC", alignement: "droite", rendu: (x) => f(x.ttc) },
   { cle: "restant", entete: "Restant dû", alignement: "droite", rendu: (x) => (x.restantDu === null ? "—" : f(x.restantDu)) },
   // Le libellé du PDF en attente est celui d'avant la refonte ; la pastille suit la table unique des statuts.

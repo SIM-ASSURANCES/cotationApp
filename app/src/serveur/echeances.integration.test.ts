@@ -229,7 +229,7 @@ beforeAll(async () => {
   produitGroupe = CODE("RLX");
   const brancheG = await assurerBranche(`SANTE_${produitGroupe}`);
   await creerTaxe(technique, { branche: brancheG, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-  await creerProduit(technique, { code: produitGroupe, libelle: "RELAXSANTE 80 % (test)", gamme: "RELAX", branche: brancheG }, null);
+  await creerProduit(technique, { code: produitGroupe, libelle: "RELAXSANTE 80 % (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheG }, null);
   const versionG: VersionSaisie = {
     ...base,
     arrondi: { ...base.arrondi },
@@ -248,7 +248,7 @@ beforeAll(async () => {
   produitIndividuel = CODE("IND");
   const brancheI = await assurerBranche(`SANTE_${produitIndividuel}`);
   await creerTaxe(technique, { branche: brancheI, typeContrat: "INDIVIDUEL", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-  await creerProduit(technique, { code: produitIndividuel, libelle: "Santé individuelle (test)", gamme: "RELAX", branche: brancheI }, null);
+  await creerProduit(technique, { code: produitIndividuel, libelle: "Santé individuelle (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheI }, null);
   await creerVersion(
     technique,
     produitIndividuel,

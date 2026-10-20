@@ -99,7 +99,7 @@ beforeAll(async () => {
   for (const typeContrat of ["INDIVIDUEL", "GROUPE"] as const) {
     await creerTaxe(technique, { branche: BRANCHE, typeContrat, tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
   }
-  await creerProduit(technique, { code: CODE, libelle: "Produit 4a (test)", gamme: "RELAX", branche: BRANCHE }, null);
+  await creerProduit(technique, { code: CODE, libelle: "Produit 4a (test)", gamme: "RELAX", branchePrincipale: "DECES", branche: BRANCHE }, null);
   await creerVersion(technique, CODE, version(), null);
 });
 

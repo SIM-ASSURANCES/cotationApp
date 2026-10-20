@@ -8,10 +8,10 @@ import { PRECISIONS, SENS_ARRONDI, montant } from "@/domaine/calcul/montant";
 import { MODES_TARIFICATION } from "@/domaine/calcul/parametrage";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
-import { listerVersions, type VersionProduit } from "@/serveur/parametrage";
+import { listerBranchesPrincipales, listerVersions, type VersionProduit } from "@/serveur/parametrage";
 import { exigerDroit } from "@/serveur/session";
 
-import { ajouterUneVersion } from "./actions";
+import { ajouterUneVersion, renseignerBranchePrincipale } from "./actions";
 
 const LIBELLE_SENS = { PROCHE: "Au plus proche", SUPERIEUR: "Au supérieur", INFERIEUR: "À l'inférieur" } as const;
 const LIBELLE_NIVEAU = { LIGNE: "Chaque ligne", TOTAL: "Total seulement" } as const;
@@ -56,11 +56,14 @@ function Resume({ v }: { v: VersionProduit }) {
 export default async function PageProduit(props: PageProps<"/parametrage/produits/[code]">) {
   const { code } = await props.params;
   const utilisateur = await exigerDroit("PARAMETRER_PRODUITS", peutLire);
-  const donnees = await listerVersions(utilisateur, code);
+  const [donnees, branchesPrincipales, niveau] = await Promise.all([
+    listerVersions(utilisateur, code),
+    listerBranchesPrincipales(utilisateur),
+    niveauDuProfil(utilisateur.profil, "PARAMETRER_PRODUITS"),
+  ]);
   if (!donnees) {
     notFound();
   }
-  const niveau = await niveauDuProfil(utilisateur.profil, "PARAMETRER_PRODUITS");
   const { produit, versions } = donnees;
   const base = versions[0]; // la plus récente : point de départ de la nouvelle version
 
@@ -69,13 +72,37 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
       <EnTetePage
         filAriane={[{ libelle: "Produits", href: "/parametrage/produits" }, { libelle: produit.code }]}
         titre={`${produit.code} — ${produit.libelle}`}
-        sousTitre={`Gamme ${produit.gamme} · branche fiscale ${produit.branche}. Le calcul utilise la version en vigueur à la date du document.`}
+        sousTitre={`Gamme ${produit.gamme} · Branche : ${produit.branchePrincipaleLibelle ? `${produit.branchePrincipaleLibelle} (${produit.branchePrincipale})` : "à renseigner"} · Catégorie de taxe : ${produit.branche}. Le calcul utilise la version en vigueur à la date du document.`}
         actions={
           <LienBouton href={`/parametrage/produits/${produit.code}/relances`} title="Délai J-x, niveaux de relance">
             Avis d&apos;échéance et relances de ce produit
           </LienBouton>
         }
       />
+
+      {!produit.branchePrincipale ? (
+        <Bandeau ton="avertissement">
+          Ce produit n&apos;a pas encore de branche principale renseignée (produit existant avant D37) : choisissez-la ci-dessous pour alimenter le classement et la balise <code>produit.branche_libelle</code>.
+        </Bandeau>
+      ) : null}
+
+      {peutAgir(niveau) ? (
+        <Carte titre="Branche principale du produit" className="max-w-md">
+          <FormulaireAction action={renseignerBranchePrincipale} libelleBouton="Enregistrer la branche">
+            <input type="hidden" name="codeProduit" value={produit.code} />
+            <div className="mb-4">
+              <ListeDeroulante
+                label="Branche (classement)"
+                name="branchePrincipale"
+                required
+                defaultValue={produit.branchePrincipale ?? ""}
+                invite="Choisir une branche"
+                options={branchesPrincipales.map((b) => ({ valeur: b.code, libelle: `${b.libelle} (${b.code})` }))}
+              />
+            </div>
+          </FormulaireAction>
+        </Carte>
+      ) : null}
 
       {peutAgir(niveau) ? (
         <Carte

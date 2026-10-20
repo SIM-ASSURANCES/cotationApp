@@ -172,22 +172,35 @@ model Taxe {
   @@map("taxes")
 }
 
+/// Branche principale de classement des produits (session SECURPRO, D37, H105) : 5 codes stables, distincts des catégories de taxe (table branches).
+model BranchePrincipale {
+  code     String    @id
+  libelle  String
+  creeLe   DateTime  @default(now()) @map("cree_le")
+  produits Produit[]
+
+  @@map("branches_principales")
+}
+
 /// Produit d'assurance (CDC §2.3, §7). Aucun produit n'est codé en dur : tout vient d'ici.
 model Produit {
-  id             Int              @id @default(autoincrement())
-  code           String           @unique
-  libelle        String
-  gamme          String
-  /// Branche fiscale : clé de la table des taxes (liste paramétrable, table branches).
-  branche        String
-  brancheFiscale Branche          @relation(fields: [branche], references: [code], onDelete: Restrict, onUpdate: Restrict)
-  actif          Boolean          @default(true)
-  creeLe         DateTime         @default(now()) @map("cree_le")
-  creePar        String           @map("cree_par")
-  versions       ProduitVersion[]
-  cotations      Cotation[]
-  modeles        Modele[]
-  factures       Facture[]
+  id                   Int                @id @default(autoincrement())
+  code                 String             @unique
+  libelle              String
+  gamme                String
+  /// Branche principale de classement (5 branches, D37, H105). Facultative en base pour l'existant, obligatoire à la saisie.
+  branchePrincipale    String?            @map("branche_principale")
+  branchePrincipaleRef BranchePrincipale? @relation(fields: [branchePrincipale], references: [code], onDelete: Restrict, onUpdate: Restrict)
+  /// Catégorie de taxe (branche fiscale) : clé de la table des taxes (liste paramétrable, table branches).
+  branche              String
+  brancheFiscale       Branche            @relation(fields: [branche], references: [code], onDelete: Restrict, onUpdate: Restrict)
+  actif                Boolean            @default(true)
+  creeLe               DateTime           @default(now()) @map("cree_le")
+  creePar              String             @map("cree_par")
+  versions             ProduitVersion[]
+  cotations            Cotation[]
+  modeles              Modele[]
+  factures             Facture[]
 
   @@map("produits")
 }

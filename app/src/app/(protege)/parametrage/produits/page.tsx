@@ -1,10 +1,10 @@
 import Link from "next/link";
 
 import { Champ, FormulaireAction } from "@/composants/FormulaireAction";
-import { Carte, EnTetePage, ListeDeroulante, Tableau, type ColonneTableau } from "@/composants/ui";
+import { Bouton, Carte, EnTetePage, LienBouton, ListeDeroulante, PastilleStatut, Tableau, type ColonneTableau } from "@/composants/ui";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
-import { listerBranches, listerProduits } from "@/serveur/parametrage";
+import { listerBranches, listerBranchesPrincipales, listerProduits } from "@/serveur/parametrage";
 import { exigerDroit } from "@/serveur/session";
 
 import { creerUnProduit } from "./actions";
@@ -23,7 +23,19 @@ const COLONNES: ColonneTableau<LigneProduit>[] = [
   },
   { cle: "libelle", entete: "Libellé", rendu: (p) => p.libelle },
   { cle: "gamme", entete: "Gamme", rendu: (p) => p.gamme },
-  { cle: "branche", entete: "Branche", rendu: (p) => p.branche },
+  {
+    cle: "branchePrincipale",
+    entete: "Branche",
+    rendu: (p) =>
+      p.branchePrincipaleLibelle ? (
+        <span>
+          {p.branchePrincipaleLibelle} <span className="text-xs text-muted">({p.branchePrincipale})</span>
+        </span>
+      ) : (
+        <PastilleStatut libelle="Branche à renseigner" />
+      ),
+  },
+  { cle: "branche", entete: "Catégorie de taxe", rendu: (p) => p.branche },
   {
     cle: "versions",
     entete: "Versions",
@@ -31,15 +43,21 @@ const COLONNES: ColonneTableau<LigneProduit>[] = [
   },
 ];
 
-export default async function PageProduits() {
+export default async function PageProduits({ searchParams }: { searchParams?: Promise<{ branche?: string }> }) {
   const utilisateur = await exigerDroit("PARAMETRER_PRODUITS", peutLire);
-  const [produits, branches, niveau] = await Promise.all([listerProduits(utilisateur), listerBranches(utilisateur), niveauDuProfil(utilisateur.profil, "PARAMETRER_PRODUITS")]);
+  const { branche: filtreBranche } = (await searchParams) ?? {};
+  const [produits, branchesPrincipales, branches, niveau] = await Promise.all([
+    listerProduits(utilisateur, { branchePrincipale: filtreBranche }),
+    listerBranchesPrincipales(utilisateur),
+    listerBranches(utilisateur),
+    niveauDuProfil(utilisateur.profil, "PARAMETRER_PRODUITS"),
+  ]);
 
   return (
     <main className="space-y-6">
       <EnTetePage
         titre="Produits"
-        sousTitre="Aucun produit n'est codé en dur (CDC §2.3) : un produit, ses formules et ses règles de calcul se paramètrent ici, par versions datées."
+        sousTitre="Aucun produit n'est codé en dur (CDC §2.3) : un produit est rattaché à l'une des 5 branches principales (classement) et à une catégorie de taxe (fiscalité), puis paramétré par versions datées."
       />
 
       {peutAgir(niveau) ? (
@@ -50,16 +68,47 @@ export default async function PageProduits() {
             <Champ nom="gamme" libelle="Gamme (ex. RELAX)" autoComplete="off" />
             <div className="mb-4">
               <ListeDeroulante
-                label="Branche"
-                name="branche"
+                label="Branche (classement)"
+                name="branchePrincipale"
                 required
                 invite="Choisir une branche"
+                options={branchesPrincipales.map((b) => ({ valeur: b.code, libelle: `${b.libelle} (${b.code})` }))}
+              />
+            </div>
+            <div className="mb-4">
+              <ListeDeroulante
+                label="Catégorie de taxe (fiscalité)"
+                name="branche"
+                required
+                invite="Choisir une catégorie de taxe"
                 options={branches.filter((b) => b.actif).map((b) => ({ valeur: b.code, libelle: `${b.code} · ${b.libelle}` }))}
               />
             </div>
           </FormulaireAction>
         </Carte>
       ) : null}
+
+      <Carte titre="Filtrer par branche">
+        <form method="get" className="flex flex-wrap items-end gap-3">
+          <div className="w-72">
+            <ListeDeroulante
+              label="Branche"
+              name="branche"
+              defaultValue={filtreBranche ?? ""}
+              invite="Toutes les branches"
+              options={branchesPrincipales.map((b) => ({ valeur: b.code, libelle: `${b.libelle} (${b.code})` }))}
+            />
+          </div>
+          <Bouton type="submit" variante="secondaire">
+            Filtrer
+          </Bouton>
+          {filtreBranche ? (
+            <LienBouton href="/parametrage/produits" variante="fantome">
+              Tout afficher
+            </LienBouton>
+          ) : null}
+        </form>
+      </Carte>
 
       <Tableau colonnes={COLONNES} lignes={produits} cleLigne={(p) => p.code} messageVide="Aucun produit." legende="Produits" />
     </main>

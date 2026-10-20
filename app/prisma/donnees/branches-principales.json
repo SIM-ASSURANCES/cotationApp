@@ -1,0 +1,11 @@
+{
+  "source": "Cinq branches principales de classement des produits, confirmées par la Direction Technique le 19/10/2026 (session SECURPRO, D37, H105). Un code ne change plus une fois en production.",
+  "lignes": [
+    { "code": "MALADIE", "libelle": "Maladie" },
+    { "code": "ACCIDENTS_CORPORELS", "libelle": "Accidents corporels" },
+    { "code": "RECOLTE", "libelle": "Récolte" },
+    { "code": "DECES", "libelle": "Décès" },
+    { "code": "INCENDIE_DOMMAGES", "libelle": "Incendie et dommages aux biens" }
+  ]
+}
+

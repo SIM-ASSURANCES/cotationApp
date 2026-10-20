@@ -56,7 +56,7 @@ export type EnvoyeA = { nom: string; adresse: string };
  * montants du moteur en texte. Un avoir porte les montants de la facture qu'il annule, en négatif.
  */
 export type ContenuFacture = {
-  produit: { code: string; libelle: string; gamme: string; branche: string };
+  produit: { code: string; libelle: string; gamme: string; branche: string; branche_libelle?: string | null };
   typeContrat: string | null;
   souscripteur: Souscripteur;
   envoyeA: EnvoyeA | null;

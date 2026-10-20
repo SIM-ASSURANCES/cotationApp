@@ -11,7 +11,13 @@ export async function creerUnProduit(_etat: EtatFormulaire, donnees: FormData): 
     (acteur, ip) =>
       creerProduit(
         acteur,
-        { code, libelle: champ(donnees, "libelle"), gamme: champ(donnees, "gamme"), branche: champ(donnees, "branche").toUpperCase() },
+        {
+          code,
+          libelle: champ(donnees, "libelle"),
+          gamme: champ(donnees, "gamme"),
+          branchePrincipale: champ(donnees, "branchePrincipale").toUpperCase(),
+          branche: champ(donnees, "branche").toUpperCase(),
+        },
         ip,
       ),
     `Produit ${code} créé : ajoutez-lui maintenant une première version (formules et règles de calcul).`,

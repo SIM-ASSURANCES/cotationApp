@@ -9,14 +9,18 @@ import { genererEcheancier, type Tranche } from "@/domaine/calcul/echeancier";
 import { composer, VERSION_COMPOSITION, estComposition, type DonneesCalcul, type EntreeComposition, type LigneComposee, type LigneDePrime } from "@/domaine/calcul/composition";
 import { ErreurCalcul, montant, type Precision } from "@/domaine/calcul/montant";
 import {
+  BRANCHES_PRINCIPALES,
   calculAutomatiquePossible,
   codeValide,
   compositionPossible,
   enVigueur,
+  estBranchePrincipaleValide,
+  libelleBranchePrincipale,
   MESSAGE_COMPOSITION_IMPOSSIBLE,
   MESSAGE_TARIFICATION_PAR_GARANTIES,
   problemesTaxe,
   problemesVersion,
+  type CodeBranchePrincipale,
   type FormuleSaisie,
   type GarantieParametree,
   type ModeTarification,
@@ -289,27 +293,64 @@ export async function initialiserTaxes(lignes: TaxeDemarrage[], auteur = "initia
   return crees;
 }
 
+// ---------------------------------------------------------------- Branches principales (classement des produits, D37, H105)
+
+export type LigneBranchePrincipale = { code: CodeBranchePrincipale; libelle: string };
+
+export async function listerBranchesPrincipales(acteur: UtilisateurCourant): Promise<LigneBranchePrincipale[]> {
+  await exigerConsultation(acteur);
+  const enBase = await obtenirPrisma().branchePrincipale.findMany();
+  const parCode = new Map(enBase.map((b) => [b.code, b.libelle]));
+  return BRANCHES_PRINCIPALES.map((b) => ({ code: b.code, libelle: parCode.get(b.code) ?? b.libelle }));
+}
+
+/** Branches principales de démarrage (prisma/donnees/branches-principales.json), idempotent. */
+export async function initialiserBranchesPrincipales(lignes: { code: string; libelle: string }[] = [...BRANCHES_PRINCIPALES]): Promise<number> {
+  let crees = 0;
+  for (const l of lignes) {
+    if (!estBranchePrincipaleValide(l.code) || l.libelle.trim() === "") {
+      throw new Error(`Branche principale de démarrage invalide : ${l.code}`);
+    }
+    await obtenirPrisma().$transaction(async (tx) => {
+      if (await tx.branchePrincipale.findUnique({ where: { code: l.code } })) return;
+      await tx.branchePrincipale.create({ data: { code: l.code, libelle: l.libelle.trim() } });
+      await journaliser({ acteur: null, action: "PARAMETRE_MODIFIE", objetType: "branche_principale", objetId: l.code, apres: { code: l.code, libelle: l.libelle.trim(), source: "données de démarrage" }, adresseIp: null }, tx);
+      crees += 1;
+    });
+  }
+  return crees;
+}
+
 // ---------------------------------------------------------------- Produits
 
 export type LigneProduit = {
   code: string;
   libelle: string;
   gamme: string;
+  branchePrincipale: string | null;
+  branchePrincipaleLibelle: string | null;
   branche: string;
   actif: boolean;
   versions: DateIso[];
 };
 
-export async function listerProduits(acteur: UtilisateurCourant): Promise<LigneProduit[]> {
+export async function listerProduits(acteur: UtilisateurCourant, filtre?: { branchePrincipale?: string }): Promise<LigneProduit[]> {
   await exigerConsultation(acteur);
+  const branchePrincipale = filtre?.branchePrincipale?.trim() || undefined;
   const produits = await obtenirPrisma().produit.findMany({
-    include: { versions: { select: { dateEffet: true }, orderBy: { dateEffet: "desc" } } },
+    where: branchePrincipale ? { branchePrincipale } : undefined,
+    include: {
+      branchePrincipaleRef: true,
+      versions: { select: { dateEffet: true }, orderBy: { dateEffet: "desc" } },
+    },
     orderBy: { code: "asc" },
   });
   return produits.map((p) => ({
     code: p.code,
     libelle: p.libelle,
     gamme: p.gamme,
+    branchePrincipale: p.branchePrincipale,
+    branchePrincipaleLibelle: p.branchePrincipaleRef?.libelle ?? libelleBranchePrincipale(p.branchePrincipale),
     branche: p.branche,
     actif: p.actif,
     versions: p.versions.map((v) => depuisDate(v.dateEffet)),
@@ -318,26 +359,74 @@ export async function listerProduits(acteur: UtilisateurCourant): Promise<LigneP
 
 export async function creerProduit(
   acteur: UtilisateurCourant,
-  saisie: { code: string; libelle: string; gamme: string; branche: string },
+  saisie: { code: string; libelle: string; gamme: string; branche: string; branchePrincipale?: string | null },
   adresseIp: string | null,
 ): Promise<void> {
   await exigerEcriture(acteur);
   const problemes: string[] = [];
   if (!codeValide(saisie.code)) problemes.push("Code produit invalide (majuscules, chiffres et _, 30 caractères au plus).");
-  if (!codeValide(saisie.branche)) problemes.push("Branche invalide (choisissez-la dans la liste des branches).");
+  if (!estBranchePrincipaleValide(saisie.branchePrincipale)) {
+    problemes.push("La branche principale est obligatoire (choisissez-la parmi les 5 branches principales : MALADIE, ACCIDENTS_CORPORELS, RECOLTE, DECES, INCENDIE_DOMMAGES).");
+  }
+  if (!codeValide(saisie.branche)) problemes.push("Catégorie de taxe (branche fiscale) invalide (choisissez-la dans la liste des branches).");
   if (saisie.libelle.trim() === "" || saisie.gamme.trim() === "") problemes.push("Libellé et gamme obligatoires.");
   refuserSiProblemes(problemes);
+  const branchePrincipale = saisie.branchePrincipale!;
 
   await obtenirPrisma().$transaction(async (tx) => {
     if (await tx.produit.findUnique({ where: { code: saisie.code } })) {
       throw new ErreurMetier("Ce code produit existe déjà.");
     }
+    if (!(await tx.branchePrincipale.findUnique({ where: { code: branchePrincipale } }))) {
+      throw new ErreurMetier(`La branche principale « ${branchePrincipale} » est introuvable.`);
+    }
     await exigerBrancheActive(tx, saisie.branche);
     const cree = await tx.produit.create({
-      data: { code: saisie.code, libelle: saisie.libelle.trim(), gamme: saisie.gamme.trim(), branche: saisie.branche, creePar: acteur.identifiant },
+      data: {
+        code: saisie.code,
+        libelle: saisie.libelle.trim(),
+        gamme: saisie.gamme.trim(),
+        branchePrincipale,
+        branche: saisie.branche,
+        creePar: acteur.identifiant,
+      },
     });
     await journaliser(
-      { acteur: { id: acteur.id, identifiant: acteur.identifiant }, action: "PARAMETRE_MODIFIE", objetType: "produit", objetId: cree.id, apres: { ...saisie }, adresseIp },
+      { acteur: { id: acteur.id, identifiant: acteur.identifiant }, action: "PARAMETRE_MODIFIE", objetType: "produit", objetId: cree.id, apres: { ...saisie, branchePrincipale }, adresseIp },
+      tx,
+    );
+  });
+}
+
+/** Renseigne ou modifie la branche principale d'un produit existant (produits de développement créés avant D37, journalisé). */
+export async function modifierBranchePrincipaleProduit(
+  acteur: UtilisateurCourant,
+  codeProduit: string,
+  branchePrincipale: string,
+  adresseIp: string | null,
+): Promise<void> {
+  await exigerEcriture(acteur);
+  if (!estBranchePrincipaleValide(branchePrincipale)) {
+    throw new ErreurMetier("La branche principale est obligatoire (choisissez-la parmi les 5 branches principales : MALADIE, ACCIDENTS_CORPORELS, RECOLTE, DECES, INCENDIE_DOMMAGES).");
+  }
+  await obtenirPrisma().$transaction(async (tx) => {
+    const avant = await tx.produit.findUnique({ where: { code: codeProduit } });
+    if (!avant) throw new ErreurMetier("Produit introuvable.");
+    if (!(await tx.branchePrincipale.findUnique({ where: { code: branchePrincipale } }))) {
+      throw new ErreurMetier(`La branche principale « ${branchePrincipale} » est introuvable.`);
+    }
+    if (avant.branchePrincipale === branchePrincipale) return;
+    await tx.produit.update({ where: { id: avant.id }, data: { branchePrincipale } });
+    await journaliser(
+      {
+        acteur: { id: acteur.id, identifiant: acteur.identifiant },
+        action: "PARAMETRE_MODIFIE",
+        objetType: "produit",
+        objetId: avant.id,
+        avant: { branchePrincipale: avant.branchePrincipale },
+        apres: { branchePrincipale },
+        adresseIp,
+      },
       tx,
     );
   });
@@ -409,13 +498,25 @@ export async function listerVersions(acteur: UtilisateurCourant, codeProduit: st
   await exigerConsultation(acteur);
   const produit = await obtenirPrisma().produit.findUnique({
     where: { code: codeProduit },
-    include: { versions: { include: { formules: true }, orderBy: { dateEffet: "desc" } } },
+    include: {
+      branchePrincipaleRef: true,
+      versions: { include: { formules: true }, orderBy: { dateEffet: "desc" } },
+    },
   });
   if (!produit) {
     return null;
   }
   return {
-    produit: { code: produit.code, libelle: produit.libelle, gamme: produit.gamme, branche: produit.branche, actif: produit.actif, versions: produit.versions.map((v) => depuisDate(v.dateEffet)) },
+    produit: {
+      code: produit.code,
+      libelle: produit.libelle,
+      gamme: produit.gamme,
+      branchePrincipale: produit.branchePrincipale,
+      branchePrincipaleLibelle: produit.branchePrincipaleRef?.libelle ?? libelleBranchePrincipale(produit.branchePrincipale),
+      branche: produit.branche,
+      actif: produit.actif,
+      versions: produit.versions.map((v) => depuisDate(v.dateEffet)),
+    },
     versions: produit.versions.map(versVersion),
   };
 }

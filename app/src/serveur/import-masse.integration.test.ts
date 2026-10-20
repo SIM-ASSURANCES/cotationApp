@@ -198,7 +198,7 @@ beforeAll(async () => {
   const branche = `SANTE_${code}`;
   await assurerBranche(branche);
   await creerTaxe(technique, { branche, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-  await creerProduit(technique, { code, libelle: "Santé groupe import (test)", gamme: "RELAX", branche }, null);
+  await creerProduit(technique, { code, libelle: "Santé groupe import (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche }, null);
   const formule = (c: string, ageMin: number | null, ageMax: number | null) => ({ code: c, libelle: c, tauxCouverture: "80", primeUnitaire: "93581.33", accessoireMode: "FIXE" as const, accessoireValeur: "3000", ageMin, ageMax });
   const version: VersionSaisie = {
     dateEffet: "2020-01-01",

@@ -42,6 +42,9 @@ const TON_PAR_STATUT: Record<string, TonPastille> = {
   "Désactivée": "neutre",
   "Désactivé": "neutre",
   "Verrouillé": "avertissement",
+  // Session SECURPRO (D37) : alertes sur l'existant en base de développement.
+  "Branche à renseigner": "avertissement",
+  "Code CG manquant": "avertissement",
 };
 
 /** Un statut peut porter un complément (« Annulée – avoir AV-2026-10-0001 ») : le ton est celui de son premier mot. */

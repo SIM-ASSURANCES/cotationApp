@@ -105,7 +105,7 @@ async function produit(references?: VersionSaisie["references"]): Promise<string
   const branche = `SANTE_${code}`;
   await assurerBranche(branche);
   await creerTaxe(technique, { branche, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-  await creerProduit(technique, { code, libelle: "Santé BENI (test)", gamme: "RELAX", branche }, null);
+  await creerProduit(technique, { code, libelle: "Santé BENI (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche }, null);
   await creerVersion(technique, code, versionBeni(references), null);
   return code;
 }

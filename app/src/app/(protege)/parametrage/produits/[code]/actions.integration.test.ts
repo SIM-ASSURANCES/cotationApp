@@ -50,7 +50,7 @@ beforeAll(async () => {
   await creerUtilisateur(await compte(admin), { identifiant: technique, nom: "Technique", profil: "TECHNIQUE", motDePasse: MDP }, null);
   acteurConnecte = await compte(technique);
   await assurerBranche("SANTE");
-  await creerProduit(acteurConnecte, { code: CODE, libelle: "Montants saisis (test)", gamme: "RELAX", branche: "SANTE" }, null);
+  await creerProduit(acteurConnecte, { code: CODE, libelle: "Montants saisis (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: "SANTE" }, null);
 });
 
 afterAll(async () => {

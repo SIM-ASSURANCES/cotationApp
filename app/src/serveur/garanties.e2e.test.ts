@@ -93,7 +93,7 @@ beforeAll(async () => {
   }
   const cg = await publier("CG", null, "cg_test.docx", { visa: VISA_CG, dateDocument: "2025-06-19" });
   produit = CODE("SECURPRO");
-  await creerProduit(technique, { code: produit, libelle: "SECURPRO (produit de test par garanties)", gamme: "SECUR", branche: iard }, null);
+  await creerProduit(technique, { code: produit, libelle: "SECURPRO (produit de test par garanties)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: iard }, null);
   await creerVersion(
     technique,
     produit,

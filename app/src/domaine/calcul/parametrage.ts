@@ -30,6 +30,31 @@ export type FormuleSaisie = {
 export const AGE_MAXIMAL = 120;
 
 /**
+ * Cinq branches principales de classement des produits (session SECURPRO, D37, H105).
+ * Distinctes des branches fiscales (catégories de taxe par ligne de prime). Un code ne change plus une fois en production.
+ */
+export const BRANCHES_PRINCIPALES = [
+  { code: "MALADIE", libelle: "Maladie" },
+  { code: "ACCIDENTS_CORPORELS", libelle: "Accidents corporels" },
+  { code: "RECOLTE", libelle: "Récolte" },
+  { code: "DECES", libelle: "Décès" },
+  { code: "INCENDIE_DOMMAGES", libelle: "Incendie et dommages aux biens" },
+] as const;
+
+export type CodeBranchePrincipale = (typeof BRANCHES_PRINCIPALES)[number]["code"];
+
+export const CODES_BRANCHES_PRINCIPALES: readonly CodeBranchePrincipale[] = BRANCHES_PRINCIPALES.map((b) => b.code);
+
+export function estBranchePrincipaleValide(code: string | null | undefined): code is CodeBranchePrincipale {
+  return typeof code === "string" && (CODES_BRANCHES_PRINCIPALES as readonly string[]).includes(code);
+}
+
+export function libelleBranchePrincipale(code: string | null | undefined): string | null {
+  if (!code) return null;
+  return BRANCHES_PRINCIPALES.find((b) => b.code === code)?.libelle ?? null;
+}
+
+/**
  * Mode de tarification d'une version de produit (session 6.2a).
  *  - FORMULE : prime unitaire × effectif × prorata (T1, T2, T3), calcul automatique ;
  *  - GARANTIES : une prime par garantie, que le moteur ne sait pas calculer ; la prime est composée par la Technique.

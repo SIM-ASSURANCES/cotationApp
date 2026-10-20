@@ -75,7 +75,7 @@ async function produit(seuil: string | null): Promise<string> {
   const branche = `SANTE_${code}`;
   await assurerBranche(branche);
   await creerTaxe(technique, { branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-  await creerProduit(technique, { code, libelle: "Produit à seuil (test)", gamme: "RELAX", branche }, null);
+  await creerProduit(technique, { code, libelle: "Produit à seuil (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche }, null);
   const cg = await publier("CG", null, VISA);
   const version: VersionSaisie = {
     dateEffet: "2020-01-01",

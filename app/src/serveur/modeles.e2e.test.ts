@@ -59,7 +59,7 @@ beforeAll(async () => {
   [technique, dg] = [await nouveau("TECHNIQUE"), await nouveau("DIRECTION_GENERALE")];
   produit = CODE("PRD");
   await assurerBranche("SANTE");
-  await creerProduit(technique, { code: produit, libelle: "Produit de bout en bout", gamme: "RELAX", branche: "SANTE" }, null);
+  await creerProduit(technique, { code: produit, libelle: "Produit de bout en bout", gamme: "RELAX", branchePrincipale: "MALADIE", branche: "SANTE" }, null);
 });
 
 afterAll(async () => {

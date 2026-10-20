@@ -114,7 +114,7 @@ describe("T5 : SECURVIE, trois bénéficiaires, branche DECES (taxe 0 %)", () =>
     await publier(cgId, "cg_test.docx", { visa: VISA_CG, dateDocument: "2025-06-19" });
 
     const code = CODE("SECURVIE");
-    await creerProduit(technique, { code, libelle: "Sécur'Vie (bout en bout)", gamme: "RELAX", branche: "DECES" }, null);
+    await creerProduit(technique, { code, libelle: "Sécur'Vie (bout en bout)", gamme: "RELAX", branchePrincipale: "DECES", branche: "DECES" }, null);
     await creerVersion(technique, code, version({ cgModeleCode: cgCode, cgVisa: VISA_CG }), null);
     // Le CP est déposé SANS ACCROC : l'analyse réelle vérifie le contenu obligatoire du §10.1 (durée, primes, CG, réclamation, date, signature…).
     const cp = await creerModele(technique, { type: "CP", code: CODE("CP"), libelle: "CP SECURVIE", produitCode: code, ...sans }, null);
@@ -189,7 +189,7 @@ describe("T6 : VOL (IARD), cases à cocher et date d'émission dynamique — doc
     });
     // Configuration prévue pour un produit IARD : mode GARANTIES, avec les VRAIES données de démarrage (IARD à 7,25 %, INCENDIE à 12,5 %).
     const garanties = CODE("VOLG");
-    await creerProduit(technique, { code: garanties, libelle: "Vol, par garanties (bout en bout)", gamme: "RELAX", branche: "IARD" }, null);
+    await creerProduit(technique, { code: garanties, libelle: "Vol, par garanties (bout en bout)", gamme: "RELAX", branchePrincipale: "INCENDIE_DOMMAGES", branche: "IARD" }, null);
     await creerVersion(technique, garanties, { ...version(), modeTarification: "GARANTIES", formules: [] }, null);
     const brouillon = await creerBrouillon(commercial, saisie(garanties), null);
     await expect(soumettre(commercial, brouillon, null)).rejects.toThrow(/pas encore composée/);
@@ -202,14 +202,14 @@ describe("T6 : VOL (IARD), cases à cocher et date d'émission dynamique — doc
     const mixte = (await assurerBranche(`MIX_${CODE("B")}`.slice(0, 20)));
     await creerTaxe(technique, { branche: mixte, typeContrat: null, tauxMixte: true, commentaire: "12,5 % / 7,25 % (inventé)", tauxPourcent: null, assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
     const formule = CODE("VOL");
-    await creerProduit(technique, { code: formule, libelle: "Vol (bout en bout)", gamme: "RELAX", branche: mixte }, null);
+    await creerProduit(technique, { code: formule, libelle: "Vol (bout en bout)", gamme: "RELAX", branchePrincipale: "INCENDIE_DOMMAGES", branche: mixte }, null);
     await creerVersion(technique, formule, version(), null);
     await expect(creerBrouillon(commercial, { ...saisie(formule), lignes: [{ codeFormule: "STANDARD", effectif: 1 }] }, null).then((id) => soumettre(commercial, id, null))).rejects.toThrow(/taux mixte non pris en charge/);
   });
 
   it("CP VOL déposé (contenu du §10.1 vérifié), puis rendu avec des montants de fixture : les bonnes cases sont cochées, la date d'émission suit", async () => {
     const code = CODE("VOL");
-    await creerProduit(technique, { code, libelle: "Vol", gamme: "RELAX", branche: "IARD" }, null);
+    await creerProduit(technique, { code, libelle: "Vol", gamme: "RELAX", branchePrincipale: "INCENDIE_DOMMAGES", branche: "IARD" }, null);
     const cp = await creerModele(technique, { type: "CP", code: CODE("CP"), libelle: "CP VOL", produitCode: code, ...sans }, null);
     await publier(cp, "cp_vol_test.docx"); // refusé si le contenu obligatoire du §10.1 manque
     const modele = await obtenirPrisma().modeleVersion.findFirstOrThrow({ where: { modeleId: cp }, select: { fichier: true } });

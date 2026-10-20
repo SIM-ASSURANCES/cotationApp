@@ -230,7 +230,7 @@ beforeAll(async () => {
   produitGroupe = CODE("RLX");
   const brancheG = await assurerBranche(`SANTE_${produitGroupe}`);
   await creerTaxe(technique, { branche: brancheG, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-  await creerProduit(technique, { code: produitGroupe, libelle: "RELAXSANTE 80 % (test)", gamme: "RELAX", branche: brancheG }, null);
+  await creerProduit(technique, { code: produitGroupe, libelle: "RELAXSANTE 80 % (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheG }, null);
   const versionG: VersionSaisie = {
     ...base,
     arrondi: { ...base.arrondi },
@@ -249,7 +249,7 @@ beforeAll(async () => {
   produitIndividuel = CODE("IND");
   const brancheI = await assurerBranche(`SANTE_${produitIndividuel}`);
   await creerTaxe(technique, { branche: brancheI, typeContrat: "INDIVIDUEL", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-  await creerProduit(technique, { code: produitIndividuel, libelle: "Santé individuelle (test)", gamme: "RELAX", branche: brancheI }, null);
+  await creerProduit(technique, { code: produitIndividuel, libelle: "Santé individuelle (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheI }, null);
   await creerVersion(
     technique,
     produitIndividuel,
@@ -762,7 +762,7 @@ describe("session 6.2a : un produit tarifé par garanties ne produit aucune fact
     const code = CODE("SW");
     const branche = await assurerBranche(`SANTE_${code}`);
     await creerTaxe(technique, { branche, typeContrat: "INDIVIDUEL", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-    await creerProduit(technique, { code, libelle: "Bascule en garanties (test)", gamme: "RELAX", branche }, null);
+    await creerProduit(technique, { code, libelle: "Bascule en garanties (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche }, null);
     // Mêmes conditions générales que les autres produits du fichier (l'émission des CP exige le visa des CG jointes).
     const references = (await listerVersions(technique, produitIndividuel))!.versions[0].references;
     await creerVersion(
@@ -849,7 +849,7 @@ describe("session 6.2b : produit par garanties, de la cotation composée à la f
     const iard = (await assurerBranche(`IARD_${code}`)).slice(0, 28);
     await creerTaxe(technique, { branche: incendie, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "12.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
     await creerTaxe(technique, { branche: iard, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "7.25", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-    await creerProduit(technique, { code, libelle: "SECURPRO (produit de test par garanties)", gamme: "SECUR", branche: iard }, null);
+    await creerProduit(technique, { code, libelle: "SECURPRO (produit de test par garanties)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: iard }, null);
     const references = (await listerVersions(technique, produitIndividuel))!.versions[0].references;
     await creerVersion(
       technique,

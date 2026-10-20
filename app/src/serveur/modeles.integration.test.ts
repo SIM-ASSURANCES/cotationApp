@@ -131,7 +131,7 @@ beforeAll(async () => {
   [technique, technique2, dg, commercial] = [await nouveauCompte("TECHNIQUE"), await nouveauCompte("TECHNIQUE"), await nouveauCompte("DIRECTION_GENERALE"), await nouveauCompte("COMMERCIAL")];
   produit = CODE("PRD");
   await assurerBranche("SANTE");
-  await creerProduit(technique, { code: produit, libelle: "Produit de test", gamme: "RELAX", branche: "SANTE" }, null);
+  await creerProduit(technique, { code: produit, libelle: "Produit de test", gamme: "RELAX", branchePrincipale: "MALADIE", branche: "SANTE" }, null);
 });
 
 afterAll(async () => {

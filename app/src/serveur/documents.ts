@@ -7,6 +7,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { calculer } from "@/domaine/calcul/calcul";
 import { composer, estComposition, tauxUnique, type DonneesCalcul } from "@/domaine/calcul/composition";
 import { ZERO as ZERO_MONTANT } from "@/domaine/calcul/montant";
+import { libelleBranchePrincipale } from "@/domaine/calcul/parametrage";
 import type { DateIso } from "@/domaine/calcul/dates";
 import { dateAdhesion, estContratDeGroupe, type VersionAdherents } from "@/domaine/cotation/adherents";
 import { normaliserNumeroPolice, numeroCertificatParDefaut, problemesNumeroCertificat } from "@/domaine/cotation/police";
@@ -88,7 +89,7 @@ async function exigerSurType(acteur: UtilisateurCourant, type: TypeDocument, ecr
 // ---------------------------------------------------------------- Sources : cotation et police
 
 export type ContexteProduit = {
-  produit: { id: number; code: string; libelle: string; gamme: string; branche: string };
+  produit: { id: number; code: string; libelle: string; gamme: string; branche: string; branche_libelle: string | null };
   versionDateEffet: DateIso;
   /** Mode de tarification de la version figée : seul FORMULE a des montants issus du moteur (session 6.2a). */
   modeTarification: string;
@@ -99,10 +100,17 @@ export type ContexteProduit = {
 export async function contexteProduit(produitId: number, versionDateEffet: Date): Promise<ContexteProduit> {
   const version = await obtenirPrisma().produitVersion.findUniqueOrThrow({
     where: { produitId_dateEffet: { produitId, dateEffet: versionDateEffet } },
-    include: { formules: true, produit: true },
+    include: { formules: true, produit: { include: { branchePrincipaleRef: true } } },
   });
   return {
-    produit: { id: version.produit.id, code: version.produit.code, libelle: version.produit.libelle, gamme: version.produit.gamme, branche: version.produit.branche },
+    produit: {
+      id: version.produit.id,
+      code: version.produit.code,
+      libelle: version.produit.libelle,
+      gamme: version.produit.gamme,
+      branche: version.produit.branche,
+      branche_libelle: version.produit.branchePrincipaleRef?.libelle ?? libelleBranchePrincipale(version.produit.branchePrincipale),
+    },
     versionDateEffet: depuisDate(versionDateEffet),
     modeTarification: version.modeTarification,
     formules: new Map(version.formules.map((f) => [f.code, { libelle: f.libelle, tauxCouverture: f.tauxCouverture ? f.tauxCouverture.toFixed() : null }])),
@@ -375,7 +383,16 @@ async function piecesContractuelles(contexte: ContexteProduit, date: DateIso, ob
 }
 
 async function sourceCommune(contexte: ContexteProduit, date: DateIso) {
-  return { produit: { code: contexte.produit.code, libelle: contexte.produit.libelle, gamme: contexte.produit.gamme, branche: contexte.produit.branche }, ...(await lireParametresSociete(date)) };
+  return {
+    produit: {
+      code: contexte.produit.code,
+      libelle: contexte.produit.libelle,
+      gamme: contexte.produit.gamme,
+      branche: contexte.produit.branche,
+      branche_libelle: contexte.produit.branche_libelle,
+    },
+    ...(await lireParametresSociete(date)),
+  };
 }
 
 // ---------------------------------------------------------------- Cotation (CDC §9)

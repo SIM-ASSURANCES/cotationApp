@@ -9,13 +9,15 @@ nextEnv.loadEnvConfig(process.cwd());
 
 const { initialiserProfilsEtDroits } = await import("../src/serveur/droits");
 const { initialiserMotifsRefus } = await import("../src/serveur/clients");
-const { initialiserBranches, initialiserTaxes } = await import("../src/serveur/parametrage");
+const { initialiserBranches, initialiserBranchesPrincipales, initialiserTaxes } = await import("../src/serveur/parametrage");
 const { obtenirPrisma } = await import("../src/serveur/prisma");
 
 const { profilsCrees, droitsCrees } = await initialiserProfilsEtDroits();
 console.log(`Profils créés : ${profilsCrees} ; droits par défaut créés : ${droitsCrees}.`);
 const motifs = await initialiserMotifsRefus();
 console.log(`Motifs de refus créés : ${motifs}.`);
+const branchesPrincipales = JSON.parse(readFileSync(new URL("../prisma/donnees/branches-principales.json", import.meta.url), "utf8"));
+console.log(`Branches principales de démarrage créées : ${await initialiserBranchesPrincipales(branchesPrincipales.lignes)}.`);
 const branches = JSON.parse(readFileSync(new URL("../prisma/donnees/branches.json", import.meta.url), "utf8"));
 console.log(`Branches fiscales de démarrage créées : ${await initialiserBranches(branches.lignes)}.`);
 const taxes = JSON.parse(readFileSync(new URL("../prisma/donnees/taxes-loi.json", import.meta.url), "utf8"));

@@ -95,7 +95,7 @@ const LIGNES_IARD = () => [
 
 async function produitGaranties(surcharge: Partial<VersionSaisie> = {}): Promise<string> {
   const code = CODE("PGAR");
-  await creerProduit(technique, { code, libelle: "Produit par garanties (test)", gamme: "SECUR", branche: IARD }, null);
+  await creerProduit(technique, { code, libelle: "Produit par garanties (test)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: IARD }, null);
   await creerVersion(technique, code, versionGaranties(surcharge), null);
   return code;
 }
@@ -428,7 +428,7 @@ describe("contrôles de la saisie", () => {
 
   it("un produit à la formule ne se compose pas", async () => {
     const code = CODE("FORM");
-    await creerProduit(technique, { code, libelle: "À la formule (test)", gamme: "RELAX", branche: SANTE }, null);
+    await creerProduit(technique, { code, libelle: "À la formule (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: SANTE }, null);
     await creerVersion(technique, code, { ...versionGaranties(), modeTarification: "FORMULE", garanties: [], formules: [{ code: "F", libelle: "F", tauxCouverture: null, primeUnitaire: "1000", accessoireMode: "AUCUN", accessoireValeur: "0" }] }, null);
     const id = await creerBrouillon(commercial, saisie(code, { lignes: [{ codeFormule: "F", effectif: 1 }] }), null);
     await expect(composerLaPrime(technique, id, LIGNES_IARD(), "Essai de composition", null)).rejects.toThrow(/se tarifie à la formule/);
@@ -478,7 +478,7 @@ describe("modification d'un brouillon composé et paramétrage de la version", (
 
   it("une version par garanties n'a pas besoin de formule ; ses frais de fractionnement et une liste de garanties à la formule sont refusés", async () => {
     const code = CODE("VER");
-    await creerProduit(technique, { code, libelle: "Version (test)", gamme: "SECUR", branche: IARD }, null);
+    await creerProduit(technique, { code, libelle: "Version (test)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: IARD }, null);
     await expect(creerVersion(technique, code, versionGaranties({ fractionnement: { tranchesMax: 4, repartitionPourcent: null, decalagesMois: null, frais: "500" } }), null)).rejects.toThrow(/frais de fractionnement/);
     await expect(creerVersion(technique, code, versionGaranties({ modeTarification: "FORMULE" }), null)).rejects.toThrow(/au moins une formule|liste des garanties/);
     await expect(creerVersion(technique, code, versionGaranties({ garantiesSaisieLibre: false, garanties: [] }), null)).rejects.toThrow(/saisie libre est interdite/);
@@ -491,7 +491,7 @@ describe("modification d'un brouillon composé et paramétrage de la version", (
 
   it("des frais de fractionnement présents sur une version déjà enregistrée (créée avant ce contrôle) sont refusés dès qu'on fractionne, jamais ignorés", async () => {
     const code = CODE("FRA");
-    await creerProduit(technique, { code, libelle: "Frais (test)", gamme: "SECUR", branche: IARD }, null);
+    await creerProduit(technique, { code, libelle: "Frais (test)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: IARD }, null);
     const produit = await obtenirPrisma().produit.findUniqueOrThrow({ where: { code } });
     // Une version de la 6.2a pouvait porter des frais : on l'insère sans passer par la validation (les versions en vigueur ne se modifient plus, mais s'insèrent).
     await obtenirPrisma().produitVersion.create({

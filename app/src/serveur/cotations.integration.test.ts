@@ -116,7 +116,7 @@ beforeAll(async () => {
   ];
   await assurerBranche(BRANCHE);
   await creerTaxe(technique, { branche: BRANCHE, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-  await creerProduit(technique, { code: CODE, libelle: "Santé BENI (test)", gamme: "RELAX", branche: BRANCHE }, null);
+  await creerProduit(technique, { code: CODE, libelle: "Santé BENI (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: BRANCHE }, null);
   await creerVersion(technique, CODE, versionBeni(), null);
 });
 

@@ -144,7 +144,13 @@ async function contenuCalcule(
   const m = montantsDu(entree, contexte);
   const groupe = estContratDeGroupe(police.typeContrat);
   return {
-    produit: { code: contexte.produit.code, libelle: contexte.produit.libelle, gamme: contexte.produit.gamme, branche: contexte.produit.branche },
+    produit: {
+      code: contexte.produit.code,
+      libelle: contexte.produit.libelle,
+      gamme: contexte.produit.gamme,
+      branche: contexte.produit.branche,
+      branche_libelle: contexte.produit.branche_libelle,
+    },
     typeContrat: police.typeContrat,
     souscripteur: police.souscripteur as unknown as Souscripteur,
     envoyeA: o.envoyeA,

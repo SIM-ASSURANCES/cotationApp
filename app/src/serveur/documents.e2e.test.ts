@@ -62,7 +62,7 @@ describe("cotation T1 de bout en bout", () => {
     const branche = `SANTE_${produit}`;
     await assurerBranche(branche);
     await creerTaxe(technique, { branche, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-    await creerProduit(technique, { code: produit, libelle: "Santé BENI (bout en bout)", gamme: "RELAX", branche }, null);
+    await creerProduit(technique, { code: produit, libelle: "Santé BENI (bout en bout)", gamme: "RELAX", branchePrincipale: "MALADIE", branche }, null);
     await creerVersion(
       technique,
       produit,

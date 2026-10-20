@@ -129,7 +129,7 @@ describe("FORMULE : T1 ne change pas d'un franc", () => {
   it("une version créée sans mode, ou avec le mode FORMULE, donne exactement les montants de T1 (15 888 000)", async () => {
     const [sansMode, avecMode] = [CODE("FSM"), CODE("FAM")];
     for (const [code, v] of [[sansMode, versionBeni()], [avecMode, versionBeni({ modeTarification: "FORMULE" })]] as const) {
-      await creerProduit(technique, { code, libelle: "Santé BENI (test)", gamme: "RELAX", branche: brancheSante }, null);
+      await creerProduit(technique, { code, libelle: "Santé BENI (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
       await creerVersion(technique, code, v, null);
     }
     const lignes = [{ codeFormule: "SOLO", effectif: 3 }, { codeFormule: "FAMILLE", effectif: 60 }];
@@ -147,7 +147,7 @@ describe("FORMULE : T1 ne change pas d'un franc", () => {
 
   it("une cotation FORMULE s'émet toujours et porte les montants de T1", async () => {
     const code = CODE("FEM");
-    await creerProduit(technique, { code, libelle: "Santé BENI (test)", gamme: "RELAX", branche: brancheSante }, null);
+    await creerProduit(technique, { code, libelle: "Santé BENI (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
     await creerVersion(technique, code, versionBeni(), null);
     const id = await creerBrouillon(commercial, saisie(code), null);
     const r = await soumettre(commercial, id, null);
@@ -157,7 +157,7 @@ describe("FORMULE : T1 ne change pas d'un franc", () => {
 
   it("un produit à la formule rattaché à une branche à taux mixte reste refusé avec son propre message (le filet existe toujours)", async () => {
     const code = CODE("FMX");
-    await creerProduit(technique, { code, libelle: "Formule sur taux mixte (test)", gamme: "RELAX", branche: brancheMixte }, null);
+    await creerProduit(technique, { code, libelle: "Formule sur taux mixte (test)", gamme: "RELAX", branchePrincipale: "INCENDIE_DOMMAGES", branche: brancheMixte }, null);
     await creerVersion(technique, code, versionBeni(), null);
     await expect(calculerPourProduit(technique, { codeProduit: code, regimeTaxe: "GROUPE", ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 1 }] })).rejects.toThrow("taux mixte non pris en charge");
   });
@@ -167,7 +167,7 @@ describe("GARANTIES : aucun montant automatique", () => {
   it("le calcul est refusé avec le message de la Technique, que la taxe de la branche soit simple ou mixte (le message ne dépend plus du taux)", async () => {
     for (const branche of [brancheSante, brancheMixte]) {
       const code = CODE("GAR");
-      await creerProduit(technique, { code, libelle: "Garanties (test)", gamme: "RELAX", branche }, null);
+      await creerProduit(technique, { code, libelle: "Garanties (test)", gamme: "RELAX", branchePrincipale: "INCENDIE_DOMMAGES", branche }, null);
       await creerVersion(technique, code, versionGaranties("2020-01-01"), null);
       const demande = { codeProduit: code, regimeTaxe: "GROUPE" as const, ...ANNEE, lignes: [{ codeFormule: "UNITE", effectif: 1 }] };
 
@@ -179,7 +179,7 @@ describe("GARANTIES : aucun montant automatique", () => {
 
   it("la construction de l'entrée du moteur refuse elle aussi un contexte GARANTIES ou d'un mode inconnu, même fabriqué hors de la résolution des paramètres (ceinture)", async () => {
     const code = CODE("CTX");
-    await creerProduit(technique, { code, libelle: "Contexte (test)", gamme: "RELAX", branche: brancheSante }, null);
+    await creerProduit(technique, { code, libelle: "Contexte (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
     await creerVersion(technique, code, versionBeni(), null);
     const contexte = await resoudreContexte(obtenirPrisma(), code, aujourdhui(), ANNEE.dateEffet, "GROUPE");
     const demande = { ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 1 }], nombreTranches: 1 };
@@ -192,7 +192,7 @@ describe("GARANTIES : aucun montant automatique", () => {
 
   it("le brouillon d'un produit par garanties naît « à composer » (sans TTC) et ne se soumet pas tant que la prime n'est pas composée ; avec des formules, il est refusé", async () => {
     const code = CODE("GAC");
-    await creerProduit(technique, { code, libelle: "Garanties (test)", gamme: "RELAX", branche: brancheSante }, null);
+    await creerProduit(technique, { code, libelle: "Garanties (test)", gamme: "RELAX", branchePrincipale: "INCENDIE_DOMMAGES", branche: brancheSante }, null);
     await creerVersion(technique, code, versionGaranties("2020-01-01"), null);
 
     await expect(creerBrouillon(commercial, saisie(code), null)).rejects.toThrow(MESSAGE_BROUILLON_A_FORMULES);
@@ -209,7 +209,7 @@ describe("GARANTIES : aucun montant automatique", () => {
 
   it("un produit basculé en GARANTIES : le brouillon d'avant ne peut plus être soumis ni modifié, une cotation déjà émise reste acceptable (T10)", async () => {
     const code = CODE("BAS");
-    await creerProduit(technique, { code, libelle: "Bascule (test)", gamme: "RELAX", branche: brancheSante }, null);
+    await creerProduit(technique, { code, libelle: "Bascule (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
     await creerVersion(technique, code, versionBeni(), null);
     const emise = await creerBrouillon(commercial, saisie(code), null);
     expect((await soumettre(commercial, emise, null)).statut).toBe("EMISE");
@@ -240,7 +240,7 @@ describe("GARANTIES : aucun montant automatique", () => {
 
   it("une cotation « À valider » d'avant la bascule ne s'émet plus après : la validation refuse, la cotation reste en attente", async () => {
     const code = CODE("VAL");
-    await creerProduit(technique, { code, libelle: "Validation (test)", gamme: "RELAX", branche: brancheSante }, null);
+    await creerProduit(technique, { code, libelle: "Validation (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
     await creerVersion(technique, code, versionBeni(), null);
     // Au-dessus du seuil de 20 000 000 F (100 familles : environ 25,9 millions) : la cotation attend un valideur.
     const id = await creerBrouillon(commercial, saisie(code, { lignes: [{ codeFormule: "FAMILLE", effectif: 100 }] }), null);
@@ -260,7 +260,7 @@ describe("GARANTIES : aucun montant automatique", () => {
 
   it("ceinture : l'émission refuse aussi une cotation rattachée à la version GARANTIES (état fabriqué en SQL : aucun chemin de l'application n'y mène)", async () => {
     const code = CODE("CEI");
-    await creerProduit(technique, { code, libelle: "Ceinture (test)", gamme: "RELAX", branche: brancheSante }, null);
+    await creerProduit(technique, { code, libelle: "Ceinture (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
     await creerVersion(technique, code, versionBeni(), null);
     const id = await creerBrouillon(commercial, saisie(code, { lignes: [{ codeFormule: "FAMILLE", effectif: 100 }] }), null);
     expect((await soumettre(commercial, id, null)).statut).toBe("A_VALIDER");
@@ -274,7 +274,7 @@ describe("GARANTIES : aucun montant automatique", () => {
 
   it("une version GARANTIES datée dans l'avenir ne bloque rien avant sa date (H86) ; elle bloque dès qu'elle est en vigueur", async () => {
     const code = CODE("FUT");
-    await creerProduit(technique, { code, libelle: "Version future (test)", gamme: "RELAX", branche: brancheSante }, null);
+    await creerProduit(technique, { code, libelle: "Version future (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
     await creerVersion(technique, code, versionBeni(), null);
     await creerVersion(technique, code, versionGaranties("2099-01-01"), null);
     const lignes = [{ codeFormule: "SOLO", effectif: 3 }, { codeFormule: "FAMILLE", effectif: 60 }];
@@ -289,7 +289,7 @@ describe("GARANTIES : aucun montant automatique", () => {
 
   it("montantsDu (création des factures d'affaire nouvelle, de renouvellement et d'avenant ; CP ; PDF de cotation) refuse une version GARANTIES", async () => {
     const code = CODE("DOC");
-    await creerProduit(technique, { code, libelle: "Documents (test)", gamme: "RELAX", branche: brancheSante }, null);
+    await creerProduit(technique, { code, libelle: "Documents (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
     await creerVersion(technique, code, versionBeni(), null);
     await creerVersion(technique, code, versionGaranties("2026-06-01"), null);
     const produit = await obtenirPrisma().produit.findUniqueOrThrow({ where: { code } });
@@ -308,7 +308,7 @@ describe("GARANTIES : aucun montant automatique", () => {
 describe("Version : lecture, journal et immutabilité du mode", () => {
   it("le mode est lu tel qu'enregistré et figure au journal de la création de la version", async () => {
     const code = CODE("JNL");
-    await creerProduit(technique, { code, libelle: "Journal (test)", gamme: "RELAX", branche: brancheSante }, null);
+    await creerProduit(technique, { code, libelle: "Journal (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
     await creerVersion(technique, code, versionGaranties("2020-01-01"), null);
     await creerVersion(technique, code, versionBeni({ dateEffet: "2026-03-01" }), null);
 
@@ -322,13 +322,13 @@ describe("Version : lecture, journal et immutabilité du mode", () => {
 
   it("un mode inconnu est refusé avant d'atteindre la base", async () => {
     const code = CODE("INV");
-    await creerProduit(technique, { code, libelle: "Invalide (test)", gamme: "RELAX", branche: brancheSante }, null);
+    await creerProduit(technique, { code, libelle: "Invalide (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
     await expect(creerVersion(technique, code, versionBeni({ modeTarification: "AUTRE" as never }), null)).rejects.toThrow(/mode de tarification/);
   });
 
   it("la base refuse elle aussi un mode inconnu, et le mode d'une version existante ne se modifie pas (versions historisées)", async () => {
     const code = CODE("SQL");
-    await creerProduit(technique, { code, libelle: "SQL (test)", gamme: "RELAX", branche: brancheSante }, null);
+    await creerProduit(technique, { code, libelle: "SQL (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
     await creerVersion(technique, code, versionBeni(), null);
     const produit = await obtenirPrisma().produit.findUniqueOrThrow({ where: { code } });
 
@@ -340,7 +340,7 @@ describe("Version : lecture, journal et immutabilité du mode", () => {
 
   it("la colonne vaut FORMULE par défaut (une version insérée sans mode, comme avant la 6.2a, se calcule)", async () => {
     const code = CODE("DEF");
-    await creerProduit(technique, { code, libelle: "Défaut (test)", gamme: "RELAX", branche: brancheSante }, null);
+    await creerProduit(technique, { code, libelle: "Défaut (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
     const produit = await obtenirPrisma().produit.findUniqueOrThrow({ where: { code } });
     expect(await sql(`INSERT INTO produit_versions (produit_id, date_effet, arrondi_precision, arrondi_sens, arrondi_niveau, arrondi_composante, prorata_actif, cree_par)
       VALUES (${produit.id}, DATE '2020-01-01', 1, 'PROCHE', 'LIGNE', 'TAXE', true, 'test')`)).toBe("accepté");
@@ -352,7 +352,7 @@ describe("Version : lecture, journal et immutabilité du mode", () => {
 /** Entrée du moteur de T1 (3 Solo + 60 Famille), prise d'une cotation FORMULE émise pour l'occasion. */
 async function creerEntreeDeReference(): Promise<unknown> {
   const code = CODE("REF");
-  await creerProduit(technique, { code, libelle: "Référence (test)", gamme: "RELAX", branche: brancheSante }, null);
+  await creerProduit(technique, { code, libelle: "Référence (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
   await creerVersion(technique, code, versionBeni(), null);
   const id = await creerBrouillon(commercial, saisie(code), null);
   await soumettre(commercial, id, null);

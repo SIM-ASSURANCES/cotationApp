@@ -59,7 +59,7 @@ export type SourceDocument = {
   dateEmission: DateIso;
   dateValidite: DateIso | null;
   policeNumero: string | null;
-  produit: { code: string; libelle: string; gamme: string; branche: string };
+  produit: { code: string; libelle: string; gamme: string; branche: string; branche_libelle?: string | null };
   cg: { libelle: string; visa: string; date: DateIso | null } | null;
   cs: { libelle: string; visa: string } | null;
   souscripteur: Souscripteur;
@@ -146,7 +146,11 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
   const donnees = {
     societe: s.societe,
     produit: {
-      ...s.produit,
+      code: s.produit.code,
+      libelle: s.produit.libelle,
+      gamme: s.produit.gamme,
+      branche: s.produit.branche,
+      branche_libelle: s.produit.branche_libelle ?? null,
       cg_libelle: s.cg?.libelle ?? null,
       cg_visa: s.cg?.visa ?? null,
       cg_date: s.cg?.date ?? null,

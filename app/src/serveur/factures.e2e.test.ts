@@ -73,7 +73,7 @@ async function produit(typeContrat: "GROUPE" | "INDIVIDUEL", cgCode: string, for
   const code = CODE(typeContrat === "GROUPE" ? "RLX" : "IND");
   const branche = await assurerBranche(`SANTE_${code}`);
   await creerTaxe(technique, { branche, typeContrat, tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-  await creerProduit(technique, { code, libelle: typeContrat === "GROUPE" ? "RELAXSANTE 80 % (bout en bout)" : "Santé individuelle (bout en bout)", gamme: "RELAX", branche }, null);
+  await creerProduit(technique, { code, libelle: typeContrat === "GROUPE" ? "RELAXSANTE 80 % (bout en bout)" : "Santé individuelle (bout en bout)", gamme: "RELAX", branchePrincipale: "MALADIE", branche }, null);
   await creerVersion(
     technique,
     code,

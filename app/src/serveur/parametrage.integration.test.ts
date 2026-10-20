@@ -17,10 +17,14 @@ import {
   creerVersion,
   creerBranche,
   initialiserBranches,
+  initialiserBranchesPrincipales,
   initialiserTaxes,
   listerBranches,
+  listerBranchesPrincipales,
+  listerProduits,
   listerTaxes,
   modifierBranche,
+  modifierBranchePrincipaleProduit,
   type TaxeDemarrage,
 } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
@@ -84,7 +88,7 @@ describe("T1 et T3 de bout en bout, avec les paramètres lus en base", () => {
     // Taux santé GROUPE de la loi (1,5 %, D18) : T1 et T2 sont des contrats groupe.
     await assurerBranche(branche);
     await creerTaxe(technique, { branche, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-    await creerProduit(technique, { code, libelle: "Santé BENI (test)", gamme: "RELAX", branche }, null);
+    await creerProduit(technique, { code, libelle: "Santé BENI (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche }, null);
     await creerVersion(technique, code, versionBeni(), null);
   });
 
@@ -121,7 +125,7 @@ describe("T1 et T3 de bout en bout, avec les paramètres lus en base", () => {
 
   it("T3 : 163 jours, taxe de 1,5 % (1 809,495 avant arrondi), jamais 2 292", async () => {
     const codeT3 = `${code}_T3`;
-    await creerProduit(technique, { code: codeT3, libelle: "Individuel (test T3)", gamme: "RELAX", branche }, null);
+    await creerProduit(technique, { code: codeT3, libelle: "Individuel (test T3)", gamme: "RELAX", branchePrincipale: "MALADIE", branche }, null);
     // Prime annuelle choisie pour que la prime nette proratisée sur 163 jours soit de 120 633.
     await creerVersion(
       technique,
@@ -159,7 +163,7 @@ describe("historisation par date d'effet (CDC §7)", () => {
     await assurerBranche(branche);
     await creerTaxe(technique, { branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
     await creerTaxe(technique, { branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "1.9", assiette: "NETTE_ACCESSOIRES", dateEffet: "2026-09-01", dateFin: null }, null);
-    await creerProduit(technique, { code, libelle: "Historique (test)", gamme: "RELAX", branche }, null);
+    await creerProduit(technique, { code, libelle: "Historique (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche }, null);
     await creerVersion(technique, code, versionBeni({ dateEffet: "2026-01-01", formules: [{ code: "SOLO", libelle: "Solo", tauxCouverture: null, primeUnitaire: "100000", accessoireMode: "AUCUN", accessoireValeur: "0" }] }), null);
     await creerVersion(technique, code, versionBeni({ dateEffet: "2026-09-01", formules: [{ code: "SOLO", libelle: "Solo", tauxCouverture: null, primeUnitaire: "120000", accessoireMode: "AUCUN", accessoireValeur: "0" }] }), null);
   });
@@ -218,7 +222,7 @@ describe("règles de gestion", () => {
   beforeAll(async () => {
     await assurerBranche(branche);
     await creerTaxe(technique, { branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-    await creerProduit(technique, { code, libelle: "Règles (test)", gamme: "RELAX", branche }, null);
+    await creerProduit(technique, { code, libelle: "Règles (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche }, null);
     await creerVersion(
       technique,
       code,
@@ -235,7 +239,7 @@ describe("règles de gestion", () => {
 
     await expect(creerTaxe(commercial, taxe, null)).rejects.toBeInstanceOf(ErreurAcces);
     await expect(creerTaxe(comptabilite, taxe, null)).rejects.toBeInstanceOf(ErreurAcces);
-    await expect(creerProduit(commercial, { code: "X", libelle: "x", gamme: "x", branche: "X" }, null)).rejects.toBeInstanceOf(ErreurAcces);
+    await expect(creerProduit(commercial, { code: "X", libelle: "x", gamme: "x", branchePrincipale: "MALADIE", branche: "X" }, null)).rejects.toBeInstanceOf(ErreurAcces);
     await expect(creerVersion(comptabilite, code, versionBeni({ dateEffet: "2026-12-01" }), null)).rejects.toBeInstanceOf(ErreurAcces);
   });
 
@@ -330,7 +334,7 @@ describe("taxes par branche et type de contrat (D18)", () => {
     await creerTaxe(technique, taxe(branche, { tauxPourcent: "7.25", dateEffet: "2020-01-01" }), null);
     await creerTaxe(technique, taxe(branche, { typeContrat: "INDIVIDUEL", tauxPourcent: "4", dateEffet: "2020-01-01" }), null);
     const code = unique("PREC").toUpperCase().replace(/-/g, "_");
-    await creerProduit(technique, { code, libelle: "Précision (test)", gamme: "RELAX", branche }, null);
+    await creerProduit(technique, { code, libelle: "Précision (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche }, null);
     await creerVersion(technique, code, versionBeni({ dateEffet: "2020-01-01" }), null);
     const demande = (regimeTaxe: string) => calculerPourProduit(technique, { codeProduit: code, regimeTaxe, ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 1 }] });
 
@@ -345,7 +349,7 @@ describe("taxes par branche et type de contrat (D18)", () => {
     await assurerBranche(mixte);
     await creerTaxe(technique, taxe(mixte, { tauxPourcent: null, tauxMixte: true, commentaire: "12,5 % incendie ; 7,25 % reste", dateEffet: "2020-01-01" }), null);
     const codeMixte = `${code}_M`;
-    await creerProduit(technique, { code: codeMixte, libelle: "Mixte (test)", gamme: "RELAX", branche: mixte }, null);
+    await creerProduit(technique, { code: codeMixte, libelle: "Mixte (test)", gamme: "RELAX", branchePrincipale: "INCENDIE_DOMMAGES", branche: mixte }, null);
     await creerVersion(technique, codeMixte, versionBeni({ dateEffet: "2020-01-01" }), null);
     await expect(calculerPourProduit(technique, { codeProduit: codeMixte, regimeTaxe: "INDIVIDUEL", ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 1 }] })).rejects.toThrow(
       "taux mixte non pris en charge : à paramétrer",
@@ -398,12 +402,12 @@ describe("branches fiscales paramétrables (D21)", () => {
     const c = code();
 
     await expect(creerTaxe(technique, taxe(c), null)).rejects.toThrow(/pas dans la liste des branches/);
-    await expect(creerProduit(technique, { code: c, libelle: "P", gamme: "G", branche: c }, null)).rejects.toThrow(/pas dans la liste des branches/);
+    await expect(creerProduit(technique, { code: c, libelle: "P", gamme: "G", branchePrincipale: "MALADIE", branche: c }, null)).rejects.toThrow(/pas dans la liste des branches/);
     await creerBranche(technique, { code: c, libelle: "Récolte" }, null);
     await creerTaxe(technique, taxe(c), null);
     await modifierBranche(technique, c, { libelle: "Récolte (agricole)", actif: false }, null);
     await expect(creerTaxe(technique, { ...taxe(c), dateEffet: "2027-01-01" }, null)).rejects.toThrow(/désactivée/);
-    await expect(creerProduit(technique, { code: c, libelle: "P", gamme: "G", branche: c }, null)).rejects.toThrow(/désactivée/);
+    await expect(creerProduit(technique, { code: c, libelle: "P", gamme: "G", branchePrincipale: "MALADIE", branche: c }, null)).rejects.toThrow(/désactivée/);
     expect((await listerTaxes(technique)).some((t) => t.branche === c)).toBe(true); // les taux existants restent
     const modif = (await lireJournal({ action: "PARAMETRE_MODIFIE" })).lignes.find((l) => l.objet === `branche ${c}` && l.avant !== null)!;
     expect(modif.avant).toEqual({ libelle: "Récolte", actif: true });
@@ -418,5 +422,44 @@ describe("branches fiscales paramétrables (D21)", () => {
     await expect(prisma.$executeRawUnsafe(`UPDATE branches SET code = '${c}X' WHERE code = '${c}'`)).rejects.toThrow(/seuls le libellé/);
     await expect(prisma.$executeRawUnsafe(`DELETE FROM branches WHERE code = '${c}'`)).rejects.toThrow(/suppression interdite/);
     await expect(prisma.$executeRawUnsafe(`INSERT INTO taxes (branche, taux_pourcent, assiette, date_effet, cree_par) VALUES ('INCONNUE_${c}', 1, 'NETTE', '2026-01-01', 'sql')`)).rejects.toThrow(/taxes_branche_fkey/);
+  });
+});
+
+describe("branches principales du produit (session SECURPRO, D37, H105)", () => {
+  it("charge les 5 branches principales, refuse un produit sans branche principale, filtre par branche et interdit de modifier ou supprimer un code", async () => {
+    expect(await initialiserBranchesPrincipales()).toBe(0);
+    const principales = await listerBranchesPrincipales(technique);
+    expect(principales.map((b) => b.code)).toEqual(["MALADIE", "ACCIDENTS_CORPORELS", "RECOLTE", "DECES", "INCENDIE_DOMMAGES"]);
+
+    const bFisc = await assurerBranche(unique("BFISC").toUpperCase().replace(/-/g, "_"));
+    const c = unique("BP").toUpperCase().replace(/-/g, "_");
+    await expect(creerProduit(technique, { code: c, libelle: "Sans branche", gamme: "SECUR", branchePrincipale: "", branche: bFisc }, null)).rejects.toThrow(
+      /branche principale est obligatoire/,
+    );
+    await expect(creerProduit(technique, { code: c, libelle: "Inconnue", gamme: "SECUR", branchePrincipale: "AUTRE", branche: bFisc }, null)).rejects.toThrow(
+      /branche principale est obligatoire/,
+    );
+
+    await creerProduit(technique, { code: c, libelle: "Avec branche", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: bFisc }, null);
+    const filtres = await listerProduits(technique, { branchePrincipale: "INCENDIE_DOMMAGES" });
+    expect(filtres.find((p) => p.code === c)).toMatchObject({
+      code: c,
+      branchePrincipale: "INCENDIE_DOMMAGES",
+      branchePrincipaleLibelle: "Incendie et dommages aux biens",
+      branche: bFisc,
+    });
+    expect((await listerProduits(technique, { branchePrincipale: "RECOLTE" })).some((p) => p.code === c)).toBe(false);
+
+    await modifierBranchePrincipaleProduit(technique, c, "RECOLTE", null);
+    expect((await listerProduits(technique, { branchePrincipale: "RECOLTE" })).find((p) => p.code === c)).toMatchObject({
+      branchePrincipale: "RECOLTE",
+      branchePrincipaleLibelle: "Récolte",
+    });
+
+    const prisma = obtenirPrisma();
+    await expect(prisma.$executeRawUnsafe(`UPDATE branches_principales SET code = 'MALADIE_2' WHERE code = 'MALADIE'`)).rejects.toThrow(
+      /ne peut pas être modifié/,
+    );
+    await expect(prisma.$executeRawUnsafe(`DELETE FROM branches_principales WHERE code = 'RECOLTE'`)).rejects.toThrow(/Suppression interdite/);
   });
 });

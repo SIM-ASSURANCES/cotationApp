@@ -19,9 +19,14 @@ const COLONNES: ColonneTableau<LigneModele>[] = [
     cle: "code",
     entete: "Code",
     rendu: (m) => (
-      <Link href={`/modeles/${m.id}`} className="font-medium text-primary underline">
-        {m.code}
-      </Link>
+      <span className="inline-flex flex-wrap items-center gap-2">
+        <Link href={`/modeles/${m.id}`} className="font-medium text-primary underline">
+          {m.code || "—"}
+        </Link>
+        {m.codeCgManquant ? (
+          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">Code CG manquant</span>
+        ) : null}
+      </span>
     ),
   },
   {

@@ -4,6 +4,7 @@ import type { Analyse, Emplacement } from "./analyse";
 import { champImiteUneBalise, controlerDepot } from "./controles";
 import { CHAMPS, champsInconnus, donneesExemple, estConnu } from "./dictionnaire";
 import {
+  codeCgManquant,
   peutPublier,
   peutSoumettre,
   problemesPublication,
@@ -278,12 +279,25 @@ describe("bibliothèque de modèles (CDC §6.1, §6.6)", () => {
     expect(problemesSaisieModele(saisie({ type: "RELANCE", produitCode: null, niveauRelance: 0 }))).toHaveLength(1);
   });
 
-  it("dépôt d'une version : .docx, commentaire, visa des CG", () => {
+  it("dépôt d'une version : .docx, commentaire, code et visa des CG et CS (D37, H108)", () => {
     const v = { nomFichier: "cp.docx", taille: 1000, commentaire: "Première version", dateEffet: "2026-10-06", visa: null, dateDocument: null };
     expect(problemesSaisieVersion("CP", v)).toEqual([]);
     expect(problemesSaisieVersion("CP", { ...v, nomFichier: "cp.doc" })).toHaveLength(1);
     expect(problemesSaisieVersion("CG", v)).toHaveLength(2);
-    expect(problemesSaisieVersion("CG", { ...v, visa: "MFB/DGTCP/DA/N° 01498", dateDocument: "2025-06-19" })).toEqual([]);
+    expect(problemesSaisieVersion("CG", { ...v, visa: "   ", dateDocument: "2025-06-19" }, "CG_SECURPRO")).toEqual([
+      "Conditions générales : visa obligatoire (ex. MFB/DGTCP/DA/N° 01498).",
+    ]);
+    expect(problemesSaisieVersion("CG", { ...v, visa: "MFB/DGTCP/DA/N° 01498", dateDocument: "2025-06-19" }, "")).toEqual([
+      "Conditions générales : code obligatoire (2 à 60 caractères parmi A-Z, 0-9, _ et -).",
+    ]);
+    expect(problemesSaisieVersion("CS", { ...v, visa: "", dateDocument: null }, "CS_SECURPRO")).toEqual([
+      "Conventions spéciales : visa obligatoire (ex. MFB/DGTCP/DA/N° 01498).",
+    ]);
+    expect(problemesSaisieVersion("CG", { ...v, visa: "MFB/DGTCP/DA/N° 01498", dateDocument: "2025-06-19" }, "CG_SECURPRO")).toEqual([]);
+    expect(codeCgManquant({ type: "CG", code: "" })).toBe(true);
+    expect(codeCgManquant({ type: "CG", code: "   " })).toBe(true);
+    expect(codeCgManquant({ type: "CG", code: "CG_SECURPRO" })).toBe(false);
+    expect(codeCgManquant({ type: "CP", code: "" })).toBe(false);
   });
 
   const auteur = 1;

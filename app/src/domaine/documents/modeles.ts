@@ -173,7 +173,10 @@ export type SaisieVersion = {
 
 export const TAILLE_MAX_MODELE = 15 * 1024 * 1024;
 
-export function problemesSaisieVersion(type: TypeModele, s: SaisieVersion): string[] {
+/** CG déjà déposées sans code (D37, H108) : signalées sur l'écran des modèles (« Code CG manquant »), jamais supprimées. */
+export const codeCgManquant = (m: { type: string; code: string }): boolean => m.type === "CG" && m.code.trim() === "";
+
+export function problemesSaisieVersion(type: TypeModele, s: SaisieVersion, codeModele?: string): string[] {
   const p: string[] = [];
   if (!/\.docx$/i.test(s.nomFichier)) p.push("Le fichier doit être un document Word .docx (pas .doc, ni .docm).");
   if (s.taille <= 0) p.push("Le fichier est vide.");
@@ -181,6 +184,9 @@ export function problemesSaisieVersion(type: TypeModele, s: SaisieVersion): stri
   if (s.commentaire.trim().length < 3 || s.commentaire.length > 1000) p.push("Commentaire de modification obligatoire (3 à 1 000 caractères).");
   if (!dateValide(s.dateEffet)) p.push("Date d'effet invalide (AAAA-MM-JJ).");
   if (REGLES[type].fixe) {
+    if (codeModele !== undefined && !/^[A-Z0-9_-]{2,60}$/.test(codeModele.trim())) {
+      p.push(`${REGLES[type].libelle} : code obligatoire (2 à 60 caractères parmi A-Z, 0-9, _ et -).`);
+    }
     if (!s.visa || s.visa.trim().length < 3 || s.visa.length > 120) p.push(`${REGLES[type].libelle} : visa obligatoire (ex. MFB/DGTCP/DA/N° 01498).`);
     if (type === "CG" && (!s.dateDocument || !dateValide(s.dateDocument))) p.push("Conditions générales : date du document obligatoire (AAAA-MM-JJ).");
     if (type === "CS" && s.dateDocument !== null && !dateValide(s.dateDocument)) p.push("Date du document invalide.");

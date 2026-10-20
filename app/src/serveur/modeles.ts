@@ -12,6 +12,7 @@ import {
   LIBELLE_STATUT_VERSION,
   REGLES,
   SEUIL_LISTE_DEFAUT,
+  codeCgManquant,
   donneesFixes,
   estTypeModele,
   peutPublier,
@@ -80,6 +81,7 @@ export type LigneModele = {
   type: TypeModele;
   libelleType: string;
   code: string;
+  codeCgManquant: boolean;
   libelle: string;
   produitCode: string | null;
   precision: string | null;
@@ -153,6 +155,7 @@ function ligne(
     type,
     libelleType: REGLES[type]?.libelle ?? m.type,
     code: m.code,
+    codeCgManquant: codeCgManquant(m),
     libelle: m.libelle,
     produitCode: m.produit?.code ?? null,
     precision: precision(m),
@@ -280,7 +283,7 @@ export async function deposerVersion(acteur: UtilisateurCourant, modeleId: numbe
   const modele = await prisma.modele.findUnique({ where: { id: modeleId } });
   if (!modele) throw new ErreurMetier("Modèle introuvable.");
   const type = modele.type as TypeModele;
-  const problemes = problemesSaisieVersion(type, { ...depot, taille: depot.fichier.byteLength });
+  const problemes = problemesSaisieVersion(type, { ...depot, taille: depot.fichier.byteLength }, modele.code);
   if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
 
   const empreinte = sha256(depot.fichier);

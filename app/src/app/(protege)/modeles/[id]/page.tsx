@@ -32,12 +32,17 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
   return (
     <main className="space-y-6">
       <EnTetePage
-        filAriane={[{ libelle: "Modèles Word", href: "/modeles" }, { libelle: m.code }]}
-        titre={`${m.code} — ${m.libelle}`}
+        filAriane={[{ libelle: "Modèles Word", href: "/modeles" }, { libelle: m.code || "Sans code" }]}
+        titre={`${m.code || "—"} — ${m.libelle}`}
         sousTitre={`${m.libelleType}${m.precision ? ` : ${m.precision}` : ""} · ${m.produitCode ? `produit ${m.produitCode}` : "commun à tous les produits"} · ${
           m.enVigueur ? `version en vigueur : v${m.enVigueur.numero}` : "aucune version en vigueur"
         }${regle.fixe ? " · document fixe : converti une seule fois en PDF, à la publication" : ""}`}
       />
+      {m.codeCgManquant ? (
+        <Bandeau ton="avertissement">
+          <strong>Code CG manquant :</strong> ce modèle de conditions générales a été déposé sans code.
+        </Bandeau>
+      ) : null}
 
       <section className="space-y-4">
         <h2 className="text-lg font-bold text-foreground">Versions</h2>

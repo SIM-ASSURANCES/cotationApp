@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
-import { Carte, EnTetePage, LienBouton, ListeDeroulante, Tableau, type ColonneTableau } from "@/composants/ui";
+import { Carte, EnTetePage, LienBouton, ListeDeroulante, Pastille, Tableau, type ColonneTableau } from "@/composants/ui";
 import { formaterDate } from "@/domaine/calcul/dates";
 import { LISTES_ANNEXE, REGLES, TYPES_MODELE } from "@/domaine/documents/modeles";
 import { peutAgir, peutLire } from "@/domaine/droits";
@@ -24,7 +24,7 @@ const COLONNES: ColonneTableau<LigneModele>[] = [
           {m.code || "—"}
         </Link>
         {m.codeCgManquant ? (
-          <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">Code CG manquant</span>
+          <Pastille ton="avertissement">Code CG manquant</Pastille>
         ) : null}
       </span>
     ),

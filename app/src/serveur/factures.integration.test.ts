@@ -932,9 +932,9 @@ describe("session 6.2b : produit par garanties, de la cotation composée à la f
     expect(d.donnees.prime).toMatchObject({ taxe: "3074", ttc: "36424" });
     // Incendie : (10 000 + 2 500) × 12,5 % = 1 562,5 → 1 563 ; Vol : 895 ; Dégât des eaux : 616 ; TTC 14 063 + 13 245 + 9 116 = 36 424.
     expect(d.donnees.garanties_souscrites).toEqual([
-      { libelle: "Incendie", branche: p.incendie, prime_nette: "10000", accessoires: "2500", taux_taxe: "12.5", taxe: "1563", ttc: "14063" },
-      { libelle: "Vol", branche: p.iard, prime_nette: "9850", accessoires: "2500", taux_taxe: "7.25", taxe: "895", ttc: "13245" },
-      { libelle: "Dégât des eaux", branche: p.iard, prime_nette: "6000", accessoires: "2500", taux_taxe: "7.25", taxe: "616", ttc: "9116" },
+      { libelle: "Incendie", branche: p.incendie, prime_nette: "10000", accessoires: "2500", montant_garanti: null, taux_taxe: "12.5", taxe: "1563", ttc: "14063" },
+      { libelle: "Vol", branche: p.iard, prime_nette: "9850", accessoires: "2500", montant_garanti: null, taux_taxe: "7.25", taxe: "895", ttc: "13245" },
+      { libelle: "Dégât des eaux", branche: p.iard, prime_nette: "6000", accessoires: "2500", montant_garanti: null, taux_taxe: "7.25", taxe: "616", ttc: "9116" },
     ]);
     // Plusieurs taux : prime.taux_taxe est vide (facultatif) ; la base de la taxe est la somme des bases des lignes (25 850 + 7 500).
     expect(d.donnees.prime).toMatchObject({ nette: "25850", accessoires: "7500", base_taxe: "33350", taux_taxe: null, taxe: "3074", ttc: "36424" });

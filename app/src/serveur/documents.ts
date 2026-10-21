@@ -17,7 +17,6 @@ import { statutEffectif, type StatutCotation } from "@/domaine/cotation/statuts"
 import { donneesDocument, type FormuleSource, type GarantieSource, type SourceDocument } from "@/domaine/documents/donnees";
 import {
   DOCUMENTS,
-  cheminStockage,
   estTypeDocument,
   masquerSouscripteur,
   nomSouscripteur,
@@ -40,6 +39,7 @@ import { obtenirPrisma } from "./prisma";
 import { lireImageSociete, lireParametresSociete } from "./societe";
 import { differerEcriture, ecrituresDifferees, lireDocumentEmis, programmerReprise, stockage, tenterEcriture } from "./stockage";
 import { fermerTachesAutomatiquement } from "./taches-police";
+import { calculerCheminStockage } from "./stockage-arborescence";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 import { cloreValidationContrat, controlerSeuilContrat, demanderValidationContrat, exigerAutreQueLeDemandeur } from "./validation-contrat";
 
@@ -276,7 +276,17 @@ async function produire(acteur: UtilisateurCourant, p: Production, adresseIp: st
   });
 
   const empreinte = sha256(pdf);
-  const chemin = cheminStockage({ produitCode: p.produitCode, type: p.type, numero: p.numero, dateEmission: aujourdhui(), version });
+  const chemin = await calculerCheminStockage(prisma, {
+    type: p.type,
+    numero: p.numero,
+    version,
+    produitCode: p.produitCode,
+    policeNumero: p.policeNumero,
+    cotationId: p.cotationId,
+    policeId: p.policeId,
+    versionAdherents: p.versionAdherents,
+    adherentOrdre: p.adherentOrdre,
+  });
   // Stockage indisponible (T14) : le document est émis quand même, son fichier attend en base (écriture différée).
   const ecriture = await tenterEcriture(chemin, pdf, empreinte);
 

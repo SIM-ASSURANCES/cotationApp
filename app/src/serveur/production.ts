@@ -6,7 +6,7 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import type { DateIso } from "@/domaine/calcul/dates";
 import type { Souscripteur } from "@/domaine/cotation/saisie";
-import { cheminStockage, masquerSouscripteur, nomSouscripteur, type TypeDocument } from "@/domaine/documents/emission";
+import { masquerSouscripteur, nomSouscripteur, type TypeDocument } from "@/domaine/documents/emission";
 
 import { journaliser, type ActeurAudit } from "./audit";
 import { images, nouveauJeton, urlPublique, versLu, type DocumentLu } from "./documents";
@@ -14,6 +14,7 @@ import { generateur } from "./generateur";
 import { fichiersAssocies, lireSeuilListe, type VersionsAssociees } from "./modeles";
 import { obtenirPrisma } from "./prisma";
 import { differerEcriture, programmerReprise, tenterEcriture } from "./stockage";
+import { calculerCheminStockage } from "./stockage-arborescence";
 import type { UtilisateurCourant } from "./types";
 
 /**
@@ -98,9 +99,31 @@ export async function prochaineVersion(tx: Prisma.TransactionClient, numero: str
 
 export type IssueProduction = { id: number; numero: string; version: number; type: string } & ({ ok: true; document: DocumentLu } | { ok: false; erreur: string });
 
-/** Chemin du fichier : celui du CDC (§14.2) ; une relance après un échec ne réécrit jamais un fichier existant. */
-const chemin = (p: { produitCode: string; type: string; numero: string; dateEmission: Date; version: number }, tentative: number) => {
-  const base = cheminStockage({ produitCode: p.produitCode, type: p.type as TypeDocument, numero: p.numero, dateEmission: depuisDate(p.dateEmission), version: p.version });
+/** Chemin du fichier selon l'arborescence du portefeuille (Étape 5, D41) ; un réessai n'écrase jamais. */
+const chemin = async (
+  prisma: ReturnType<typeof obtenirPrisma>,
+  p: {
+    produitCode: string;
+    type: string;
+    numero: string;
+    version: number;
+    policeNumero: string | null;
+    cotationId: number | null;
+    policeId: number | null;
+    factureId: number | null;
+  },
+  tentative: number,
+) => {
+  const base = await calculerCheminStockage(prisma, {
+    type: p.type as TypeDocument,
+    numero: p.numero,
+    version: p.version,
+    produitCode: p.produitCode,
+    policeNumero: p.policeNumero,
+    cotationId: p.cotationId,
+    policeId: p.policeId,
+    factureId: p.factureId,
+  });
   return tentative > 1 ? base.replace(/\.pdf$/, `_essai${tentative}.pdf`) : base;
 };
 
@@ -138,7 +161,7 @@ export async function produire(acteur: UtilisateurCourant, id: number, adresseIp
       listesEnAnnexe: ids.listesEnAnnexe ?? [],
     });
     const empreinte = sha256(pdf);
-    const fichier = chemin(p, essai.tentatives);
+    const fichier = await chemin(prisma, p, essai.tentatives);
     // Stockage indisponible (T14) : le document est inscrit quand même, son fichier attend en base (écriture différée).
     const ecriture = await tenterEcriture(fichier, pdf, empreinte);
 

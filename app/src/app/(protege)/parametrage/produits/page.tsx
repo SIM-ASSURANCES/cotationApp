@@ -54,6 +54,13 @@ export default async function PageProduits({ searchParams }: { searchParams?: Pr
     niveauDuProfil(utilisateur.profil, "PARAMETRER_PRODUITS"),
   ]);
 
+  const branchesAffichees = filtreBranche
+    ? branchesPrincipales.filter((b) => b.code === filtreBranche)
+    : branchesPrincipales;
+  const sansBranche = filtreBranche
+    ? []
+    : produits.filter((p) => !p.branchePrincipale);
+
   return (
     <main className="space-y-6">
       <EnTetePage
@@ -111,7 +118,32 @@ export default async function PageProduits({ searchParams }: { searchParams?: Pr
         </form>
       </Carte>
 
-      <Tableau colonnes={COLONNES} lignes={produits} cleLigne={(p) => p.code} messageVide="Aucun produit." legende="Produits" />
+      {branchesAffichees.map((b) => {
+        const prods = produits.filter((p) => p.branchePrincipale === b.code);
+        return (
+          <Carte key={b.code} titre={`${b.libelle} (${b.code})`} description={`${prods.length} produit(s) rattaché(s)`}>
+            <Tableau
+              colonnes={COLONNES}
+              lignes={prods}
+              cleLigne={(p) => p.code}
+              messageVide="Aucun produit rattaché à cette branche."
+              legende={`Produits de la branche ${b.libelle}`}
+            />
+          </Carte>
+        );
+      })}
+
+      {sansBranche.length > 0 ? (
+        <Carte titre="Autres produits" description="Produits dont la branche principale reste à renseigner">
+          <Tableau
+            colonnes={COLONNES}
+            lignes={sansBranche}
+            cleLigne={(p) => p.code}
+            messageVide="Aucun produit sans branche."
+            legende="Produits sans branche principale"
+          />
+        </Carte>
+      ) : null}
     </main>
   );
 }

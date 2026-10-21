@@ -16,6 +16,8 @@ const TON_PAR_STATUT: Record<string, TonPastille> = {
   "Refusée": "danger",
   "Expirée": "neutre",
   // Factures, avoirs, échéances
+  "À composer": "avertissement",
+  "À composer — composition précédente proposée": "avertissement",
   "Annulée": "danger",
   "Abandonnée": "neutre",
   "Payé": "succes",

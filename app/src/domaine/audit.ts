@@ -63,6 +63,7 @@ export const ACTIONS_AUDIT = [
   "FACTURE_EMISE",
   "FACTURE_ANNULEE",
   "FACTURE_ABANDONNEE",
+  "FACTURE_COMPOSEE",
   "PAIEMENT_ENREGISTRE",
   "PDF_EN_ATTENTE",
   // Session 5a : stockage indisponible (T14, ECRITURE_PARTAGE_ECHEC est plus haut) et import en masse (CDC §13)

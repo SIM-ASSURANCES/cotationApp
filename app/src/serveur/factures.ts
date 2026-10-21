@@ -2,9 +2,18 @@ import "server-only";
 
 import { Prisma } from "@/generated/prisma/client";
 
-import type { EntreeCalcul } from "@/domaine/calcul/calcul";
-import { estComposition, type DonneesCalcul } from "@/domaine/calcul/composition";
-import { compositionPossible, MESSAGE_AVENANT_GARANTIES, MESSAGE_RENOUVELLEMENT_GARANTIES, MESSAGE_TARIFICATION_PAR_GARANTIES } from "@/domaine/calcul/parametrage";
+import { joursCouverts, type EntreeCalcul } from "@/domaine/calcul/calcul";
+import {
+  estComposition,
+  type DonneesCalcul,
+  type EntreeComposition,
+  type LigneComposee,
+  type LigneDePrime,
+  problemesLignesDePrime,
+  LONGUEUR_MIN_MOTIF_COMPOSITION,
+  LONGUEUR_MAX_MOTIF_COMPOSITION,
+} from "@/domaine/calcul/composition";
+import { compositionPossible, type GarantieParametree, MESSAGE_RENOUVELLEMENT_GARANTIES, MESSAGE_TARIFICATION_PAR_GARANTIES } from "@/domaine/calcul/parametrage";
 import { problemesDateEffetCotation, type DateIso } from "@/domaine/calcul/dates";
 import { montant } from "@/domaine/calcul/montant";
 import { estRegimeTaxe, estTypeContrat, REGIME_PAR_DEFAUT } from "@/domaine/calcul/taxes";
@@ -47,7 +56,18 @@ import { niveauDuProfil } from "./droits";
 import { versIntermediairesDocument } from "./intermediaires";
 import { exigerDetailDesGaranties, modelesAssocies, versionPublieeEnVigueur } from "./modeles";
 import { allouerNumero } from "./numerotation";
-import { aujourdhui, construireEntree, executerCalcul, exigerCalculAutomatiqueEnVigueur, resoudreContexte, resoudreVersion } from "./parametrage";
+import {
+  aujourdhui,
+  construireComposition,
+  construireEntree,
+  executerCalcul,
+  exigerModeCoherentEnVigueur,
+  figerLesTaux,
+  listerBranches,
+  resoudreContexte,
+  resoudreContexteComposition,
+  resoudreVersion,
+} from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { figer, produire, produireEnAttente, prochaineVersion, type AssociesFiges, type IssueProduction, type TypeAProduire } from "./production";
 import { lireParametresSociete } from "./societe";
@@ -184,7 +204,24 @@ async function factureRemplacee(tx: Tx, policeId: number, type: TypeFacture, cri
   return f?.id ?? null;
 }
 
-async function creer(tx: Tx, acteur: UtilisateurCourant, police: PoliceChargee, d: { type: TypeFacture; produitId: number; versionDateEffet: Date; contenu: ContenuFacture; remplaceId: number | null; adherentsVersion?: number | null }, adresseIp: string | null): Promise<number> {
+async function creer(
+  tx: Tx,
+  acteur: UtilisateurCourant,
+  police: PoliceChargee,
+  d: {
+    type: TypeFacture;
+    produitId: number;
+    versionDateEffet: Date;
+    contenu: ContenuFacture;
+    remplaceId: number | null;
+    adherentsVersion?: number | null;
+    compositionParId?: number | null;
+    compositionPar?: string | null;
+    compositionLe?: Date | null;
+    compositionMotif?: string | null;
+  },
+  adresseIp: string | null,
+): Promise<number> {
   const f = await tx.facture.create({
     data: {
       type: d.type,
@@ -200,6 +237,11 @@ async function creer(tx: Tx, acteur: UtilisateurCourant, police: PoliceChargee, 
       ttc: d.contenu.totaux.ttc,
       creeParId: acteur.id,
       creePar: acteur.identifiant,
+      contributeurs: [acteur.id],
+      compositionParId: d.compositionParId ?? null,
+      compositionPar: d.compositionPar ?? null,
+      compositionLe: d.compositionLe ?? null,
+      compositionMotif: d.compositionMotif ?? null,
     },
   });
   await journaliser(
@@ -274,10 +316,30 @@ async function calculRenouvellement(tx: Tx, police: PoliceChargee, precedente: L
   if (problemesDateEffet.length > 0) throw new ErreurMetier(problemesDateEffet.join(" "));
   // Régime de taxe de la cotation (session 6.0) ; cotation plus ancienne : le régime proposé pour son type de contrat.
   const regime = police.cotation.regimeTaxe && estRegimeTaxe(police.cotation.regimeTaxe) ? police.cotation.regimeTaxe : REGIME_PAR_DEFAUT[police.typeContrat];
-  // Session 6.2b (H90) : le renouvellement d'une police à garanties n'est pas géré (la composition de la nouvelle période non plus), que la période
-  // précédente ait été composée ou que le produit soit passé en mode par garanties depuis.
+  // Session 6.2c-1 (H90) : le renouvellement d'une police à garanties reprend les lignes de la composition précédente (libellé,
+  // branche, prime nette, accessoires, montant garanti). Les taux de taxe sont résolus de nouveau à la date d'effet (H93).
   const precedenteFigee = contenuDe(precedente).entree as DonneesCalcul;
-  if (estComposition(precedenteFigee) || compositionPossible((await resoudreVersion(tx, police.produitCode, dateEffet)).version.modeTarification)) {
+  if (estComposition(precedenteFigee)) {
+    const contexte = await resoudreContexteComposition(tx, police.produitCode, dateEffet);
+    const lignesPrecedentes: LigneDePrime[] = precedenteFigee.lignes.map((l) => ({
+      libelle: l.libelle,
+      branche: l.branche,
+      montantGaranti: l.montantGaranti ?? null,
+      primeNette: l.primeNette,
+      accessoires: l.accessoires,
+    }));
+    const lignesComposees = await figerLesTaux(tx, lignesPrecedentes, regime, dateEffet);
+    const nombreTranches = saisie.nombreTranches ?? Math.max(1, contenuDe(precedente).echeances.length);
+    const entree = construireComposition(contexte, { dateEffet, dateEcheance, lignes: lignesComposees, nombreTranches });
+    const { echeancier } = executerCalcul(entree, contexte.version.fractionnement, nombreTranches);
+    return {
+      produitId: contexte.produit.id,
+      versionDateEffet: versDate(contexte.version.dateEffet),
+      entree,
+      echeances: (echeancier ?? []).map((t) => ({ numero: t.numero, date: t.date, montant: t.montant.toFixed() })),
+    };
+  }
+  if (compositionPossible((await resoudreVersion(tx, police.produitCode, dateEffet)).version.modeTarification)) {
     throw new ErreurMetier(MESSAGE_RENOUVELLEMENT_GARANTIES);
   }
   const contexte = await resoudreContexte(tx, police.produitCode, dateEffet, dateEffet, regime);
@@ -344,12 +406,64 @@ export async function creerFactureAvenant(acteur: UtilisateurCourant, policeId: 
     });
     if (!periode) throw new ErreurMetier(`Aucune facture émise ne couvre le ${date} : émettez d'abord la facture de la période où l'incorporation prend effet.`);
     const baseFigee = contenuDe(periode).entree as DonneesCalcul;
-    // Session 6.2b (H90) : la prime d'un avenant à garanties n'est pas gérée ; rien n'est calculé en silence.
-    if (estComposition(baseFigee)) throw new ErreurMetier(MESSAGE_AVENANT_GARANTIES);
-    const base = baseFigee;
     const concernes = new Set(version.concernes as unknown as number[]);
     const incorpores = (version.adherents as unknown as Assure[]).filter((a) => concernes.has(a.ordre));
     if (incorpores.length === 0) throw new ErreurMetier("Cette incorporation n'ajoute aucun adhérent.");
+    // Session 6.2c-1 (H90) : un avenant sur une police par garanties se prépare sans montant, la Technique
+    // compose la prime additionnelle (mêmes règles : lignes, branche, motif). Pas de prorata automatique.
+    if (estComposition(baseFigee)) {
+      const contexteComp = await resoudreContexteComposition(tx, police.produitCode, date);
+      const cp = await contexteProduit(periode.produitId, periode.versionDateEffet);
+      const entree: EntreeComposition = {
+        type: "COMPOSITION",
+        version: 1,
+        dateEffet: date,
+        dateEcheance: depuisDate(periode.dateEcheance),
+        arrondi: contexteComp.version.arrondi,
+        lignes: [],
+      };
+      const contenu: ContenuFacture = {
+        produit: {
+          code: cp.produit.code,
+          libelle: cp.produit.libelle,
+          gamme: cp.produit.gamme,
+          branche: cp.produit.branche,
+          branche_libelle: cp.produit.branche_libelle,
+        },
+        typeContrat: police.typeContrat,
+        souscripteur: police.souscripteur as unknown as Souscripteur,
+        envoyeA: envoyeAControle(envoyeA, police.souscripteur as unknown as Souscripteur),
+        assures: incorpores,
+        ordresSansPrime: [],
+        listesEnAnnexe: estContratDeGroupe(police.typeContrat) ? ["assures"] : [],
+        dateSouscription: depuisDate(police.creeLe),
+        dateEffet: date,
+        dateEcheance: depuisDate(periode.dateEcheance),
+        joursCouverts: joursCouverts(date, depuisDate(periode.dateEcheance)),
+        formules: [],
+        garanties: [],
+        totaux: { nette: "0", accessoires: "0", taxe: "0", ttc: "0" },
+        taxe: { tauxPourcent: null, assiette: "NETTE_ACCESSOIRES" },
+        echeances: [],
+        entree,
+        intermediaires: versIntermediairesDocument(police.cotation.intermediaires),
+      };
+      return creer(
+        tx,
+        acteur,
+        police,
+        {
+          type: "AVENANT",
+          produitId: periode.produitId,
+          versionDateEffet: periode.versionDateEffet,
+          contenu,
+          adherentsVersion,
+          remplaceId: await factureRemplacee(tx, policeId, "AVENANT", { adherentsVersion }),
+        },
+        adresseIp,
+      );
+    }
+    const base = baseFigee as EntreeCalcul;
     const parFormule = new Map<string, number>();
     for (const a of incorpores) parFormule.set(a.formule, (parFormule.get(a.formule) ?? 0) + 1);
     const lignes = [...parFormule].map(([code, effectif]) => {
@@ -431,22 +545,115 @@ export async function modifierFacture(acteur: UtilisateurCourant, factureId: num
     let contenu: ContenuFacture = { ...avant, envoyeA };
     let produit = { produitId: f.produitId, versionDateEffet: f.versionDateEffet };
     if (f.type === "RENOUVELLEMENT" && (saisie.lignes || saisie.nombreTranches)) {
-      const precedente = await tx.facture.findFirst({
-        where: { policeId: f.policeId, type: { in: ["AFFAIRE_NOUVELLE", "RENOUVELLEMENT"] }, statut: "EMISE", dateEcheance: { lt: f.dateEffet } },
-        orderBy: { dateEcheance: "desc" },
-      });
-      if (!precedente) throw new ErreurMetier("Période précédente introuvable.");
-      const calcul = await calculRenouvellement(tx, police, precedente, saisie);
-      contenu = await contenuCalcule(police, calcul.produitId, calcul.versionDateEffet, calcul.entree, { assures: avant.assures, ordresSansPrime: [], echeances: calcul.echeances, envoyeA });
-      produit = { produitId: calcul.produitId, versionDateEffet: calcul.versionDateEffet };
+      if (estComposition(avant.entree)) {
+        if (saisie.lignes && saisie.lignes.length > 0) {
+          throw new ErreurMetier("Les lignes d'une facture par garanties se composent via l'action « Composer une prime ».");
+        }
+        if (saisie.nombreTranches) {
+          const { version } = await resoudreVersion(tx, police.produitCode, depuisDate(f.dateEffet));
+          const { echeancier } = executerCalcul(avant.entree, version.fractionnement, saisie.nombreTranches);
+          const echeances = (echeancier ?? []).map((t) => ({ numero: t.numero, date: t.date, montant: t.montant.toFixed() }));
+          contenu = { ...contenu, echeances };
+        }
+      } else {
+        const precedente = await tx.facture.findFirst({
+          where: { policeId: f.policeId, type: { in: ["AFFAIRE_NOUVELLE", "RENOUVELLEMENT"] }, statut: "EMISE", dateEcheance: { lt: f.dateEffet } },
+          orderBy: { dateEcheance: "desc" },
+        });
+        if (!precedente) throw new ErreurMetier("Période précédente introuvable.");
+        const calcul = await calculRenouvellement(tx, police, precedente, saisie);
+        contenu = await contenuCalcule(police, calcul.produitId, calcul.versionDateEffet, calcul.entree, { assures: avant.assures, ordresSansPrime: [], echeances: calcul.echeances, envoyeA });
+        produit = { produitId: calcul.produitId, versionDateEffet: calcul.versionDateEffet };
+      }
     } else if (saisie.lignes || saisie.nombreTranches) {
       throw new ErreurMetier("Les montants d'une affaire nouvelle ou d'un avenant viennent de la police : seul « Envoyé à » se modifie.");
     }
-    await tx.facture.update({ where: { id: f.id }, data: { contenu: json(contenu), ttc: contenu.totaux.ttc, ...produit } });
+    const contributeurs = f.contributeurs.includes(acteur.id) ? f.contributeurs : [...f.contributeurs, acteur.id];
+    await tx.facture.update({ where: { id: f.id }, data: { contenu: json(contenu), ttc: contenu.totaux.ttc, contributeurs, ...produit } });
     await journaliser(
       { acteur: auteur(acteur), action: "FACTURE_MODIFIEE", objetType: "facture", objetId: f.id, avant: { envoyeA: avant.envoyeA, ttc: avant.totaux.ttc }, apres: { envoyeA, ttc: contenu.totaux.ttc }, adresseIp },
       tx,
     );
+  });
+}
+
+/**
+ * Composition ou confirmation de la prime d'une facture par garanties (renouvellement ou avenant, session 6.2c-1, H90).
+ * Action « Composer une prime », motif obligatoire, journalisée avant / après.
+ */
+export async function composerFacture(
+  acteur: UtilisateurCourant,
+  factureId: number,
+  lignes: LigneDePrime[],
+  motif: string,
+  adresseIp: string | null,
+): Promise<{ ttc: string }> {
+  await exiger(acteur, "COMPOSER_PRIME", "composition de la prime");
+  const motifPropre = motif.trim();
+  if (motifPropre.length < LONGUEUR_MIN_MOTIF_COMPOSITION) {
+    throw new ErreurMetier(`Le motif de la composition est obligatoire (${LONGUEUR_MIN_MOTIF_COMPOSITION} caractères au moins).`);
+  }
+  if (motifPropre.length > LONGUEUR_MAX_MOTIF_COMPOSITION) {
+    throw new ErreurMetier(`Le motif de la composition est trop long (${LONGUEUR_MAX_MOTIF_COMPOSITION} caractères au plus).`);
+  }
+  const problemes = problemesLignesDePrime(lignes);
+  if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
+
+  return obtenirPrisma().$transaction(async (tx) => {
+    const f = await verrouiller(tx, factureId);
+    if (f.statut === "ABANDONNEE") throw new ErreurMetier("Ce brouillon est abandonné : il ne se modifie plus.");
+    if (f.statut !== "BROUILLON") throw new ErreurMetier("Seul un brouillon se compose.");
+    const avant = contenuDe(f);
+    if (!estComposition(avant.entree)) {
+      throw new ErreurMetier("Ce produit se tarifie à la formule : la prime se calcule, elle ne se compose pas.");
+    }
+    const police = (await chargerPolice(tx, f.policeId))!;
+    const regime = police.cotation.regimeTaxe && estRegimeTaxe(police.cotation.regimeTaxe) ? police.cotation.regimeTaxe : (police.typeContrat && estTypeContrat(police.typeContrat) ? REGIME_PAR_DEFAUT[police.typeContrat] : "INDIVIDUEL");
+    const dateEffet = depuisDate(f.dateEffet);
+    const dateEcheance = depuisDate(f.dateEcheance);
+    const lignesComposees = await figerLesTaux(tx, lignes, regime, dateEffet);
+    const contexte = await resoudreContexteComposition(tx, police.produitCode, dateEffet);
+    const nombreTranches = Math.max(1, avant.echeances.length);
+    const entree = construireComposition(contexte, { dateEffet, dateEcheance, lignes: lignesComposees, nombreTranches });
+    const { echeancier } = executerCalcul(entree, contexte.version.fractionnement, nombreTranches);
+    const echeances = (echeancier ?? []).map((t) => ({ numero: t.numero, date: t.date, montant: t.montant.toFixed() }));
+    const nouveauContenu = await contenuCalcule(police, contexte.produit.id, versDate(contexte.version.dateEffet), entree, {
+      assures: avant.assures,
+      ordresSansPrime: avant.ordresSansPrime,
+      echeances,
+      envoyeA: avant.envoyeA,
+    });
+    const ttc = nouveauContenu.totaux.ttc;
+    const contributeurs = f.contributeurs.includes(acteur.id) ? f.contributeurs : [...f.contributeurs, acteur.id];
+    const maintenant = new Date();
+    await tx.facture.update({
+      where: { id: f.id },
+      data: {
+        contenu: json(nouveauContenu),
+        ttc,
+        produitId: contexte.produit.id,
+        versionDateEffet: versDate(contexte.version.dateEffet),
+        compositionParId: acteur.id,
+        compositionPar: acteur.identifiant,
+        compositionLe: maintenant,
+        compositionMotif: motifPropre,
+        contributeurs,
+      },
+    });
+    const anciennesLignes = estComposition(avant.entree) ? avant.entree.lignes : [];
+    await journaliser(
+      {
+        acteur: auteur(acteur),
+        action: "FACTURE_COMPOSEE",
+        objetType: "facture",
+        objetId: f.id,
+        avant: { lignes: anciennesLignes, ttc: f.ttc.toFixed(), composePar: f.compositionPar, motif: f.compositionMotif },
+        apres: { lignes: lignesComposees, ttc, motif: motifPropre, contributeurs: contributeurs.length },
+        adresseIp,
+      },
+      tx,
+    );
+    return { ttc };
   });
 }
 
@@ -557,11 +764,21 @@ export async function emettreFacture(acteur: UtilisateurCourant, factureId: numb
   if (lue.statut !== "BROUILLON" && lue.statut !== "A_VALIDER") {
     throw new ErreurMetier(`Cette facture est déjà ${LIBELLE_STATUT_FACTURE[lue.statut as StatutFacture].toLowerCase()}${lue.numero ? ` (${lue.numero})` : ""}.`);
   }
+  const contenuLue = contenuDe(lue);
+  const entreeLue = contenuLue.entree as DonneesCalcul;
+  if (estComposition(entreeLue)) {
+    if (lue.type === "RENOUVELLEMENT" && lue.compositionParId === null) {
+      throw new ErreurMetier("Cette facture de renouvellement par garanties doit être confirmée par la Technique (« Composer une prime ») avant d'être émise.");
+    }
+    if (lue.type === "AVENANT" && (lue.compositionParId === null || (entreeLue as EntreeComposition).lignes.length === 0)) {
+      throw new ErreurMetier("Cette facture d'avenant par garanties doit être composée par la Technique (« Composer une prime ») avant d'être émise.");
+    }
+  }
   // Session 6.2a : un renouvellement prépare des montants au tarif en vigueur à sa date d'effet ; si ce produit est passé en GARANTIES entre-temps,
   // il ne s'émet plus (ni lui, ni la demande de validation). Affaire nouvelle et avenant viennent de la police, figée avec sa version (T10).
   if (lue.type === "RENOUVELLEMENT") {
     try {
-      await exigerCalculAutomatiqueEnVigueur(prisma, lue.produitId, depuisDate(lue.dateEffet));
+      await exigerModeCoherentEnVigueur(prisma, lue.produitId, depuisDate(lue.dateEffet), entreeLue);
     } catch (erreur) {
       if (erreur instanceof ErreurMetier && erreur.message === MESSAGE_TARIFICATION_PAR_GARANTIES) {
         throw new ErreurMetier(`${MESSAGE_TARIFICATION_PAR_GARANTIES}. Ce brouillon de renouvellement a été préparé avant le changement de mode du produit : il ne s'émet plus, abandonnez-le (« Abandonner le brouillon »).`);
@@ -582,8 +799,19 @@ export async function emettreFacture(acteur: UtilisateurCourant, factureId: numb
     });
     return { statut: "A_VALIDER", ttc, seuil, demandeePar: acteur.identifiant };
   }
-  if (lue.statut === "A_VALIDER" && lue.demandeParId === acteur.id) {
-    throw new ErreurMetier("Vous avez demandé la validation de cette facture : un autre valideur doit l'émettre (séparation des tâches).");
+  if (lue.statut === "A_VALIDER") {
+    if (lue.demandeParId === acteur.id) {
+      throw new ErreurMetier("Vous avez demandé la validation de cette facture : un autre valideur doit l'émettre (séparation des tâches).");
+    }
+    if (lue.creeParId === acteur.id) {
+      throw new ErreurMetier("Vous avez préparé cette facture : un autre valideur doit l'émettre (séparation des tâches).");
+    }
+    if (lue.compositionParId === acteur.id) {
+      throw new ErreurMetier("Vous avez composé cette facture : un autre valideur doit l'émettre (séparation des tâches).");
+    }
+    if (lue.contributeurs.includes(acteur.id)) {
+      throw new ErreurMetier("Vous avez modifié cette facture : un autre valideur doit l'émettre (séparation des tâches).");
+    }
   }
 
   const date = aujourdhui();
@@ -599,6 +827,11 @@ export async function emettreFacture(acteur: UtilisateurCourant, factureId: numb
     const f = await verrouiller(tx, factureId);
     if (f.statut === "ABANDONNEE") throw new ErreurMetier("Ce brouillon vient d'être abandonné : rechargez la page.");
     if (f.statut !== "BROUILLON" && f.statut !== "A_VALIDER") throw new ErreurMetier("Cette facture vient d'être émise par quelqu'un d'autre.");
+    if (f.statut === "A_VALIDER") {
+      if (f.demandeParId === acteur.id || f.creeParId === acteur.id || f.compositionParId === acteur.id || f.contributeurs.includes(acteur.id)) {
+        throw new ErreurMetier("Un autre valideur doit émettre cette facture (séparation des tâches).");
+      }
+    }
     const police = (await chargerPolice(tx, f.policeId))!;
     const contenu = contenuDe(f);
     const numero = await allouerNumero(tx, "FAC", date);
@@ -1050,7 +1283,22 @@ export type FactureLue = LigneFactureLue & {
   reports: { recu: string | null; date: DateIso; montant: string }[];
   /** Brouillon abandonné (session 6.2b, H87) : qui, quand, pourquoi. */
   abandon: { par: string; le: Date; motif: string } | null;
-  actions: { abandonner: boolean; modifier: boolean; emettre: boolean; emettreSousSeuil: boolean; avoir: boolean; payer: boolean; imputer: boolean; relancer: boolean };
+  /** Composition manuelle de la prime (produit en mode GARANTIES, session 6.2c-1). */
+  composition: { lignes: LigneComposee[]; composePar: string | null; composeLe: Date | null; motif: string | null } | null;
+  garantiesDuProduit: GarantieParametree[];
+  garantiesSaisieLibre: boolean;
+  branchesActives: { code: string; libelle: string }[];
+  actions: {
+    abandonner: boolean;
+    modifier: boolean;
+    emettre: boolean;
+    emettreSousSeuil: boolean;
+    composer: boolean;
+    avoir: boolean;
+    payer: boolean;
+    imputer: boolean;
+    relancer: boolean;
+  };
 };
 
 const inclusion = {
@@ -1062,6 +1310,17 @@ const inclusion = {
 };
 type FactureComplete = Prisma.FactureGetPayload<{ include: typeof inclusion }>;
 
+function libelleStatutFacture(f: { statut: string; type: string; compositionParId: number | null; contenu: unknown }): string {
+  if (f.statut === "BROUILLON") {
+    const c = f.contenu as ContenuFacture;
+    if (c?.entree && estComposition(c.entree) && f.compositionParId === null) {
+      if (f.type === "RENOUVELLEMENT") return "À composer — composition précédente proposée";
+      if (f.type === "AVENANT") return "À composer";
+    }
+  }
+  return LIBELLE_STATUT_FACTURE[f.statut as StatutFacture] ?? f.statut;
+}
+
 function ligne(f: FactureComplete): LigneFactureLue & { etat: EtatPaiements | null } {
   const contenu = contenuDe(f);
   const etat = f.type !== "AVOIR" && (f.statut === "EMISE" || f.statut === "ANNULEE") ? etatPaiements(contenu.totaux.ttc, contenu.echeances, versEncaissements(f.paiements, f.imputations)) : null;
@@ -1070,7 +1329,7 @@ function ligne(f: FactureComplete): LigneFactureLue & { etat: EtatPaiements | nu
     type: f.type as TypeFacture,
     libelleType: LIBELLE_TYPE_FACTURE[f.type as TypeFacture],
     statut: f.statut as StatutFacture,
-    libelleStatut: LIBELLE_STATUT_FACTURE[f.statut as StatutFacture],
+    libelleStatut: libelleStatutFacture(f),
     numero: f.numero,
     policeId: f.policeId,
     policeNumero: f.police.numero,
@@ -1130,9 +1389,33 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
   const reports = await prisma.mouvementAvance.findMany({ where: { type: "REPORT", factureAnnuleeId: f.id }, include: { paiement: { select: { numeroRecu: true } } }, orderBy: { id: "asc" } });
   const ouverte = f.statut === "BROUILLON" || f.statut === "A_VALIDER";
   const sousSeuil = ouverte && validationContratRequise(d.facture, f.ttc.toFixed(), seuil);
+  const contenu = contenuDe(f);
+  const entreeDonnees = contenu.entree as DonneesCalcul;
+  const estComp = estComposition(entreeDonnees);
+  const niveauComposer = await niveauDuProfil(acteur.profil, "COMPOSER_PRIME");
+  const peutComposer = peutAgir(niveauComposer);
+  const [version, branches] = await Promise.all([
+    estComp
+      ? prisma.produitVersion.findUnique({
+          where: { produitId_dateEffet: { produitId: f.produitId, dateEffet: f.versionDateEffet } },
+          select: { garanties: true, garantiesSaisieLibre: true },
+        })
+      : null,
+    estComp ? listerBranches(acteur) : [],
+  ]);
+  const branchesActives = branches.filter((b) => b.actif).map((b) => ({ code: b.code, libelle: b.libelle }));
+  const composition: FactureLue["composition"] = estComp
+    ? {
+        lignes: (entreeDonnees as EntreeComposition).lignes,
+        composePar: f.compositionPar,
+        composeLe: f.compositionLe,
+        motif: f.compositionMotif,
+      }
+    : null;
+
   return {
     ...base,
-    contenu: contenuDe(f),
+    contenu,
     motif: f.motif,
     factureOrigine: lien(origine),
     avoir: lien(avoir),
@@ -1149,14 +1432,33 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
     avance: { disponible, proposee, reportsEnAttente: await reportsEnAttente(prisma, f.policeId) },
     reports: reports.map((r) => ({ recu: r.paiement?.numeroRecu ?? null, date: depuisDate(r.date), montant: r.montant.toFixed() })),
     abandon: f.statut === "ABANDONNEE" && f.abandonnePar && f.abandonneLe && f.motifAbandon ? { par: f.abandonnePar, le: f.abandonneLe, motif: f.motifAbandon } : null,
+    composition,
+    garantiesDuProduit: (version?.garanties as unknown as GarantieParametree[]) ?? [],
+    garantiesSaisieLibre: version?.garantiesSaisieLibre ?? true,
+    branchesActives,
     actions: {
       // Un brouillon ou une demande « À valider » s'abandonne (H87) ; jamais un avoir ni une facture émise.
       // Une demande « À valider » d'un autre ne s'abandonne que par un profil qui peut décider (voir abandonnerFacture).
       abandonner: ouverte && f.type !== "AVOIR" && peutAgir(d.facture) && !(f.statut === "A_VALIDER" && sousSeuil && f.demandeParId !== acteur.id),
       modifier: f.statut === "BROUILLON" && peutAgir(d.facture),
       // Le demandeur d'une validation ne l'émet pas lui-même ; une demande « À valider » ne se refait pas.
-      emettre: ouverte && peutAgir(d.facture) && !(f.statut === "A_VALIDER" && (sousSeuil || f.demandeParId === acteur.id)),
+      emettre:
+        ouverte &&
+        peutAgir(d.facture) &&
+        !(
+          f.statut === "A_VALIDER" &&
+          (sousSeuil ||
+            f.demandeParId === acteur.id ||
+            f.creeParId === acteur.id ||
+            f.compositionParId === acteur.id ||
+            f.contributeurs.includes(acteur.id))
+        ) &&
+        !(
+          estComp &&
+          (f.compositionParId === null || (entreeDonnees as EntreeComposition).lignes.length === 0)
+        ),
       emettreSousSeuil: sousSeuil && f.statut === "BROUILLON",
+      composer: f.statut === "BROUILLON" && estComp && peutComposer,
       // H47 (09/10/2026) : une facture payée en partie s'annule aussi ; ses sommes sont reportées.
       avoir: f.type !== "AVOIR" && f.statut === "EMISE" && peutAgir(d.avoir),
       payer: f.type !== "AVOIR" && f.statut === "EMISE" && peutAgir(d.paiement) && base.etat !== null && montant(base.etat.restantDu).greaterThan(0),

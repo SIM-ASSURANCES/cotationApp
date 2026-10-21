@@ -9,7 +9,7 @@ import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { fixerDateMinimumEffetPourTests } from "@/domaine/calcul/dates";
-import { MESSAGE_AVENANT_GARANTIES, MESSAGE_RENOUVELLEMENT_GARANTIES, MESSAGE_TARIFICATION_PAR_GARANTIES, type VersionSaisie } from "@/domaine/calcul/parametrage";
+import { MESSAGE_RENOUVELLEMENT_GARANTIES, MESSAGE_TARIFICATION_PAR_GARANTIES, type VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Analyse } from "@/domaine/documents/analyse";
 import type { Assure } from "@/domaine/cotation/saisie";
 
@@ -21,6 +21,7 @@ import { emettreCp, verifierJeton } from "./documents";
 import { initialiserProfilsEtDroits } from "./droits";
 import {
   abandonnerFacture,
+  composerFacture,
   creerFactureAffaireNouvelle,
   creerFactureAvenant,
   creerFactureRenouvellement,
@@ -51,6 +52,7 @@ const sha256 = (o: Uint8Array) => createHash("sha256").update(o).digest("hex");
 const texte = (t: string) => new TextEncoder().encode(t);
 
 let technique: UtilisateurCourant;
+let techniqueValideur: UtilisateurCourant;
 let dg: UtilisateurCourant;
 let commercial: UtilisateurCourant;
 let gestionnaire: UtilisateurCourant;
@@ -210,6 +212,7 @@ beforeAll(async () => {
     return compte(identifiant);
   };
   technique = await nouveau("TECHNIQUE");
+  techniqueValideur = await nouveau("TECHNIQUE");
   dg = await nouveau("DIRECTION_GENERALE");
   commercial = await nouveau("COMMERCIAL");
   gestionnaire = await nouveau("GESTIONNAIRE_PRODUCTION");
@@ -846,7 +849,7 @@ const publierFactureGaranties = (code: string) =>
   publier("FACTURE", code, analyse([...CONTENU_FACTURE, ...TAGS_GARANTIES], { filtres: ["lettres"], textes: ["Article 13 du Code CIMA : la prise d'effet est subordonnée au paiement de la prime."] }));
 
 describe("session 6.2b : produit par garanties, de la cotation composée à la facture", () => {
-  async function produitParGaranties(options: { factureDuProduit?: boolean; cpAvecGaranties?: boolean } = {}): Promise<{ code: string; incendie: string; iard: string }> {
+  async function produitParGaranties(options: { factureDuProduit?: boolean; cpAvecGaranties?: boolean; seuilValidationTtc?: number | null } = {}): Promise<{ code: string; incendie: string; iard: string }> {
     const code = CODE("GPR");
     const incendie = (await assurerBranche(`INC_${code}`)).slice(0, 28);
     const iard = (await assurerBranche(`IARD_${code}`)).slice(0, 28);
@@ -865,7 +868,7 @@ describe("session 6.2b : produit par garanties, de la cotation composée à la f
         prorata: { actif: false, primeMinimale: null },
         fractionnement: { tranchesMax: 4, repartitionPourcent: null, decalagesMois: null, frais: "0" },
         cotation: { validiteMois: 3, formulesMax: 3 },
-        seuilValidationTtc: null,
+        seuilValidationTtc: options.seuilValidationTtc != null ? String(options.seuilValidationTtc) : null,
         formules: [],
         garanties: [{ libelle: "Incendie", branche: incendie }],
       },
@@ -878,7 +881,7 @@ describe("session 6.2b : produit par garanties, de la cotation composée à la f
   }
 
   /** Police d'un produit par garanties : cotation créée par le Commercial, prime composée par la Technique, soumise, acceptée, CP émises. */
-  async function policeGaranties(p: { code: string; incendie: string; iard: string }, typeContrat: "INDIVIDUEL" | "GROUPE" = "INDIVIDUEL", options: { emettreLesCp?: boolean } = {}) {
+  async function policeGaranties(p: { code: string; incendie: string; iard: string }, typeContrat: "INDIVIDUEL" | "GROUPE" = "INDIVIDUEL", options: { emettreLesCp?: boolean; montantGarantiIncendie?: string } = {}) {
     const id = await creerBrouillon(commercial, {
       codeProduit: p.code,
       clientId: null,
@@ -898,14 +901,17 @@ describe("session 6.2b : produit par garanties, de la cotation composée à la f
       technique,
       id,
       [
-        { libelle: "Incendie", branche: p.incendie, primeNette: "10000", accessoires: "2500" },
+        { libelle: "Incendie", branche: p.incendie, ...(options.montantGarantiIncendie ? { montantGaranti: options.montantGarantiIncendie } : {}), primeNette: "10000", accessoires: "2500" },
         { libelle: "Vol", branche: p.iard, primeNette: "9850", accessoires: "2500" },
         { libelle: "Dégât des eaux", branche: p.iard, primeNette: "6000", accessoires: "2500" },
       ],
       "Simulateur de la Technique (chiffres inventés)",
       null,
     );
-    expect((await soumettre(commercial, id, null)).statut).toBe("EMISE");
+    const s = await soumettre(commercial, id, null);
+    if (s.statut === "A_VALIDER") {
+      await valider(techniqueValideur, id, null);
+    }
     const { numeroPolice: numero } = await accepter(commercial, id, [], numeroPolice(), null);
     if (options.emettreLesCp !== false) await emettreCp(technique, id, null);
     const police = await obtenirPrisma().police.findUniqueOrThrow({ where: { numero } });
@@ -1000,31 +1006,198 @@ describe("session 6.2b : produit par garanties, de la cotation composée à la f
     expect(derniere("CP").donnees.garanties_souscrites).toHaveLength(3);
   });
 
-  it("l'écran d'une police à garanties n'offre ni renouvellement ni avenant (H90) ; une police à la formule les offre toujours", async () => {
+  it("session 6.2c-1 (H90) : renouvellement d'une police par garanties (reprise N, taux N+1 résolus, confirmation obligatoire, montant garanti)", async () => {
     const p = await produitParGaranties();
-    const pol = await policeGaranties(p, "GROUPE");
-    await emettreFacture(technique, await creerFactureAffaireNouvelle(technique, pol.policeId, null, null), null);
-    expect((await facturesDePolice(technique, pol.cotationId))!.police.composee).toBe(true);
+    const pol = await policeGaranties(p, "GROUPE", { montantGarantiIncendie: "5000000" });
+    const anId = await creerFactureAffaireNouvelle(technique, pol.policeId, null, null);
+    await emettreFacture(technique, anId, null);
 
-    const t2 = await policeT2();
-    await emettreFacture(technique, await creerFactureAffaireNouvelle(technique, t2.policeId, null, null), null);
-    const vue = (await facturesDePolice(technique, t2.cotationId))!;
-    expect(vue.police.composee).toBe(false);
-    expect(vue.possibles.renouvellement).not.toBeNull();
+    // Taux N+1 inventé pour la branche Incendie (effet au 01/01/2027) : 14 % au lieu de 12.5 %
+    await creerTaxe(
+      technique,
+      {
+        branche: p.incendie,
+        typeContrat: null,
+        tauxMixte: false,
+        commentaire: "Changement de taux N+1 (test inventé)",
+        tauxPourcent: "14",
+        assiette: "NETTE_ACCESSOIRES",
+        dateEffet: "2027-01-01",
+        dateFin: null,
+      },
+      null,
+    );
+
+    // 1. Préparation du renouvellement : brouillon arrive à « À composer — composition précédente proposée »
+    const renId = await creerFactureRenouvellement(technique, pol.policeId, { lignes: null, nombreTranches: 1, envoyeA: null }, null);
+    const lu = (await lireFacture(technique, renId))!;
+    expect(lu.statut).toBe("BROUILLON");
+    expect(lu.libelleStatut).toBe("À composer — composition précédente proposée");
+    expect(lu.actions.emettre).toBe(false);
+    expect(lu.actions.composer).toBe(true);
+
+    // Lignes reprises : montant garanti, libellé, branche, prime nette, accessoires
+    const lignes = lu.contenu.garanties!;
+    expect(lignes).toHaveLength(3);
+    expect(lignes[0].libelle).toBe("Incendie");
+    expect(lignes[0].montantGaranti).toBe("5000000");
+    expect(lignes[0].nette).toBe("10000");
+    expect(lignes[0].accessoires).toBe("2500");
+    // H93 : taux de taxe de l'année N+1 résolu à la date d'effet (14 % au lieu de 12.5 %)
+    expect(lignes[0].tauxTaxe).toBe("14");
+    // 12 500 * 14 % = 1 750 (au lieu de 12 500 * 12.5 % = 1 563)
+    expect(lignes[0].taxe).toBe("1750");
+
+    // 2. Émission refusée tant que la Technique n'a pas confirmé la composition
+    await expect(emettreFacture(technique, renId, null)).rejects.toThrow(/doit être confirmée par la Technique/);
+
+    // 3. Confirmation sans motif ou motif trop court refusée
+    const lignesSaisies = (lu.composition?.lignes ?? []).map((l) => ({
+      libelle: l.libelle,
+      branche: l.branche,
+      montantGaranti: l.montantGaranti ?? null,
+      primeNette: l.primeNette,
+      accessoires: l.accessoires,
+    }));
+    await expect(composerFacture(technique, renId, lignesSaisies, "  ", null)).rejects.toThrow(/motif.*obligatoire/i);
+    await expect(composerFacture(technique, renId, lignesSaisies, "ab", null)).rejects.toThrow(/3 caractères/);
+
+    // Droit requis : le Commercial ne peut pas composer
+    await expect(composerFacture(commercial, renId, lignesSaisies, "Motif valide de test", null)).rejects.toThrow(ErreurAcces);
+
+    // 4. Confirmation par la Technique avec motif obligatoire
+    const compRes = await composerFacture(technique, renId, lignesSaisies, "Reconduction conforme pour l'exercice 2027", null);
+    expect(Number(compRes.ttc)).toBeGreaterThan(0);
+
+    const luApres = (await lireFacture(technique, renId))!;
+    expect(luApres.statut).toBe("BROUILLON");
+    expect(luApres.libelleStatut).toBe("Brouillon");
+    expect(luApres.actions.emettre).toBe(true);
+    expect(luApres.composition).toMatchObject({
+      composePar: technique.identifiant,
+      motif: "Reconduction conforme pour l'exercice 2027",
+    });
+
+    // Journal d'audit FACTURE_COMPOSEE
+    const auditComp = (await lireJournal({ action: "FACTURE_COMPOSEE" })).lignes.find((l) => l.objet === `facture ${renId}`);
+    expect(auditComp).toBeDefined();
+
+    // 5. Émission réussie
+    const emise = await emettreFacture(technique, renId, null);
+    expect(emise.statut).toBe("EMISE");
+    if (emise.statut === "EMISE") {
+      expect(emise.numero).toMatch(/^FAC-\d{4}-\d{2}-\d{4}$/);
+    }
+
+    // 6. Données du document PDF : garanties_souscrites[] avec montant_garanti
+    const d = derniere("FACTURE");
+    expect(d.donnees.garanties_souscrites).toHaveLength(3);
+    const g1 = (d.donnees.garanties_souscrites as Record<string, unknown>[])[0];
+    expect(g1.libelle).toBe("Incendie");
+    expect(g1.montant_garanti).toBe("5000000");
   });
 
-  it("renouvellement et avenant d'une police à garanties : refusés avec un message explicite, rien n'est calculé en silence (H90)", async () => {
+  it("session 6.2c-1 (H90) : avenant d'incorporation sur une police par garanties (sans montant, composition manuelle, pas de prorata)", async () => {
     const p = await produitParGaranties();
     const pol = await policeGaranties(p, "GROUPE");
-    const id = await creerFactureAffaireNouvelle(technique, pol.policeId, null, null);
-    await emettreFacture(technique, id, null);
-    await expect(creerFactureRenouvellement(technique, pol.policeId, { lignes: null, nombreTranches: 1, envoyeA: null }, null)).rejects.toThrow(MESSAGE_RENOUVELLEMENT_GARANTIES);
+    const anId = await creerFactureAffaireNouvelle(technique, pol.policeId, null, null);
+    await emettreFacture(technique, anId, null);
 
-    await incorporerAdherents(gestionnaire, pol.policeId, "2026-07-22", [{ nom_prenoms: "Nouvel Adhérent Inventé", date_naissance: "1992-02-02", sexe: "M", lien: "Salarié", formule: "" }], null);
+    // Incorporation de 3 adhérents
+    await incorporerAdherents(
+      gestionnaire,
+      pol.policeId,
+      "2026-07-22",
+      [
+        { nom_prenoms: "Adhérent Un", date_naissance: "1990-01-01", sexe: "M", lien: "Salarié", formule: "" },
+        { nom_prenoms: "Adhérent Deux", date_naissance: "1991-02-02", sexe: "F", lien: "Conjoint", formule: "" },
+        { nom_prenoms: "Adhérent Trois", date_naissance: "2015-03-03", sexe: "M", lien: "Enfant", formule: "" },
+      ],
+      null,
+    );
     const vue = (await facturesDePolice(technique, pol.cotationId))!;
     const incorporation = vue.possibles.avenants[0];
-    await expect(creerFactureAvenant(technique, pol.policeId, incorporation.numero, null, null)).rejects.toThrow(MESSAGE_AVENANT_GARANTIES);
-    expect(await obtenirPrisma().facture.count({ where: { policeId: pol.policeId, type: { in: ["RENOUVELLEMENT", "AVENANT"] } } })).toBe(0);
+    expect(incorporation.adherents).toBe(3);
+
+    // 1. Préparation de l'avenant : brouillon sans montant, état « À composer »
+    const avenantId = await creerFactureAvenant(technique, pol.policeId, incorporation.numero, null, null);
+    const lu = (await lireFacture(technique, avenantId))!;
+    expect(lu.statut).toBe("BROUILLON");
+    expect(lu.libelleStatut).toBe("À composer");
+    expect(lu.ttc).toBe("0");
+    expect(lu.contenu.garanties).toHaveLength(0);
+    expect(lu.actions.emettre).toBe(false);
+    expect(lu.actions.composer).toBe(true);
+
+    // 2. Émission refusée tant qu'elle n'est pas composée
+    await expect(emettreFacture(technique, avenantId, null)).rejects.toThrow(/doit être composée par la Technique/);
+
+    // 3. Composition de la prime additionnelle par la Technique
+    await composerFacture(
+      technique,
+      avenantId,
+      [
+        { libelle: "Extension Incendie 3 adhérents", branche: p.incendie, primeNette: "12000", accessoires: "0" },
+        { libelle: "Extension Vol 3 adhérents", branche: p.iard, primeNette: "8000", accessoires: "0" },
+      ],
+      "Prime additionnelle pour l'incorporation de 3 bénéficiaires",
+      null,
+    );
+
+    const luApres = (await lireFacture(technique, avenantId))!;
+    expect(luApres.statut).toBe("BROUILLON");
+    expect(luApres.libelleStatut).toBe("Brouillon");
+    expect(Number(luApres.ttc)).toBeGreaterThan(0);
+    expect(luApres.actions.emettre).toBe(true);
+
+    // 4. Émission réussie
+    const emise = await emettreFacture(technique, avenantId, null);
+    expect(emise.statut).toBe("EMISE");
+    const d = derniere("FACTURE");
+    expect(d.donnees.garanties_souscrites).toHaveLength(2);
+  });
+
+  it("session 6.2c-1 (H95) : séparation des tâches à la validation d'une facture (auteur, demandeur, composeur exclus)", async () => {
+    // Créons un deuxième utilisateur Technique pour valider
+    const technique2 = await (async () => {
+      const identifiant = unique("technique-2");
+      await creerUtilisateur(admin, { identifiant, nom: "Technique Deux", profil: "TECHNIQUE", motDePasse: MDP }, null);
+      return compte(identifiant);
+    })();
+
+    // Produit par garanties avec seuil bas pour déclencher « À valider » (seuil 5 000 TTC)
+    const p = await produitParGaranties({ seuilValidationTtc: 5000 });
+    const pol = await policeGaranties(p);
+    const anId = await creerFactureAffaireNouvelle(technique, pol.policeId, null, null);
+    await emettreFacture(technique, anId, null);
+
+    // Renouvellement créé par le gestionnaire (qui n'a pas le droit de composer)
+    const renId = await creerFactureRenouvellement(gestionnaire, pol.policeId, { lignes: null, nombreTranches: 1, envoyeA: null }, null);
+
+    // Prime composée par le premier utilisateur Technique
+    const lu = (await lireFacture(technique, renId))!;
+    const lignes = (lu.composition?.lignes ?? []).map((l) => ({
+      libelle: l.libelle,
+      branche: l.branche,
+      primeNette: l.primeNette,
+      accessoires: l.accessoires,
+    }));
+    await composerFacture(technique, renId, lignes, "Composition exercice suivant", null);
+
+    // Le gestionnaire demande la validation (TTC > seuil 5 000)
+    const demande = await emettreFacture(gestionnaire, renId, null);
+    expect(demande.statut).toBe("A_VALIDER");
+
+    // Séparation des tâches :
+    // 1. Le demandeur / auteur ne peut pas valider (même promu avec les droits de validation)
+    const demandeurHabilite = { ...gestionnaire, profil: "TECHNIQUE" as const };
+    await expect(emettreFacture(demandeurHabilite, renId, null)).rejects.toThrow(/séparation des tâches/);
+    await expect(emettreFacture(gestionnaire, renId, null)).rejects.toThrow(/attend déjà sa validation/);
+    // 2. Le composeur (technique) ne peut pas valider
+    await expect(emettreFacture(technique, renId, null)).rejects.toThrow(/séparation des tâches/);
+    // 3. Un autre valideur habilité (technique2) PEUT valider
+    const emise = await emettreFacture(technique2, renId, null);
+    expect(emise.statut).toBe("EMISE");
   });
 });
 

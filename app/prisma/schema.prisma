@@ -661,6 +661,12 @@ model Facture {
   abandonnePar     String?             @map("abandonne_par")
   abandonneLe      DateTime?           @map("abandonne_le")
   motifAbandon     String?             @map("motif_abandon")
+  /// Composition manuelle de la prime (renouvellement et avenant d'un produit en mode GARANTIES, session 6.2c-1, H90).
+  compositionParId Int?                @map("composition_par_id")
+  compositionPar   String?             @map("composition_par")
+  compositionLe    DateTime?           @map("composition_le")
+  compositionMotif String?             @map("composition_motif")
+  contributeurs    Int[]               @default([])
   police           Police              @relation(fields: [policeId], references: [id], onDelete: Restrict)
   produit          Produit             @relation(fields: [produitId], references: [id], onDelete: Restrict)
   factureOrigine   Facture?            @relation("Avoir", fields: [factureOrigineId], references: [id], onDelete: Restrict)

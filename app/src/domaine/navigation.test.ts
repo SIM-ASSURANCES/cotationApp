@@ -24,9 +24,11 @@ function hrefsAncienLayout(niveaux: NiveauxNavigation): string[] {
 
   const parametrage = niveaux.PARAMETRER_PRODUITS;
   const cotation = niveaux.CREER_COTATION;
+  const contrat = niveaux.EMETTRE_CONTRAT;
   const depotModele = niveaux.DEPOSER_MODELE;
   const publicationModele = niveaux.PUBLIER_MODELE;
 
+  if (peutLire(cotation) || peutLire(contrat)) hrefs.push("/portefeuille");
   if (peutLire(cotation)) hrefs.push("/cotations");
   if (peutLire(depotModele) || peutLire(publicationModele)) hrefs.push("/modeles");
   const lectureDocuments = (["CREER_COTATION", "EMETTRE_CONTRAT", "EMETTRE_FACTURE", "EMETTRE_AVOIR", "ENREGISTRER_PAIEMENT"] as const).map((action) => niveaux[action]);
@@ -73,7 +75,7 @@ describe("navigation : mêmes liens que l'ancien bandeau, profil par défaut par
   it("quelques profils en clair (garde-fou contre une référence qui se tromperait comme l'implémentation)", () => {
     const hrefs = (code: (typeof PROFILS)[number]["code"]) => hrefsDeLaNavigation(construireNavigation(niveauxDuProfil(code)));
     // Commercial : cotations seulement (CDC §4), donc pas de facturation ni de paramétrage.
-    expect(trie(hrefs("COMMERCIAL"))).toEqual(trie(["/", "/cotations", "/calcul", "/documents"]));
+    expect(trie(hrefs("COMMERCIAL"))).toEqual(trie(["/", "/portefeuille", "/cotations", "/calcul", "/documents"]));
     // Admin système : administration et journal d'audit, aucun écran métier.
     expect(trie(hrefs("ADMIN_SYSTEME"))).toEqual(trie(["/", "/admin/utilisateurs", "/admin/droits", "/admin/stockage", "/admin/audit"]));
     // Comptabilité : facturation et tableaux de bord, paramétrage en lecture (D21).
@@ -147,6 +149,7 @@ describe("navigation : branches", () => {
     const navigation = construireNavigation(niveauxVides("OUI"));
     const liensDe = (cle: string) => navigation.branches.find((b) => b.cle === cle)?.groupes.flatMap((g) => g.liens.map((l) => [l.libelle, l.href]));
     expect(liensDe("production")).toEqual([
+      ["Portefeuille", "/portefeuille"],
       ["Cotations", "/cotations"],
       ["Calcul", "/calcul"],
       ["Imports", "/imports"],
@@ -254,6 +257,8 @@ describe("titreDeLaPage", () => {
   });
 
   it("une sous-page prend le titre de son lien", () => {
+    expect(titreDeLaPage(navigation, "/portefeuille")).toBe("Portefeuille");
+    expect(titreDeLaPage(navigation, "/portefeuille/MALADIE")).toBe("Portefeuille");
     expect(titreDeLaPage(navigation, "/cotations")).toBe("Cotations");
     expect(titreDeLaPage(navigation, "/cotations/12")).toBe("Cotations");
     expect(titreDeLaPage(navigation, "/parametrage/produits/XYZ/relances")).toBe("Produits");

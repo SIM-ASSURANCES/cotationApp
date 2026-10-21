@@ -84,6 +84,7 @@ export function construireNavigation(niveaux: NiveauxNavigation): Navigation {
   const parametrage = lit("PARAMETRER_PRODUITS");
 
   const production: LienNavigation[] = [];
+  if (cotation || contrat) production.push({ href: "/portefeuille", libelle: "Portefeuille", icone: "portefeuille" });
   if (cotation) production.push({ href: "/cotations", libelle: "Cotations", icone: "document" });
   // Calcul : paramétrer les produits ou créer une cotation.
   if (parametrage || cotation) production.push({ href: "/calcul", libelle: "Calcul", icone: "calculatrice" });

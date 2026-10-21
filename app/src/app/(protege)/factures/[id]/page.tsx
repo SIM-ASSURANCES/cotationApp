@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { AvertissementsReports } from "@/composants/AvertissementsReports";
 import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
+import { LignesComposition } from "@/composants/LignesComposition";
 import { Bandeau, Carte, Champ as ChampSaisie, EnTetePage, ListeDefinitions, ListeDeroulante, PastilleStatut, Tableau, type ColonneTableau, type ElementDefinition } from "@/composants/ui";
 import { formaterDate } from "@/domaine/calcul/dates";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
@@ -13,7 +14,7 @@ import { lireFacture } from "@/serveur/factures";
 import { exigerUtilisateur } from "@/serveur/session";
 import { ErreurAcces } from "@/serveur/types";
 
-import { abandonnerLaFacture, emettreLAvoir, emettreLaFacture, enregistrerLePaiement, imputerLAvance, modifierLaFacture, relancerLesPdf } from "../actions";
+import { abandonnerLaFacture, composerLaPrimeFacture, emettreLAvoir, emettreLaFacture, enregistrerLePaiement, imputerLAvance, modifierLaFacture, relancerLesPdf } from "../actions";
 
 const f = (m: string) => formaterMontant(montant(m));
 
@@ -58,6 +59,9 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
     { libelle: "Période", valeur: `du ${formaterDate(c.dateEffet)} au ${formaterDate(c.dateEcheance)} (${c.joursCouverts} jours)` },
     { libelle: "Émise le", valeur: `${formaterDate(x.dateEmission)}${x.emisePar ? ` par ${x.emisePar}` : ""}` },
     { libelle: "Préparée par", valeur: x.creePar },
+    ...(x.composition && x.composition.composePar
+      ? [{ libelle: "Composée par", valeur: `${x.composition.composePar}${x.composition.composeLe ? ` le ${new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }).format(x.composition.composeLe)}` : ""}${x.composition.motif ? ` (motif : ${x.composition.motif})` : ""}` }]
+      : []),
     ...(x.factureOrigine ? [{ libelle: "Facture annulée", valeur: <Link href={`/factures/${x.factureOrigine.id}`} className="text-primary underline">{x.factureOrigine.numero}</Link> }] : []),
     ...(x.motif ? [{ libelle: "Motif de l'avoir", valeur: x.motif }] : []),
     ...(x.remplace ? [{ libelle: "Remplace", valeur: <><Link href={`/factures/${x.remplace.id}`} className="text-primary underline">{x.remplace.numero}</Link> (annulée)</> }] : []),
@@ -155,8 +159,18 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
         filAriane={[{ libelle: `Factures de la police ${x.policeNumero}`, href: `/cotations/${x.cotationId}/factures` }, { libelle: titre }]}
       />
 
-      {x.abandon || x.statut === "A_VALIDER" || x.pdfEnAttente > 0 ? (
+      {x.abandon || x.statut === "A_VALIDER" || x.pdfEnAttente > 0 || x.libelleStatut.startsWith("À composer") ? (
         <div className="space-y-4">
+          {x.libelleStatut === "À composer — composition précédente proposée" ? (
+            <Bandeau ton="avertissement" role="status">
+              <strong>Prime à confirmer.</strong> La composition de la période précédente a été reprise en proposition avec les taux de taxe résolus à la nouvelle date d&apos;effet. La Technique doit confirmer ou adapter la prime (action « Composer une prime ») avant que la facture ne puisse être émise.
+            </Bandeau>
+          ) : null}
+          {x.libelleStatut === "À composer" ? (
+            <Bandeau ton="avertissement" role="status">
+              <strong>Prime à composer.</strong> Cette facture d&apos;avenant par garanties a été préparée sans montant : la Technique doit composer la prime additionnelle (action « Composer une prime ») avant que la facture ne puisse être émise.
+            </Bandeau>
+          ) : null}
           {x.abandon ? (
             <Bandeau ton="neutre" role="status">
               <strong>Brouillon abandonné</strong> par {x.abandon.par} le {new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short", timeZone: "UTC" }).format(x.abandon.le)}. Motif : {x.abandon.motif}. L&apos;abandon est définitif et aucun numéro n&apos;a été consommé ;
@@ -214,6 +228,39 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
       {x.documents.length > 0 ? (
         <Carte titre="Documents">
           <Tableau colonnes={colonnesDocuments} lignes={x.documents} cleLigne={(d) => `${d.numero}-${d.version}`} legende="Documents de la facture" />
+        </Carte>
+      ) : null}
+
+      {x.actions.composer ? (
+        <Carte
+          titre={x.composition?.composePar ? "Recomposer la prime" : x.type === "RENOUVELLEMENT" ? "Confirmer la composition" : "Composer la prime"}
+          description="Saisissez ou adaptez, pour chaque garantie souscrite (et chaque surprime ou majoration), la prime nette et les accessoires. Le module résout le taux de taxe de la branche de chaque ligne (régime de taxe de la cotation, date d'effet de la facture), calcule la taxe et totalise. Le motif est obligatoire (3 à 500 caractères) et la composition est journalisée. Vous ne pourrez pas valider cette facture si elle dépasse le seuil (séparation des tâches)."
+        >
+          <FormulaireAction action={composerLaPrimeFacture} libelleBouton={x.composition?.composePar ? "Enregistrer la composition" : x.type === "RENOUVELLEMENT" ? "Confirmer la composition" : "Enregistrer la composition"}>
+            {cache}
+            <div className="mb-4">
+              <LignesComposition
+                initiales={(x.composition?.lignes ?? []).map((l) => ({
+                  libelle: l.libelle,
+                  branche: l.branche,
+                  montantGaranti: l.montantGaranti != null ? montant(l.montantGaranti).toString() : "",
+                  primeNette: montant(l.primeNette).toString(),
+                  accessoires: montant(l.accessoires).toString(),
+                }))}
+                garanties={x.garantiesDuProduit.map((g) => ({
+                  libelle: g.libelle,
+                  branche: g.branche,
+                  montantGaranti: g.montantGaranti != null ? montant(g.montantGaranti).toString() : null,
+                  accessoires: g.accessoires != null ? montant(g.accessoires).toString() : null,
+                }))}
+                branches={x.branchesActives.map((b) => ({ code: b.code, libelle: b.libelle }))}
+                saisieLibre={x.garantiesSaisieLibre}
+              />
+            </div>
+            <div className="mb-4 max-w-2xl">
+              <ChampSaisie label="Motif de la composition (obligatoire)" name="motif" required minLength={3} maxLength={500} autoComplete="off" defaultValue={x.composition?.motif ?? ""} />
+            </div>
+          </FormulaireAction>
         </Carte>
       ) : null}
 

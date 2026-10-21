@@ -18,7 +18,7 @@ const COLONNES: ColonneTableau<LigneFactureLue>[] = [
   { cle: "police", entete: "Police", rendu: (x) => <Link href={`/cotations/${x.cotationId}/factures`} className="text-primary underline">{x.policeNumero}</Link> },
   { cle: "souscripteur", entete: "Souscripteur", rendu: (x) => x.souscripteur },
   { cle: "emission", entete: "Émise le", rendu: (x) => formaterDate(x.dateEmission) },
-  { cle: "ttc", entete: "TTC", alignement: "droite", rendu: (x) => f(x.ttc) },
+  { cle: "ttc", entete: "TTC", alignement: "droite", rendu: (x) => (x.libelleStatut.startsWith("À composer") && montant(x.ttc).isZero() ? "À composer" : f(x.ttc)) },
   { cle: "restant", entete: "Restant dû", alignement: "droite", rendu: (x) => (x.restantDu === null ? "—" : f(x.restantDu)) },
   // Le libellé du PDF en attente est celui d'avant la refonte ; la pastille suit la table unique des statuts.
   { cle: "pdf", entete: "PDF", rendu: (x) => (x.pdfEnAttente > 0 ? <PastilleStatut libelle="PDF en attente">En attente</PastilleStatut> : x.numero ? "Produit" : "—") },

@@ -6,6 +6,7 @@ import type { EtatFormulaire } from "@/composants/types";
 import type { EnvoyeA } from "@/domaine/facturation/factures";
 import {
   abandonnerFacture,
+  composerFacture,
   creerFactureAffaireNouvelle,
   creerFactureAvenant,
   creerFactureRenouvellement,
@@ -20,6 +21,7 @@ import {
 } from "@/serveur/factures";
 import type { IssueProduction } from "@/serveur/production";
 
+import { lireLignesDePrime } from "../cotations/lire-composition";
 import { avecMessage, champ, executerAction } from "../executer";
 
 /** « Envoyé à » saisi : null si les deux champs sont vides. */
@@ -62,6 +64,25 @@ export async function modifierLaFacture(_e: EtatFormulaire, d: FormData): Promis
   return executerAction(
     async (acteur, ip) => void (await modifierFacture(acteur, id, { lignes: lireLignes(d), nombreTranches: tranches(d), envoyeA: lireEnvoyeA(d) }, ip)),
     "Brouillon modifié.",
+    `/factures/${id}`,
+  );
+}
+
+/**
+ * Composition ou confirmation de la prime d'une facture par garanties (renouvellement ou avenant, session 6.2c-1, H90).
+ * Action « Composer une prime », motif obligatoire, journalisée avant / après.
+ */
+export async function composerLaPrimeFacture(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
+  const id = identifiant(d, "factureId");
+  const motif = champ(d, "motif");
+  const lignes = lireLignesDePrime(d);
+  let res: { ttc: string } | null = null;
+  return executerAction(
+    async (acteur, ip) => {
+      res = await composerFacture(acteur, id, lignes, motif, ip);
+      return [];
+    },
+    () => `Prime composée (${res?.ttc ?? ""} F CFA TTC).`,
     `/factures/${id}`,
   );
 }

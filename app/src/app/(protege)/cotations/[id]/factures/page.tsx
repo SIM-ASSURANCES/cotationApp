@@ -6,7 +6,6 @@ import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireActio
 import { Carte, Champ as ChampSaisie, EnTetePage, ListeDeroulante, PastilleStatut, Tableau } from "@/composants/ui";
 import { formaterDate } from "@/domaine/calcul/dates";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
-import { MESSAGE_AVENANT_GARANTIES, MESSAGE_RENOUVELLEMENT_GARANTIES } from "@/domaine/calcul/parametrage";
 import { CANAUX_PAIEMENT, LIBELLE_CANAL } from "@/domaine/facturation/factures";
 import { facturesDePolice } from "@/serveur/factures";
 import { aujourdhui } from "@/serveur/parametrage";
@@ -139,13 +138,14 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
           </Carte>
 
           <Carte titre="Renouvellement">
-            {police.composee ? (
-              <p className="text-sm text-neutral">{MESSAGE_RENOUVELLEMENT_GARANTIES}. Décision en attente de Thierry (H90).</p>
-            ) : possibles.renouvellement ? (
+            {possibles.renouvellement ? (
               <FormulaireAction action={creerFacture} libelleBouton="Préparer le renouvellement (brouillon)">
                 {cache("RENOUVELLEMENT")}
                 <p className="mb-3 text-sm text-neutral">
-                  Période proposée : du {formaterDate(possibles.renouvellement.dateEffet)} au {formaterDate(possibles.renouvellement.dateEcheance)}, au tarif en vigueur à cette date. Formules et effectifs de la période précédente, modifiables dans le brouillon.
+                  Période proposée : du {formaterDate(possibles.renouvellement.dateEffet)} au {formaterDate(possibles.renouvellement.dateEcheance)}.{" "}
+                  {police.composee
+                    ? "La composition de la période précédente sera reprise en brouillon et devra être confirmée par la Technique (« Composer une prime »)."
+                    : "Au tarif en vigueur à cette date. Formules et effectifs de la période précédente, modifiables dans le brouillon."}
                 </p>
                 <EnvoyeA />
               </FormulaireAction>
@@ -155,9 +155,7 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
           </Carte>
 
           <Carte titre="Avenant d'incorporation">
-            {police.composee ? (
-              <p className="text-sm text-neutral">{MESSAGE_AVENANT_GARANTIES}. Décision en attente de Thierry (H90).</p>
-            ) : possibles.avenants.length > 0 ? (
+            {possibles.avenants.length > 0 ? (
               <FormulaireAction action={creerFacture} libelleBouton="Préparer l'avenant (brouillon)">
                 {cache("AVENANT")}
                 <div className="mb-3 max-w-xl">
@@ -170,7 +168,11 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
                     options={possibles.avenants.map((a) => ({ valeur: String(a.numero), libelle: `Version ${a.numero} : ${a.adherents} adhérent(s), effet le ${formaterDate(a.dateEffet)}` }))}
                   />
                 </div>
-                <p className="mb-3 text-sm text-neutral">Prime additionnelle au prorata, du jour de l'incorporation à l'échéance de la période facturée.</p>
+                <p className="mb-3 text-sm text-neutral">
+                  {police.composee
+                    ? "La facture d'avenant sera préparée sans montant ; la Technique composera la prime additionnelle dans le brouillon."
+                    : "Prime additionnelle au prorata, du jour de l'incorporation à l'échéance de la période facturée."}
+                </p>
                 <EnvoyeA />
               </FormulaireAction>
             ) : (

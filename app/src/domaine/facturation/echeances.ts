@@ -59,7 +59,7 @@ export type FactureAppelable = {
   type: string;
   dateEffet: DateIso;
   ttc: string;
-  echeances: readonly { numero: number; date: DateIso; montant: string }[];
+  echeances?: readonly { numero: number; date: DateIso; montant: string }[];
 };
 
 /** Statut d'une échéance (`echeances[].statut`). */
@@ -87,7 +87,7 @@ export const factureAppelable = (f: Pick<FactureAppelable, "statut" | "type">): 
  */
 export function repartirEcheances(echeances: readonly { numero: number; date: DateIso; montant: string }[], totalPaye: string): EcheanceDue[] {
   let reste: Montant = montant(totalPaye);
-  return echeances.map((e) => {
+  return (echeances ?? []).map((e) => {
     const du = montant(e.montant);
     const couvert = DecimalMontant.min(du, DecimalMontant.max(ZERO, reste));
     reste = reste.minus(couvert);
@@ -100,7 +100,8 @@ export function repartirEcheances(echeances: readonly { numero: number; date: Da
 
 /** Échéances d'une facture et leur couverture par le total payé (H49 : dans l'ordre ; H67 : terme unique sans échéancier). */
 export function echeancesDe(f: FactureAppelable, totalPaye: string): EcheanceDue[] {
-  return repartirEcheances(f.echeances.length > 0 ? f.echeances : [{ numero: 1, date: f.dateEffet, montant: f.ttc }], totalPaye);
+  const echeances = f.echeances ?? [];
+  return repartirEcheances(echeances.length > 0 ? echeances : [{ numero: 1, date: f.dateEffet, montant: f.ttc }], totalPaye);
 }
 
 // ------------------------------------------------------------------ Avis d'échéance (J-x)

@@ -59,7 +59,7 @@ export function impayesParAnciennete(echeances: readonly { date: DateIso; restan
   const r = Object.fromEntries(TRANCHES_ANCIENNETE.map((t) => [t, { nombre: 0, montant: ZERO }])) as Record<TrancheAnciennete, { nombre: number; montant: ReturnType<typeof montant> }>;
   for (const e of echeances) {
     const reste = montant(e.restant);
-    if (!reste.greaterThan(0) || e.date > aujourdhui) continue;
+    if (!reste.greaterThan(0) || !e.date || e.date > aujourdhui) continue;
     const t = trancheDe(ecartEnJours(e.date, aujourdhui));
     r[t].nombre += 1;
     r[t].montant = r[t].montant.plus(reste);

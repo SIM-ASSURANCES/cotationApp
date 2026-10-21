@@ -708,3 +708,31 @@ Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir)
   - **H112** (**Convention d'identification souscripteur dans le portefeuille**) : préfixe `CLI-<id>` pour les clients enregistrés et `PROSP-<cotationId>` pour les prospects saisis librement.
   - **H113** (**Regroupement par branche principale au paramétrage**) : affichage par section pour chacune des 5 branches principales, avec état vide propre si 0 produit.
 
+## D41 — Session Étape 5 : Arborescence, partie 2 — rangement des fichiers et export ZIP (21/10/2026)
+
+- **Date** : 21/10/2026. Branche `phase-arborescence-stockage`.
+- **Rangement des PDF émis sur le volume persistant (Option A retenue)** :
+  1. Les chemins des fichiers émis reproduisent l'ordre du portefeuille sans aucune donnée personnelle (PII) :
+     `<branche>/<produit>/<client>/<cotation>/<contrat>/<avenant>/<facture>/{avoir,recus,relances,echeances,certificats}/<nom>.pdf`
+  2. Identifiants stricts retenus pour chaque niveau :
+     - `<branche>` : code de la branche principale (`SANTE`, `MALADIE`, `ACCIDENTS_CORPORELS`, `RECOLTE`, `DECES`, `INCENDIE_DOMMAGES`).
+     - `<produit>` : code produit en majuscules (ex. `RELAXSANTE`, `SECURPRO`, `SECURHOME`).
+     - `<client>` : `CLI-<clientId>` pour un client enregistré, `PROSP-<cotationId>` pour un prospect sans compte client.
+     - `<cotation>` : numéro de cotation `COT-AAAA-MM-NNNN` (ou `COT-<id>` si brouillon sans numéro).
+     - `<contrat>` : numéro officiel de police `POL-AAAA-NNNNNN`.
+     - `<avenant>` : `AVN-<adherentsVersion>` (ex. `AVN-01`, `AVN-02`) pour les factures et certificats d'incorporation.
+     - `<facture>` : numéro officiel de facture `FAC-AAAA-MM-NNNN`.
+     - Sous-dossiers : `recus/`, `relances/`, `avoir/`, `echeances/`, `certificats/`.
+  3. Arborescence adaptative : les segments intermédiaires inexistants sont omis (5 segments pour un devis cotation, 6 pour un contrat CP, 7 pour une facture d'affaire nouvelle, 8 pour une facture d'avenant ou un reçu/relance/avoir/avis). Tous les chemins comptent de 5 à 9 segments, sous la limite stricte de 10 segments de `stockage.py`.
+- **Export ZIP arborescent** :
+  1. Dans `generateur/app/stockage.py`, la fonction `zipper` conserve désormais le chemin relatif complet de chaque document dans l'archive ZIP (au lieu d'extraire uniquement le nom plat par `.name`).
+  2. Dans `serveur/documents.ts`, l'action de téléchargement groupé `zipDocuments` passe le chemin arborescent `d.chemin` comme entrée d'archive : le ZIP téléchargé reproduit exactement l'arborescence du portefeuille.
+- **Script de réorganisation dev (H116)** :
+  1. Script `app/scripts/ranger-fichiers-dev.mts` (`npm run ranger:dev`), strictement interdit en production (`NODE_ENV === 'production'`).
+  2. Idempotent : déplace les fichiers physiques vers le nouveau chemin, et met à jour `documents_emis.chemin` via `SET session_replication_role = 'replica';` pour contourner temporairement le déclencheur PostgreSQL `documents_emis_figes`.
+- **Hypothèses nouvelles** :
+  - **H114** (**Chemins de stockage arborescents adaptatifs**) : la profondeur du chemin s'adapte au type de pièce sans répertoires factices (5 à 9 segments).
+  - **H115** (**Export ZIP arborescent**) : les archives ZIP conservent la structure arborescente relative complète du volume de stockage.
+  - **H116** (**Rangement dev sous session_replication_role**) : mise à jour de la colonne `chemin` en base de développement autorisée uniquement sous désactivation temporaire de session du déclencheur d'immuabilité.
+
+

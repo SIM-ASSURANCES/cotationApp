@@ -71,6 +71,7 @@ export async function montantsFacturation(p: Periode, jour: DateIso, auteur?: st
       type: true,
       statut: true,
       ttc: true,
+      dateEffet: true,
       contenu: true,
       dateEmission: true,
       paiements: { select: { montant: true, excedent: true } },
@@ -93,7 +94,8 @@ export async function montantsFacturation(p: Periode, jour: DateIso, auteur?: st
       ...f.imputations.map((x) => ({ montant: x.montant.toFixed(), excedent: "0" })),
     ];
     const paye = etatPaiements(f.ttc.toFixed(), [], sommes.map((x, i) => ({ numero: String(i), date: "", reference: "", canal: "ESPECES" as const, payeur: "", ...x }))).totalPaye;
-    return echeancesDe({ statut: f.statut, type: f.type, dateEffet: contenu.dateEffet, ttc: f.ttc.toFixed(), echeances: contenu.echeances }, paye);
+    const dateEffet = contenu?.dateEffet ?? (f.dateEffet ? depuisDate(f.dateEffet) : jour);
+    return echeancesDe({ statut: f.statut, type: f.type, dateEffet, ttc: f.ttc.toFixed(), echeances: contenu?.echeances }, paye);
   });
   const restantDu = somme(echeances.map((e) => e.restant));
   return { emis, avoirs, encaisse, restantDu, echeances };

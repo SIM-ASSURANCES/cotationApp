@@ -94,7 +94,28 @@ const CONTENU_RELANCE = [...CONTENU_AVIS, "relance.niveau", "relance.libelle", "
 
 const sans = { listeAnnexe: null, blocNom: null, blocCle: null };
 async function publier(type: "CP" | "CG" | "FACTURE" | "AVOIR" | "RECU" | "AVIS_ECHEANCE" | "RELANCE", code: string | null, a: Analyse, options: { visa?: string; niveau?: number } = {}) {
-  const id = await creerModele(technique, { type, code: CODE(type), libelle: type === "CG" ? "CG santé (test)" : `Modèle ${type}`, produitCode: code, ...sans, niveauRelance: options.niveau ?? null }, null);
+  const prisma = obtenirPrisma();
+  const existant = await prisma.modele.findFirst({
+    where: {
+      type,
+      produit: code ? { code } : null,
+      produitId: code ? undefined : null,
+      ...(options.niveau !== undefined ? { niveauRelance: options.niveau } : {}),
+    },
+  });
+  let id: number;
+  if (existant && ["ANNEXE", "SOUS_MODELE", "RELANCE"].includes(type)) {
+    const dejaPublie = await prisma.modeleVersion.findFirst({
+      where: { modeleId: existant.id, statut: "PUBLIEE" },
+      orderBy: { dateEffet: "asc" },
+    });
+    if (dejaPublie) {
+      return { code: existant.code, versionId: dejaPublie.id };
+    }
+    id = existant.id;
+  } else {
+    id = await creerModele(technique, { type, code: CODE(type), libelle: type === "CG" ? "CG santé (test)" : `Modèle ${type}`, produitCode: code, ...sans, niveauRelance: options.niveau ?? null }, null);
+  }
   prochaineAnalyse = a;
   await deposerVersion(technique, id, { fichier: texte(`docx ${type}`), nomFichier: "m.docx", commentaire: "test", dateEffet: aujourdhui(), visa: options.visa ?? null, dateDocument: options.visa ? "2025-06-19" : null }, null);
   const v = await obtenirPrisma().modeleVersion.findFirstOrThrow({ where: { modeleId: id }, orderBy: { numero: "desc" } });

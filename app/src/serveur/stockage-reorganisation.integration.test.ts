@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { fixerDateMinimumEffetPourTests } from "@/domaine/calcul/dates";
+import { assurerBranche } from "./branches-test";
 import { obtenirPrisma } from "./prisma";
 import { remplacerStockage } from "./stockage";
 import {
@@ -40,6 +41,7 @@ describe("script idempotent de rangement des documents dev (Étape 5, D41)", () 
 
   it("réorganise un document avec ancien chemin et vérifie l'idempotence au 2e passage", async () => {
     const prisma = obtenirPrisma();
+    await assurerBranche("SANTE");
     const prodCode = CODE("PRD");
 
     const produit = await prisma.produit.create({
@@ -57,11 +59,13 @@ describe("script idempotent de rangement des documents dev (Étape 5, D41)", () 
       data: { nom: "CLIENT REORG", type: "MORALE", creePar: "admin" },
     });
 
+    const numCotation = CODE("COT");
+
     const cotation = await prisma.cotation.create({
       data: {
         produitId: produit.id,
         clientId: client.id,
-        numero: "COT-2026-10-0888",
+        numero: numCotation,
         versionDateEffet: new Date("2026-01-01"),
         statut: "EMISE",
         dateEffet: new Date("2026-01-01"),
@@ -82,31 +86,38 @@ describe("script idempotent de rangement des documents dev (Étape 5, D41)", () 
         creePar: "admin",
       },
     });
-    const modeleVersion = await prisma.modeleVersion.create({
-      data: {
-        modeleId: modele.id,
-        numero: 1,
-        statut: "PUBLIE",
-        fichier: new Uint8Array([1]),
-        nomFichier: "modele.docx",
-        taille: 1,
-        empreinte: "a".repeat(64),
-        commentaire: "version initiale",
-        dateEffet: new Date("2026-01-01"),
-        analyse: {},
-        auteurId: 1,
-        auteurIdentifiant: "admin",
-      },
-    });
+    await prisma.$executeRawUnsafe("SET session_replication_role = 'replica';");
+    let modeleVersionId: number;
+    try {
+      const modeleVersion = await prisma.modeleVersion.create({
+        data: {
+          modeleId: modele.id,
+          numero: 1,
+          statut: "PUBLIE",
+          fichier: new Uint8Array([1]),
+          nomFichier: "modele.docx",
+          taille: 1,
+          empreinte: "a".repeat(64),
+          commentaire: "version initiale",
+          dateEffet: new Date("2026-01-01"),
+          analyse: {},
+          auteurId: 1,
+          auteurIdentifiant: "admin",
+        },
+      });
+      modeleVersionId = modeleVersion.id;
+    } finally {
+      await prisma.$executeRawUnsafe("SET session_replication_role = 'origin';");
+    }
 
     // Ancien format de chemin CDC §14.2 : {Produit}/{AAAA}/{MM}/{Type}/...
-    const ancienChemin = `${prodCode}/2026/10/COTATION/COT-2026-10-0888_COTATION_20261001_v1.pdf`;
+    const ancienChemin = `${prodCode}/2026/10/COTATION/${numCotation}_COTATION_20261001_v1.pdf`;
     fichiers.set(ancienChemin, new Uint8Array([10, 20, 30]));
 
     const doc = await prisma.documentEmis.create({
       data: {
         type: "COTATION",
-        numero: "COT-2026-10-0888",
+        numero: numCotation,
         version: 1,
         jeton: `jeton-${Math.random().toString(36).slice(2, 10)}${"a".repeat(24)}`,
         chemin: ancienChemin,
@@ -117,7 +128,7 @@ describe("script idempotent de rangement des documents dev (Étape 5, D41)", () 
         souscripteurMasque: "C***** R****",
         cotationId: cotation.id,
         dateEmission: new Date("2026-10-01"),
-        modeleVersionId: modeleVersion.id,
+        modeleVersionId,
         versionsAssociees: {},
         parametresDate: new Date("2026-01-01"),
         donnees: {},
@@ -130,7 +141,7 @@ describe("script idempotent de rangement des documents dev (Étape 5, D41)", () 
     expect(rapport1.deplaces).toBeGreaterThanOrEqual(1);
 
     const docMisAJour = await prisma.documentEmis.findUniqueOrThrow({ where: { id: doc.id } });
-    const cheminAttendu = `MALADIE/${prodCode}/CLI-${client.id}/COT-2026-10-0888/COT-2026-10-0888_COTATION_v1.pdf`;
+    const cheminAttendu = `MALADIE/${prodCode}/CLI-${client.id}/${numCotation}/${numCotation}_COTATION_v1.pdf`;
     expect(docMisAJour.chemin).toBe(cheminAttendu);
     expect(fichiers.has(cheminAttendu)).toBe(true);
 

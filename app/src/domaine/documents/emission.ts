@@ -47,13 +47,130 @@ export function nomSouscripteur(s: { type: string; nom?: string | null; prenoms?
   return (s.type === "MORALE" ? (s.raison_sociale ?? "") : `${s.nom ?? ""} ${s.prenoms ?? ""}`).trim();
 }
 
-// ------------------------------------------------------------------ Stockage (§14.2 adapté par D11)
+// ------------------------------------------------------------------ Stockage (§14.2, D11, D41)
+
+const REGEX_SEGMENT = /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,120}$/;
+
+export function segmentValide(segment: string): boolean {
+  return REGEX_SEGMENT.test(segment) && segment !== "." && segment !== "..";
+}
+
+export function nettoyerSegment(texte: string): string {
+  const nettoye = texte.trim().replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 120);
+  if (!nettoye || nettoye === "." || nettoye === "..") {
+    return "S_defaut";
+  }
+  if (nettoye.startsWith(".") || nettoye.startsWith("-")) {
+    const reste = nettoye.replace(/^[.-]+/, "").replace(/^_+/, "");
+    return `S_${reste || "segment"}`.slice(0, 120);
+  }
+  return nettoye;
+}
+
+export type ContexteCheminStockage = {
+  brancheCode: string;
+  produitCode: string;
+  clientIdentifiant: string;
+  cotationNumero: string;
+  policeNumero?: string | null;
+  avenantNumero?: string | null;
+  factureNumero?: string | null;
+  type: TypeDocument;
+  numero: string;
+  version: number;
+};
+
+export type ContexteCheminLegacy = {
+  produitCode: string;
+  type: TypeDocument;
+  numero: string;
+  dateEmission: DateIso;
+  version: number;
+};
 
 /**
- * Chemin du PDF dans le stockage : {Produit}/{AAAA}/{MM}/{Type}/{Numéro}_{Type}_{AAAAMMJJ}_v{version}.pdf
- * (arborescence du CDC §14.2, sur le volume persistant). Une réédition a son propre fichier.
+ * Chemin du PDF dans le stockage selon l'arborescence du portefeuille (Étape 5, D41) :
+ * <branche>/<produit>/<client>/<cotation>/<contrat>/<avenant>/<facture>/{avoir,recus,relances,echeances,certificats}/<nom>.pdf
+ *
+ * Règles :
+ * - Codes et numéros lisibles uniquement (aucun nom de personne / PII).
+ * - Arborescence adaptative : les niveaux intermédiaires absents sont omis.
+ * - Validation stricte : pas de '..', segments conformes à stockage.py, max 10 segments au total.
  */
-export function cheminStockage(d: { produitCode: string; type: TypeDocument; numero: string; dateEmission: DateIso; version: number }): string {
+export function cheminStockageArborescent(d: ContexteCheminStockage): string {
+  const segments: string[] = [
+    nettoyerSegment(d.brancheCode),
+    nettoyerSegment(d.produitCode),
+    nettoyerSegment(d.clientIdentifiant),
+    nettoyerSegment(d.cotationNumero),
+  ];
+
+  if (d.policeNumero) {
+    segments.push(nettoyerSegment(d.policeNumero));
+  }
+
+  if (d.avenantNumero) {
+    segments.push(nettoyerSegment(d.avenantNumero));
+  }
+
+  switch (d.type) {
+    case "COTATION":
+    case "CP":
+      break;
+
+    case "CERTIFICAT":
+      segments.push("certificats");
+      break;
+
+    case "FACTURE":
+      segments.push(nettoyerSegment(d.numero));
+      break;
+
+    case "AVOIR":
+      if (d.factureNumero) segments.push(nettoyerSegment(d.factureNumero));
+      segments.push("avoir");
+      break;
+
+    case "RECU":
+      if (d.factureNumero) segments.push(nettoyerSegment(d.factureNumero));
+      segments.push("recus");
+      break;
+
+    case "RELANCE":
+      if (d.factureNumero) segments.push(nettoyerSegment(d.factureNumero));
+      segments.push("relances");
+      break;
+
+    case "AVIS_ECHEANCE":
+      if (d.factureNumero) segments.push(nettoyerSegment(d.factureNumero));
+      segments.push("echeances");
+      break;
+  }
+
+  const nomFichier = `${nettoyerSegment(d.numero)}_${d.type}_v${d.version}.pdf`;
+  segments.push(nomFichier);
+
+  if (segments.length > 10) {
+    throw new Error(`Chemin de stockage invalide : dépasse 10 segments (${segments.length} segments)`);
+  }
+
+  for (const s of segments) {
+    if (!segmentValide(s)) {
+      throw new Error(`Segment de chemin invalide : ${s}`);
+    }
+  }
+
+  return segments.join("/");
+}
+
+/**
+ * Chemin du PDF dans le stockage : arborescent si le contexte complet est fourni (D41),
+ * sinon format historique CDC §14.2 / D11 pour rétrocompatibilité.
+ */
+export function cheminStockage(d: ContexteCheminStockage | ContexteCheminLegacy): string {
+  if ("brancheCode" in d && "cotationNumero" in d) {
+    return cheminStockageArborescent(d);
+  }
   const [annee, mois, jour] = d.dateEmission.split("-");
   const propre = (texte: string) => texte.replace(/[^A-Za-z0-9_-]/g, "_");
   return `${propre(d.produitCode)}/${annee}/${mois}/${d.type}/${propre(d.numero)}_${d.type}_${annee}${mois}${jour}_v${d.version}.pdf`;

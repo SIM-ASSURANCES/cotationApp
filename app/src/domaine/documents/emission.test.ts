@@ -3,7 +3,15 @@ import { describe, expect, it } from "vitest";
 import { calculer, type EntreeCalcul } from "../calcul/calcul";
 import { CHAMPS_FACULTATIFS } from "./dictionnaire";
 import { donneesDocument, type SourceDocument } from "./donnees";
-import { cheminStockage, masquerSouscripteur, problemesVisas, statutPublic } from "./emission";
+import {
+  cheminStockage,
+  cheminStockageArborescent,
+  masquerSouscripteur,
+  nettoyerSegment,
+  problemesVisas,
+  segmentValide,
+  statutPublic,
+} from "./emission";
 import { SOCIETE_DEFAUT, lireLignes, lireSociete, problemesSociete } from "./societe";
 
 describe("émission : règles pures (CDC §14)", () => {
@@ -18,6 +26,171 @@ describe("émission : règles pures (CDC §14)", () => {
     expect(cheminStockage({ produitCode: "RELAXSANTE", type: "COTATION", numero: "COT-2026-10-0001", dateEmission: "2026-10-06", version: 2 })).toBe(
       "RELAXSANTE/2026/10/COTATION/COT-2026-10-0001_COTATION_20261006_v2.pdf",
     );
+  });
+
+  describe("arborescence de stockage portefeuille (Étape 5, D41)", () => {
+    it("valide et nettoie les segments selon les contraintes de stockage.py", () => {
+      expect(segmentValide("SANTE")).toBe(true);
+      expect(segmentValide("CLI-12")).toBe(true);
+      expect(segmentValide("COT-2026-10-0001")).toBe(true);
+      expect(segmentValide("..")).toBe(false);
+      expect(segmentValide(".")).toBe(false);
+      expect(segmentValide("a/b")).toBe(false);
+      expect(segmentValide("")).toBe(false);
+
+      expect(nettoyerSegment("Nom avec espaces & accents !")).toBe("Nom_avec_espaces___accents__");
+      expect(nettoyerSegment("../tentative")).toBe("S_tentative");
+      expect(nettoyerSegment(".cache")).toBe("S_cache");
+      expect(nettoyerSegment("-debut")).toBe("S_debut");
+    });
+
+    it("génère le chemin d'un devis cotation (5 segments)", () => {
+      const chemin = cheminStockageArborescent({
+        brancheCode: "MALADIE",
+        produitCode: "RELAXSANTE",
+        clientIdentifiant: "PROSP-45",
+        cotationNumero: "COT-2026-10-0001",
+        type: "COTATION",
+        numero: "COT-2026-10-0001",
+        version: 1,
+      });
+      expect(chemin).toBe("MALADIE/RELAXSANTE/PROSP-45/COT-2026-10-0001/COT-2026-10-0001_COTATION_v1.pdf");
+      expect(chemin.split("/")).toHaveLength(5);
+    });
+
+    it("génère le chemin d'un contrat CP (6 segments)", () => {
+      const chemin = cheminStockageArborescent({
+        brancheCode: "SANTE",
+        produitCode: "RELAXSANTE",
+        clientIdentifiant: "CLI-12",
+        cotationNumero: "COT-2026-10-0001",
+        policeNumero: "POL-2026-000001",
+        type: "CP",
+        numero: "POL-2026-000001",
+        version: 1,
+      });
+      expect(chemin).toBe("SANTE/RELAXSANTE/CLI-12/COT-2026-10-0001/POL-2026-000001/POL-2026-000001_CP_v1.pdf");
+      expect(chemin.split("/")).toHaveLength(6);
+    });
+
+    it("génère le chemin d'un certificat d'adhésion initial (7 segments) et d'avenant (8 segments)", () => {
+      const initial = cheminStockageArborescent({
+        brancheCode: "SANTE",
+        produitCode: "RELAXSANTE",
+        clientIdentifiant: "CLI-12",
+        cotationNumero: "COT-2026-10-0001",
+        policeNumero: "POL-2026-000001",
+        type: "CERTIFICAT",
+        numero: "POL-2026-000001-001",
+        version: 1,
+      });
+      expect(initial).toBe("SANTE/RELAXSANTE/CLI-12/COT-2026-10-0001/POL-2026-000001/certificats/POL-2026-000001-001_CERTIFICAT_v1.pdf");
+      expect(initial.split("/")).toHaveLength(7);
+
+      const avenant = cheminStockageArborescent({
+        brancheCode: "SANTE",
+        produitCode: "RELAXSANTE",
+        clientIdentifiant: "CLI-12",
+        cotationNumero: "COT-2026-10-0001",
+        policeNumero: "POL-2026-000001",
+        avenantNumero: "AVN-02",
+        type: "CERTIFICAT",
+        numero: "POL-2026-000001-042",
+        version: 1,
+      });
+      expect(avenant).toBe("SANTE/RELAXSANTE/CLI-12/COT-2026-10-0001/POL-2026-000001/AVN-02/certificats/POL-2026-000001-042_CERTIFICAT_v1.pdf");
+      expect(avenant.split("/")).toHaveLength(8);
+    });
+
+    it("génère le chemin d'une facture d'affaire nouvelle (7 segments) et d'avenant (8 segments)", () => {
+      const an = cheminStockageArborescent({
+        brancheCode: "INCENDIE_DOMMAGES",
+        produitCode: "SECURHOME",
+        clientIdentifiant: "CLI-5",
+        cotationNumero: "COT-2026-10-0005",
+        policeNumero: "POL-2026-000005",
+        type: "FACTURE",
+        numero: "FAC-2026-10-0001",
+        version: 1,
+      });
+      expect(an).toBe("INCENDIE_DOMMAGES/SECURHOME/CLI-5/COT-2026-10-0005/POL-2026-000005/FAC-2026-10-0001/FAC-2026-10-0001_FACTURE_v1.pdf");
+      expect(an.split("/")).toHaveLength(7);
+
+      const avn = cheminStockageArborescent({
+        brancheCode: "SANTE",
+        produitCode: "RELAXSANTE",
+        clientIdentifiant: "CLI-12",
+        cotationNumero: "COT-2026-10-0001",
+        policeNumero: "POL-2026-000001",
+        avenantNumero: "AVN-01",
+        type: "FACTURE",
+        numero: "FAC-2026-10-0002",
+        version: 1,
+      });
+      expect(avn).toBe("SANTE/RELAXSANTE/CLI-12/COT-2026-10-0001/POL-2026-000001/AVN-01/FAC-2026-10-0002/FAC-2026-10-0002_FACTURE_v1.pdf");
+      expect(avn.split("/")).toHaveLength(8);
+    });
+
+    it("génère le chemin des pièces satellites : reçu, relance, avis d'échéance et avoir", () => {
+      const contexteBase = {
+        brancheCode: "ACCIDENTS_CORPORELS",
+        produitCode: "SECURPRO",
+        clientIdentifiant: "CLI-8",
+        cotationNumero: "COT-2026-10-0008",
+        policeNumero: "POL-2026-000008",
+        factureNumero: "FAC-2026-10-0008",
+      };
+
+      const recu = cheminStockageArborescent({
+        ...contexteBase,
+        type: "RECU",
+        numero: "REC-2026-10-0001",
+        version: 1,
+      });
+      expect(recu).toBe("ACCIDENTS_CORPORELS/SECURPRO/CLI-8/COT-2026-10-0008/POL-2026-000008/FAC-2026-10-0008/recus/REC-2026-10-0001_RECU_v1.pdf");
+      expect(recu.split("/")).toHaveLength(8);
+
+      const relance = cheminStockageArborescent({
+        ...contexteBase,
+        type: "RELANCE",
+        numero: "REL-2026-10-0001",
+        version: 1,
+      });
+      expect(relance).toBe("ACCIDENTS_CORPORELS/SECURPRO/CLI-8/COT-2026-10-0008/POL-2026-000008/FAC-2026-10-0008/relances/REL-2026-10-0001_RELANCE_v1.pdf");
+      expect(relance.split("/")).toHaveLength(8);
+
+      const avis = cheminStockageArborescent({
+        ...contexteBase,
+        type: "AVIS_ECHEANCE",
+        numero: "AVIS-2026-10-0001",
+        version: 1,
+      });
+      expect(avis).toBe("ACCIDENTS_CORPORELS/SECURPRO/CLI-8/COT-2026-10-0008/POL-2026-000008/FAC-2026-10-0008/echeances/AVIS-2026-10-0001_AVIS_ECHEANCE_v1.pdf");
+      expect(avis.split("/")).toHaveLength(8);
+
+      const avoir = cheminStockageArborescent({
+        ...contexteBase,
+        type: "AVOIR",
+        numero: "AV-2026-10-0001",
+        version: 1,
+      });
+      expect(avoir).toBe("ACCIDENTS_CORPORELS/SECURPRO/CLI-8/COT-2026-10-0008/POL-2026-000008/FAC-2026-10-0008/avoir/AV-2026-10-0001_AVOIR_v1.pdf");
+      expect(avoir.split("/")).toHaveLength(8);
+    });
+
+    it("utilise cheminStockage de manière polymorphe avec le contexte complet", () => {
+      const chemin = cheminStockage({
+        brancheCode: "MALADIE",
+        produitCode: "RELAXSANTE",
+        clientIdentifiant: "CLI-1",
+        cotationNumero: "COT-2026-10-0001",
+        policeNumero: "POL-2026-000001",
+        type: "CP",
+        numero: "POL-2026-000001",
+        version: 1,
+      });
+      expect(chemin).toBe("MALADIE/RELAXSANTE/CLI-1/COT-2026-10-0001/POL-2026-000001/POL-2026-000001_CP_v1.pdf");
+    });
   });
 
   it("statut public : valide, expirée, annulée par avoir (T12)", () => {

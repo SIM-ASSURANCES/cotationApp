@@ -27,3 +27,4 @@ FROM "profils" p
 CROSS JOIN (VALUES ('VALIDER_COTATION'), ('EMETTRE_CONTRAT'), ('EMETTRE_FACTURE')) AS a("action")
 WHERE p."code" = 'DIRECTION_GENERALE'
 ON CONFLICT ("profil_id", "action") DO UPDATE SET "niveau" = 'VALIDE';
+

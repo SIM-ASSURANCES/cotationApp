@@ -69,7 +69,7 @@ describe("saisie des montants : analyseur unique, du formulaire à la base", () 
     expect(etat.erreur).toBeUndefined();
     const v = (await versions()).find((x) => x.dateEffet.toISOString().startsWith(date))!;
     expect(v.formules.find((f) => f.code === "SOLO")!.primeUnitaire.toFixed()).toBe("93581.33");
-    expect(v.seuilValidationTtc?.toFixed()).toBe("20000000");
+    expect(v.seuilValidationTtc).toBeNull();
   });
 
   it.each(["1.234,5", "1,234.5", "1,2,3", "abc"])("refuse « %s » avec un message en français, sans erreur 500 ni enregistrement partiel", async (saisie) => {

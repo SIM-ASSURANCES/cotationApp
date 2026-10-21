@@ -89,6 +89,11 @@ async function produit(seuil: string | null): Promise<string> {
     references: { cgModeleCode: cg, cgVisa: VISA, csModeleCode: null, csVisa: null },
   };
   await creerVersion(technique, code, version, null);
+  await obtenirPrisma().parametre.upsert({
+    where: { cle_dateEffet: { cle: "seuil_validation_global", dateEffet: new Date("2020-01-01T00:00:00.000Z") } },
+    update: { valeur: seuil ?? "10000000" },
+    create: { cle: "seuil_validation_global", valeur: seuil ?? "10000000", dateEffet: new Date("2020-01-01T00:00:00.000Z"), creePar: "test" },
+  });
   await publier("CP", code);
   return code;
 }
@@ -162,6 +167,14 @@ beforeAll(async () => {
 
 afterAll(async () => {
   fixerDateMinimumEffetPourTests(null);
+  await obtenirPrisma().parametre.upsert({
+    where: { cle_dateEffet: { cle: "seuil_validation_global", dateEffet: new Date("2026-01-01T00:00:00.000Z") } },
+    update: { valeur: "10000000" },
+    create: { cle: "seuil_validation_global", valeur: "10000000", dateEffet: new Date("2026-01-01T00:00:00.000Z"), creePar: "test" },
+  });
+  await obtenirPrisma().parametre.deleteMany({
+    where: { cle: "seuil_validation_global", dateEffet: { not: new Date("2026-01-01T00:00:00.000Z") } },
+  });
   remplacerGenerateur(null);
   remplacerStockage(null);
   await obtenirPrisma().$disconnect();
@@ -242,12 +255,12 @@ describe("émission d'un contrat : « Oui (sous seuil) » du Gestionnaire produc
     }
   });
 
-  it("le Commercial (aucun droit) et la Direction Générale (lecture) n'émettent ni ne demandent", async () => {
+  it("le Commercial (aucun droit) n'émet ni ne demande ; la Direction Générale valide (fin écart D21)", async () => {
     const { cotationId } = await contrat(await produit("200000"));
 
     await expect(soumettreCp(commercial, cotationId, null)).rejects.toBeInstanceOf(ErreurAcces);
-    await expect(soumettreCp(dg, cotationId, null)).rejects.toBeInstanceOf(ErreurAcces);
     await expect(lireValidationContrat(commercial, cotationId)).rejects.toBeInstanceOf(ErreurAcces);
+    expect((await soumettreCp(dg, cotationId, null)).statut).toBe("EMISE");
   });
 
   it("la base garde une seule demande ouverte par police et ne laisse pas modifier une demande décidée", async () => {

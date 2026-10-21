@@ -2,7 +2,7 @@ import "server-only";
 
 import { Prisma } from "@/generated/prisma/client";
 
-import type { DateIso } from "@/domaine/calcul/dates";
+import { dateMinimumEffetCotation, type DateIso } from "@/domaine/calcul/dates";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import {
   cleFormatNumero,
@@ -63,7 +63,7 @@ export async function consulterSociete(acteur: UtilisateurCourant): Promise<{ pa
 
 /** Ajoute une valeur historisée d'un paramètre (date d'effet jamais passée), journalisée dans la même transaction. */
 export async function ajouterParametre(acteur: UtilisateurCourant, cle: string, valeur: string, dateEffet: DateIso, apres: Prisma.InputJsonValue, adresseIp: string | null): Promise<void> {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateEffet) || dateEffet < aujourdhui()) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateEffet) || dateEffet < dateMinimumEffetCotation()) {
     throw new ErreurMetier("Date d'effet invalide ou passée : un paramètre ne se modifie jamais rétroactivement.");
   }
   try {

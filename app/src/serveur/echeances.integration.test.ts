@@ -338,10 +338,10 @@ describe("avis d'échéance (CDC §12) : liste du jour, un seul avis par échéa
     expect(await appels(f.id, "AVIS_ECHEANCE")).toEqual([]);
   });
 
-  it("droits (H21) : la Comptabilité génère ; le Commercial ne lit pas la liste ; la DG la lit sans générer", async () => {
+  it("droits (H21) : la Comptabilité génère ; le Commercial ne lit pas la liste ni ne génère ; la DG la lit (fin écart D21)", async () => {
     await expect(listeDuJour(commercial)).rejects.toThrow(ErreurAcces);
+    await expect(genererAppel(commercial, { type: "AVIS_ECHEANCE", factureId: 1, echeanceNumero: 1, niveau: null }, null)).rejects.toThrow(ErreurAcces);
     await expect(listeDuJour(dg)).resolves.toBeTruthy();
-    await expect(genererAppel(dg, { type: "AVIS_ECHEANCE", factureId: 1, echeanceNumero: 1, niveau: null }, null)).rejects.toThrow(ErreurAcces);
   });
 });
 

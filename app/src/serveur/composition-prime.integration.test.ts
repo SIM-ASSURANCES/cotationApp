@@ -98,6 +98,12 @@ const LIGNES_IARD = () => [
 
 async function produitGaranties(surcharge: Partial<VersionSaisie> = {}): Promise<string> {
   const code = CODE("PGAR");
+  const seuil = surcharge.seuilValidationTtc ?? "10000000";
+  await obtenirPrisma().parametre.upsert({
+    where: { cle_dateEffet: { cle: "seuil_validation_global", dateEffet: new Date("2026-01-01T00:00:00.000Z") } },
+    update: { valeur: seuil },
+    create: { cle: "seuil_validation_global", valeur: seuil, dateEffet: new Date("2026-01-01T00:00:00.000Z"), creePar: "test" },
+  });
   await creerProduit(technique, { code, libelle: "Produit par garanties (test)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: IARD }, null);
   await creerVersion(technique, code, versionGaranties(surcharge), null);
   return code;
@@ -153,6 +159,14 @@ const repasserALaFormule = (code: string) =>
 
 afterAll(async () => {
   fixerDateMinimumEffetPourTests(null);
+  await obtenirPrisma().parametre.upsert({
+    where: { cle_dateEffet: { cle: "seuil_validation_global", dateEffet: new Date("2026-01-01T00:00:00.000Z") } },
+    update: { valeur: "10000000" },
+    create: { cle: "seuil_validation_global", valeur: "10000000", dateEffet: new Date("2026-01-01T00:00:00.000Z"), creePar: "test" },
+  });
+  await obtenirPrisma().parametre.deleteMany({
+    where: { cle: "seuil_validation_global", dateEffet: { not: new Date("2026-01-01T00:00:00.000Z") } },
+  });
   await obtenirPrisma().$disconnect();
 });
 

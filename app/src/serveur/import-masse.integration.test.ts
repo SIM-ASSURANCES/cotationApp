@@ -218,18 +218,20 @@ beforeAll(async () => {
   await publier("FACTURE", code, CONTENU_FACTURE);
   produitCode = code;
 
-  reglerReprise({ delaiMs: 150 });
-  await viderFile(FILE_IMPORTS);
-  await viderFile(FILE_STOCKAGE);
-  // Le travailleur reprend au démarrage les écritures différées laissées par d'autres tests : on part d'une table vide.
-  await obtenirPrisma().ecritureDifferee.deleteMany();
-  travailleur = await demarrerTravailleur({ journal: () => undefined });
+  if (process.env.REDIS_URL) {
+    reglerReprise({ delaiMs: 150 });
+    await viderFile(FILE_IMPORTS);
+    await viderFile(FILE_STOCKAGE);
+    // Le travailleur reprend au démarrage les écritures différées laissées par d'autres tests : on part d'une table vide.
+    await obtenirPrisma().ecritureDifferee.deleteMany();
+    travailleur = await demarrerTravailleur({ journal: () => undefined });
+  }
 });
 
 afterAll(async () => {
   fixerDateMinimumEffetPourTests(null);
   await travailleur?.fermer();
-  await fermerFiles();
+  if (process.env.REDIS_URL) await fermerFiles();
   remplacerGenerateur(null);
   remplacerStockage(null);
   await obtenirPrisma().$disconnect();
@@ -273,7 +275,7 @@ describe("fichier modèle et lecture du fichier", () => {
   });
 });
 
-describe("import en masse : contrôle, rapport, confirmation, traitement", () => {
+describe.skipIf(!process.env.REDIS_URL)("import en masse : contrôle, rapport, confirmation, traitement", () => {
   it("contrôle sans rien créer ; rapport .xlsx ; confirmation en UNE version de la liste ; un certificat par ligne valide ; ZIP et récapitulatif", async () => {
     const { policeId } = await policeDeGroupe();
     const n = [numero(), numero(), numero(), numero()];
@@ -385,7 +387,7 @@ describe("import en masse : contrôle, rapport, confirmation, traitement", () =>
   });
 });
 
-describe("H64 : pièces à émettre après un import, visibles sur la police jusqu'à leur émission", () => {
+describe.skipIf(!process.env.REDIS_URL)("H64 : pièces à émettre après un import, visibles sur la police jusqu'à leur émission", () => {
   it("l'import crée « Nouvelle version des CP à émettre » et « Facture d'avenant à émettre » ; chacune disparaît à l'émission de sa pièce, pas avant", async () => {
     const { policeId, cotationId } = await policeDeGroupe();
     await emettreCp(technique, cotationId, null);
@@ -448,7 +450,7 @@ describe("H64 : pièces à émettre après un import, visibles sur la police jus
   });
 });
 
-describe("T14 : stockage indisponible, le document reste émis et l'écriture est reprise", () => {
+describe.skipIf(!process.env.REDIS_URL)("T14 : stockage indisponible, le document reste émis et l'écriture est reprise", () => {
   it("panne : certificat émis « en attente d'écriture », alerte admin, téléchargement depuis la base ; retour du stockage : écriture reprise par la file", async () => {
     const { policeId } = await policeDeGroupe();
     panne = true;

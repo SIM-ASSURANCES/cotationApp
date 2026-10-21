@@ -171,10 +171,23 @@ beforeAll(async () => {
   [technique, dg, commercial] = [await nouveau("TECHNIQUE"), await nouveau("DIRECTION_GENERALE"), await nouveau("COMMERCIAL")];
   // Les CP utilisent {{ signature_sim }} (CDC §10.1) : la signature scannée de SIM doit être paramétrée (image inventée).
   await assurerSignature(technique);
+  await obtenirPrisma().parametre.upsert({
+    where: { cle_dateEffet: { cle: "seuil_validation_global", dateEffet: new Date("2026-01-01T00:00:00.000Z") } },
+    update: { valeur: "20000000" },
+    create: { cle: "seuil_validation_global", valeur: "20000000", dateEffet: new Date("2026-01-01T00:00:00.000Z"), creePar: "test" },
+  });
 });
 
 afterAll(async () => {
   fixerDateMinimumEffetPourTests(null);
+  await obtenirPrisma().parametre.upsert({
+    where: { cle_dateEffet: { cle: "seuil_validation_global", dateEffet: new Date("2026-01-01T00:00:00.000Z") } },
+    update: { valeur: "10000000" },
+    create: { cle: "seuil_validation_global", valeur: "10000000", dateEffet: new Date("2026-01-01T00:00:00.000Z"), creePar: "test" },
+  });
+  await obtenirPrisma().parametre.deleteMany({
+    where: { cle: "seuil_validation_global", dateEffet: { not: new Date("2026-01-01T00:00:00.000Z") } },
+  });
   remplacerGenerateur(null);
   remplacerStockage(null);
   await obtenirPrisma().$disconnect();

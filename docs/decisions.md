@@ -247,7 +247,7 @@ Conséquences retenues pour le code (session 4.0) :
 - **Date d'effet des taux de démarrage** : 01/01/2026 (`prisma/donnees/taxes-loi.json`), **validée par Thierry le 08/10/2026 à titre provisoire**. La date réelle d'entrée en vigueur n'a pas été donnée : à confirmer par la Technique (ligne « en attente »).
 - **Branches fiscales** : liste **paramétrable** (écran « Branches », table `branches`), et non plus figée. Chaque ajout ou modification (libellé, état actif) est journalisé. Le code ne change jamais et ne se supprime pas ; une branche désactivée garde ses taux et ses produits mais n'en reçoit plus. Taux et produits ne se rattachent qu'à une branche active de la liste. Branches de démarrage (`prisma/donnees/branches.json`) : `IA`, `DECES`, `SANTE`, `IARD`. Produits hors tableau : H32 ci-dessous.
 - **Droit « modifier une cotation » (H9)** : c'est le droit existant « Créer une cotation » (pas de nouvelle ligne dans la matrice). Celui qui modifie le brouillon d'un autre peut aussi le soumettre ; soumettre ne compte pas comme une modification.
-- **Validation (H7)** : nouveau droit paramétrable « Valider une cotation » (`VALIDER_COTATION`), « Valide » pour la Technique seule. La Direction Générale, qui validait jusqu'ici, ne valide plus par défaut ; l'administrateur peut lui redonner ce droit. **Validé par Thierry le 08/10/2026.** **Écart avec le CDC §4.1** (« Technique ou DG ») : **à présenter au superviseur**.
+- **Validation (H7)** : nouveau droit paramétrable « Valider une cotation » (`VALIDER_COTATION`), « Valide » pour la Technique seule. La Direction Générale, qui validait jusqu'ici, ne valide plus par défaut ; l'administrateur peut lui redonner ce droit. **Validé par Thierry le 08/10/2026.** **Écart avec le CDC §4.1** (« Technique ou DG ») : **à présenter au superviseur** *(écart clos le 21/10/2026 par D39 : Technique et Direction Générale valident toutes deux)*.
 - **Droits : valeur « Proposition » supprimée, Comptabilité en « Lecture » sur le paramétrage (décision de Thierry du 08/10/2026, corrections de la 4a)** : le CDC §4 donne « Taxes (proposition) » à la Comptabilité pour « Paramétrer produits, taxes, arrondis ». Aucun circuit de proposition n'existe : la valeur « Proposition » est retirée de la liste des niveaux et la Comptabilité passe en **Lecture** (elle consulte, ne modifie rien). **Écart avec le CDC §4** (comme celui de la validation ci-dessus) : **à présenter au superviseur**. La migration `20261009100000_validation_contrat_et_droits` convertit en « Lecture » toute ligne `PROPOSITION` déjà en base et le journalise (action `DROIT_MODIFIE`, auteur `migration`). Un test compare ligne à ligne les droits par défaut (code et base) au tableau du CDC §4, hors cette cellule et le droit ajouté « Valider une cotation ».
 - **Composante absorbante** : retirée de l'écran de version de produit (sans effet depuis le moteur v2, H4). La colonne reste en base avec la valeur fixe `TAXE`, pour les versions déjà enregistrées.
 - **H32 (nouveau)** : branche fiscale et taux pour SECURMOTO, RELAXVOYAGE, SECURECOLTE et les autres produits hors tableau de la loi communiqué par la Technique. Tant qu'elle n'a pas répondu, ces produits n'ont pas de taux et leur calcul est refusé (« Aucune taxe en vigueur »).
@@ -656,3 +656,27 @@ Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir)
   1. Le renouvellement d'un produit à la formule reste inchangé au franc près (T1).
   2. Levée des messages de refus pour ces deux cas.
   3. `garanties_souscrites[]` avec `montant_garanti` transmis aux documents émis (CP et facture).
+
+## D39 — Session Étape 3 : Seuil unique de validation (21/10/2026)
+
+- **Date** : 21/10/2026. Branche `phase-seuil-unique`. Réponse de la Technique du 20/10/2026.
+- **Seuil unique global (point 1)** :
+  1. Le seuil de validation devient un paramètre global d'entreprise (écran « Société », clé `seuil_validation_global`), avec une valeur par défaut de **10 000 000 FCFA TTC**, historisé avec date d'effet (jamais rétroactive) et journalisé (`PARAMETRE_MODIFIE`).
+  2. Le seuil par version de produit est retiré de la saisie (masqué et figé à null sur les nouvelles versions). La colonne `seuil_validation_ttc` en base est conservée pour l'historique et l'audit, mais n'est plus utilisée pour les contrôles de seuil.
+  3. La règle de comparaison stricte (`TTC > seuil`) issue de D18 est strictement maintenue : 9 999 999 F et 10 000 000 F passent directement ; 10 000 001 F passe en statut « À valider » (`SEUIL_DEPASSE`).
+- **Valideurs et fin de l'écart D21 (point 2)** :
+  1. Les profils **Technique** ET **Direction Générale** peuvent désormais tous les deux valider :
+     - Les cotations au-dessus du seuil (`VALIDER_COTATION` : niveau `VALIDE` par défaut pour DG et Technique).
+     - L'émission des conditions particulières de contrat au-dessus du seuil (H44, `EMETTRE_CONTRAT` : niveau `VALIDE` par défaut pour DG, `OUI` pour Technique).
+     - L'émission des factures au-dessus du seuil (H56, `EMETTRE_FACTURE` : niveau `VALIDE` par défaut pour DG, `OUI` pour Technique et Comptabilité).
+  2. **Clôture de l'écart D21** : l'écart avec le CDC §4.1 est officiellement clos.
+- **Circuit de validation (point 3, arbitrage confirmé par Thierry)** :
+  1. Circuit à **validation unique par l'un des deux profils** (option 1 confirmée) : une validation par la Technique OU par la Direction Générale suffit pour émettre le document.
+- **Séparation des tâches inchangée (point 4)** :
+  1. L'auteur d'un document, son préparateur, son demandeur ou toute personne ayant modifié le brouillon ne peut en aucun cas le valider lui-même (CDC §4.1, H9, H95).
+- **Intangibilité (T10)** :
+  1. Les cotations et documents émis avant le changement restent strictement intangibles et ne sont jamais recalculés ni renvoyés en validation.
+- **Hypothèses nouvelles** :
+  - **H109** (**Seuil de validation global historisé**) : la valeur en vigueur est lue selon la date d'effet de la pièce ou de sa version dans la table `parametres` (`cle = 'seuil_validation_global'`). Si aucune ligne n'est applicable, le défaut de 10 000 000 FCFA s'applique.
+  - **H110** (**Validation par l'un des deux profils**) : le profil qui valide émet le document et clôt la demande de validation. Aucun circuit séquentiel n'est exigé.
+

@@ -121,10 +121,23 @@ beforeAll(async () => {
   [technique, technique2, commercial] = [await nouveauCompte("TECHNIQUE"), await nouveauCompte("TECHNIQUE"), await nouveauCompte("COMMERCIAL")];
   brancheSante = await parametresBranche(`SANTE_${CODE("G")}`, { mixte: false });
   brancheMixte = await parametresBranche(`IARD_${CODE("G")}`, { mixte: true });
+  await obtenirPrisma().parametre.upsert({
+    where: { cle_dateEffet: { cle: "seuil_validation_global", dateEffet: new Date("2026-01-01T00:00:00.000Z") } },
+    update: { valeur: "20000000" },
+    create: { cle: "seuil_validation_global", valeur: "20000000", dateEffet: new Date("2026-01-01T00:00:00.000Z"), creePar: "test" },
+  });
 });
 
 afterAll(async () => {
   fixerDateMinimumEffetPourTests(null);
+  await obtenirPrisma().parametre.upsert({
+    where: { cle_dateEffet: { cle: "seuil_validation_global", dateEffet: new Date("2026-01-01T00:00:00.000Z") } },
+    update: { valeur: "10000000" },
+    create: { cle: "seuil_validation_global", valeur: "10000000", dateEffet: new Date("2026-01-01T00:00:00.000Z"), creePar: "test" },
+  });
+  await obtenirPrisma().parametre.deleteMany({
+    where: { cle: "seuil_validation_global", dateEffet: { not: new Date("2026-01-01T00:00:00.000Z") } },
+  });
   await obtenirPrisma().$disconnect();
 });
 

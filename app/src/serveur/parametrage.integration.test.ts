@@ -251,9 +251,9 @@ describe("règles de gestion", () => {
     await expect(calculerPourProduit(admin, demande)).rejects.toBeInstanceOf(ErreurAcces);
   });
 
-  it("signale la double validation au-dessus du seuil de TTC du produit", async () => {
+  it("signale la double validation au-dessus du seuil de validation global", async () => {
     const petit = await calculerPourProduit(technique, { codeProduit: code, regimeTaxe: "GROUPE", ...ANNEE, lignes: [{ codeFormule: "SOLO", effectif: 1 }] });
-    const grand = await calculerPourProduit(technique, { codeProduit: code, regimeTaxe: "GROUPE", ...ANNEE, lignes: [{ codeFormule: "FAMILLE", effectif: 10 }] });
+    const grand = await calculerPourProduit(technique, { codeProduit: code, regimeTaxe: "GROUPE", ...ANNEE, lignes: [{ codeFormule: "FAMILLE", effectif: 50 }] });
 
     expect(petit.doubleValidationRequise).toBe(false);
     expect(grand.doubleValidationRequise).toBe(true);

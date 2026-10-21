@@ -124,8 +124,13 @@ async function police(saisie: Omit<SaisieCotation, "clientId" | "motifForcage" |
 }
 
 /** T2 : CGE-SN (nom de société inventé dans le CDC), RELAXSANTE 80 %, Solo 8, Famille 31, 4 échéances. */
-const policeT2 = () =>
-  police(
+const policeT2 = async () => {
+  await obtenirPrisma().parametre.upsert({
+    where: { cle_dateEffet: { cle: "seuil_validation_global", dateEffet: new Date("2020-01-01T00:00:00.000Z") } },
+    update: { valeur: "20000000" },
+    create: { cle: "seuil_validation_global", valeur: "20000000", dateEffet: new Date("2020-01-01T00:00:00.000Z"), creePar: "test" },
+  });
+  return police(
     {
       codeProduit: produitGroupe,
       typeContrat: "GROUPE",
@@ -141,10 +146,16 @@ const policeT2 = () =>
     },
     ["SOLO", "FAMILLE"],
   );
+};
 
 /** T3 : facture individuelle YAO (nom inventé du CDC), effet 22/07/2026, échéance 31/12/2026. */
-const policeT3 = (dateEffet = "2026-07-22") =>
-  police(
+const policeT3 = async (dateEffet = "2026-07-22") => {
+  await obtenirPrisma().parametre.upsert({
+    where: { cle_dateEffet: { cle: "seuil_validation_global", dateEffet: new Date("2020-01-01T00:00:00.000Z") } },
+    update: { valeur: "200000" },
+    create: { cle: "seuil_validation_global", valeur: "200000", dateEffet: new Date("2020-01-01T00:00:00.000Z"), creePar: "test" },
+  });
+  return police(
     {
       codeProduit: produitIndividuel,
       typeContrat: "INDIVIDUEL",
@@ -157,6 +168,7 @@ const policeT3 = (dateEffet = "2026-07-22") =>
     },
     ["F"],
   );
+};
 
 const derniere = (type: string) => [...demandes].reverse().find((d) => (d.donnees.doc as { type: string }).type === type)!;
 const doc = (d: DemandePdf) => d.donnees.doc as Record<string, string>;
@@ -279,6 +291,14 @@ beforeAll(async () => {
 
 afterAll(async () => {
   fixerDateMinimumEffetPourTests(null);
+  await obtenirPrisma().parametre.upsert({
+    where: { cle_dateEffet: { cle: "seuil_validation_global", dateEffet: new Date("2026-01-01T00:00:00.000Z") } },
+    update: { valeur: "10000000" },
+    create: { cle: "seuil_validation_global", valeur: "10000000", dateEffet: new Date("2026-01-01T00:00:00.000Z"), creePar: "test" },
+  });
+  await obtenirPrisma().parametre.deleteMany({
+    where: { cle: "seuil_validation_global", dateEffet: { not: new Date("2026-01-01T00:00:00.000Z") } },
+  });
   remplacerGenerateur(null);
   remplacerStockage(null);
   await obtenirPrisma().$disconnect();
@@ -436,7 +456,7 @@ describe("T3 : facture individuelle YAO (prorata), paiement de 41 000, reçu et 
     await emettreFacture(technique, id, null);
     await expect(enregistrerPaiement(technique, id, paiement("1000"), null)).rejects.toThrow(ErreurAcces);
     await expect(lireFacture(commercial, id)).rejects.toThrow(ErreurAcces);
-    await expect(creerFactureAffaireNouvelle(dg, p.policeId, null, null)).rejects.toThrow(ErreurAcces);
+    await expect(creerFactureAffaireNouvelle(commercial, p.policeId, null, null)).rejects.toThrow(ErreurAcces);
   });
 });
 
@@ -622,7 +642,7 @@ describe("numérotation : sans trou, même sous concurrence", () => {
 });
 
 describe("« Oui (sous seuil) » à l'émission d'une facture (H21 fermée, comme les contrats)", () => {
-  it("Gestionnaire au-dessus du seuil : « À valider » ; ni lui ni la DG n'émettent ; la Comptabilité émet", async () => {
+  it("Gestionnaire au-dessus du seuil : « À valider » ; ni lui ni le commercial n'émettent ; la DG et la Comptabilité émettent", async () => {
     const p = await policeT3("2026-01-01");
     const id = await creerFactureAffaireNouvelle(gestionnaire, p.policeId, null, null);
     const lue = (await lireFacture(gestionnaire, id))!;
@@ -632,8 +652,8 @@ describe("« Oui (sous seuil) » à l'émission d'une facture (H21 fermée, comm
     expect((await lireFacture(gestionnaire, id))!).toMatchObject({ statut: "A_VALIDER", numero: null, demandePar: gestionnaire.identifiant });
     await expect(emettreFacture(gestionnaire, id, null)).rejects.toThrow(/attend déjà sa validation/);
     await expect(emettreFacture(gestionnaire2, id, null)).rejects.toThrow(/attend déjà sa validation/); // autre « sous seuil »
-    await expect(emettreFacture(dg, id, null)).rejects.toThrow(ErreurAcces); // DG : Lecture, ne valide pas (H44)
-    const e = await emettreFacture(comptable, id, null);
+    await expect(emettreFacture(commercial, id, null)).rejects.toThrow(ErreurAcces); // Commercial : aucun droit
+    const e = await emettreFacture(dg, id, null); // DG valide (fin écart D21)
     expect(e.statut).toBe("EMISE");
     const journal = (await lireJournal({ action: "FACTURE_EMISE" })).lignes.find((l) => l.objet === `facture ${id}`)!;
     expect(journal.apres).toMatchObject({ validationDemandeePar: gestionnaire.identifiant });
@@ -857,6 +877,13 @@ describe("session 6.2b : produit par garanties, de la cotation composée à la f
     await creerTaxe(technique, { branche: iard, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "7.25", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
     await creerProduit(technique, { code, libelle: "SECURPRO (produit de test par garanties)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: iard }, null);
     const references = (await listerVersions(technique, produitIndividuel))!.versions[0].references;
+    if (options.seuilValidationTtc != null) {
+      await obtenirPrisma().parametre.upsert({
+        where: { cle_dateEffet: { cle: "seuil_validation_global", dateEffet: new Date("2020-01-01T00:00:00.000Z") } },
+        update: { valeur: String(options.seuilValidationTtc) },
+        create: { cle: "seuil_validation_global", valeur: String(options.seuilValidationTtc), dateEffet: new Date("2020-01-01T00:00:00.000Z"), creePar: "test" },
+      });
+    }
     await creerVersion(
       technique,
       code,
@@ -1212,7 +1239,7 @@ describe("session 6.2b : abandon d'un brouillon de facture (H87)", () => {
     expect((await lireFacture(technique, brouillon))!.actions.abandonner).toBe(true);
     await expect(abandonnerFacture(technique, brouillon, "  ", null)).rejects.toThrow(/Motif de l'abandon obligatoire/);
     await expect(abandonnerFacture(technique, brouillon, "abc", null)).rejects.toThrow(/Motif de l'abandon obligatoire/);
-    await expect(abandonnerFacture(dg, brouillon, "Doublon de saisie", null)).rejects.toThrow(ErreurAcces);
+    await expect(abandonnerFacture(commercial, brouillon, "Doublon de saisie", null)).rejects.toThrow(ErreurAcces);
     expect((await lireFacture(technique, brouillon))!.statut).toBe("BROUILLON");
 
     await abandonnerFacture(technique, brouillon, "Doublon de saisie (test)", null);

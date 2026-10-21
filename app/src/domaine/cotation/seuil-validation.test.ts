@@ -31,3 +31,4 @@ describe("seuil unique de validation global", () => {
     expect(p[0]).toMatch(/pas un montant valide/);
   });
 });
+

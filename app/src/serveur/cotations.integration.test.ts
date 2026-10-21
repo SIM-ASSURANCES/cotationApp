@@ -119,10 +119,23 @@ beforeAll(async () => {
   await creerTaxe(technique, { branche: BRANCHE, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
   await creerProduit(technique, { code: CODE, libelle: "Santé BENI (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: BRANCHE }, null);
   await creerVersion(technique, CODE, versionBeni(), null);
+  await obtenirPrisma().parametre.upsert({
+    where: { cle_dateEffet: { cle: "seuil_validation_global", dateEffet: new Date("2026-01-01T00:00:00.000Z") } },
+    update: { valeur: "20000000" },
+    create: { cle: "seuil_validation_global", valeur: "20000000", dateEffet: new Date("2026-01-01T00:00:00.000Z"), creePar: "test" },
+  });
 });
 
 afterAll(async () => {
   fixerDateMinimumEffetPourTests(null);
+  await obtenirPrisma().parametre.upsert({
+    where: { cle_dateEffet: { cle: "seuil_validation_global", dateEffet: new Date("2026-01-01T00:00:00.000Z") } },
+    update: { valeur: "10000000" },
+    create: { cle: "seuil_validation_global", valeur: "10000000", dateEffet: new Date("2026-01-01T00:00:00.000Z"), creePar: "test" },
+  });
+  await obtenirPrisma().parametre.deleteMany({
+    where: { cle: "seuil_validation_global", dateEffet: { not: new Date("2026-01-01T00:00:00.000Z") } },
+  });
   await obtenirPrisma().$disconnect();
 });
 
@@ -314,24 +327,24 @@ describe("T13 : forçage de prime et double validation", () => {
     expect((await soumettre(commercial, id, null)).statut).toBe("EMISE");
   });
 
-  it("un TTC au-dessus du seuil du produit passe « À valider » sans forçage ; la Technique valide, plus la DG (D18)", async () => {
+  it("un TTC au-dessus du seuil passe « À valider » sans forçage ; la Technique et la DG valident (étape 3, fin écart D21)", async () => {
     const id = await creerBrouillon(gestionnaire, grosse(), null);
     const r = await soumettre(gestionnaire, id, null);
 
     expect(r.statut).toBe("A_VALIDER");
     expect((await lireCotation(gestionnaire, id))!.raisonsValidation).toEqual(["SEUIL_DEPASSE"]);
-    await expect(valider(dg, id, null)).rejects.toBeInstanceOf(ErreurAcces);
-    await expect(valider(technique, id, null)).resolves.toMatch(/^COT-/);
+    // Fin écart D21 : la DG valide
+    await expect(valider(dg, id, null)).resolves.toMatch(/^COT-/);
   });
 
-  it("le droit de valider est paramétrable : l'administrateur peut le donner à la DG", async () => {
+  it("le droit de valider est paramétrable : si retiré à la DG, elle ne peut plus valider", async () => {
     const id = await creerBrouillon(gestionnaire, grosse(), null);
     await soumettre(gestionnaire, id, null);
     try {
-      await enregistrerDroit(admin, { profil: "DIRECTION_GENERALE", action: "VALIDER_COTATION", niveau: "VALIDE" }, null);
-      await expect(valider(dg, id, null)).resolves.toMatch(/^COT-/);
-    } finally {
       await enregistrerDroit(admin, { profil: "DIRECTION_GENERALE", action: "VALIDER_COTATION", niveau: "AUCUN" }, null);
+      await expect(valider(dg, id, null)).rejects.toBeInstanceOf(ErreurAcces);
+    } finally {
+      await enregistrerDroit(admin, { profil: "DIRECTION_GENERALE", action: "VALIDER_COTATION", niveau: "VALIDE" }, null);
     }
   });
 
@@ -348,12 +361,14 @@ describe("T13 : forçage de prime et double validation", () => {
     }
   });
 
-  it("le renvoi en brouillon par un valideur suit le même droit : « Forcer une prime : Valide » ne suffit pas", async () => {
+  it("le renvoi en brouillon par un valideur suit le même droit : « Forcer une prime : Valide » ne suffit pas (fin écart D21 : DG valide)", async () => {
     const id = await creerBrouillon(gestionnaire, grosse(), null);
     await soumettre(gestionnaire, id, null);
 
-    await expect(renvoyerEnBrouillon(dg, id, "Refus de la Direction", null)).rejects.toBeInstanceOf(ErreurAcces);
-    await expect(renvoyerEnBrouillon(technique, id, "Seuil à revoir avec le client", null)).resolves.toBeUndefined();
+    // La Comptabilité (aucun droit de validation) ne peut pas renvoyer
+    await expect(renvoyerEnBrouillon(comptabilite, id, "Refus", null)).rejects.toBeInstanceOf(ErreurAcces);
+    // La DG et la Technique (valideurs, étape 3) peuvent renvoyer
+    await expect(renvoyerEnBrouillon(dg, id, "Refus de la Direction", null)).resolves.toBeUndefined();
   });
 
   it("H9 (T13 adapté) : B modifie le brouillon de A, B ne peut pas valider ; un troisième valideur le peut", async () => {

@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "next dev",
-    "build": "next build && node scripts/completer-standalone.mjs",
+    "build": "next build --webpack && node scripts/completer-standalone.mjs",
     "start": "node .next/standalone/server.js",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",

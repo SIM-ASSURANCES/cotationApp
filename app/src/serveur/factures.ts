@@ -1258,7 +1258,17 @@ export type LigneFactureLue = {
   pdfEnAttente: number;
 };
 
-export type DocumentFacture = { numero: string; version: number; type: string; statut: "EN_ATTENTE" | "PRODUIT"; documentId: number | null; tentatives: number; derniereErreur: string | null };
+export type DocumentFacture = {
+  numero: string;
+  version: number;
+  type: string;
+  statut: "EN_ATTENTE" | "PRODUIT";
+  documentId: number | null;
+  tentatives: number;
+  derniereErreur: string | null;
+  niveauRelance?: number | null;
+  echeanceNumero?: number | null;
+};
 
 export type FactureLue = LigneFactureLue & {
   contenu: ContenuFacture;
@@ -1427,7 +1437,17 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
     emisePar: f.emisePar,
     emiseLe: f.emiseLe,
     seuil,
-    documents: f.aProduire.map((p) => ({ numero: p.numero, version: p.version, type: p.type, statut: p.statut as DocumentFacture["statut"], documentId: p.documentId, tentatives: p.tentatives, derniereErreur: p.derniereErreur })),
+    documents: f.aProduire.map((p) => ({
+      numero: p.numero,
+      version: p.version,
+      type: p.type,
+      statut: p.statut as DocumentFacture["statut"],
+      documentId: p.documentId,
+      tentatives: p.tentatives,
+      derniereErreur: p.derniereErreur,
+      niveauRelance: p.niveauRelance,
+      echeanceNumero: p.echeanceNumero,
+    })),
     avance: { disponible, proposee, reportsEnAttente: await reportsEnAttente(prisma, f.policeId) },
     reports: reports.map((r) => ({ recu: r.paiement?.numeroRecu ?? null, date: depuisDate(r.date), montant: r.montant.toFixed() })),
     abandon: f.statut === "ABANDONNEE" && f.abandonnePar && f.abandonneLe && f.motifAbandon ? { par: f.abandonnePar, le: f.abandonneLe, motif: f.motifAbandon } : null,

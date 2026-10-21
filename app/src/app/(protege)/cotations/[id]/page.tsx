@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ChampNumeroPolice } from "@/composants/ChampNumeroPolice";
@@ -20,6 +21,7 @@ import { listerMotifsRefus } from "@/serveur/clients";
 import { listerBranches } from "@/serveur/parametrage";
 import { lireCotation } from "@/serveur/cotations";
 import { documentsDe } from "@/serveur/documents";
+import { facturesDePolice } from "@/serveur/factures";
 import { niveauDuProfil } from "@/serveur/droits";
 import { lireFormatNumeroPolice } from "@/serveur/societe";
 import { exigerDroit } from "@/serveur/session";
@@ -41,7 +43,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
     notFound();
   }
 
-  const [niveauCotation, niveauValidation, niveauComposition, niveauContrat, motifs, documents, formatPolice] = await Promise.all([
+  const [niveauCotation, niveauValidation, niveauComposition, niveauContrat, motifs, documents, formatPolice, vueFactures] = await Promise.all([
     niveauDuProfil(utilisateur.profil, "CREER_COTATION"),
     niveauDuProfil(utilisateur.profil, "VALIDER_COTATION"),
     niveauDuProfil(utilisateur.profil, "COMPOSER_PRIME"),
@@ -49,6 +51,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
     listerMotifsRefus(),
     documentsDe(utilisateur, { cotationId: c.id }),
     lireFormatNumeroPolice(),
+    c.numeroPolice ? facturesDePolice(utilisateur, c.id) : null,
   ]);
   // Contrat au-dessus du seuil de validation : demande de validation en cours, ou validation exigée de ce profil (CDC §4.1).
   const etatContrat = c.numeroPolice && peutLire(niveauContrat) ? await lireValidationContrat(utilisateur, c.id) : null;
@@ -170,6 +173,84 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           </div>
         ) : null}
       </Carte>
+
+      {c.numeroPolice && vueFactures ? (
+        <Carte titre="Contrat, avenants et facturation de la police">
+          <div className="space-y-4">
+            <p className="text-sm">
+              <strong>Police n° {c.numeroPolice}</strong> ({c.produit.code}) — {nom} — du {formatDate(c.dateEffet)} au {formatDate(c.dateEcheance)}.
+            </p>
+
+            {pdfCp.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-semibold text-foreground">Conditions Particulières (CP) :</span>
+                {pdfCp.map((cp) => (
+                  <a
+                    key={`${cp.numero}-${cp.version}`}
+                    href={`/api/documents/${cp.id}`}
+                    className="font-medium text-primary underline"
+                  >
+                    Télécharger {cp.numero} (v{cp.version})
+                  </a>
+                ))}
+              </div>
+            ) : null}
+
+            {estContratDeGroupe(c.typeContrat) ? (
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-semibold text-foreground">Avenants :</span>
+                <Link href={`/cotations/${c.id}/adherents`} className="font-medium text-primary underline">
+                  Adhérents et avenants d'incorporation / retrait
+                </Link>
+              </div>
+            ) : null}
+
+            {vueFactures.factures.length > 0 ? (
+              <div>
+                <h4 className="mb-2 text-sm font-semibold text-foreground">Factures et avoirs de la police</h4>
+                <Tableau
+                  legende="Factures de la police"
+                  lignes={vueFactures.factures}
+                  cleLigne={(x) => String(x.id)}
+                  colonnes={[
+                    {
+                      cle: "numero",
+                      entete: "Numéro",
+                      rendu: (x) => (
+                        <Link href={`/factures/${x.id}`} className="font-medium text-primary underline">
+                          {x.numero ?? `Brouillon n° ${x.id}`}
+                        </Link>
+                      ),
+                    },
+                    { cle: "type", entete: "Type", rendu: (x) => x.libelleType },
+                    { cle: "statut", entete: "Statut", rendu: (x) => <PastilleStatut libelle={x.libelleStatut} /> },
+                    { cle: "periode", entete: "Période", rendu: (x) => `${formatDate(x.dateEffet)} → ${formatDate(x.dateEcheance)}` },
+                    { cle: "ttc", entete: "TTC", alignement: "droite", rendu: (x) => `${f(montant(x.ttc))} F` },
+                    {
+                      cle: "actions",
+                      entete: "Action",
+                      alignement: "droite",
+                      rendu: (x) => (
+                        <LienBouton href={`/factures/${x.id}`} variante="secondaire">
+                          Voir
+                        </LienBouton>
+                      ),
+                    },
+                  ]}
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-neutral">Aucune facture émise pour le moment pour ce contrat.</p>
+            )}
+
+            <div className="pt-2">
+              <LienBouton href={`/cotations/${c.id}/factures`}>
+                Gérer toutes les factures, avoirs et paiements de la police
+              </LienBouton>
+            </div>
+          </div>
+        </Carte>
+      ) : null}
 
       {c.raisonsValidation.length > 0 ? (
         <Bandeau ton="avertissement">

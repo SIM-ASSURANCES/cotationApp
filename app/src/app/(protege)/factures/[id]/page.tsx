@@ -122,7 +122,21 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
   type Paiement = NonNullable<typeof x.etat>["paiements"][number];
   const lignesPaiements = (x.etat?.paiements ?? []).map((p, i) => ({ p, i }));
   const colonnesPaiements: ColonneTableau<{ p: Paiement; i: number }>[] = [
-    { cle: "recu", entete: "Reçu", rendu: ({ p }) => p.numero || "—" },
+    {
+      cle: "recu",
+      entete: "Reçu",
+      rendu: ({ p }) => {
+        if (!p.numero) return "—";
+        const doc = x.documents.find((d) => d.type === "RECU" && d.numero === p.numero);
+        return doc?.documentId ? (
+          <a href={`/api/documents/${doc.documentId}`} className="font-semibold text-primary underline" title="Télécharger le reçu PDF">
+            {p.numero}
+          </a>
+        ) : (
+          p.numero
+        );
+      },
+    },
     { cle: "date", entete: "Date", rendu: ({ p }) => formaterDate(p.date) },
     {
       cle: "montant",
@@ -142,8 +156,16 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
   ];
 
   type DocumentFacture = (typeof x.documents)[number];
+  const libelleDoc = (d: DocumentFacture) => {
+    if (d.type === "RECU") return `Reçu ${d.numero}`;
+    if (d.type === "AVOIR") return `Avoir ${d.numero}`;
+    if (d.type === "RELANCE") return `Relance (niveau ${d.niveauRelance ?? 1}) ${d.numero}`;
+    if (d.type === "AVIS_ECHEANCE") return `Avis d'échéance ${d.echeanceNumero ? `n° ${d.echeanceNumero}` : ""} ${d.numero}`.trim();
+    return `Facture ${d.numero}`;
+  };
+
   const colonnesDocuments: ColonneTableau<DocumentFacture>[] = [
-    { cle: "document", entete: "Document", rendu: (d) => `${d.type === "RECU" ? "Reçu" : d.type === "AVOIR" ? "Avoir" : "Facture"} ${d.numero}` },
+    { cle: "document", entete: "Document", rendu: (d) => libelleDoc(d) },
     { cle: "version", entete: "Version", rendu: (d) => `v${d.version}` },
     {
       cle: "fichier",

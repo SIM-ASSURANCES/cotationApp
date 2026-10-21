@@ -39,6 +39,15 @@ describe("matrice par défaut (CDC §4)", () => {
     expect(matrice.TECHNIQUE.PUBLIER_MODELE).toBe("AUCUN");
     expect(matrice.DIRECTION_GENERALE.PUBLIER_MODELE).toBe("OUI");
   });
+
+  it("valideurs : profils Technique et Direction Générale valident par défaut (étape 3, fin écart D21)", () => {
+    expect(matrice.TECHNIQUE.VALIDER_COTATION).toBe("VALIDE");
+    expect(matrice.DIRECTION_GENERALE.VALIDER_COTATION).toBe("VALIDE");
+    expect(matrice.TECHNIQUE.EMETTRE_CONTRAT).toBe("OUI");
+    expect(matrice.DIRECTION_GENERALE.EMETTRE_CONTRAT).toBe("VALIDE");
+    expect(matrice.TECHNIQUE.EMETTRE_FACTURE).toBe("OUI");
+    expect(matrice.DIRECTION_GENERALE.EMETTRE_FACTURE).toBe("VALIDE");
+  });
 });
 
 describe("« Composer une prime » (session 6.2b, D32)", () => {

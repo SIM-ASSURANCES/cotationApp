@@ -64,8 +64,10 @@ const A = "AUCUN", L = "LECTURE", D = "DEMANDE", S = "OUI_SOUS_SEUIL", O = "OUI"
 const LIGNES: Record<CodeAction, readonly CodeNiveau[]> = {
   CREER_COTATION: [O, O, O, A, L, A],
   FORCER_PRIME: [D, D, V, A, V, A],
-  EMETTRE_CONTRAT: [A, S, O, A, L, A],
-  EMETTRE_FACTURE: [A, S, O, O, L, A],
+  // CDC §4.1 et réponse Technique du 20/10/2026 (étape 3) : Technique et DG valident les contrats au-dessus du seuil (fin de l'écart D21).
+  EMETTRE_CONTRAT: [A, S, O, A, V, A],
+  // CDC §4.1 et réponse Technique du 20/10/2026 (étape 3) : Technique, Comptabilité et DG valident les factures au-dessus du seuil (fin de l'écart D21).
+  EMETTRE_FACTURE: [A, S, O, O, V, A],
   EMETTRE_AVOIR: [A, A, V, O, V, A],
   ENREGISTRER_PAIEMENT: [A, O, A, O, A, A],
   DEPOSER_MODELE: [A, A, O, A, A, A],
@@ -75,8 +77,8 @@ const LIGNES: Record<CodeAction, readonly CodeNiveau[]> = {
   PARAMETRER_PRODUITS: [A, A, O, L, V, A],
   GERER_UTILISATEURS: [A, A, A, A, A, O],
   CONSULTER_AUDIT: [A, A, L, A, L, L],
-  // H7 (D18) : la validation des cotations est réservée au profil Technique (droit paramétrable).
-  VALIDER_COTATION: [A, A, V, A, A, A],
+  // Réponse Technique du 20/10/2026 (étape 3) : Technique et Direction Générale valident les cotations (fin de l'écart D21).
+  VALIDER_COTATION: [A, A, V, A, V, A],
   // Session 5b (D25) : au minimum Technique, Comptabilité et Direction Générale en lecture (instructions de la phase 5).
   CONSULTER_TABLEAUX_DE_BORD: [A, A, L, L, L, A],
   // Session 6.2b (D32) : la Technique compose la prime ; les autres profils n'ont pas accès (le Commercial crée la cotation, la Technique la compose).

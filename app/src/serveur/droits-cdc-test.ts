@@ -53,7 +53,13 @@ export function matriceDuCdc(): Record<CodeProfil, Partial<Record<CodeAction, Co
   PROFILS.forEach((profil, colonne) => {
     matrice[profil.code] = {};
     corps.forEach((ligne, i) => {
-      matrice[profil.code][ACTIONS_DU_CDC[i]] = niveauDeLaCellule(ligne[colonne + 1]);
+      const action = ACTIONS_DU_CDC[i];
+      // Fin de l'écart D21 (décision Technique du 20/10/2026, étape 3) : la DG valide contrats et factures (CDC §4.1).
+      if (profil.code === "DIRECTION_GENERALE" && (action === "EMETTRE_CONTRAT" || action === "EMETTRE_FACTURE")) {
+        matrice[profil.code][action] = "VALIDE";
+      } else {
+        matrice[profil.code][action] = niveauDeLaCellule(ligne[colonne + 1]);
+      }
     });
   });
   return matrice;

@@ -17,16 +17,21 @@ describe("matrice par défaut = tableau du CDC §4 (docs/cdc.md)", () => {
     expect(entete.slice(1)).toEqual(PROFILS.map((p) => p.libelle));
   });
 
-  it("VALIDER_COTATION (D18) : réservé au profil Technique par défaut", () => {
+  it("VALIDER_COTATION : Technique et Direction Générale par défaut (étape 3, fin écart D21)", () => {
     const m = droitsParDefaut();
-    expect(PROFILS.map((p) => m[p.code].VALIDER_COTATION)).toEqual(["AUCUN", "AUCUN", "VALIDE", "AUCUN", "AUCUN", "AUCUN"]);
+    expect(PROFILS.map((p) => m[p.code].VALIDER_COTATION)).toEqual(["AUCUN", "AUCUN", "VALIDE", "AUCUN", "VALIDE", "AUCUN"]);
   });
 
-  it("chaque cellule correspond à la matrice par défaut (une seule traduction retouchée : « Taxes (proposition) » = Lecture, D21)", () => {
+  it("chaque cellule correspond à la matrice par défaut (traductions retouchées : « Taxes (proposition) » = Lecture, D21 ; fin écart D21 : DG valide contrat et facture)", () => {
     const matrice = droitsParDefaut();
     corps.forEach((ligne, i) => {
       PROFILS.forEach((profil, colonne) => {
-        expect(matrice[profil.code][ACTIONS_DU_CDC[i]], `${ligne[0]} / ${entete[colonne + 1]}`).toBe(niveauDeLaCellule(ligne[colonne + 1]));
+        const action = ACTIONS_DU_CDC[i];
+        if (profil.code === "DIRECTION_GENERALE" && (action === "EMETTRE_CONTRAT" || action === "EMETTRE_FACTURE")) {
+          expect(matrice[profil.code][action]).toBe("VALIDE");
+        } else {
+          expect(matrice[profil.code][action], `${ligne[0]} / ${entete[colonne + 1]}`).toBe(niveauDeLaCellule(ligne[colonne + 1]));
+        }
       });
     });
   });

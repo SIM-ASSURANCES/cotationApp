@@ -33,6 +33,7 @@ import { exigeDoubleValidation } from "@/domaine/calcul/validation";
 import { journaliser } from "./audit";
 import { niveauDuProfil } from "./droits";
 import { obtenirPrisma } from "./prisma";
+import { lireSeuilValidationGlobal } from "./societe";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 
 const ACTION_PARAMETRAGE: CodeAction = "PARAMETRER_PRODUITS";
@@ -891,6 +892,6 @@ export async function calculerPourProduit(acteur: UtilisateurCourant, demande: D
     libelles: Object.fromEntries(contexte.version.formules.map((f) => [f.code, f.libelle])),
     resultat,
     echeancier,
-    doubleValidationRequise: exigeDoubleValidation(resultat.totaux.arrondi.ttc, contexte.version.seuilValidationTtc),
+    doubleValidationRequise: exigeDoubleValidation(resultat.totaux.arrondi.ttc, await lireSeuilValidationGlobal(demande.dateEffet)),
   };
 }

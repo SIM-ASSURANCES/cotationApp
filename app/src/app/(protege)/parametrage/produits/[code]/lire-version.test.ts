@@ -31,7 +31,7 @@ describe("lireVersion : formulaire -> version saisie", () => {
     expect(v.arrondi).toEqual({ precision: 1, sens: "PROCHE", niveau: "LIGNE", composanteAbsorbante: "TAXE" });
     expect(v.prorata).toEqual({ actif: true, primeMinimale: null });
     expect(v.fractionnement).toEqual({ tranchesMax: 4, repartitionPourcent: null, decalagesMois: null, frais: "0" });
-    expect(v.seuilValidationTtc).toBe("20000000");
+    expect(v.seuilValidationTtc).toBeNull();
     expect(v.formules.map((f) => [f.code, f.primeUnitaire, f.accessoireMode, f.accessoireValeur])).toEqual([
       ["SOLO", "93581.33", "FIXE", "3000"], // code mis en majuscules
       ["FAMILLE", "252657.63", "FIXE", "210000"], // virgule décimale mise en écriture canonique par l'analyseur unique

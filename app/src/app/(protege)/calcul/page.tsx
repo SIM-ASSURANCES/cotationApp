@@ -107,7 +107,7 @@ function Resultats({ r }: { r: ReponseCalcul }) {
     >
       {r.doubleValidationRequise ? (
         <Bandeau ton="avertissement" role="status" className="mb-3">
-          Le TTC dépasse le seuil du produit : ce document passerait en « À valider » (double validation, CDC §4.1).
+          Le TTC dépasse le seuil de validation : ce document passerait en « À valider » (double validation, CDC §4.1).
         </Bandeau>
       ) : null}
       <Tableau colonnes={colonnesResultat} lignes={lignesResultat} cleLigne={(l) => l.cle} legende="Résultat du calcul" />

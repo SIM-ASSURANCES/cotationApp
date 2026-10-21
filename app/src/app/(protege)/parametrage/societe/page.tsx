@@ -3,14 +3,15 @@ import { redirect } from "next/navigation";
 import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
 import { Carte, Champ as ChampSaisie, EnTetePage, ListeDeroulante, Tableau, ZoneTexte, type ColonneTableau } from "@/composants/ui";
 import { formaterDate } from "@/domaine/calcul/dates";
+import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { peutAgir } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
 import { aujourdhui } from "@/serveur/parametrage";
 import { exigerUtilisateur } from "@/serveur/session";
-import { consulterFormatNumeroPolice, consulterFormatsNumero, consulterSociete } from "@/serveur/societe";
+import { consulterFormatNumeroPolice, consulterFormatsNumero, consulterSeuilValidationGlobal, consulterSociete } from "@/serveur/societe";
 import { ErreurAcces } from "@/serveur/types";
 
-import { enregistrerLaSociete, enregistrerLeFormatNumero, enregistrerLeFormatPolice, enregistrerUneImage } from "./actions";
+import { enregistrerLaSociete, enregistrerLeFormatNumero, enregistrerLeFormatPolice, enregistrerLeSeuilValidation, enregistrerUneImage } from "./actions";
 
 const lignes = (liste: Record<string, string>[], cles: [string, string]) => liste.map((x) => `${x[cles[0]]} ; ${x[cles[1]]}`).join("\n");
 const MONO = "font-mono text-xs";
@@ -20,7 +21,12 @@ export default async function PageSociete() {
   const utilisateur = await exigerUtilisateur();
   let lu;
   try {
-    lu = { ...(await consulterSociete(utilisateur)), formatPolice: await consulterFormatNumeroPolice(utilisateur), formats: await consulterFormatsNumero(utilisateur) };
+    lu = {
+      ...(await consulterSociete(utilisateur)),
+      formatPolice: await consulterFormatNumeroPolice(utilisateur),
+      formats: await consulterFormatsNumero(utilisateur),
+      seuilValidation: await consulterSeuilValidationGlobal(utilisateur),
+    };
   } catch (erreur) {
     if (erreur instanceof ErreurAcces) redirect("/acces-refuse");
     throw erreur;
@@ -45,6 +51,13 @@ export default async function PageSociete() {
       entete: "Historique",
       rendu: (x) => <span className="text-xs">{x.historique.length === 0 ? "défaut" : x.historique.map((h) => `${formaterDate(h.dateEffet)} : ${h.valeur} (${h.creePar})`).join(" ; ")}</span>,
     },
+  ];
+  type HistoriqueSeuil = (typeof lu.seuilValidation.historique)[number];
+  const colonnesSeuil: ColonneTableau<HistoriqueSeuil>[] = [
+    { cle: "dateEffet", entete: "À partir du", rendu: (h) => formaterDate(h.dateEffet) },
+    { cle: "valeur", entete: "Seuil TTC", alignement: "droite", rendu: (h) => `${formaterMontant(montant(h.valeur))} F` },
+    { cle: "creePar", entete: "Saisi par", rendu: (h) => h.creePar },
+    { cle: "creeLe", entete: "Saisi le", rendu: (h) => h.creeLe.toISOString().slice(0, 16).replace("T", " ") },
   ];
 
   return (
@@ -170,6 +183,34 @@ export default async function PageSociete() {
             </div>
           </FormulaireAction>
         ) : null}
+      </Carte>
+
+      <Carte
+        titre="Seuil unique de validation"
+        description={
+          <>
+            Seuil unique pour tous les produits (en vigueur : <strong>{formaterMontant(montant(lu.seuilValidation.enVigueur))} F TTC</strong>). Tout
+            document dont le TTC dépasse strictement ce seuil passe en « À valider » (validé par la Technique ou la Direction Générale).
+          </>
+        }
+      >
+        {ecriture ? (
+          <FormulaireAction action={enregistrerLeSeuilValidation} libelleBouton="Enregistrer le seuil">
+            <div className="mb-4 grid gap-x-6 gap-y-4 sm:grid-cols-3">
+              <div className="sm:col-span-2">
+                <Champ nom="seuil" libelle="Seuil de validation (FCFA TTC)" valeur={formaterMontant(montant(lu.seuilValidation.enVigueur))} autoComplete="off" />
+              </div>
+              <ChampDate nom="dateEffet" libelle="À partir du (JJ/MM/AAAA)" valeur={aujourdhui()} min={aujourdhui()} />
+            </div>
+          </FormulaireAction>
+        ) : null}
+        <div className="mt-4">
+          {lu.seuilValidation.historique.length > 0 ? (
+            <Tableau colonnes={colonnesSeuil} lignes={lu.seuilValidation.historique} cleLigne={(h) => `${h.dateEffet}-${h.valeur}`} legende="Historique du seuil de validation" />
+          ) : (
+            <p className="text-sm text-muted-foreground">Seuil par défaut (10 000 000 F TTC), jamais modifié.</p>
+          )}
+        </div>
       </Carte>
     </main>
   );

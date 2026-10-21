@@ -2,7 +2,7 @@
 
 import type { EtatFormulaire } from "@/composants/types";
 import { IMAGES_SOCIETE, lireLignes, type ImageSociete, type ParametresSociete } from "@/domaine/documents/societe";
-import { enregistrerFormatNumero, enregistrerFormatNumeroPolice, enregistrerImageSociete, enregistrerSociete } from "@/serveur/societe";
+import { enregistrerFormatNumero, enregistrerFormatNumeroPolice, enregistrerImageSociete, enregistrerSeuilValidationGlobal, enregistrerSociete } from "@/serveur/societe";
 
 import { champ, executerAction } from "../../executer";
 
@@ -46,4 +46,9 @@ export async function enregistrerLeFormatPolice(_e: EtatFormulaire, d: FormData)
 /** Format des numéros de cotation, facture, avoir, reçu (session 4b) : historisé, journalisé (avant, après). */
 export async function enregistrerLeFormatNumero(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
   return executerAction((acteur, ip) => enregistrerFormatNumero(acteur, champ(d, "prefixe"), champ(d, "format"), champ(d, "dateEffet"), ip), "Format de numéro enregistré.", "/parametrage/societe");
+}
+
+/** Seuil unique de validation pour tous les produits (20/10/2026) : historisé, journalisé. */
+export async function enregistrerLeSeuilValidation(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
+  return executerAction((acteur, ip) => enregistrerSeuilValidationGlobal(acteur, champ(d, "seuil"), champ(d, "dateEffet"), ip), "Seuil de validation enregistré.", "/parametrage/societe");
 }

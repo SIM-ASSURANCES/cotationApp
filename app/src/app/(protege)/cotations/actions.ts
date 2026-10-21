@@ -85,7 +85,7 @@ export async function emettreCpDeCotation(_e: EtatFormulaire, d: FormData): Prom
     async (acteur, ip) => {
       enValidation = (await soumettreCp(acteur, id, ip)).statut === "A_VALIDER";
     },
-    () => (enValidation ? "Le TTC dépasse le seuil du produit : le contrat est en attente de validation." : "Conditions particulières émises."),
+    () => (enValidation ? "Le TTC dépasse le seuil de validation : le contrat est en attente de validation." : "Conditions particulières émises."),
     `/cotations/${id}`,
   );
 }

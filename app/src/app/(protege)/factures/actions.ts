@@ -103,7 +103,7 @@ export async function emettreLaFacture(_e: EtatFormulaire, d: FormData): Promise
     },
     () =>
       r?.statut === "A_VALIDER"
-        ? `Le TTC (${r.ttc} F) dépasse le seuil du produit (${r.seuil ?? "?"} F) : facture « À valider ». Un profil habilité, autre que vous, l'émettra.`
+        ? `Le TTC (${r.ttc} F) dépasse le seuil de validation (${r.seuil ?? "?"} F) : facture « À valider ». Un profil habilité, autre que vous, l'émettra.`
         : `Facture émise : ${r?.statut === "EMISE" ? r.numero : ""}.`,
     `/factures/${id}`,
   );

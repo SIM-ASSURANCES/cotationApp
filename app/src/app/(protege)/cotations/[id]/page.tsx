@@ -50,7 +50,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
     documentsDe(utilisateur, { cotationId: c.id }),
     lireFormatNumeroPolice(),
   ]);
-  // Contrat au-dessus du seuil du produit : demande de validation en cours, ou validation exigée de ce profil (CDC §4.1).
+  // Contrat au-dessus du seuil de validation : demande de validation en cours, ou validation exigée de ce profil (CDC §4.1).
   const etatContrat = c.numeroPolice && peutLire(niveauContrat) ? await lireValidationContrat(utilisateur, c.id) : null;
   const taches = c.numeroPolice ? await tachesDeCotation(utilisateur, c.id) : [];
   const pdfCotation = documents.filter((d) => d.type === "COTATION");
@@ -325,7 +325,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         </div>
         {pdfCp.length === 0 && etatContrat?.validation?.statut === "A_VALIDER" ? (
           <Bandeau ton="avertissement" role="status" className="mb-3">
-            <strong>Contrat à valider.</strong> Son TTC ({formaterMontant(montant(etatContrat.ttc))} F) dépasse le seuil du produit ({formaterMontant(montant(etatContrat.validation.seuil))} F) ; demandé par {etatContrat.validation.demandeePar} le{" "}
+            <strong>Contrat à valider.</strong> Son TTC ({formaterMontant(montant(etatContrat.ttc))} F) dépasse le seuil de validation ({formaterMontant(montant(etatContrat.validation.seuil))} F) ; demandé par {etatContrat.validation.demandeePar} le{" "}
             {formatDateHeure(etatContrat.validation.demandeeLe)}. Un profil habilité qui n'est pas le demandeur doit l'émettre.
           </Bandeau>
         ) : null}

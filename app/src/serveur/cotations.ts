@@ -79,7 +79,7 @@ import {
 } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { ecrireIntermediaires, resoudreIntermediaires, versIntermediairesDocument } from "./intermediaires";
-import { lireFormatNumeroPolice } from "./societe";
+import { lireFormatNumeroPolice, lireSeuilValidationGlobal } from "./societe";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 
 const auteur = (u: UtilisateurCourant): ActeurAudit => ({ id: u.id, identifiant: u.identifiant });
@@ -251,10 +251,11 @@ async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: Saisie
   }
 
   const { resultat, echeancier } = executerCalcul(entree, version.fractionnement, saisie.nombreTranches);
+  const seuilValidation = await lireSeuilValidationGlobal(saisie.dateEffet);
   return {
     versionDateEffet: version.dateEffet,
     validiteMois: version.cotation.validiteMois,
-    seuil: version.seuilValidationTtc,
+    seuil: seuilValidation,
     fractionnement: version.fractionnement,
     produitId: contexte.produit.id,
     entree,
@@ -269,7 +270,7 @@ async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: Saisie
       // Une valeur saisie égale au paramétrage n'est pas une modification.
       accessoireSaisi: l.accessoireValeur != null && !montant(l.accessoireValeur).eq(montant(accessoiresTarif[l.codeFormule])) ? montant(l.accessoireValeur).toFixed() : null,
     })),
-    raisons: raisonsDeValidation({ forcages, ttc: resultat.totaux.arrondi.ttc, seuil: version.seuilValidationTtc }),
+    raisons: raisonsDeValidation({ forcages, ttc: resultat.totaux.arrondi.ttc, seuil: seuilValidation }),
     souscripteur,
     typeContrat,
     regimeTaxe,
@@ -319,10 +320,11 @@ async function calculerComposition(tx: Tx, saisie: SaisieCotation, dateDocument:
   const lignes: LigneComposee[] = await figerLesTaux(tx, lignesSaisies, regimeTaxe, saisie.dateEffet);
   const entree = construireComposition(contexte, { dateEffet: saisie.dateEffet, dateEcheance: saisie.dateEcheance, lignes, nombreTranches: saisie.nombreTranches });
   const { resultat, echeancier } = executerCalcul(entree, version.fractionnement, lignes.length > 0 ? saisie.nombreTranches : 1);
+  const seuilValidation = await lireSeuilValidationGlobal(saisie.dateEffet);
   return {
     versionDateEffet: version.dateEffet,
     validiteMois: version.cotation.validiteMois,
-    seuil: version.seuilValidationTtc,
+    seuil: seuilValidation,
     fractionnement: version.fractionnement,
     produitId: contexte.produit.id,
     entree,
@@ -330,7 +332,7 @@ async function calculerComposition(tx: Tx, saisie: SaisieCotation, dateDocument:
     echeancier,
     lignesStockees: [],
     // Les seuils de validation s'appliquent au TTC de la composition ; il n'y a pas de tarif, donc pas de forçage.
-    raisons: raisonsDeValidation({ forcages: [], ttc: resultat.totaux.arrondi.ttc, seuil: version.seuilValidationTtc }),
+    raisons: raisonsDeValidation({ forcages: [], ttc: resultat.totaux.arrondi.ttc, seuil: seuilValidation }),
     souscripteur,
     typeContrat,
     regimeTaxe,

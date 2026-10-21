@@ -182,7 +182,6 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
               <Champ nom="frais" libelle="Frais de fractionnement (ajoutés aux accessoires)" valeur={base ? net(base.fractionnement.frais) : "0"} autoComplete="off" />
               <Champ nom="validiteMois" libelle="Validité d'une cotation (mois, à partir de la date d'établissement)" valeur={String(base?.cotation.validiteMois ?? 3)} autoComplete="off" />
               <Champ nom="formulesMax" libelle="Formules comparées au plus" valeur={String(base?.cotation.formulesMax ?? 3)} autoComplete="off" />
-              <Champ nom="seuil" libelle="Seuil de TTC pour la double validation (facultatif)" requis={false} valeur={base?.seuilValidationTtc ? net(base.seuilValidationTtc) : ""} autoComplete="off" />
             </div>
             <h3 className={SOUS_TITRE}>Garanties du produit (mode « Par garanties » seulement)</h3>
             <p className="mb-2 text-sm text-muted-foreground">

@@ -15,7 +15,9 @@ import {
   type PrefixeNumero,
 } from "@/domaine/cotation/numerotation";
 import { CLE_FORMAT_NUMERO_POLICE, FORMAT_NUMERO_POLICE_DEFAUT, problemesFormatNumeroPolice } from "@/domaine/cotation/police";
+import { CLE_SEUIL_VALIDATION_GLOBAL, problemesSeuilValidationGlobal, SEUIL_VALIDATION_GLOBAL_DEFAUT } from "@/domaine/cotation/seuil-validation";
 import { CLE_SOCIETE, cleImage, lireSociete, problemesSociete, type ImageSociete, type ParametresSociete } from "@/domaine/documents/societe";
+import { montant } from "@/domaine/calcul/montant";
 
 import { journaliser } from "./audit";
 import { niveauDuProfil } from "./droits";
@@ -154,3 +156,45 @@ export async function enregistrerFormatNumero(acteur: UtilisateurCourant, prefix
   const avant = (await valeurEnVigueur(cleFormatNumero(prefixe), dateEffet)) ?? FORMATS_NUMERO_DEFAUT[prefixe];
   await ajouterParametre(acteur, cleFormatNumero(prefixe), propre, dateEffet, { formatNumero: prefixe, avant, apres: propre, dateEffet }, adresseIp);
 }
+
+// ---------------------------------------------------------------- Seuil unique de validation global (20/10/2026)
+
+/** Seuil unique de validation en vigueur à la date donnée (défaut : 10 000 000 FCFA TTC). */
+export async function lireSeuilValidationGlobal(date: DateIso = aujourdhui()): Promise<string> {
+  return (await valeurEnVigueur(CLE_SEUIL_VALIDATION_GLOBAL, date)) ?? SEUIL_VALIDATION_GLOBAL_DEFAUT;
+}
+
+/** Consultation du seuil global (écran Société) : valeur en vigueur et historique des modifications. */
+export async function consulterSeuilValidationGlobal(
+  acteur: UtilisateurCourant,
+): Promise<{ enVigueur: string; historique: { valeur: string; dateEffet: DateIso; creePar: string; creeLe: Date }[] }> {
+  await exigerParametrage(acteur, false);
+  const lignes = await obtenirPrisma().parametre.findMany({ where: { cle: CLE_SEUIL_VALIDATION_GLOBAL }, orderBy: { dateEffet: "desc" } });
+  return {
+    enVigueur: await lireSeuilValidationGlobal(),
+    historique: lignes.map((l) => ({ valeur: l.valeur, dateEffet: l.dateEffet.toISOString().slice(0, 10), creePar: l.creePar, creeLe: l.creeLe })),
+  };
+}
+
+/** Nouveau seuil de validation global, à une date d'effet (jamais rétroactive) : historisé et journalisé. */
+export async function enregistrerSeuilValidationGlobal(
+  acteur: UtilisateurCourant,
+  seuil: string,
+  dateEffet: DateIso,
+  adresseIp: string | null,
+): Promise<void> {
+  await exigerParametrage(acteur, true);
+  const problemes = problemesSeuilValidationGlobal(seuil);
+  if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
+  const m = montant(seuil.trim()).toFixed();
+  const avant = await lireSeuilValidationGlobal(dateEffet);
+  await ajouterParametre(
+    acteur,
+    CLE_SEUIL_VALIDATION_GLOBAL,
+    m,
+    dateEffet,
+    { seuilValidationGlobal: m, avant, dateEffet },
+    adresseIp,
+  );
+}
+

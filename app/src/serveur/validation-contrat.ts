@@ -8,6 +8,7 @@ import { peutLire } from "@/domaine/droits";
 import { journaliser, type ActeurAudit } from "./audit";
 import { niveauDuProfil } from "./droits";
 import { obtenirPrisma } from "./prisma";
+import { lireSeuilValidationGlobal } from "./societe";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 
 /**
@@ -23,14 +24,11 @@ const auteur = (u: UtilisateurCourant): ActeurAudit => ({ id: u.id, identifiant:
 
 export type ControleSeuil = { requise: boolean; ttc: string; seuil: string | null };
 
-/** Faut-il une validation pour que CET acteur émette CE contrat ? (TTC de la police, seuil de la version du produit.) */
+/** Faut-il une validation pour que CET acteur émette CE contrat ? (TTC de la police, seuil unique global.) */
 export async function controlerSeuilContrat(acteur: UtilisateurCourant, police: { ttcTotal: { toFixed(): string } }, cotation: { produitId: number; versionDateEffet: Date }): Promise<ControleSeuil> {
-  const version = await obtenirPrisma().produitVersion.findUniqueOrThrow({
-    where: { produitId_dateEffet: { produitId: cotation.produitId, dateEffet: cotation.versionDateEffet } },
-    select: { seuilValidationTtc: true },
-  });
+  const dateIso = cotation.versionDateEffet.toISOString().slice(0, 10);
+  const seuil = await lireSeuilValidationGlobal(dateIso);
   const ttc = police.ttcTotal.toFixed();
-  const seuil = version.seuilValidationTtc ? version.seuilValidationTtc.toFixed() : null;
   const niveau = await niveauDuProfil(acteur.profil, "EMETTRE_CONTRAT");
   return { requise: validationContratRequise(niveau, ttc, seuil), ttc, seuil };
 }

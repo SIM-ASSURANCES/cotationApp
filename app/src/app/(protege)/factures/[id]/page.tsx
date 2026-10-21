@@ -179,7 +179,7 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
           ) : null}
           {x.statut === "A_VALIDER" ? (
             <Bandeau ton="avertissement">
-              <strong>À valider :</strong> TTC {f(x.ttc)} F au-dessus du seuil du produit ({x.seuil ? f(x.seuil) : "?"} F). Demande de {x.demandePar}. Un profil habilité, autre que le demandeur, émet la facture (CDC §4.1).
+              <strong>À valider :</strong> TTC {f(x.ttc)} F au-dessus du seuil de validation ({x.seuil ? f(x.seuil) : "?"} F). Demande de {x.demandePar}. Un profil habilité, autre que le demandeur, émet la facture (CDC §4.1).
             </Bandeau>
           ) : null}
           {x.pdfEnAttente > 0 ? (
@@ -312,7 +312,7 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
             titre="Émettre"
             description={
               x.actions.emettreSousSeuil
-                ? `Le TTC dépasse le seuil du produit (${x.seuil ? f(x.seuil) : "?"} F) : votre demande passera « À valider ».`
+                ? `Le TTC dépasse le seuil de validation (${x.seuil ? f(x.seuil) : "?"} F) : votre demande passera « À valider ».`
                 : "Le numéro FAC est attribué maintenant ; la facture ne se modifiera plus."
             }
           >

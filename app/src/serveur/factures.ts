@@ -70,7 +70,7 @@ import {
 } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { figer, produire, produireEnAttente, prochaineVersion, type AssociesFiges, type IssueProduction, type TypeAProduire } from "./production";
-import { lireParametresSociete } from "./societe";
+import { lireParametresSociete, lireSeuilValidationGlobal } from "./societe";
 import { fermerTachesAutomatiquement } from "./taches-police";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 
@@ -746,9 +746,8 @@ export type ResultatEmission =
   | { statut: "EMISE"; numero: string; productions: IssueProduction[] }
   | { statut: "A_VALIDER"; ttc: string; seuil: string | null; demandeePar: string };
 
-async function seuilDe(produitId: number, versionDateEffet: Date): Promise<string | null> {
-  const v = await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { produitId_dateEffet: { produitId, dateEffet: versionDateEffet } }, select: { seuilValidationTtc: true } });
-  return v.seuilValidationTtc ? v.seuilValidationTtc.toFixed() : null;
+async function seuilDe(_produitId: number, versionDateEffet: Date): Promise<string | null> {
+  return lireSeuilValidationGlobal(versionDateEffet.toISOString().slice(0, 10));
 }
 
 /**

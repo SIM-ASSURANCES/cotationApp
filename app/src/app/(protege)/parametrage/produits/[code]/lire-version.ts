@@ -68,7 +68,8 @@ export function lireVersion(donnees: FormData): VersionSaisie {
       frais: m(champ(donnees, "frais") || "0"),
     },
     cotation: { validiteMois: Number(champ(donnees, "validiteMois")), formulesMax: Number(champ(donnees, "formulesMax")) },
-    seuilValidationTtc: mOuNull(champOuNull(donnees, "seuil")),
+    // Retiré de la saisie (20/10/2026, étape 3) : le seuil de validation est désormais unique et global (écran Société).
+    seuilValidationTtc: null,
     // Champ absent : FORMULE (le comportement d'avant la 6.2a) ; valeur inconnue : refusée avec un message par la validation.
     modeTarification: parmi<ModeTarification>(champ(donnees, "modeTarification") || "FORMULE", MODES_TARIFICATION),
     // Session 6.2b : liste des garanties du produit (mode par garanties) ; la case « saisie libre » est cochée par défaut, et absente d'un formulaire d'avant.

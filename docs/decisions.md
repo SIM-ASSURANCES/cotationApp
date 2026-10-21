@@ -680,3 +680,31 @@ Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir)
   - **H109** (**Seuil de validation global historisé**) : la valeur en vigueur est lue selon la date d'effet de la pièce ou de sa version dans la table `parametres` (`cle = 'seuil_validation_global'`). Si aucune ligne n'est applicable, le défaut de 10 000 000 FCFA s'applique.
   - **H110** (**Validation par l'un des deux profils**) : le profil qui valide émet le document et clôt la demande de validation. Aucun circuit séquentiel n'est exigé.
 
+## D40 — Session Étape 4 : Arborescence, partie 1 — navigation et menu (21/10/2026)
+
+- **Date** : 21/10/2026. Branche `phase-arborescence-navigation`. Réponse de la Technique et arbitrages de Thierry.
+- **Explorateur Portefeuille (Option a retenue)** :
+  1. Mise en place de l'explorateur hiérarchique dédié à 4 niveaux :
+     - `/portefeuille` : synthèse des 5 branches principales avec compteurs de produits, clients et polices.
+     - `/portefeuille/[branche]` : produits rattachés à la branche avec mode de tarification (Formule / Garanties) et compteurs.
+     - `/portefeuille/[branche]/[produit]` : clients et prospects du produit avec contact et compteurs de cotations / polices.
+     - `/portefeuille/[branche]/[produit]/[client]` : fiche client et tableau des cotations et contrats menant aux fiches `/cotations/[id]`.
+  2. Fil d'Ariane continu à chaque niveau pour faciliter la remontée dans l'arborescence.
+  3. Menu latéral : entrée « Portefeuille » ajoutée en premier lien du groupe « Production » (icône `portefeuille`), affichée dès que le profil peut lire les cotations ou les contrats (`CREER_COTATION` ou `EMETTRE_CONTRAT`).
+- **Clients et prospects (H112)** :
+  1. Tous les souscripteurs du portefeuille sont consultables :
+     - Clients enregistrés en base : identifiés par `CLI-<id>`.
+     - Prospects libres (sans compte client) : identifiés par `PROSP-<cotationId>`.
+  2. Respect de la contrainte d'absence de données personnelles dans les segments d'URL, préparant directement l'étape 5 (rangement des fichiers).
+- **Paramétrage des produits regroupés par branche (H113)** :
+  1. L'écran `/parametrage/produits` organise l'affichage en sections distinctes pour chacune des 5 branches principales, avec un tableau de produits dédié par branche.
+  2. Le filtre sélecteur au sommet est conservé pour isoler rapidement une branche donnée.
+  3. Une section de rattrapage « Autres produits » s'affiche si des produits n'ont pas encore de branche principale renseignée.
+- **Liaisons sous cotation et sous facture** :
+  1. Sous une cotation acceptée (`/cotations/[id]`) : bloc « Contrat, avenants et facturation » regroupant les conditions particulières émises (téléchargement direct), le lien vers les adhérents/avenants, et le tableau des factures et avoirs de la police.
+  2. Sous une facture (`/factures/[id]`) : les numéros de reçus dans le tableau des paiements sont cliquables pour télécharger directement le PDF du reçu ; la table des documents prend en compte et libelle explicitement les avis d'échéance et les relances émises.
+- **Hypothèses nouvelles** :
+  - **H111** (**Arborescence Portefeuille dédiée**) : les 4 niveaux hiérarchiques de l'explorateur appliquent les mêmes contrôles côté serveur que les listes de cotations et contrats.
+  - **H112** (**Convention d'identification souscripteur dans le portefeuille**) : préfixe `CLI-<id>` pour les clients enregistrés et `PROSP-<cotationId>` pour les prospects saisis librement.
+  - **H113** (**Regroupement par branche principale au paramétrage**) : affichage par section pour chacune des 5 branches principales, avec état vide propre si 0 produit.
+

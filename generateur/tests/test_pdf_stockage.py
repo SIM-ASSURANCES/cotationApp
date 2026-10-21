@@ -87,6 +87,24 @@ def test_zip(tmp_path: Path) -> None:
         assert archive.read("deux.pdf") == b"22"
 
 
+def test_zip_arborescent_etape_5(tmp_path: Path) -> None:
+    stockage.ecrire(tmp_path, "MALADIE/RELAXSANTE/CLI-1/cot.pdf", b"cotation")
+    stockage.ecrire(tmp_path, "MALADIE/RELAXSANTE/CLI-1/pol/facture/fac.pdf", b"facture")
+    fichiers = [
+        ("MALADIE/RELAXSANTE/CLI-1/cot.pdf", "MALADIE/RELAXSANTE/CLI-1/cot.pdf"),
+        ("MALADIE/RELAXSANTE/CLI-1/pol/facture/fac.pdf", "MALADIE/RELAXSANTE/CLI-1/pol/facture/fac.pdf"),
+    ]
+    with zipfile.ZipFile(io.BytesIO(stockage.zipper(tmp_path, fichiers))) as archive:
+        assert sorted(archive.namelist()) == [
+            "MALADIE/RELAXSANTE/CLI-1/cot.pdf",
+            "MALADIE/RELAXSANTE/CLI-1/pol/facture/fac.pdf",
+        ]
+        assert archive.read("MALADIE/RELAXSANTE/CLI-1/cot.pdf") == b"cotation"
+
+    with pytest.raises(stockage.CheminInvalide):
+        stockage.zipper(tmp_path, [("MALADIE/RELAXSANTE/CLI-1/cot.pdf", "../hors.pdf")])
+
+
 @pytest.fixture
 def client_stockage(client: TestClient, tmp_path: Path) -> TestClient:
     app.dependency_overrides[obtenir_parametres] = lambda: charger_parametres(_env_file=None, dossier_sortie=tmp_path)

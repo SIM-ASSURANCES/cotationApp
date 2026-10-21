@@ -75,11 +75,12 @@ def lire(base: Path, chemin: str) -> bytes:
 
 
 def zipper(base: Path, fichiers: list[tuple[str, str]]) -> bytes:
-    """Archive ZIP de fichiers stockés : (chemin stocké, nom dans l'archive)."""
+    """Archive ZIP de fichiers stockés : (chemin stocké, nom ou chemin dans l'archive)."""
     sortie = io.BytesIO()
     with zipfile.ZipFile(sortie, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for chemin, nom in fichiers:
-            archive.writestr(_resoudre(Path("."), nom).name, lire(base, chemin))
+            chemin_archive = "/".join(_resoudre(Path(""), nom).parts)
+            archive.writestr(chemin_archive, lire(base, chemin))
     return sortie.getvalue()
 
 

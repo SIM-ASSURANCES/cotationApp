@@ -970,7 +970,8 @@ export async function zipDocuments(acteur: UtilisateurCourant, ids: number[], ad
     const noms = lignes.filter((d) => differes.has(d.id)).map((d) => `${d.numero} v${d.version}`);
     throw new ErreurMetier(`Fichier en attente d'écriture dans le stockage : ${noms.join(", ")}. Téléchargez ce document seul, ou réessayez l'archive après la reprise automatique.`);
   }
-  const contenu = await stockage().zip(lignes.map((d) => ({ chemin: d.chemin, nom: nomFichier(d) })));
+  // L'export ZIP reprend la même arborescence que le stockage (Étape 5, D41)
+  const contenu = await stockage().zip(lignes.map((d) => ({ chemin: d.chemin, nom: d.chemin })));
   await journaliser({ acteur: auteur(acteur), action: "DOCUMENT_TELECHARGE", objetType: "documents", objetId: lignes.map((d) => d.id).join(","), apres: { zip: lignes.map((d) => `${d.numero} v${d.version}`) }, adresseIp });
   return { nom: `documents_${aujourdhui()}.zip`, contenu };
 }

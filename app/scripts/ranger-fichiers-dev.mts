@@ -3,8 +3,10 @@
 // <branche>/<produit>/<client>/<cotation>/<contrat>/<avenant>/<facture>/{avoir,recus,relances}/<nom>.pdf
 //
 // Lancement à la main uniquement (jamais en production) :
-//   npm run ranger:dev
-//   docker compose run --rm -e NODE_ENV=development outils npm run ranger:dev
+//   AUTORISER_RANGEMENT_DEV=oui npm run ranger:dev
+//   docker compose run --rm -e NODE_ENV=development -e AUTORISER_RANGEMENT_DEV=oui outils npm run ranger:dev
+// Refusé si NODE_ENV=production ou si AUTORISER_RANGEMENT_DEV n'est pas exactement « oui ».
+// Les anciens fichiers ne sont jamais supprimés (stockage en ajout seul).
 import nextEnv from "@next/env";
 
 nextEnv.loadEnvConfig(process.cwd());

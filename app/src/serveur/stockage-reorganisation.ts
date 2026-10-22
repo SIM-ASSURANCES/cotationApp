@@ -1,13 +1,16 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { TypeDocument } from "@/domaine/documents/emission";
+import { ErreurDejaStocke } from "./generateur";
 import { calculerCheminStockage } from "./stockage-arborescence";
 import { stockage as getStockage } from "./stockage";
 
 export class ReorganisationInterditeEnProduction extends Error {
   constructor() {
-    super("Le rangement des fichiers est strictement interdit en environnement de production.");
+    super("Le rangement des fichiers est interdit en production et exige AUTORISER_RANGEMENT_DEV=oui.");
   }
 }
 
@@ -19,19 +22,28 @@ export type RapportRangement = {
   erreurs: { id: number; numero: string; erreur: string }[];
 };
 
+const sha256 = (octets: Uint8Array) => createHash("sha256").update(octets).digest("hex");
+const egaux = (a: Uint8Array, b: Uint8Array) => sha256(a) === sha256(b);
+
 /**
  * Script idempotent de rangement des documents de développement (Étape 5, D41).
- * Recalcule le chemin arborescent, déplace le fichier physique dans le stockage
- * et met à jour la colonne `chemin` dans documents_emis en désactivant temporairement
- * le déclencheur PostgreSQL d'immuabilité (session_replication_role = 'replica').
+ * Recalcule le chemin arborescent, COPIE le fichier dans le stockage (l'ancien fichier n'est jamais
+ * supprimé : stockage en ajout seul) et met à jour la colonne `chemin` de documents_emis. Pour cela,
+ * le déclencheur d'immuabilité est désactivé par `SET LOCAL session_replication_role = replica`,
+ * dans la même transaction que l'UPDATE : aucune connexion ne reste en mode replica.
  *
- * STRICTEMENT INTERDIT EN PRODUCTION.
+ * - fichier source introuvable : `chemin` inchangé, compté en « introuvables » seulement ;
+ * - fichier cible déjà présent : même empreinte SHA-256 = idempotent, empreinte différente = erreur,
+ *   pas d'UPDATE ; toute autre erreur d'écriture : erreur au rapport, pas d'UPDATE.
+ *
+ * STRICTEMENT INTERDIT EN PRODUCTION. Lancement (jamais sur un serveur) :
+ *   AUTORISER_RANGEMENT_DEV=oui npm run ranger:dev
  */
 export async function rangerDocumentsDev(
   prisma: PrismaClient,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<RapportRangement> {
-  if (env.NODE_ENV === "production") {
+  if (env.NODE_ENV === "production" || env.AUTORISER_RANGEMENT_DEV !== "oui") {
     throw new ReorganisationInterditeEnProduction();
   }
 
@@ -67,34 +79,36 @@ export async function rangerDocumentsDev(
         continue;
       }
 
-      // Tentative de lecture de l'ancien fichier
-      let contenu: Uint8Array | null = null;
+      let contenu: Uint8Array;
       try {
         contenu = await s.lire(doc.chemin);
       } catch {
         rapport.introuvables += 1;
+        continue;
       }
 
-      // Écriture du nouveau fichier si le contenu est disponible
-      if (contenu) {
-        try {
-          await s.ecrire(nouveauChemin, contenu);
-        } catch {
-          // Déjà présent (idempotence)
+      try {
+        const ecrit = await s.ecrire(nouveauChemin, contenu);
+        if (ecrit.empreinte !== sha256(contenu)) {
+          throw new Error(`Empreinte écrite différente de la source pour ${nouveauChemin}`);
+        }
+      } catch (err) {
+        if (!(err instanceof ErreurDejaStocke)) throw err;
+        const present = await s.lire(nouveauChemin);
+        if (!egaux(present, contenu)) {
+          throw new Error(`Un fichier différent occupe déjà ${nouveauChemin} : aucun UPDATE`);
         }
       }
 
-      // Mise à jour en base en contournant le trigger par session_replication_role
-      await prisma.$executeRawUnsafe("SET session_replication_role = 'replica';");
-      try {
-        await prisma.$executeRawUnsafe(
+      // SET LOCAL et UPDATE dans UNE transaction : le mode replica s'arrête avec elle.
+      await prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe("SET LOCAL session_replication_role = replica;");
+        await tx.$executeRawUnsafe(
           "UPDATE documents_emis SET chemin = $1 WHERE id = $2;",
           nouveauChemin,
           doc.id,
         );
-      } finally {
-        await prisma.$executeRawUnsafe("SET session_replication_role = 'origin';");
-      }
+      });
 
       rapport.deplaces += 1;
     } catch (err) {

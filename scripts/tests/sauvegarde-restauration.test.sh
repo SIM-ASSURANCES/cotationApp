@@ -9,120 +9,16 @@
 # volumes sont créés, puis SUPPRIMÉS à la fin (docker compose down -v), quel que soit le résultat. Les secrets de la pile sont
 # générés au hasard dans un dossier temporaire : le .env du dépôt n'est ni lu ni modifié. Prévoir quelques minutes la première
 # fois (construction des images « outils » et « generateur », ensuite en cache).
-set -Eeuo pipefail
-export LC_ALL=C MSYS_NO_PATHCONV=1
-REP="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPTS="$(cd "$REP/.." && pwd)"
-RACINE="$(cd "$SCRIPTS/.." && pwd)"
-# shellcheck source=../lib-sauvegarde.sh
-. "$SCRIPTS/lib-sauvegarde.sh"
-
 PROJET="sauvegarde-test"
-TMP="$(mktemp -d)"
+# shellcheck source=lib-pile-test.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib-pile-test.sh" # pile jetable, secrets aléatoires, nettoyage à la sortie, fonctions d'essai
 SAUVEGARDES="$TMP/sauvegardes"
 mkdir -p "$SAUVEGARDES"
-ENV_FILE="$TMP/essai.env"
-
-aleatoire() { head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
-cat >"$ENV_FILE" <<FIN
-POSTGRES_USER=essai
-POSTGRES_DB=essai_documents
-POSTGRES_PASSWORD=$(aleatoire)
-REDIS_PASSWORD=$(aleatoire)
-GENERATEUR_SECRET=$(aleatoire)
-AUTH_SECRET=$(aleatoire)
-FIN
-export ENV_FILE
-
-dc() {
-  docker compose -p "$PROJET" --project-directory "$(chemin_hote "$RACINE")" -f "$(chemin_hote "$RACINE")/docker-compose.yml" \
-    --env-file "$(chemin_hote "$ENV_FILE")" "$@"
-}
-detruire_pile() { dc down -v --remove-orphans >/dev/null 2>&1 || true; }
-fin() {
-  local code=$?
-  trap - EXIT
-  detruire_pile
-  rm -rf "$TMP"
-  exit "$code"
-}
-trap fin EXIT
-trap 'exit 130' INT TERM
-
-echecs=0
-etape() { printf '\n== %s\n' "$*"; }
-ok() { printf '  ok      %s\n' "$1"; }
-ko() { printf '  ÉCHEC   %s\n' "$1"; echecs=$((echecs + 1)); }
-verifier() { if [ "$2" = "$3" ]; then ok "$1"; else ko "$1 (attendu « $2 », obtenu « $3 »)"; fi; }
-# refus <description> <motif attendu dans la sortie> <commande...> : la commande doit échouer et dire pourquoi.
-refus() {
-  local description="$1" motif="$2" sortie
-  shift 2
-  if sortie="$("$@" 2>&1)"; then ko "$description : la commande aurait dû être refusée"; return; fi
-  case "$sortie" in *"$motif"*) ok "$description" ;; *) ko "$description : refusée, mais pas pour la bonne raison : $sortie" ;; esac
-}
-psql_pile() { # psql_pile <requête>
-  sql "$(conteneur_service "$PROJET" postgres)" "$1"
-}
-compte() { psql_pile "select count(*) from \"$1\""; }
-TABLES="clients cotations polices factures documents_emis"
-
-[[ "$PROJET" == sauvegarde-test* ]] || { echo "projet inattendu : $PROJET"; exit 1; }
-detruire_pile
 
 # ---------------------------------------------------------------------------------------------------------------------
-etape "1. Pile jetable « $PROJET » : base, générateur, migrations, données inventées"
-dc up -d --build --wait postgres generateur >/dev/null
-dc run --rm -T outils >/dev/null # migrate deploy : le vrai schéma, avec ses déclencheurs
-GEN="$(conteneur_service "$PROJET" generateur)"
-PG="$(conteneur_service "$PROJET" postgres)"
-docker exec -i "$PG" sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -q' <"$REP/donnees-inventees.sql"
-
-# Trois vrais PDF écrits par le code de stockage du générateur (mêmes droits, même propriétaire qu'en service).
-SCRIPT_PDF="$(
-  cat <<'FIN'
-import io, sys
-from pathlib import Path
-from pypdf import PdfWriter
-from app import stockage
-
-racine = stockage.racine(Path("/donnees/sortie"))
-for numero, chemin in enumerate(sys.argv[1:], start=1):
-    ecriture = PdfWriter()
-    ecriture.add_blank_page(width=210, height=297)
-    ecriture.add_metadata({"/Title": "Document inventé %d" % numero})
-    tampon = io.BytesIO()
-    ecriture.write(tampon)
-    contenu = tampon.getvalue()
-    print(chemin, stockage.ecrire(racine, chemin, contenu), len(contenu))
-FIN
-)"
-CHEMINS=(
-  "ESSAI_PRINCIPALE/ESSAIPROD/CLI-1/COT-2026-10-0001/cotation-1.pdf"
-  "ESSAI_PRINCIPALE/ESSAIPROD/CLI-1/COT-2026-10-0001/POL-2026-900001/contrat-1.pdf"
-  "ESSAI_PRINCIPALE/ESSAIPROD/CLI-1/COT-2026-10-0001/POL-2026-900001/FAC-2026-10-0001/facture-1.pdf"
-)
-PDF_EMPREINTES="$(docker exec "$GEN" python -c "$SCRIPT_PDF" "${CHEMINS[@]}")"
-SQL_DOCUMENTS="$TMP/documents.sql"
-numero=0
-: >"$SQL_DOCUMENTS"
-while read -r chemin empreinte taille; do
-  numero=$((numero + 1))
-  jeton="$(aleatoire)$(aleatoire)"
-  cat >>"$SQL_DOCUMENTS" <<FIN
-insert into documents_emis (type, numero, version, jeton, chemin, empreinte, taille, produit_code, souscripteur_nom, souscripteur_masque,
-                            date_emission, modele_version_id, versions_associees, parametres_date, donnees, emis_par)
-select 'COTATION', 'COT-ESSAI-$numero', 1, '$jeton', '$chemin', '$empreinte', $taille, 'ESSAIPROD', 'Client Inventé Un', 'C. I. U.',
-       date '2026-10-22', mv.id, '{}'::jsonb, date '2026-01-01', '{}'::jsonb, 'test-sauvegarde'
-from modele_versions mv limit 1;
-FIN
-done <<<"$PDF_EMPREINTES"
-docker exec -i "$PG" sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -q' <"$SQL_DOCUMENTS"
-
-declare -A attendu=()
-for t in $TABLES; do attendu[$t]="$(compte "$t")"; done
-verifier "données inventées : 3 clients, 3 cotations, 2 polices, 2 factures, 3 documents émis" \
-  "3 3 2 2 3" "${attendu[clients]} ${attendu[cotations]} ${attendu[polices]} ${attendu[factures]} ${attendu[documents_emis]}"
+etape "1. Pile jetable « $PROJET » : base, générateur, migrations, données inventées, fichiers"
+preparer_pile_avec_donnees
+verifier "données inventées : 3 clients, 3 cotations, 2 polices, 2 factures, 3 documents émis"   "3 3 2 2 3" "${attendu[clients]} ${attendu[cotations]} ${attendu[polices]} ${attendu[factures]} ${attendu[documents_emis]}"
 
 # ---------------------------------------------------------------------------------------------------------------------
 etape "2. Refus de la sauvegarde (avant d'écrire quoi que ce soit)"
@@ -208,6 +104,8 @@ for ligne in sys.stdin:
 FIN
 )"
 verifier "3 PDF ouverts, empreintes d'origine" "3" "$(printf '%s\n' "$PDF_EMPREINTES" | docker exec -i "$GEN" python -I -c "$SCRIPT_CONTROLE" | grep -c '^ok ')"
+read -r zip_chemin zip_empreinte _ <<<"$ZIP_EMPREINTES"
+verifier "archive ZIP d'import restaurée à l'identique" "$zip_empreinte" "$(docker exec "$GEN" sha256sum "/donnees/sortie/documents/$zip_chemin" | cut -d' ' -f1)"
 verifier "propriétaire et droits conservés (uid 10001, lecture seule)" "10001 440" \
   "$(docker exec "$GEN" stat -c '%u %a' "/donnees/sortie/documents/${CHEMINS[0]}")"
 refus "la restauration d'une seconde fois est refusée (la base n'est plus vide)" "REFUS : la base" bash "$SCRIPTS/restauration.sh" -p "$PROJET" -s "$JEU"

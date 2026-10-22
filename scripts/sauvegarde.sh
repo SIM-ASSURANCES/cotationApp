@@ -42,19 +42,7 @@ exiger_commandes docker sha256sum gzip realpath date
 DOSSIER="$(realpath -m -- "$DOSSIER_SAUVEGARDE")"
 [ "$DOSSIER" != "/" ] || echec "DOSSIER_SAUVEGARDE ne peut pas être la racine."
 
-# Volumes du projet et sources des montages de ses conteneurs (arrêtés compris) : la cible ne doit pas s'y trouver.
-sources_des_donnees() {
-  local v c
-  while read -r v; do docker volume inspect -f '{{.Mountpoint}}' "$v"; done < <(docker volume ls -q --filter "label=com.docker.compose.project=$PROJET")
-  while read -r c; do docker inspect -f '{{range .Mounts}}{{println .Source}}{{end}}' "$c"; done < <(docker ps -aq --filter "label=com.docker.compose.project=$PROJET")
-}
-while IFS= read -r source; do
-  [ -n "$source" ] || continue
-  source="$(realpath -m -- "$source")"
-  case "$DOSSIER/" in
-    "$source"/*) echec "DOSSIER_SAUVEGARDE ($DOSSIER) est à l'intérieur des données du projet ($source) : choisir un disque ou un serveur distinct." ;;
-  esac
-done < <(sources_des_donnees)
+refuser_dans_donnees "$PROJET" "$DOSSIER" DOSSIER_SAUVEGARDE
 
 [ -d "$DOSSIER" ] || echec "DOSSIER_SAUVEGARDE n'existe pas : $DOSSIER (le script ne le crée pas ; disque monté ?)."
 [ -w "$DOSSIER" ] || echec "DOSSIER_SAUVEGARDE n'est pas accessible en écriture : $DOSSIER."

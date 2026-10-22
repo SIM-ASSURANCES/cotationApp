@@ -57,6 +57,22 @@ attendre_postgres() {
   return 1
 }
 
+# refuser_dans_donnees <projet> <dossier absolu normalisé> <nom de la variable> : refuse (echec) un dossier situé à l'intérieur
+# d'un volume du projet ou d'un montage de ses conteneurs (arrêtés compris) : une copie qui vit avec les données ne les protège pas.
+refuser_dans_donnees() {
+  local v c source
+  while IFS= read -r source; do
+    [ -n "$source" ] || continue
+    source="$(realpath -m -- "$source")"
+    case "$2/" in
+      "$source"/*) echec "$3 ($2) est à l'intérieur des données du projet ($source) : choisir un disque ou un serveur distinct." ;;
+    esac
+  done < <(
+    while read -r v; do docker volume inspect -f '{{.Mountpoint}}' "$v"; done < <(docker volume ls -q --filter "label=com.docker.compose.project=$1")
+    while read -r c; do docker inspect -f '{{range .Mounts}}{{println .Source}}{{end}}' "$c"; done < <(docker ps -aq --filter "label=com.docker.compose.project=$1")
+  )
+}
+
 # Les noms de tables viennent de l'environnement : on n'accepte que des identifiants simples.
 valider_tables() {
   local t

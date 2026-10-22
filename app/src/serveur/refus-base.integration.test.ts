@@ -26,8 +26,9 @@ describe("déclencheurs réels : message montré tel quel", () => {
   });
 
   it("RAISE EXCEPTION sans code (P0001) : une branche fiscale ne se supprime pas", async () => {
-    const branche = await obtenirPrisma().branche.findFirstOrThrow();
-    const erreur = await erreurDe(() => obtenirPrisma().branche.delete({ where: { code: branche.code } }));
+    // SQL direct sur une branche de la migration : les autres fichiers de tests créent des branches en parallèle, et le « delete »
+    // de Prisma relit la ligne avant de la supprimer (erreur « introuvable » possible si elle change entre-temps).
+    const erreur = await erreurDe(() => obtenirPrisma().$executeRawUnsafe("DELETE FROM branches WHERE code = (SELECT code FROM branches ORDER BY code LIMIT 1)"));
     expect(messagePourErreurDeBase(erreur)).toBe("branche fiscale : suppression interdite, désactivez-la");
   });
 

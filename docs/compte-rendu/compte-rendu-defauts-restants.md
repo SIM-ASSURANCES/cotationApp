@@ -1,6 +1,6 @@
 # Compte rendu — Étape 10 : défauts et points restants (branche `phase-defauts-restants`)
 
-Décision **D46**, hypothèses **H127 à H131** (`docs/decisions.md`). Branche issue de `main` : D45 et H126 sont ceux de `phase-prorata-avenant` (à fusionner avant ou après, sans conflit de numéros).
+Décision **D46**, hypothèses **H127 à H131** (`docs/decisions.md`). Branche issue de `main` après la fusion de `phase-prorata-avenant` (D45, H126).
 
 ## Les dix points (un commit chacun)
 

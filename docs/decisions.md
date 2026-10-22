@@ -580,8 +580,8 @@ Conséquences retenues pour le code (session 4.0) :
 | H89 à H101 (session 6.2b : voir D32), en particulier H90 (principe retenu : composition précédente proposée en brouillon et confirmée avec un motif, à mettre en œuvre en 6.2c ; en attendant, l'incorporation d'adhérents reste possible mais n'est pas facturée) et le taux de 12,5 % de l'incendie (date d'effet) | Thierry, puis Direction Technique | avant la recette |
 | H120 à H123 (session Étape 8 : voir D43), en particulier H121 (durée des mensuelles et annuelles) et le dossier cible `DOSSIER_SAUVEGARDE` (disque ou serveur distinct, à fixer) | Thierry, puis superviseur | avant la mise en production |
 | H124 et H125 (export d'archive : voir D44), en particulier H125 (manifeste non signé : signature à décider) | Thierry, puis superviseur | avant la mise en production |
-| H127 à H131 (étape 10 : voir D46), en particulier H127 (limite par adresse IP : 10 échecs par minute, en mémoire) et H130 (courriel d'alerte : relais SMTP du VPS à vérifier) | Thierry, puis superviseur | avant la mise en production |
 | H126 (prorata de l'avenant au choix : voir D45), en particulier le choix non modifiable dans le brouillon et la durée affichée en « Non » | Direction Technique | avant la recette |
+| H127 à H131 (étape 10 : voir D46), en particulier H127 (limite par adresse IP : 10 échecs par minute, en mémoire) et H130 (courriel d'alerte : relais SMTP du VPS à vérifier) | Thierry, puis superviseur | avant la mise en production |
 
 Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir), Q3 (plus de dossier partagé : D11), Q4 (`assures[].sexe` ajouté : D12), Q5 (Thierry balise d'abord, puis la Technique : D12), H6 (validité en mois : D10).
 
@@ -794,7 +794,7 @@ Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir)
 
 ## D46 — Session Étape 10 : défauts et points restants (22/10/2026)
 
-- **Date** : 22/10/2026. Branche `phase-defauts-restants` (issue de `main`, indépendante de `phase-prorata-avenant` : D45 et H126 y sont réservés). Dix points, un commit chacun ; le dixième n'est pas codé.
+- **Date** : 22/10/2026. Branche `phase-defauts-restants` (issue de `main` après la fusion de `phase-prorata-avenant`, D45 et H126). Dix points, un commit chacun ; le dixième n'est pas codé.
 - **Règle** :
   1. **Tests** : le test des droits par défaut en base écrit le tableau du CDC §4 attendu dans le test (plus de lecture de `docs/cdc.md` à l'exécution). Cause du message Prisma des factures : le pilote `adapter-pg` classe le code `23001` (`restrict_violation`, utilisé par tous nos déclencheurs) parmi les clés étrangères (P2003) ; le message du déclencheur reste dans `meta.driverAdapterError.cause.originalMessage`. `refusDuDeclencheur` (`serveur/refus-base.ts`) le retrouve ; `executerAction` et `avecMessage` l'affichent au lieu d'une erreur 500. Modifier une facture annulée dit qu'elle est annulée par un avoir. Les e2e qui relèvent le seuil global à 20 M le rétablissent dans un `finally`.
   2. **M2** : 10 échecs de connexion par minute et par adresse IP (`LimiteRequetes`), en plus du verrouillage par compte. **m1** : `utilisateurs.mot_de_passe_modifie_le` (migration `20261022120000`) portée par le jeton et comparée à la base : un changement ou une réinitialisation ferme les sessions ouvertes. **m7** : le seed de développement refuse une base qui contient un compte hors seed. **m13** : `/docs`, `/redoc` et `/openapi.json` du générateur absents sauf `GENERATEUR_DOCS=oui`.

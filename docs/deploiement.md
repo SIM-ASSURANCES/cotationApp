@@ -159,7 +159,19 @@ La rotation ne supprime **jamais** une mensuelle ou une annuelle encore dans sa 
 0 3 * * 0  DOSSIER_SAUVEGARDE=/mnt/sauvegardes-sim  /opt/sim-documents/scripts/sauvegarde.sh -p sim-documents -t hebdomadaire  >> /var/log/sim-sauvegarde.log 2>&1
 ```
 
-(Adapter le chemin du dépôt et celui du dossier cible.) Un verrou empêche deux sauvegardes simultanées. Surveiller le journal et la **date de la dernière sauvegarde** : une sauvegarde qui ne tourne plus ne prévient pas.
+(Adapter le chemin du dépôt et celui du dossier cible.) Un verrou empêche deux sauvegardes simultanées.
+
+### Alerte : la dernière sauvegarde quotidienne a plus de 26 heures
+
+Une sauvegarde qui ne tourne plus ne prévient pas : `scripts/alerte-sauvegarde.sh` le fait. Il lit le `DOSSIER_SAUVEGARDE`, retient la dernière `_quotidienne` **complète** (dossier contenant `MANIFESTE.txt`) et alerte si elle date de plus de 26 heures (`HEURES_MAX_SAUVEGARDE` ou `-h` pour changer), si le dossier est vide ou introuvable (disque non monté). Une hebdomadaire récente ne suffit pas. Ligne `cron` à ajouter, **après** l'heure de la quotidienne (2 h) avec de la marge (la sauvegarde dure quelques minutes) :
+
+```cron
+0 7 * * *  DOSSIER_SAUVEGARDE=/mnt/sauvegardes-sim  ALERTE_COURRIEL=technique@sim-assurances.exemple  /opt/sim-documents/scripts/alerte-sauvegarde.sh  >> /var/log/sim-sauvegarde.log 2>&1
+```
+
+- **Avec `ALERTE_COURRIEL`** (ou `-c`) : un courriel est envoyé par la commande `mail` (paquet `mailutils`/`bsd-mailx`) ou, à défaut, `sendmail`. Le serveur doit savoir expédier du courrier (relais SMTP du VPS) : **à vérifier avec le superviseur** en lançant le script avec `-h 1` juste après une sauvegarde plus ancienne, ou à la main : `echo test | mail -s test adresse`.
+- **Sans courriel configuré, sans commande d'envoi, ou si l'envoi échoue** : l'alerte n'est jamais perdue. Une ligne `ERREUR` est écrite sur la sortie d'erreur (donc dans `/var/log/sim-sauvegarde.log` avec la redirection ci-dessus, et dans le courrier de cron) et signalée à syslog (`logger`, étiquette `sim-sauvegarde`). Le code de sortie est 1 (3 : mauvais usage). Surveiller ce journal.
+- Essai à dates simulées, sans Docker : `bash scripts/tests/alerte.test.sh`. Essai à la main : `scripts/alerte-sauvegarde.sh -d "$DOSSIER_SAUVEGARDE" -n '2030-01-01 07:00:00'` (alerte attendue).
 
 ### Restauration
 

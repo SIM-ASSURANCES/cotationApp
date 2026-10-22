@@ -4,7 +4,8 @@ Lancement, depuis le dossier generateur/ :
     uvicorn app.main:app --host 127.0.0.1 --port 8001
 ou, avec l'adresse et le port lus dans .env (GENERATEUR_HOTE, GENERATEUR_PORT) :
     python -m app
-Documentation OpenAPI : http://127.0.0.1:8001/docs
+Documentation OpenAPI : http://127.0.0.1:8001/docs, seulement avec GENERATEUR_DOCS=oui (poste de développement ;
+désactivée par défaut, donc en production : audit m13).
 """
 
 from fastapi import FastAPI
@@ -16,7 +17,8 @@ from app.routes import interne, sante
 
 def creer_app() -> FastAPI:
     # Valide la configuration dès le démarrage : une erreur arrête le service tout de suite.
-    obtenir_parametres()
+    parametres = obtenir_parametres()
+    docs_actives = parametres.generateur_docs == "oui"
 
     application = FastAPI(
         title="SIM Documents : générateur",
@@ -26,6 +28,10 @@ def creer_app() -> FastAPI:
             "d'assemblage. Il n'écoute que la machine locale ; les routes /interne "
             "exigent l'en-tête X-Generateur-Secret."
         ),
+        # Audit m13 : /docs, /redoc et /openapi.json ne demandent pas le secret ; absents sauf GENERATEUR_DOCS=oui.
+        docs_url="/docs" if docs_actives else None,
+        redoc_url="/redoc" if docs_actives else None,
+        openapi_url="/openapi.json" if docs_actives else None,
     )
     application.include_router(sante.router)
     application.include_router(interne.router)

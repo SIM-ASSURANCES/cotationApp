@@ -8,7 +8,7 @@ silencieuse, à part les quatre défauts documentés ci-dessous et dans .env.exa
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, SecretStr, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -40,6 +40,9 @@ class Parametres(BaseSettings):
     conversions_simultanees: int = Field(default=2, ge=1, le=16)
     generateur_hote: str = Field(default="127.0.0.1", min_length=1)
     generateur_port: int = Field(default=8001, ge=1, le=65535)
+    # Documentation OpenAPI (/docs, /redoc, /openapi.json) : désactivée par défaut (audit m13) ; « oui » seulement sur un poste de
+    # développement. Jamais sur un serveur : ces pages ne demandent pas le secret.
+    generateur_docs: Literal["oui", "non"] = "non"
 
     @field_validator("libreoffice_chemin", "dossier_sortie", "profil_libreoffice")
     @classmethod
@@ -66,6 +69,8 @@ def _message(erreur: dict[str, Any]) -> str:
             return f"doit contenir au moins {contexte['min_length']} caractères"
         case "value_error":
             return str(contexte.get("error", erreur["msg"]))
+        case "literal_error":
+            return "doit valoir « oui » ou « non »"
         case "int_parsing":
             return "doit être un nombre entier"
         case "greater_than_equal":

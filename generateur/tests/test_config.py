@@ -20,6 +20,7 @@ def test_configuration_complete_acceptee_avec_les_defauts_documentes(
     assert parametres.delai_conversion_s == 60
     assert parametres.generateur_hote == "127.0.0.1"
     assert parametres.generateur_port == 8001
+    assert parametres.generateur_docs == "non"
 
 
 def test_secret_trop_court_refuse_sans_afficher_sa_valeur() -> None:
@@ -70,3 +71,12 @@ def test_conversions_simultanees_bornees() -> None:
         charger_parametres(**SANS_FICHIER_ENV, **base, conversions_simultanees=0)
     with pytest.raises(ConfigurationInvalide, match="CONVERSIONS_SIMULTANEES : doit être au plus 16"):
         charger_parametres(**SANS_FICHIER_ENV, **base, conversions_simultanees=17)
+
+
+def test_generateur_docs_accepte_oui_et_non_seulement(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GENERATEUR_DOCS", "oui")
+    assert charger_parametres(**SANS_FICHIER_ENV).generateur_docs == "oui"
+
+    monkeypatch.setenv("GENERATEUR_DOCS", "true")
+    with pytest.raises(ConfigurationInvalide, match="GENERATEUR_DOCS : doit valoir « oui » ou « non »"):
+        charger_parametres(**SANS_FICHIER_ENV)

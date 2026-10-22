@@ -137,7 +137,7 @@ uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 
 Autre façon de lancer, avec l'adresse et le port lus dans `.env` (`GENERATEUR_HOTE`, `GENERATEUR_PORT`) : `python -m app`.
 
-La documentation OpenAPI est sur http://127.0.0.1:8001/docs. Le générateur n'écoute que la machine locale (`127.0.0.1`).
+La documentation OpenAPI (http://127.0.0.1:8001/docs) n'est servie que si `GENERATEUR_DOCS=oui` (poste de développement ; désactivée par défaut, donc sur tout serveur, audit m13). Le générateur n'écoute que la machine locale (`127.0.0.1`).
 
 ## 6. Vérifier l'ensemble
 

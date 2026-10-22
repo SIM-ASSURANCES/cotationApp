@@ -12,6 +12,11 @@ export class LimiteRequetes {
     private readonly clesMax = 10_000,
   ) {}
 
+  /** La limite est-elle atteinte pour cette clé ? N'enregistre aucun appel (pour ne compter que certains événements, par exemple les échecs). */
+  saturee(cle: string, maintenant: number): boolean {
+    return (this.appels.get(cle) ?? []).filter((t) => maintenant - t < this.fenetreMs).length >= this.maximum;
+  }
+
   /** Enregistre un appel ; renvoie false si la limite est dépassée. */
   accepter(cle: string, maintenant: number): boolean {
     const recents = (this.appels.get(cle) ?? []).filter((t) => maintenant - t < this.fenetreMs);

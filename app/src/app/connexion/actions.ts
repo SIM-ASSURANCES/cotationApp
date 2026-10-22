@@ -17,7 +17,7 @@ export async function connecter(_etat: EtatFormulaire, donnees: FormData): Promi
     if (erreur instanceof AuthError) {
       // Message unique : on ne dit jamais si c'est l'identifiant, le mot de passe ou le verrouillage.
       return {
-        erreur: "Identifiant ou mot de passe incorrect, ou compte temporairement verrouillé.",
+        erreur: "Identifiant ou mot de passe incorrect, compte temporairement verrouillé, ou trop d'échecs depuis votre adresse (réessayez dans une minute).",
       };
     }
     throw erreur; // dont la redirection après une connexion réussie

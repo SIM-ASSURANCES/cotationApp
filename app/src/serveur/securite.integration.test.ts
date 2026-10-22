@@ -143,6 +143,45 @@ describe("connexion", () => {
   });
 });
 
+describe("connexion : limite des échecs par adresse IP (audit M2)", () => {
+  const adresse = () => `198.51.100.${1 + Math.floor(Math.random() * 250)}`;
+
+  it("refuse au 11e échec de la minute, même avec le bon mot de passe, sans toucher aux autres adresses ; une seule ligne d'audit", async () => {
+    const admin = await nouvelAdmin();
+    const ip = adresse();
+    const maintenant = new Date();
+    // Dix identifiants différents : aucun compte n'atteint son propre seuil de verrouillage (5), seule l'adresse est en cause.
+    for (let i = 0; i < 10; i += 1) {
+      expect(await verifierIdentifiants({ identifiant: unique("cible"), motDePasse: `faux-${i}-xxxxxxxx` }, ip, maintenant)).toBeNull();
+    }
+    // Onzième tentative, avec le bon mot de passe : refusée (limite atteinte), plusieurs fois, journalisée une seule fois.
+    expect(await verifierIdentifiants({ identifiant: admin.identifiant, motDePasse: MDP }, ip, maintenant)).toBeNull();
+    expect(await verifierIdentifiants({ identifiant: admin.identifiant, motDePasse: MDP }, ip, new Date(maintenant.getTime() + 1000))).toBeNull();
+    const refus = (await lireJournal({ action: "CONNEXION_REFUSEE_TROP_D_ECHECS_IP" })).lignes.filter((l) => l.adresseIp === ip);
+    expect(refus).toHaveLength(1);
+    // Le compte, lui, n'a pas été touché (la base n'a pas été lue) et une autre adresse se connecte normalement.
+    expect((await verifierIdentifiants({ identifiant: admin.identifiant, motDePasse: MDP }, adresse()))?.id).toBe(admin.id);
+    // Après la fenêtre d'une minute, l'adresse est de nouveau acceptée.
+    expect((await verifierIdentifiants({ identifiant: admin.identifiant, motDePasse: MDP }, ip, new Date(maintenant.getTime() + 61_000)))?.id).toBe(admin.id);
+  });
+
+  it("les connexions réussies ne comptent pas : plus de dix connexions normales depuis un bureau", async () => {
+    const admin = await nouvelAdmin();
+    const ip = adresse();
+    for (let i = 0; i < 12; i += 1) {
+      expect((await verifierIdentifiants({ identifiant: admin.identifiant, motDePasse: MDP }, ip))?.id).toBe(admin.id);
+    }
+  });
+
+  it("sans adresse connue, seul le verrouillage par compte s'applique", async () => {
+    const admin = await nouvelAdmin();
+    for (let i = 0; i < 12; i += 1) {
+      expect(await verifierIdentifiants({ identifiant: unique("cible"), motDePasse: `faux-${i}-xxxxxxxx` }, null)).toBeNull();
+    }
+    expect((await verifierIdentifiants({ identifiant: admin.identifiant, motDePasse: MDP }, null))?.id).toBe(admin.id);
+  });
+});
+
 describe("droits et gestion des utilisateurs", () => {
   it("réserve la gestion des utilisateurs à l'Admin système", async () => {
     const admin = await nouvelAdmin();

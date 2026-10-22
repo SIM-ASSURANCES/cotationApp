@@ -2,6 +2,9 @@
 
 export const MAX_ECHECS_CONSECUTIFS = 5;
 export const DUREE_VERROUILLAGE_MINUTES = 15;
+/** Audit M2 : échecs de connexion tolérés par adresse IP et par minute, tous comptes confondus (en plus du verrouillage par compte). */
+export const ECHECS_CONNEXION_MAX_PAR_IP = 10;
+export const FENETRE_ECHECS_CONNEXION_MS = 60_000;
 export const SESSION_DUREE_MAX_HEURES = 8;
 export const MOT_DE_PASSE_LONGUEUR_MIN = 12;
 export const MOT_DE_PASSE_LONGUEUR_MAX = 128;

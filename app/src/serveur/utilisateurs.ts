@@ -3,7 +3,10 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 
 import { estCodeProfil, peutAgir, type CodeProfil } from "@/domaine/droits";
+import { LimiteRequetes } from "@/domaine/limite";
 import {
+  ECHECS_CONNEXION_MAX_PAR_IP,
+  FENETRE_ECHECS_CONNEXION_MS,
   estVerrouille,
   etatApresEchec,
   identifiantValide,
@@ -74,11 +77,38 @@ async function enregistrerEchec(
 }
 
 /**
+ * Audit M2 : limite des échecs de connexion par adresse IP, en mémoire du processus (comme celle de la page de vérification).
+ * Elle compte les échecs, jamais les connexions réussies : un bureau derrière une même adresse n'est pas gêné par ses connexions
+ * normales. Au-delà de la limite, la connexion est refusée avant toute lecture de la base, avec le même résultat qu'un échec.
+ * `limiteJournal` n'autorise qu'une ligne d'audit par adresse et par fenêtre : un robot ne remplit pas le journal.
+ */
+const limiteEchecsParIp = new LimiteRequetes(ECHECS_CONNEXION_MAX_PAR_IP, FENETRE_ECHECS_CONNEXION_MS);
+const limiteJournal = new LimiteRequetes(1, FENETRE_ECHECS_CONNEXION_MS);
+
+/**
  * Vérifie un couple identifiant / mot de passe (connexion). Renvoie l'utilisateur, ou null
- * SANS dire pourquoi (identifiant inconnu, mot de passe faux, compte verrouillé ou désactivé :
- * même réponse, même durée). Le motif réel est dans le journal d'audit.
+ * SANS dire pourquoi (identifiant inconnu, mot de passe faux, compte verrouillé ou désactivé,
+ * trop d'échecs depuis cette adresse : même réponse). Le motif réel est dans le journal d'audit.
+ * Sans adresse IP connue, seul le verrouillage par compte s'applique.
  */
 export async function verifierIdentifiants(
+  saisie: { identifiant: unknown; motDePasse: unknown },
+  adresseIp: string | null,
+  maintenant: Date = new Date(),
+): Promise<UtilisateurCourant | null> {
+  const instant = maintenant.getTime();
+  if (adresseIp && limiteEchecsParIp.saturee(adresseIp, instant)) {
+    if (limiteJournal.accepter(adresseIp, instant)) {
+      await journaliser({ acteur: null, action: "CONNEXION_REFUSEE_TROP_D_ECHECS_IP", apres: { echecsMax: ECHECS_CONNEXION_MAX_PAR_IP, fenetreSecondes: FENETRE_ECHECS_CONNEXION_MS / 1000 }, adresseIp });
+    }
+    return null;
+  }
+  const utilisateur = await verifierIdentifiantsSansLimite(saisie, adresseIp, maintenant);
+  if (!utilisateur && adresseIp) limiteEchecsParIp.accepter(adresseIp, instant);
+  return utilisateur;
+}
+
+async function verifierIdentifiantsSansLimite(
   saisie: { identifiant: unknown; motDePasse: unknown },
   adresseIp: string | null,
   maintenant: Date = new Date(),

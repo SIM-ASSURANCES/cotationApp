@@ -23,22 +23,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           { identifiant: identifiants?.identifiant, motDePasse: identifiants?.motDePasse },
           adresseIp(requete),
         );
-        return utilisateur ? { id: String(utilisateur.id), name: utilisateur.nom } : null;
+        return utilisateur ? { id: String(utilisateur.id), name: utilisateur.nom, motDePasseModifieLe: utilisateur.motDePasseModifieLe } : null;
       },
     }),
   ],
   callbacks: {
     ...authConfig.callbacks,
-    // Le jeton ne contient que l'identifiant : profil et droits sont relus en base à chaque requête.
+    // Le jeton ne contient que l'identifiant et la date du mot de passe de la session : profil et droits sont relus en base à chaque
+    // requête, et la date est comparée à celle de la base (audit m1 : un nouveau mot de passe ferme les sessions ouvertes).
     jwt({ token, user }) {
       if (user?.id) {
         token.uid = user.id;
+        token.mdp = user.motDePasseModifieLe;
       }
       return token;
     },
     session({ session, token }) {
       if (typeof token.uid === "string") {
         session.user.id = token.uid;
+        session.user.motDePasseModifieLe = token.mdp;
       }
       return session;
     },

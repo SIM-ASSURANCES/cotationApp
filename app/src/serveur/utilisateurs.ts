@@ -9,6 +9,7 @@ import {
   FENETRE_ECHECS_CONNEXION_MS,
   estVerrouille,
   etatApresEchec,
+  dateNouveauMotDePasse,
   identifiantValide,
   normaliserIdentifiant,
   problemesMotDePasse,
@@ -76,6 +77,9 @@ async function enregistrerEchec(
   }
 }
 
+/** Utilisateur qui vient de se connecter : la date de son mot de passe (en ms) est inscrite dans le jeton de session (audit m1). */
+export type UtilisateurConnecte = UtilisateurCourant & { motDePasseModifieLe: number };
+
 /**
  * Audit M2 : limite des échecs de connexion par adresse IP, en mémoire du processus (comme celle de la page de vérification).
  * Elle compte les échecs, jamais les connexions réussies : un bureau derrière une même adresse n'est pas gêné par ses connexions
@@ -95,7 +99,7 @@ export async function verifierIdentifiants(
   saisie: { identifiant: unknown; motDePasse: unknown },
   adresseIp: string | null,
   maintenant: Date = new Date(),
-): Promise<UtilisateurCourant | null> {
+): Promise<UtilisateurConnecte | null> {
   const instant = maintenant.getTime();
   if (adresseIp && limiteEchecsParIp.saturee(adresseIp, instant)) {
     if (limiteJournal.accepter(adresseIp, instant)) {
@@ -112,7 +116,7 @@ async function verifierIdentifiantsSansLimite(
   saisie: { identifiant: unknown; motDePasse: unknown },
   adresseIp: string | null,
   maintenant: Date = new Date(),
-): Promise<UtilisateurCourant | null> {
+): Promise<UtilisateurConnecte | null> {
   const prisma = obtenirPrisma();
   const motDePasse = typeof saisie.motDePasse === "string" ? saisie.motDePasse : "";
   const identifiant = typeof saisie.identifiant === "string" ? normaliserIdentifiant(saisie.identifiant) : "";
@@ -160,7 +164,7 @@ async function verifierIdentifiantsSansLimite(
     });
     await journaliser({ acteur, action: "CONNEXION_REUSSIE", objetType: "utilisateur", objetId: utilisateur.id, adresseIp }, tx);
   });
-  return versUtilisateurCourant(utilisateur);
+  return { ...versUtilisateurCourant(utilisateur), motDePasseModifieLe: utilisateur.motDePasseModifieLe.getTime() };
 }
 
 export type LigneUtilisateur = {
@@ -375,6 +379,7 @@ export async function reinitialiserMotDePasse(
       where: { id },
       data: {
         motDePasseHash: await hacherMotDePasse(nouveauMotDePasse),
+        motDePasseModifieLe: dateNouveauMotDePasse(cible.motDePasseModifieLe),
         doitChangerMotDePasse: true,
         echecsConsecutifs: 0,
         verrouilleJusqua: null,
@@ -408,7 +413,7 @@ export async function changerMotDePasse(
   await prisma.$transaction(async (tx) => {
     await tx.utilisateur.update({
       where: { id: utilisateur.id },
-      data: { motDePasseHash: await hacherMotDePasse(nouveau), doitChangerMotDePasse: false, echecsConsecutifs: 0 },
+      data: { motDePasseHash: await hacherMotDePasse(nouveau), motDePasseModifieLe: dateNouveauMotDePasse(enBase.motDePasseModifieLe), doitChangerMotDePasse: false, echecsConsecutifs: 0 },
     });
     await journaliser(
       { acteur: acteurAudit(utilisateur), action: "MOT_DE_PASSE_CHANGE", objetType: "utilisateur", objetId: utilisateur.id, adresseIp },

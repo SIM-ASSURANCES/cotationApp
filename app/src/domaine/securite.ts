@@ -9,6 +9,19 @@ export const SESSION_DUREE_MAX_HEURES = 8;
 export const MOT_DE_PASSE_LONGUEUR_MIN = 12;
 export const MOT_DE_PASSE_LONGUEUR_MAX = 128;
 
+/**
+ * Session toujours valide ? Le jeton porte la date (en millisecondes) du mot de passe avec lequel la session a été ouverte ;
+ * un changement ou une réinitialisation la modifie en base (audit m1). Un jeton sans cette date (ouvert avant la migration) est refusé.
+ */
+export function sessionToujoursValide(dateDuJeton: unknown, motDePasseModifieLe: Date): boolean {
+  return typeof dateDuJeton === "number" && dateDuJeton === motDePasseModifieLe.getTime();
+}
+
+/** Nouvelle date de modification du mot de passe : strictement postérieure à la précédente, même si l'horloge n'a pas avancé d'une milliseconde. */
+export function dateNouveauMotDePasse(precedente: Date, maintenant: Date = new Date()): Date {
+  return new Date(Math.max(maintenant.getTime(), precedente.getTime() + 1));
+}
+
 /** Normalise un identifiant de connexion : sans espaces aux bords, en minuscules. */
 export function normaliserIdentifiant(identifiant: string): string {
   return identifiant.trim().toLowerCase();

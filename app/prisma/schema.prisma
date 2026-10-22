@@ -62,6 +62,8 @@ model Utilisateur {
   nom                   String
   /// Empreinte scrypt du mot de passe (format « scrypt$N$r$p$sel$empreinte »), jamais le mot de passe.
   motDePasseHash        String         @map("mot_de_passe_hash")
+  /// Date de la dernière modification du mot de passe : portée par le jeton de session, comparée à la base (audit m1).
+  motDePasseModifieLe   DateTime       @default(now()) @map("mot_de_passe_modifie_le")
   profilId              Int            @map("profil_id")
   actif                 Boolean        @default(true)
   /// Vrai après une création ou une réinitialisation par l'administrateur : changement obligatoire.

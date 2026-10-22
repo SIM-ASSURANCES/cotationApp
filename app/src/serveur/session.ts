@@ -4,6 +4,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 
 import { peutLire, type CodeAction, type CodeNiveau } from "@/domaine/droits";
+import { sessionToujoursValide } from "@/domaine/securite";
 
 import { auth } from "./auth";
 import { niveauDuProfil } from "./droits";
@@ -14,8 +15,9 @@ import { versUtilisateurCourant } from "./utilisateurs";
 /**
  * Utilisateur connecté, ou null. Le jeton de session ne sert qu'à retrouver l'identifiant :
  * le compte est relu en base, donc un compte désactivé ou un profil modifié prend effet tout de
- * suite, sans attendre l'expiration de la session. `cache` évite de relire la base plusieurs
- * fois pendant une même requête.
+ * suite, sans attendre l'expiration de la session. Le jeton porte aussi la date du mot de passe avec
+ * lequel il a été ouvert : si le mot de passe a changé depuis (changement, réinitialisation), la session est
+ * refusée (audit m1). `cache` évite de relire la base plusieurs fois pendant une même requête.
  */
 export const obtenirUtilisateurCourant = cache(async (): Promise<UtilisateurCourant | null> => {
   const session = await auth();
@@ -27,7 +29,10 @@ export const obtenirUtilisateurCourant = cache(async (): Promise<UtilisateurCour
     where: { id },
     include: { profil: true },
   });
-  return utilisateur?.actif ? versUtilisateurCourant(utilisateur) : null;
+  if (!utilisateur?.actif || !sessionToujoursValide(session?.user?.motDePasseModifieLe, utilisateur.motDePasseModifieLe)) {
+    return null;
+  }
+  return versUtilisateurCourant(utilisateur);
 });
 
 /** Pour une page protégée : redirige vers la connexion, ou vers le changement de mot de passe obligatoire. */

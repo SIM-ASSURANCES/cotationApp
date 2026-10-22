@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { droitsParDefaut } from "@/domaine/droits";
+import { sessionToujoursValide } from "@/domaine/securite";
 
 import { journaliser, lireJournal } from "./audit";
 import { enregistrerDroit, initialiserProfilsEtDroits, lireMatrice } from "./droits";
@@ -179,6 +180,45 @@ describe("connexion : limite des échecs par adresse IP (audit M2)", () => {
       expect(await verifierIdentifiants({ identifiant: unique("cible"), motDePasse: `faux-${i}-xxxxxxxx` }, null)).toBeNull();
     }
     expect((await verifierIdentifiants({ identifiant: admin.identifiant, motDePasse: MDP }, null))?.id).toBe(admin.id);
+  });
+});
+
+describe("sessions et mot de passe (audit m1)", () => {
+  const dateDuJeton = async (identifiant: string) => (await verifierIdentifiants({ identifiant, motDePasse: MDP }, null))?.motDePasseModifieLe;
+  const dateEnBase = async (id: number) => (await obtenirPrisma().utilisateur.findUniqueOrThrow({ where: { id } })).motDePasseModifieLe;
+
+  it("la connexion renvoie la date du mot de passe, qui est celle de la base : la session ouverte est valide", async () => {
+    const admin = await nouvelAdmin();
+    const jeton = await dateDuJeton(admin.identifiant);
+    expect(jeton).toBe((await dateEnBase(admin.id)).getTime());
+    expect(sessionToujoursValide(jeton, await dateEnBase(admin.id))).toBe(true);
+  });
+
+  it("une réinitialisation par l'Admin invalide la session déjà ouverte du compte", async () => {
+    const admin = await nouvelAdmin();
+    const commercial = await nouveauCompte(admin, "COMMERCIAL");
+    const jeton = await dateDuJeton(commercial.identifiant);
+    await reinitialiserMotDePasse(admin, commercial.id, `${MDP}-reinitialise`, null);
+    expect(sessionToujoursValide(jeton, await dateEnBase(commercial.id))).toBe(false);
+    // Le compte se reconnecte avec le nouveau mot de passe : nouvelle session, valide.
+    const nouveau = await verifierIdentifiants({ identifiant: commercial.identifiant, motDePasse: `${MDP}-reinitialise` }, null);
+    expect(sessionToujoursValide(nouveau?.motDePasseModifieLe, await dateEnBase(commercial.id))).toBe(true);
+  });
+
+  it("le changement de son propre mot de passe invalide les sessions ouvertes (les autres appareils aussi)", async () => {
+    const admin = await nouvelAdmin();
+    const autreAppareil = await dateDuJeton(admin.identifiant);
+    await changerMotDePasse(admin, MDP, `${MDP}-nouveau`, null);
+    expect(sessionToujoursValide(autreAppareil, await dateEnBase(admin.id))).toBe(false);
+  });
+
+  it("la modification d'un autre champ du compte (profil, activité) ne ferme pas la session", async () => {
+    const admin = await nouvelAdmin();
+    await nouvelAdmin(); // il doit rester un Admin actif
+    const commercial = await nouveauCompte(admin, "COMMERCIAL");
+    const jeton = await dateDuJeton(commercial.identifiant);
+    await modifierUtilisateur(admin, commercial.id, { nom: "Nouveau nom (test)" }, null);
+    expect(sessionToujoursValide(jeton, await dateEnBase(commercial.id))).toBe(true);
   });
 });
 

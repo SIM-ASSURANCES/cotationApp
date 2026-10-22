@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   DUREE_VERROUILLAGE_MINUTES,
   MAX_ECHECS_CONSECUTIFS,
+  dateNouveauMotDePasse,
   estVerrouille,
   etatApresEchec,
   identifiantValide,
   normaliserIdentifiant,
   problemesMotDePasse,
+  sessionToujoursValide,
 } from "./securite";
 
 const maintenant = new Date("2026-10-05T10:00:00Z");
@@ -62,5 +64,25 @@ describe("identifiants", () => {
     expect(identifiantValide("ab")).toBe(false);
     expect(identifiantValide("a b c")).toBe(false);
     expect(identifiantValide("admin'; DROP TABLE")).toBe(false);
+  });
+});
+
+describe("session et date du mot de passe (audit m1)", () => {
+  const dateEnBase = new Date("2026-10-05T10:00:00.000Z");
+
+  it("la session reste valide tant que la date du jeton est celle de la base", () => {
+    expect(sessionToujoursValide(dateEnBase.getTime(), dateEnBase)).toBe(true);
+  });
+
+  it("elle est refusée après un changement de mot de passe, ou si le jeton n'a pas de date (ouvert avant la migration)", () => {
+    expect(sessionToujoursValide(dateEnBase.getTime(), new Date("2026-10-06T08:00:00.000Z"))).toBe(false);
+    expect(sessionToujoursValide(undefined, dateEnBase)).toBe(false);
+    expect(sessionToujoursValide("1790000000000", dateEnBase)).toBe(false);
+  });
+
+  it("la nouvelle date est toujours strictement postérieure à la précédente, même à la même milliseconde", () => {
+    expect(dateNouveauMotDePasse(dateEnBase, new Date("2026-10-05T10:00:05.000Z")).toISOString()).toBe("2026-10-05T10:00:05.000Z");
+    expect(dateNouveauMotDePasse(dateEnBase, dateEnBase).getTime()).toBe(dateEnBase.getTime() + 1);
+    expect(dateNouveauMotDePasse(dateEnBase, new Date("2026-10-05T09:00:00.000Z")).getTime()).toBe(dateEnBase.getTime() + 1); // horloge en retard
   });
 });

@@ -47,6 +47,16 @@ export class ErreurDejaStocke extends ErreurGenerateur {
   override name = "ErreurDejaStocke";
 }
 
+/** Le générateur ne répond pas du tout (réseau, hôte inconnu, délai dépassé) : distinct d'un refus expliqué. */
+export class ErreurGenerateurInjoignable extends ErreurGenerateur {
+  override name = "ErreurGenerateurInjoignable";
+}
+
+/** Fichier absent du stockage (404 du générateur). */
+export class ErreurFichierIntrouvable extends ErreurGenerateur {
+  override name = "ErreurFichierIntrouvable";
+}
+
 const DELAI_ANALYSE_MS = 60_000;
 const DELAI_PDF_MS = 180_000;
 
@@ -70,7 +80,7 @@ export async function appelerGenerateur(chemin: string, corps: unknown, delaiMs:
     });
   } catch (erreur) {
     console.error(`[generateur] ${chemin} : ${erreur instanceof Error ? erreur.message : String(erreur)}`);
-    throw new ErreurGenerateur("Le générateur de documents ne répond pas : réessayez dans un instant, ou prévenez l'administrateur.");
+    throw new ErreurGenerateurInjoignable("Le générateur de documents ne répond pas : réessayez dans un instant, ou prévenez l'administrateur.");
   }
   if (reponse.ok) return reponse;
   // 422 : refus expliqué par le générateur (donnée absente, modèle invalide…), affiché tel quel.
@@ -83,8 +93,8 @@ export async function appelerGenerateur(chemin: string, corps: unknown, delaiMs:
     throw new ErreurGenerateur(`Génération impossible : ${detail}.`);
   }
   if (reponse.status === 409 && detail) throw new ErreurDejaStocke(`Stockage : ${detail}.`);
-  if (reponse.status === 404 && detail) {
-    throw new ErreurGenerateur(`Stockage : ${detail}.`);
+  if (reponse.status === 404) {
+    throw new ErreurFichierIntrouvable(detail ? `Stockage : ${detail}.` : "Stockage : fichier introuvable.");
   }
   throw new ErreurGenerateur(
     reponse.status === 504

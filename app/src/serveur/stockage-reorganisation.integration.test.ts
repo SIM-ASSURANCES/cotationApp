@@ -4,11 +4,12 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { fixerDateMinimumEffetPourTests } from "@/domaine/calcul/dates";
 import { assurerBranche } from "./branches-test";
-import { ErreurDejaStocke } from "./generateur";
+import { ErreurDejaStocke, ErreurFichierIntrouvable, ErreurGenerateur, ErreurGenerateurInjoignable } from "./generateur";
 import { obtenirPrisma } from "./prisma";
 import { remplacerStockage, type Stockage } from "./stockage";
 import {
   rangerDocumentsDev,
+  GenerateurInjoignablePourRangement,
   ReorganisationInterditeEnProduction,
 } from "./stockage-reorganisation";
 
@@ -28,7 +29,7 @@ describe("script idempotent de rangement des documents dev (Étape 5, D41)", () 
     },
     async lire(chemin) {
       const c = fichiers.get(chemin);
-      if (!c) throw new Error("Introuvable");
+      if (!c) throw new ErreurFichierIntrouvable("Introuvable");
       return c;
     },
     async zip(liste) {
@@ -212,7 +213,7 @@ describe("script idempotent de rangement des documents dev (Étape 5, D41)", () 
       },
       async lire(chemin) {
         const c = fichiers.get(chemin);
-        if (!c) throw new Error("Introuvable");
+        if (!c) throw new ErreurFichierIntrouvable("Introuvable");
         return c;
       },
       async zip() {
@@ -227,5 +228,57 @@ describe("script idempotent de rangement des documents dev (Étape 5, D41)", () 
     }
     expect(await cheminEnBase(doc.id)).toBe(ancienChemin);
     expect(fichiers.has(cheminAttendu)).toBe(false);
+  });
+
+  it("générateur injoignable : le script s'arrête, le document n'est pas déclaré introuvable", async () => {
+    const prisma = obtenirPrisma();
+    await rangerDocumentsDev(prisma, AUTORISE);
+    const { doc, ancienChemin } = await creerDocument({ fichierSource: true });
+
+    remplacerStockage({
+      async ecrire() {
+        throw new Error("jamais appelé");
+      },
+      async lire() {
+        throw new ErreurGenerateurInjoignable("Le générateur de documents ne répond pas");
+      },
+      async zip() {
+        return new Uint8Array();
+      },
+    });
+    try {
+      const echec = rangerDocumentsDev(prisma, AUTORISE);
+      await expect(echec).rejects.toBeInstanceOf(GenerateurInjoignablePourRangement);
+      await expect(echec).rejects.toThrow(/lancer le script dans Docker/);
+    } finally {
+      remplacerStockage(stockageTest);
+    }
+    expect(await cheminEnBase(doc.id)).toBe(ancienChemin);
+  });
+
+  it("autre erreur de lecture (500) : erreur au rapport, ni introuvable ni arrêt", async () => {
+    const prisma = obtenirPrisma();
+    await rangerDocumentsDev(prisma, AUTORISE);
+    const { doc, ancienChemin } = await creerDocument({ fichierSource: true });
+
+    remplacerStockage({
+      async ecrire() {
+        throw new Error("jamais appelé");
+      },
+      async lire() {
+        throw new ErreurGenerateur("Le générateur de documents a rencontré une erreur");
+      },
+      async zip() {
+        return new Uint8Array();
+      },
+    });
+    try {
+      const rapport = await rangerDocumentsDev(prisma, AUTORISE);
+      expect(rapport.introuvables).toBe(0);
+      expect(rapport.erreurs.find((e) => e.id === doc.id)?.erreur).toContain("rencontré une erreur");
+    } finally {
+      remplacerStockage(stockageTest);
+    }
+    expect(await cheminEnBase(doc.id)).toBe(ancienChemin);
   });
 });

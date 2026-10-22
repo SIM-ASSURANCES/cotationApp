@@ -11,7 +11,7 @@ import nextEnv from "@next/env";
 
 nextEnv.loadEnvConfig(process.cwd());
 
-const { rangerDocumentsDev, ReorganisationInterditeEnProduction } = await import("../src/serveur/stockage-reorganisation");
+const { rangerDocumentsDev, ReorganisationInterditeEnProduction, GenerateurInjoignablePourRangement } = await import("../src/serveur/stockage-reorganisation");
 const { obtenirPrisma } = await import("../src/serveur/prisma");
 
 try {
@@ -34,7 +34,7 @@ try {
   }
   await prisma.$disconnect();
 } catch (erreur) {
-  if (erreur instanceof ReorganisationInterditeEnProduction) {
+  if (erreur instanceof ReorganisationInterditeEnProduction || erreur instanceof GenerateurInjoignablePourRangement) {
     console.error(erreur.message);
     process.exit(1);
   }

@@ -4,13 +4,20 @@ import { createHash } from "node:crypto";
 
 import type { PrismaClient } from "@/generated/prisma/client";
 import type { TypeDocument } from "@/domaine/documents/emission";
-import { ErreurDejaStocke } from "./generateur";
+import { ErreurDejaStocke, ErreurFichierIntrouvable, ErreurGenerateurInjoignable } from "./generateur";
 import { calculerCheminStockage } from "./stockage-arborescence";
 import { stockage as getStockage } from "./stockage";
 
 export class ReorganisationInterditeEnProduction extends Error {
   constructor() {
     super("Le rangement des fichiers est interdit en production et exige AUTORISER_RANGEMENT_DEV=oui.");
+  }
+}
+
+/** Le générateur (volume de stockage) est injoignable : le script s'arrête, rien n'est déclaré « introuvable ». */
+export class GenerateurInjoignablePourRangement extends Error {
+  constructor() {
+    super("Le générateur de documents est injoignable depuis cette machine : lancer le script dans Docker (docker compose run --rm -e NODE_ENV=development -e AUTORISER_RANGEMENT_DEV=oui outils npm run ranger:dev).");
   }
 }
 
@@ -32,7 +39,9 @@ const egaux = (a: Uint8Array, b: Uint8Array) => sha256(a) === sha256(b);
  * le déclencheur d'immuabilité est désactivé par `SET LOCAL session_replication_role = replica`,
  * dans la même transaction que l'UPDATE : aucune connexion ne reste en mode replica.
  *
- * - fichier source introuvable : `chemin` inchangé, compté en « introuvables » seulement ;
+ * - fichier source introuvable (404 du générateur seulement) : `chemin` inchangé, compté en « introuvables » ;
+ * - générateur injoignable : le script s'arrête aussitôt (GenerateurInjoignablePourRangement), aucun document n'est
+ *   déclaré introuvable à tort ; toute autre erreur de lecture est portée au rapport du document ;
  * - fichier cible déjà présent : même empreinte SHA-256 = idempotent, empreinte différente = erreur,
  *   pas d'UPDATE ; toute autre erreur d'écriture : erreur au rapport, pas d'UPDATE.
  *
@@ -82,7 +91,8 @@ export async function rangerDocumentsDev(
       let contenu: Uint8Array;
       try {
         contenu = await s.lire(doc.chemin);
-      } catch {
+      } catch (err) {
+        if (!(err instanceof ErreurFichierIntrouvable)) throw err;
         rapport.introuvables += 1;
         continue;
       }
@@ -112,6 +122,7 @@ export async function rangerDocumentsDev(
 
       rapport.deplaces += 1;
     } catch (err) {
+      if (err instanceof ErreurGenerateurInjoignable) throw new GenerateurInjoignablePourRangement();
       rapport.erreurs.push({
         id: doc.id,
         numero: doc.numero,

@@ -1,16 +1,24 @@
 import { revalidatePath } from "next/cache";
 
 import type { EtatFormulaire } from "@/composants/types";
-import { refusDuDeclencheur } from "@/serveur/refus-base";
+import { MESSAGE_ERREUR_BASE_GENERIQUE, messagePourErreurDeBase } from "@/serveur/refus-base";
 import { adresseIpCourante } from "@/serveur/requete";
 import { exigerUtilisateur } from "@/serveur/session";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "@/serveur/types";
 
 /**
  * Exécute une opération au nom de l'utilisateur connecté. Les refus métier et de droits deviennent un
- * message à l'écran, ainsi que le refus d'un déclencheur de la base (filet : un cas non prévu par les gardes du serveur
- * ne donne ni erreur 500 ni message technique de Prisma) ; toute autre erreur remonte (elle est journalisée par le serveur).
+ * message à l'écran. Une erreur de la base aussi (filet : un cas non prévu par les gardes du serveur ne donne ni erreur 500 ni
+ * message technique) : le refus d'un de NOS déclencheurs est montré tel quel, toute autre erreur de base devient un message
+ * générique et est journalisée ici. Toute autre erreur remonte (elle est journalisée par le serveur).
  */
+/** Message pour une erreur de la base (voir `messagePourErreurDeBase`) ; les erreurs autres que les refus de déclencheurs sont journalisées. */
+function messageErreurDeBase(erreur: unknown): string | null {
+  const message = messagePourErreurDeBase(erreur);
+  if (message === MESSAGE_ERREUR_BASE_GENERIQUE) console.error("[erreur de base]", erreur);
+  return message;
+}
+
 export async function executerAction(
   operation: (acteur: UtilisateurCourant, adresseIp: string | null) => Promise<void | string[]>,
   /** Message de réussite ; une fonction est appelée après l'opération, quand le message dépend de son issue. */
@@ -29,8 +37,8 @@ export async function executerAction(
     if (erreur instanceof ErreurAcces) {
       return { erreur: "Vous n'avez pas le droit d'effectuer cette action." };
     }
-    const refus = refusDuDeclencheur(erreur);
-    if (refus) return { erreur: refus };
+    const messageBase = messageErreurDeBase(erreur);
+    if (messageBase) return { erreur: messageBase };
     throw erreur;
   }
   revalidatePath(cheminARafraichir);
@@ -47,8 +55,8 @@ export async function avecMessage<T>(
   } catch (erreur) {
     if (erreur instanceof ErreurMetier) return { ok: false, etat: { erreur: erreur.message, ...(erreur.details.length ? { details: erreur.details } : {}) } };
     if (erreur instanceof ErreurAcces) return { ok: false, etat: { erreur: "Vous n'avez pas le droit d'effectuer cette action." } };
-    const refus = refusDuDeclencheur(erreur);
-    if (refus) return { ok: false, etat: { erreur: refus } };
+    const messageBase = messageErreurDeBase(erreur);
+    if (messageBase) return { ok: false, etat: { erreur: messageBase } };
     throw erreur;
   }
 }

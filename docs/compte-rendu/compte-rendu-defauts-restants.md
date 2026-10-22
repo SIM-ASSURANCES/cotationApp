@@ -1,11 +1,11 @@
 # Compte rendu — Étape 10 : défauts et points restants (branche `phase-defauts-restants`)
 
-Décision **D46**, hypothèses **H127 à H131** (`docs/decisions.md`). Branche issue de `main` après la fusion de `phase-prorata-avenant` (D45, H126).
+Décision **D46**, hypothèses **H127 à H132** (`docs/decisions.md`). Branche issue de `main` après la fusion de `phase-prorata-avenant` (D45, H126).
 
 ## Les dix points (un commit chacun)
 
 1. **droits-defauts** : tableau CDC §4 écrit dans le test ; `matriceDuCdc` supprimée (inutilisée).
-2. **Factures T4** : cause trouvée. `adapter-pg` classe le code `23001` (`restrict_violation`, celui de tous nos déclencheurs) parmi les clés étrangères : Prisma dit « Foreign key constraint violated » (P2003) ; le vrai message est dans `meta.driverAdapterError.cause.originalMessage`. `refusDuDeclencheur` + `executerAction` / `avecMessage` : plus d'erreur 500. Modifier une facture annulée : « La facture … est annulée par un avoir : elle ne se modifie plus. » Test sur modifier, abandonner, émettre, avoir.
+2. **Factures T4** : cause trouvée. `adapter-pg` classe le code `23001` (`restrict_violation`, celui de tous nos déclencheurs) parmi les clés étrangères : Prisma dit « Foreign key constraint violated » (P2003) ; le vrai message est dans `meta.driverAdapterError.cause.originalMessage`. Filtre (H132) : seuls nos déclencheurs (code `P0001`, ou `23001` / `23514` sans contrainte, table ni détail) sont montrés ; toute autre erreur de base donne un message générique, journalisé côté serveur. Plus d'erreur 500. Modifier une facture annulée : « La facture … est annulée par un avoir : elle ne se modifie plus. » Test sur modifier, abandonner, émettre, avoir.
 3. **e2e seuil 20 M** : `finally` dans `documents.e2e` et `factures.e2e`. `afterAll` s'exécute déjà si `beforeAll` échoue (vérifié) ; le `finally` couvre un échec du rétablissement.
 4. **M2** : 10 échecs / minute / adresse IP (H127). Refus avant le hachage, une ligne d'audit par adresse et par minute.
 5. **m1** : colonne `mot_de_passe_modifie_le` (migration `20261022120000`), dans le jeton, comparée à la base (H128).

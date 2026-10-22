@@ -556,6 +556,7 @@ export async function modifierFacture(acteur: UtilisateurCourant, factureId: num
   await obtenirPrisma().$transaction(async (tx) => {
     const f = await verrouiller(tx, factureId);
     if (f.statut === "ABANDONNEE") throw new ErreurMetier("Ce brouillon est abandonné : il ne se modifie plus.");
+    if (f.statut === "ANNULEE") throw new ErreurMetier(`La facture ${f.numero} est annulée par un avoir : elle ne se modifie plus. Préparez une nouvelle facture.`);
     if (f.statut !== "BROUILLON") throw new ErreurMetier("Seul un brouillon se modifie. Une facture émise se corrige par un avoir puis une nouvelle facture.");
     const police = (await chargerPolice(tx, f.policeId))!;
     const avant = contenuDe(f);

@@ -1,13 +1,15 @@
 import { revalidatePath } from "next/cache";
 
 import type { EtatFormulaire } from "@/composants/types";
+import { refusDuDeclencheur } from "@/serveur/refus-base";
 import { adresseIpCourante } from "@/serveur/requete";
 import { exigerUtilisateur } from "@/serveur/session";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "@/serveur/types";
 
 /**
  * Exécute une opération au nom de l'utilisateur connecté. Les refus métier et de droits deviennent un
- * message à l'écran ; toute autre erreur remonte (elle est journalisée par le serveur).
+ * message à l'écran, ainsi que le refus d'un déclencheur de la base (filet : un cas non prévu par les gardes du serveur
+ * ne donne ni erreur 500 ni message technique de Prisma) ; toute autre erreur remonte (elle est journalisée par le serveur).
  */
 export async function executerAction(
   operation: (acteur: UtilisateurCourant, adresseIp: string | null) => Promise<void | string[]>,
@@ -27,6 +29,8 @@ export async function executerAction(
     if (erreur instanceof ErreurAcces) {
       return { erreur: "Vous n'avez pas le droit d'effectuer cette action." };
     }
+    const refus = refusDuDeclencheur(erreur);
+    if (refus) return { erreur: refus };
     throw erreur;
   }
   revalidatePath(cheminARafraichir);
@@ -43,6 +47,8 @@ export async function avecMessage<T>(
   } catch (erreur) {
     if (erreur instanceof ErreurMetier) return { ok: false, etat: { erreur: erreur.message, ...(erreur.details.length ? { details: erreur.details } : {}) } };
     if (erreur instanceof ErreurAcces) return { ok: false, etat: { erreur: "Vous n'avez pas le droit d'effectuer cette action." } };
+    const refus = refusDuDeclencheur(erreur);
+    if (refus) return { ok: false, etat: { erreur: refus } };
     throw erreur;
   }
 }

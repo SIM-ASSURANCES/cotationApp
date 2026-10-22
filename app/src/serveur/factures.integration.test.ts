@@ -36,6 +36,7 @@ import {
   restituerAvance,
 } from "./factures";
 import { remplacerGenerateur, type DemandePdf } from "./generateur";
+import { refusDuDeclencheur } from "./refus-base";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
 import { aujourdhui, creerProduit, creerTaxe, creerVersion, listerVersions } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
@@ -484,9 +485,14 @@ describe("T4 : intangibilité, avoir puis nouvelle facture", () => {
     const id = await creerFactureAffaireNouvelle(technique, p.policeId, null, null);
     await emettreFacture(technique, id, null);
     const prisma = obtenirPrisma();
-    // Prisma résume l'erreur du déclencheur (« Foreign key constraint violated ») : le message de la base se lit en SQL direct.
-    await expect(prisma.facture.update({ where: { id }, data: { ttc: "1" } })).rejects.toThrow();
-    await expect(prisma.facture.delete({ where: { id } })).rejects.toThrow();
+    // Le pilote de Prisma classe le code des déclencheurs (restrict_violation, 23001) parmi les clés étrangères : l'erreur dit
+    // « Foreign key constraint violated » (P2003). Le message du déclencheur est conservé dans le détail de l'erreur
+    // (refusDuDeclencheur) ; il se lit aussi en SQL direct.
+    const refuse = await prisma.facture.update({ where: { id }, data: { ttc: "1" } }).catch((e: unknown) => e);
+    expect(refuse).toMatchObject({ code: "P2003" });
+    expect(refusDuDeclencheur(refuse)).toMatch(/émise, elle ne se modifie plus \(correction : avoir puis nouvelle facture\)/);
+    const supprime = await prisma.facture.delete({ where: { id } }).catch((e: unknown) => e);
+    expect(refusDuDeclencheur(supprime)).toMatch(/suppression interdite/);
     expect(await sql(`UPDATE factures SET ttc = 1 WHERE id = ${id}`)).toMatch(/émise, elle ne se modifie plus \(correction : avoir puis nouvelle facture\)/);
     expect(await sql(`UPDATE factures SET contenu = '{}' WHERE id = ${id}`)).toMatch(/émise, elle ne se modifie plus/);
     expect(await sql(`UPDATE factures SET statut = 'BROUILLON', numero = NULL WHERE id = ${id}`)).toMatch(/émise, elle ne se modifie plus/);
@@ -519,7 +525,20 @@ describe("T4 : intangibilité, avoir puis nouvelle facture", () => {
 
     await expect(enregistrerPaiement(comptable, id, paiement("1000"), null)).rejects.toThrow(/annulée par un avoir/);
     await expect(emettreAvoir(comptable, id, "Deuxième avoir (test)", null)).rejects.toThrow(/déjà annulée/);
-    await expect(obtenirPrisma().facture.update({ where: { id }, data: { motif: "x" } })).rejects.toThrow(/annulée/);
+    await expect(obtenirPrisma().facture.update({ where: { id }, data: { motif: "x" } })).rejects.toThrow();
+    // Message montré à l'utilisateur : toujours un refus métier lisible (ErreurMetier), jamais une erreur de Prisma ni une erreur 500.
+    const refuseModification = await modifierFacture(technique, id, { envoyeA: { nom: "X", adresse: "Y" }, lignes: null, nombreTranches: null }, null).catch((e: unknown) => e);
+    expect(refuseModification).toBeInstanceOf(ErreurMetier);
+    expect((refuseModification as ErreurMetier).message).toBe(`La facture ${f.numero} est annulée par un avoir : elle ne se modifie plus. Préparez une nouvelle facture.`);
+    for (const tentative of [
+      () => abandonnerFacture(technique, id, "Abandon d'une facture annulée (test)", null),
+      () => emettreFacture(technique, id, null),
+      () => emettreAvoir(comptable, id, "Troisième avoir (test)", null),
+    ]) {
+      const refus = await tentative().catch((e: unknown) => e);
+      expect(refus, "refus métier attendu").toBeInstanceOf(ErreurMetier);
+      expect(refusDuDeclencheur(refus)).toBeNull();
+    }
 
     const nouvelle = await creerFactureAffaireNouvelle(technique, p.policeId, null, null);
     const n = await emettreFacture(technique, nouvelle, null);

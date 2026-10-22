@@ -205,12 +205,11 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
             </div>
             <h3 className={SOUS_TITRE}>Références contractuelles (CDC §7)</h3>
             <p className="mb-2 text-sm text-muted-foreground">
-              Modèles de conditions générales et spéciales joints au contrat (codes de la bibliothèque « Modèles Word ») et visas cités
-              dans les CP. À l'émission, le visa doit être celui des CG jointes, sinon l'émission est refusée.
+              Les conditions générales ne se saisissent plus ici : le produit reçoit celles de sa branche principale, avec le visa de leur
+              version publiée (écran « Conditions générales »). Seules les conventions spéciales (codes de la bibliothèque « Modèles Word »)
+              restent propres au produit ; à l'émission, le visa cité doit être celui des CS jointes, sinon l'émission est refusée.
             </p>
             <div className="mb-4 grid max-w-4xl gap-x-6 sm:grid-cols-2">
-              <Champ nom="cgModeleCode" libelle="Code du modèle de CG (facultatif)" requis={false} valeur={base?.references?.cgModeleCode ?? ""} autoComplete="off" />
-              <Champ nom="cgVisa" libelle="Visa des CG cité dans les CP" requis={false} valeur={base?.references?.cgVisa ?? ""} autoComplete="off" />
               <Champ nom="csModeleCode" libelle="Code du modèle de CS (facultatif)" requis={false} valeur={base?.references?.csModeleCode ?? ""} autoComplete="off" />
               <Champ nom="csVisa" libelle="Visa des CS" requis={false} valeur={base?.references?.csVisa ?? ""} autoComplete="off" />
             </div>

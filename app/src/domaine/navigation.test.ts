@@ -37,7 +37,7 @@ function hrefsAncienLayout(niveaux: NiveauxNavigation): string[] {
   if (lectureDocuments.some(peutLire)) hrefs.push("/documents");
   if (peutLire(lectureDocuments[1])) hrefs.push("/imports");
   if (peutLire(parametrage)) {
-    hrefs.push("/parametrage/produits", "/parametrage/branches", "/parametrage/intermediaires", "/parametrage/taxes", "/parametrage/societe");
+    hrefs.push("/parametrage/produits", "/parametrage/branches", "/parametrage/conditions-generales", "/parametrage/intermediaires", "/parametrage/taxes", "/parametrage/societe");
   }
   if (peutLire(parametrage) || peutLire(cotation)) hrefs.push("/calcul");
   if (niveaux.GERER_UTILISATEURS === "OUI") hrefs.push("/admin/utilisateurs", "/admin/droits", "/admin/stockage");
@@ -164,6 +164,7 @@ describe("navigation : branches", () => {
     expect(liensDe("parametrage")).toEqual([
       ["Produits", "/parametrage/produits"],
       ["Branches", "/parametrage/branches"],
+      ["Conditions générales", "/parametrage/conditions-generales"],
       ["Taxes", "/parametrage/taxes"],
       ["Intermédiaires", "/parametrage/intermediaires"],
       ["Société", "/parametrage/societe"],

@@ -47,6 +47,9 @@ const TON_PAR_STATUT: Record<string, TonPastille> = {
   // Session SECURPRO (D37) : alertes sur l'existant en base de développement.
   "Branche à renseigner": "avertissement",
   "Code CG manquant": "avertissement",
+  // Étape 6 (D42) : conditions générales par branche.
+  "En vigueur": "succes",
+  "CG à renseigner": "avertissement",
 };
 
 /** Un statut peut porter un complément (« Annulée – avoir AV-2026-10-0001 ») : le ton est celui de son premier mot. */

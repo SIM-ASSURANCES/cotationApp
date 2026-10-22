@@ -76,8 +76,6 @@ export function lireVersion(donnees: FormData): VersionSaisie {
     garanties: lireGaranties(champ(donnees, "garanties")),
     garantiesSaisieLibre: donnees.has("garantiesPresentes") ? donnees.get("garantiesSaisieLibre") === "on" : true,
     references: {
-      cgModeleCode: champOuNull(donnees, "cgModeleCode")?.toUpperCase() ?? null,
-      cgVisa: champOuNull(donnees, "cgVisa"),
       csModeleCode: champOuNull(donnees, "csModeleCode")?.toUpperCase() ?? null,
       csVisa: champOuNull(donnees, "csVisa"),
     },

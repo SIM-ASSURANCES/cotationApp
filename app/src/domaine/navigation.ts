@@ -110,6 +110,7 @@ export function construireNavigation(niveaux: NiveauxNavigation): Navigation {
     ? [
         { href: "/parametrage/produits", libelle: "Produits", icone: "colis" },
         { href: "/parametrage/branches", libelle: "Branches", icone: "arborescence" },
+        { href: "/parametrage/conditions-generales", libelle: "Conditions générales", icone: "livre" },
         { href: "/parametrage/taxes", libelle: "Taxes", icone: "pourcentage" },
         { href: "/parametrage/intermediaires", libelle: "Intermédiaires", icone: "utilisateurs" },
         { href: "/parametrage/societe", libelle: "Société", icone: "immeuble" },

@@ -338,3 +338,31 @@ describe("certificat d'adhésion unitaire", () => {
     expect("prime" in (derniereDemande().donnees.assures as object[])[0]).toBe(false);
   });
 });
+
+describe("CG figée d'un contrat en cours (H118)", () => {
+  it("la mise à jour des CP et les certificats reprennent la CG de la première émission ; un nouveau contrat prend celle de la branche", async () => {
+    const { cotationId, policeId } = await policeDeGroupe();
+    await emettreCp(technique, cotationId, null);
+    const pdfInitial = derniereDemande().piecesJointes;
+    expect(pdfInitial).toHaveLength(1);
+    expect(derniereDemande().donnees.produit).toMatchObject({ cg_visa: "MFB/DGTCP/DA/N° 01498" });
+
+    // La branche change de CG (autre modèle, autre visa) : elle ne vaut que pour les contrats qui démarrent.
+    const nouvelle = await publier("CG", null, ["produit.cg_visa"], { visa: "VISA-NOUVELLE-H118" });
+    await rattacherCgDeTest("MALADIE", nouvelle.code);
+
+    await incorporerAdherents(technique, policeId, "2026-03-01", [adherent(4)], null);
+    await mettreAJourCp(technique, policeId, null);
+    expect(derniereDemande().piecesJointes).toEqual(pdfInitial);
+    expect(derniereDemande().donnees.produit).toMatchObject({ cg_visa: "MFB/DGTCP/DA/N° 01498" });
+
+    await emettreCertificat(technique, policeId, 2, "", null);
+    expect(derniereDemande().donnees.produit).toMatchObject({ cg_visa: "MFB/DGTCP/DA/N° 01498" });
+
+    // Un autre contrat (première émission de ses CP) prend la CG de la branche en vigueur.
+    const autre = await policeDeGroupe();
+    await emettreCp(technique, autre.cotationId, null);
+    expect(derniereDemande().piecesJointes).not.toEqual(pdfInitial);
+    expect(derniereDemande().donnees.produit).toMatchObject({ cg_visa: "VISA-NOUVELLE-H118" });
+  });
+});

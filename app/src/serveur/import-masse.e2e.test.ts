@@ -30,6 +30,7 @@ import { fermerFiles, FILE_IMPORTS, viderFile } from "./taches";
 import { demarrerTravailleur, type Travailleur } from "./travailleur";
 import type { UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
+import { debutTest, finTest } from "./dates-test";
 
 const FIXTURES = join(process.cwd(), "..", "generateur", "tests", "fixtures");
 const fixture = (nom: string) => new Uint8Array(readFileSync(join(FIXTURES, nom)));
@@ -187,8 +188,8 @@ describe("T8 : import de 500 adhérents, 12 erreurs de types différents", () =>
           clientId: null,
           typeContrat: "GROUPE",
           souscripteur: { type: "MORALE", nom: "", prenoms: "", raison_sociale: "ENTREPRISE INVENTÉE T8", telephone: "", email: "", adresse: "Plateau, rue inventée" },
-          dateEffet: "2026-01-01",
-          dateEcheance: "2026-12-31",
+          dateEffet: debutTest(),
+          dateEcheance: finTest(debutTest()),
           nombreTranches: 1,
           lignes: [{ codeFormule: "SOLO", effectif: 1 }, { codeFormule: "FAMILLE", effectif: 1 }],
           motifForcage: null,
@@ -206,7 +207,7 @@ describe("T8 : import de 500 adhérents, 12 erreurs de types différents", () =>
 
       const { lignes, erreurs } = fichierT8();
       expect(lignes).toHaveLength(500);
-      const lotId = await controlerImport(technique, police.id, "2026-07-01", { nom: "adherents_500.xlsx", contenu: await xlsx(lignes) }, null);
+      const lotId = await controlerImport(technique, police.id, debutTest(), { nom: "adherents_500.xlsx", contenu: await xlsx(lignes) }, null);
       const controle = (await lireLot(technique, lotId))!;
       expect(controle).toMatchObject({ statut: "CONTROLE", total: 500, valides: 488, erreurs: 12 });
 

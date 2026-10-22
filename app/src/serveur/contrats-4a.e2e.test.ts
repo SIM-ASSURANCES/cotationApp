@@ -12,6 +12,7 @@ process.env.URL_PUBLIQUE = "https://documents.exemple.ci";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { ajouterJours, aujourdhui, formaterDate } from "@/domaine/calcul/dates";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 import { donneesDocument, type SourceDocument } from "@/domaine/documents/donnees";
 
@@ -22,13 +23,14 @@ import { emettreCp } from "./documents";
 import { initialiserProfilsEtDroits } from "./droits";
 import { generateur, remplacerGenerateur } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
-import { aujourdhui, creerProduit, creerTaxe, creerVersion, initialiserBranches, initialiserTaxes, type TaxeDemarrage } from "./parametrage";
+import { creerProduit, creerTaxe, creerVersion, initialiserBranches, initialiserTaxes, type TaxeDemarrage } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { lireImageSociete, lireParametresSociete } from "./societe";
 import { assurerSignature, assurerSocieteDeTest, PNG_REEL_1PX } from "./societe-test";
 import { remplacerStockage, stockage } from "./stockage";
 import type { UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
+import { debutTest, finTest } from "./dates-test";
 
 const FIXTURES = join(process.cwd(), "..", "generateur", "tests", "fixtures");
 const DONNEES = join(process.cwd(), "prisma", "donnees");
@@ -127,8 +129,8 @@ describe("T5 : SECURVIE, trois bénéficiaires, branche DECES (taxe 0 %)", () =>
       clientId: null,
       typeContrat: "INDIVIDUEL",
       souscripteur: { type: "PHYSIQUE", nom: "KOUADIO", prenoms: "Awa Inventée", raison_sociale: "", telephone: "0700000000", email: "", adresse: "" },
-      dateEffet: "2026-01-01",
-      dateEcheance: "2026-12-31",
+      dateEffet: debutTest(),
+      dateEcheance: finTest(debutTest()),
       nombreTranches: 1,
       lignes: [{ codeFormule: "STANDARD", effectif: 1 }],
       motifForcage: null,
@@ -177,8 +179,8 @@ describe("T6 : VOL (IARD), cases à cocher et date d'émission dynamique — doc
       clientId: null,
       typeContrat: "INDIVIDUEL",
       souscripteur: { type: "PHYSIQUE", nom: "KOUADIO", prenoms: "Awa", raison_sociale: "", telephone: "", email: "", adresse: "" },
-      dateEffet: "2026-01-01",
-      dateEcheance: "2026-12-31",
+      dateEffet: debutTest(),
+      dateEcheance: finTest(debutTest()),
       nombreTranches: 1,
       lignes: [],
       motifForcage: null,
@@ -232,8 +234,8 @@ describe("T6 : VOL (IARD), cases à cocher et date d'émission dynamique — doc
       contactsUrgence: [],
       policeMere: null,
       risque: { capital_vol_caisse: "100000", gardiennage: "NUIT", statut: "LOCATAIRE" },
-      dateEffet: "2026-01-01",
-      dateEcheance: "2026-12-31",
+      dateEffet: debutTest(),
+      dateEcheance: finTest(debutTest()),
       joursCouverts: 365,
       // Montants de FIXTURE (taux de 10 % inventé, sans valeur fiscale) : le moteur ne calcule pas l'IARD.
       formules: [{ code: "STANDARD", libelle: "Standard", tauxCouverture: null, effectif: 1, primeUnitaire: "80000", primeParAssure: "80000", nette: "80000", accessoires: "5000", taxe: "8500", ttc: "93500" }],
@@ -258,8 +260,10 @@ describe("T6 : VOL (IARD), cases à cocher et date d'émission dynamique — doc
         qr: { url: "https://documents.exemple.ci/verif/" + "v".repeat(43) },
       });
 
-    const premier = await rendre("2026-10-08");
-    const second = await rendre("2026-11-15");
+    const emission1 = aujourdhui();
+    const emission2 = ajouterJours(emission1, 38);
+    const premier = await rendre(emission1);
+    const second = await rendre(emission2);
     expect(Buffer.from(premier).subarray(0, 5).toString()).toBe("%PDF-");
     expect(pages(premier)).toBe(1);
 
@@ -277,7 +281,7 @@ describe("T6 : VOL (IARD), cases à cocher et date d'émission dynamique — doc
     expect(texte).toMatch(/☒ Nuit/);
     expect(texte).toMatch(/☒ Locataire/);
     expect(texte).toContain("taxe (10 %) 8 500");
-    expect(texte).toContain("Fait à Abidjan, le 08/10/2026");
-    expect(autre).toContain("Fait à Abidjan, le 15/11/2026");
+    expect(texte).toContain(`Fait à Abidjan, le ${formaterDate(emission1)}`);
+    expect(autre).toContain(`Fait à Abidjan, le ${formaterDate(emission2)}`);
   }, 240_000);
 });

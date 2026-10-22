@@ -385,16 +385,34 @@ async function modeleEnVigueur(type: "COTATION" | "CP" | "CERTIFICAT", produitId
   return { versionId: v.id, fichier: v.fichier, champs };
 }
 
+type CgFigee = { versionId: number; pdf: Uint8Array; code: string; libelle: string; visa: string | null; date: DateIso | null };
+
+/**
+ * CG figée d'un contrat (H118) : celle jointe à la PREMIÈRE émission des CP de la police (null : CP pas encore émises).
+ * La mise à jour des CP d'un contrat de groupe et ses certificats la reprennent ; seule une nouvelle émission initiale (autre police,
+ * donc autre contrat) prend la CG de la branche en vigueur ce jour-là.
+ */
+async function cgFigeeDeLaPolice(policeId: number): Promise<CgFigee | null> {
+  const prisma = obtenirPrisma();
+  const premier = await prisma.documentEmis.findFirst({ where: { policeId, type: "CP" }, orderBy: { version: "asc" }, select: { versionsAssociees: true } });
+  const versionId = (premier?.versionsAssociees as { cg?: number | null } | null | undefined)?.cg ?? null;
+  if (versionId === null) return null;
+  const v = await prisma.modeleVersion.findUniqueOrThrow({ where: { id: versionId }, select: { id: true, pdf: true, visa: true, dateDocument: true, modele: { select: { code: true, libelle: true } } } });
+  if (!v.pdf) throw new ErreurMetier(`Conditions générales « ${v.modele.code} » (figées à la première émission des CP) : PDF absent.`);
+  return { versionId: v.id, pdf: v.pdf, code: v.modele.code, libelle: v.modele.libelle, visa: v.visa, date: v.dateDocument ? depuisDate(v.dateDocument) : null };
+}
+
 /**
  * CG de la branche principale du produit et CS du produit, publiées et en vigueur à la date d'émission ; visa des CG lu dans leur
  * version publiée (une seule source), visa des CS contrôlé (§6.8). Obligatoire (CP) : produit sans branche ou branche sans CG en
  * vigueur = refus avec un message qui dit quoi renseigner, avant toute production de document.
  */
-async function piecesContractuelles(contexte: ContexteProduit, date: DateIso, obligatoire: boolean) {
+async function piecesContractuelles(contexte: ContexteProduit, date: DateIso, obligatoire: boolean, cgFigee: CgFigee | null = null) {
   const r = contexte.references;
   const branchePrincipale = contexte.produit.branchePrincipale;
-  const cgBranche = branchePrincipale ? await cgDeLaBranche(obtenirPrisma(), branchePrincipale, date) : null;
-  if (obligatoire && !cgBranche) {
+  // Contrat en cours (H118) : la CG figée à la première émission des CP prime, même si la branche a changé de CG depuis.
+  const cgBranche = cgFigee ? null : branchePrincipale ? await cgDeLaBranche(obtenirPrisma(), branchePrincipale, date) : null;
+  if (obligatoire && !cgFigee && !cgBranche) {
     throw new ErreurMetier(messageCgManquante(contexte.produit.code, branchePrincipale ? { code: branchePrincipale, libelle: contexte.produit.branche_libelle ?? branchePrincipale } : null, date));
   }
   const charger = async (code: string | null, quoi: string) => {
@@ -405,7 +423,7 @@ async function piecesContractuelles(contexte: ContexteProduit, date: DateIso, ob
     if (!v.pdf) throw new ErreurMetier(`${quoi} « ${code} » : PDF absent (il est produit à la publication).`);
     return { versionId: v.id, pdf: v.pdf, code, libelle: retenu.modele.libelle, visa: retenu.version.visa, date: retenu.version.dateDocument };
   };
-  const cg = await charger(cgBranche?.modeleCode ?? null, "Conditions générales");
+  const cg = cgFigee ?? (await charger(cgBranche?.modeleCode ?? null, "Conditions générales"));
   if (cg && !cg.visa?.trim()) throw new ErreurMetier(`Conditions générales « ${cg.code} » : la version publiée n'a pas de visa.`);
   const cs = await charger(r.csModeleCode, "Conventions spéciales");
   const problemes = problemesVisas({ csVisa: r.csVisa }, { cs });
@@ -483,9 +501,9 @@ function sourceDeCotation(
 }
 
 /** Une cotation cite ses CG si elles sont paramétrées et publiées, sans les joindre ni bloquer. */
-async function citationsCotation(contexte: ContexteProduit, date: DateIso) {
+async function citationsCotation(contexte: ContexteProduit, date: DateIso, cgFigee: CgFigee | null = null) {
   try {
-    const { cg, cs } = await piecesContractuelles(contexte, date, false);
+    const { cg, cs } = await piecesContractuelles(contexte, date, false, cgFigee);
     return { cg, cs };
   } catch {
     return { cg: null, cs: null };
@@ -592,7 +610,7 @@ async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<
   const modele = await modeleEnVigueur("CP", c.produitId, c.produit.code, date, police.donneesCalcul as unknown as DonneesCalcul);
   const associes = await modelesAssocies(c.produitId, date, false);
   const commun = await sourceCommune(contexte, date);
-  const pieces = await piecesContractuelles(contexte, date, true);
+  const pieces = await piecesContractuelles(contexte, date, true, await cgFigeeDeLaPolice(police.id));
   const m = montantsDu(police.donneesCalcul as unknown as DonneesCalcul, contexte);
   const groupe = estContratDeGroupe(police.typeContrat);
   const source = (version: number, url: string): SourceDocument => ({
@@ -757,7 +775,7 @@ export async function emettreCertificat(acteur: UtilisateurCourant, policeId: nu
   const modele = await modeleEnVigueur("CERTIFICAT", c.produitId, c.produit.code, date);
   const associes = await modelesAssocies(c.produitId, date, false);
   const commun = await sourceCommune(contexte, date);
-  const citees = await citationsCotation(contexte, date);
+  const citees = await citationsCotation(contexte, date, await cgFigeeDeLaPolice(policeId));
   const adhesion = dateAdhesion(versionsAdherentsDe(police), adherentOrdre, depuisDate(police.dateEffet)) ?? depuisDate(police.dateEffet);
   const formule = contexte.formules.get(adherent.formule);
   // Les montants du certificat ne sont pas fournis (H36) : ces zéros ne sont jamais lus (donnees.ts).

@@ -14,14 +14,26 @@ Mesuré sur une copie de `sim_documents_docker` : **INCENDIE_DOMMAGES** et **RÉ
 Sur un autre serveur, la liste se lit à l'écran : bandeau « Branches sans conditions générales en vigueur ».
 
 ## Tests
-- Unitaires 498 verts ; lint, typecheck, build verts.
-- Intégration : 23 fichiers, 273 verts (10 ignorés avant mon travail). Nouveaux : `cg-branches` (rattachement, historique immuable, refus, droits), `documents` (CG de la branche ; branche sans CG et produit sans branche refusés sans document produit, cotation non bloquée ; réédition qui garde la CG figée), `stockage-reorganisation` (injoignable : arrêt ; 404 : introuvable ; autre erreur : rapport).
+- Unitaires 498 verts ; lint, typecheck verts.
+- Intégration : 23 fichiers, 274 verts (10 ignorés avant mon travail). Nouveaux : `cg-branches` (rattachement, historique immuable, refus, droits), `documents` (CG de la branche ; branche sans CG et produit sans branche refusés sans document produit, cotation non bloquée ; réédition qui garde la CG figée), `stockage-reorganisation` (injoignable : arrêt ; 404 : introuvable ; autre erreur : rapport).
 - Reprise de la migration vérifiée sur une copie de la base de développement (copie supprimée).
 
-## Écarts
-- **Bout en bout NON validé** : 5 fichiers sur 6 échouent ici pour des raisons étrangères à l'étape : dates d'effet de 2026 antérieures à aujourd'hui (règle SECURPRO), Redis absent, `pdftotext` illisible sous Windows. J'ai seulement adapté leur rattachement de CG (typecheck vert). À rejouer dans le conteneur.
-- Aide de test : les tests d'intégration rattachent leurs CG par `rattacherCgDeTest` (remplacement direct de la ligne, base de test seulement).
+## Tests de bout en bout (conteneurs Docker : Postgres, Redis, générateur, pdftotext)
+Dates d'effet fixes remplacées par des dates calculées depuis aujourd'hui (`serveur/dates-test.ts` : demain, période de 365 jours ; 163 jours pour T3).
+
+| Fichier | Tests | Résultat |
+|---|---|---|
+| `contrats-4a.e2e` | T5, T6 (×2) | 3 verts |
+| `documents.e2e` | T1 | 1 vert |
+| `factures.e2e` | T2, T3/T4 | 2 verts |
+| `garanties.e2e` | composition à l'avoir | 1 vert |
+| `modeles.e2e` | T9, champ Word, T7, filtres, CG | 5 verts |
+| `import-masse.e2e` | T8 (488 certificats) | 1 vert : 237 s avec `CONVERSIONS_SIMULTANEES=4` sur 8 processeurs. Avec 2 (valeur par défaut) : 301 certificats en 15 min, test en échec sur cette machine ; à re-vérifier sur le serveur |
+
+Corrections nécessaires en plus des dates : seuil global relevé à 20 M le temps de T1 et T2 (`parametres-test.ts`, seuil unique de 10 M depuis l'étape 3) ; base de test remise à zéro avant chaque série.
+
+## H118 (option A, 22/10/2026)
+Mise à jour des CP et certificats d'un contrat en cours : CG figée à la première émission des CP. Test dans `groupes.integration`. Le renouvellement n'émet aucune CG aujourd'hui : règle sans chemin de code.
 
 ## Hypothèses ouvertes
-- H118 : la mise à jour des CP d'un contrat de groupe prend la CG en vigueur le jour de la mise à jour (nouvelle émission). Faut-il garder la CG d'origine ?
-- Besoins découverts, non codés : liste des produits touchés par une branche sans CG avant émission ; mention `cdc.md` §6.8 (visa lu au produit) à mettre à jour par Thierry.
+- Besoins découverts, non codés : liste des produits touchés par une branche sans CG ; `cdc.md` §6.8 (visa lu au produit) à mettre à jour par Thierry.

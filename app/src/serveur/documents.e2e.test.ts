@@ -20,6 +20,8 @@ import { obtenirPrisma } from "./prisma";
 import { remplacerStockage, stockage } from "./stockage";
 import type { UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
+import { debutTest, finTest } from "./dates-test";
+import { fixerSeuilGlobalDeTest, retablirSeuilGlobalDeTest } from "./parametres-test";
 
 const FIXTURES = join(process.cwd(), "..", "generateur", "tests", "fixtures");
 const MDP = "phrase-de-passe-inventee-2026";
@@ -36,6 +38,7 @@ async function compte(identifiant: string) {
 }
 
 beforeAll(async () => {
+  await fixerSeuilGlobalDeTest("20000000"); // T1 / T2 dépassent le seuil unique de 10 M (étape 3) : le test valide la production du PDF, pas la validation
   remplacerGenerateur(null);
   remplacerStockage(null);
   const sante = await fetch(new URL("/sante", obtenirConfig().GENERATEUR_URL)).catch(() => null);
@@ -53,6 +56,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await retablirSeuilGlobalDeTest();
   await obtenirPrisma().$disconnect();
 });
 
@@ -93,8 +97,8 @@ describe("cotation T1 de bout en bout", () => {
         clientId: null,
         typeContrat: "GROUPE",
         souscripteur: { type: "PHYSIQUE", nom: "KOUADIO", prenoms: "Awa Inventée", raison_sociale: "", telephone: "", email: "", adresse: "" },
-        dateEffet: "2026-01-01",
-        dateEcheance: "2026-12-31",
+        dateEffet: debutTest(),
+        dateEcheance: finTest(debutTest()),
         nombreTranches: 1,
         lignes: [{ codeFormule: "SOLO", effectif: 3 }, { codeFormule: "FAMILLE", effectif: 60 }],
         motifForcage: null,

@@ -24,6 +24,7 @@ import { assurerSignature, assurerSocieteDeTest, PNG_REEL_1PX } from "./societe-
 import { remplacerStockage, stockage } from "./stockage";
 import type { UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
+import { debutTest, finTest } from "./dates-test";
 
 const FIXTURES = join(process.cwd(), "..", "generateur", "tests", "fixtures");
 const fixture = (nom: string) => new Uint8Array(readFileSync(join(FIXTURES, nom)));
@@ -129,8 +130,8 @@ describe("produit par garanties : composition → cotation → police → CP →
       clientId: null,
       typeContrat: "INDIVIDUEL",
       souscripteur: { type: "MORALE", nom: "", prenoms: "", raison_sociale: "ENTREPRISE INVENTÉE SA", telephone: "", email: "", adresse: "Plateau, rue inventée" },
-      dateEffet: "2026-01-01",
-      dateEcheance: "2026-12-31",
+      dateEffet: debutTest(),
+      dateEcheance: finTest(debutTest()),
       nombreTranches: 2,
       lignes: [],
       motifForcage: null,

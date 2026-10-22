@@ -28,6 +28,8 @@ import { assurerSignature, assurerSocieteDeTest, PNG_REEL_1PX } from "./societe-
 import { remplacerStockage, stockage } from "./stockage";
 import type { UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
+import { debutTest, finTest } from "./dates-test";
+import { fixerSeuilGlobalDeTest, retablirSeuilGlobalDeTest } from "./parametres-test";
 
 const FIXTURES = join(process.cwd(), "..", "generateur", "tests", "fixtures");
 const fixture = (nom: string) => new Uint8Array(readFileSync(join(FIXTURES, nom)));
@@ -115,6 +117,7 @@ async function pdfDe(numero: string, version: number): Promise<{ pdf: Uint8Array
 const assure = (i: number, formule: string): Assure => ({ ordre: i, nom_prenoms: `Assuré ${i} Inventé`, date_naissance: "1990-01-01", sexe: i % 2 ? "F" : "M", lien: "Salarié", formule });
 
 beforeAll(async () => {
+  await fixerSeuilGlobalDeTest("20000000"); // T1 / T2 dépassent le seuil unique de 10 M (étape 3) : le test valide la production du PDF, pas la validation
   remplacerGenerateur(null);
   remplacerStockage(null);
   const sante = await fetch(new URL("/sante", obtenirConfig().GENERATEUR_URL)).catch(() => null);
@@ -147,6 +150,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
+  await retablirSeuilGlobalDeTest();
   await obtenirPrisma().$disconnect();
 });
 
@@ -157,8 +161,8 @@ describe("T2 : facture de groupe CGE-SN, vrai PDF", () => {
         codeProduit: produitGroupe,
         typeContrat: "GROUPE",
         souscripteur: { type: "MORALE", nom: "", prenoms: "", raison_sociale: "CGE-SN (société inventée)", telephone: "", email: "", adresse: "Plateau, rue inventée" },
-        dateEffet: "2026-01-01",
-        dateEcheance: "2026-12-31",
+        dateEffet: debutTest(),
+        dateEcheance: finTest(debutTest()),
         nombreTranches: 4,
         lignes: [
           { codeFormule: "SOLO", effectif: 8 },
@@ -196,8 +200,8 @@ describe("T3 et T4 : paiement, reçu, facture v2, puis avoir", () => {
       codeProduit: produitIndividuel,
       typeContrat: "INDIVIDUEL" as const,
       souscripteur: { type: "PHYSIQUE" as const, nom: "YAO", prenoms: "Koffi (inventé)", raison_sociale: "", telephone: "0700000000", email: "", adresse: "Cocody, rue inventée" },
-      dateEffet: "2026-07-22",
-      dateEcheance: "2026-12-31",
+      dateEffet: debutTest(),
+      dateEcheance: finTest(debutTest(), 163),
       nombreTranches: 1,
       lignes: [{ codeFormule: "F", effectif: 1 }],
       assures: [],

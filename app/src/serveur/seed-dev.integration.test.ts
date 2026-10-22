@@ -5,12 +5,15 @@ import { lireJournal } from "./audit";
 import { initialiserProfilsEtDroits } from "./droits";
 import { verifierMotDePasse } from "./mot-de-passe";
 import { obtenirPrisma } from "./prisma";
-import { COMPTES_SEED_DEV, executerSeedDev } from "./seed-dev";
+import { COMPTES_SEED_DEV, SeedRefuse, executerSeedDev as executerSeedDevAvecGarde } from "./seed-dev";
 import { creerAdministrateurInitial } from "./utilisateurs";
 
 // Mot de passe inventé, propre aux tests.
 const MOT_DE_PASSE = "Rx7-cobalt-lune-42";
 const identifiants = COMPTES_SEED_DEV.map((c) => c.identifiant);
+// La base de test est partagée avec les autres fichiers (leurs comptes ne viennent pas du seed) : ces tests remplacent la garde de la base,
+// qui a son propre test ci-dessous, sur la vraie base.
+const executerSeedDev = (motDePasse: string) => executerSeedDevAvecGarde(motDePasse, async () => {});
 const comptes = () => obtenirPrisma().utilisateur.findMany({ where: { identifiant: { in: identifiants } }, include: { profil: true }, orderBy: { identifiant: "asc" } });
 
 beforeAll(async () => {
@@ -53,5 +56,15 @@ describe("seed de développement (base réelle)", () => {
     expect(await prisma.utilisateur.count({ where: { identifiant: { in: identifiants } } })).toBe(6);
     expect(await prisma.utilisateur.findUniqueOrThrow({ where: { identifiant: "test.commercial" } })).toEqual(commercialAvant);
     expect(await prisma.utilisateur.findUniqueOrThrow({ where: { id: admin } })).toEqual(avant);
+  });
+});
+
+describe("seed de développement : refus sur une base qui contient de vrais comptes (audit m7)", () => {
+  it("refuse sans rien créer, même avec les variables d'environnement forcées", async () => {
+    const prisma = obtenirPrisma();
+    await creerAdministrateurInitial({ identifiant: `compte-reel-${Date.now()}`, nom: "Compte réel (test)", motDePasse: "Kq9-horizon-sable-77" });
+    const avant = await prisma.utilisateur.count();
+    await expect(executerSeedDevAvecGarde("Rx7-cobalt-lune-42")).rejects.toBeInstanceOf(SeedRefuse);
+    expect(await prisma.utilisateur.count()).toBe(avant);
   });
 });

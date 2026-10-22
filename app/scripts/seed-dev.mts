@@ -21,7 +21,18 @@ try {
   throw erreur;
 }
 
-const { crees, ignores } = await executerSeedDev(motDePasse);
+let resultat: Awaited<ReturnType<typeof executerSeedDev>>;
+try {
+  resultat = await executerSeedDev(motDePasse);
+} catch (erreur) {
+  if (erreur instanceof SeedRefuse) {
+    console.error(erreur.message);
+    await obtenirPrisma().$disconnect();
+    process.exit(1);
+  }
+  throw erreur;
+}
+const { crees, ignores } = resultat;
 for (const identifiant of crees) console.log(`créé    : ${identifiant}`);
 for (const identifiant of ignores) console.log(`ignoré  : ${identifiant} (existe déjà, inchangé)`);
 console.log(`\n${crees.length} compte(s) créé(s), ${ignores.length} ignoré(s). Mot de passe : celui de SEED_MOT_DE_PASSE (non affiché).`);

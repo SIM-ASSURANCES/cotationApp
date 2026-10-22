@@ -12,7 +12,9 @@ import { creerCompteSeedDev } from "./utilisateurs";
  * seulement à la main (npm run seed:dev). Jamais sur un serveur : voir docs/deploiement.md.
  *
  * Le mot de passe vient UNIQUEMENT de la variable SEED_MOT_DE_PASSE ; il n'est jamais écrit dans le
- * code ni affiché. Deux gardes : NODE_ENV différent de « production » ET AUTORISER_SEED_DEV=oui.
+ * code ni affiché. Trois gardes : NODE_ENV différent de « production », AUTORISER_SEED_DEV=oui, et une base
+ * qui ne contient aucun compte étranger au seed (audit m7 : même avec les deux variables forcées, le seed ne
+ * touche jamais une base où de vrais comptes existent).
  */
 
 export const COMPTES_SEED_DEV: readonly { identifiant: string; nom: string; profil: CodeProfil }[] = [
@@ -50,11 +52,34 @@ export function controlerEnvironnementSeed(env: Record<string, string | undefine
   return motDePasse;
 }
 
+/** Identifiants qui ne viennent pas du seed (comparés après normalisation). */
+export function comptesHorsSeed(identifiants: readonly string[]): string[] {
+  const duSeed = new Set(COMPTES_SEED_DEV.map((c) => normaliserIdentifiant(c.identifiant)));
+  return identifiants.filter((identifiant) => !duSeed.has(normaliserIdentifiant(identifiant)));
+}
+
+/**
+ * Garde de la base (audit m7) : refus si elle contient un compte qui ne vient pas du seed. Le message donne le nombre de comptes,
+ * jamais leurs identifiants. Les comptes du seed eux-mêmes ne bloquent pas (second lancement : rien n'est dupliqué).
+ */
+export async function controlerBaseSansComptesHorsSeed(
+  client: { utilisateur: { findMany(args: { select: { identifiant: true } }): Promise<{ identifiant: string }[]> } } = obtenirPrisma(),
+): Promise<void> {
+  const etrangers = comptesHorsSeed((await client.utilisateur.findMany({ select: { identifiant: true } })).map((u) => u.identifiant));
+  if (etrangers.length > 0) {
+    throw new SeedRefuse(
+      `Refus : la base contient ${etrangers.length} compte(s) qui ne viennent pas du seed de développement. Ce n'est pas une base de développement vide : le seed ne s'y exécute pas (aucun compte créé).`,
+    );
+  }
+}
+
 /**
  * Crée les comptes de la liste qui n'existent pas encore. Un compte déjà présent est ignoré : jamais
- * dupliqué ni modifié. Aucun compte hors de la liste n'est lu ni touché.
+ * dupliqué ni modifié. Aucun compte hors de la liste n'est lu ni touché, mais leur présence fait refuser le seed.
+ * `controleBase` : la garde de la base ; les tests d'intégration, dont la base partagée contient d'autres comptes, la remplacent.
  */
-export async function executerSeedDev(motDePasse: string): Promise<{ crees: string[]; ignores: string[] }> {
+export async function executerSeedDev(motDePasse: string, controleBase: () => Promise<void> = controlerBaseSansComptesHorsSeed): Promise<{ crees: string[]; ignores: string[] }> {
+  await controleBase();
   const crees: string[] = [];
   const ignores: string[] = [];
   for (const compte of COMPTES_SEED_DEV) {

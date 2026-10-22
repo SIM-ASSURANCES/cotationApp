@@ -477,7 +477,7 @@ function versVersion(v: Prisma.ProduitVersionGetPayload<{ include: { formules: t
     modeTarification: v.modeTarification as ModeTarification,
     garanties: (v.garanties as GarantieParametree[] | null) ?? [],
     garantiesSaisieLibre: v.garantiesSaisieLibre,
-    references: { cgModeleCode: v.cgModeleCode, cgVisa: v.cgVisa, csModeleCode: v.csModeleCode, csVisa: v.csVisa },
+    references: { csModeleCode: v.csModeleCode, csVisa: v.csVisa },
     formules: v.formules
       .map(
         (f): FormuleSaisie => ({
@@ -574,8 +574,6 @@ export async function creerVersion(acteur: UtilisateurCourant, codeProduit: stri
           };
         }) as unknown as Prisma.InputJsonValue,
         garantiesSaisieLibre: saisie.garantiesSaisieLibre ?? true,
-        cgModeleCode: saisie.references?.cgModeleCode ?? null,
-        cgVisa: saisie.references?.cgVisa?.trim() ?? null,
         csModeleCode: saisie.references?.csModeleCode ?? null,
         csVisa: saisie.references?.csVisa?.trim() ?? null,
         creePar: acteur.identifiant,

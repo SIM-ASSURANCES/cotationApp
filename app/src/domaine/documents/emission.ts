@@ -191,18 +191,15 @@ export function statutPublic(d: { type: TypeDocument; annuleParNumero: string | 
 // ------------------------------------------------------------------ Assemblage (§6.8)
 
 /**
- * Contrôle BLOQUANT : le visa cité dans les CP (paramétrage du produit) est celui des CG jointes ;
- * de même pour les CS.
+ * Contrôle BLOQUANT : le visa cité dans les CP pour les conventions spéciales (paramétrage du produit) est celui des CS jointes.
+ * Les CG n'ont plus de visa saisi (étape 6, D42) : il est lu dans leur version publiée, une seule source.
  */
 export function problemesVisas(
-  produit: { cgVisa: string | null; csVisa: string | null },
-  jointes: { cg: { code: string; visa: string | null } | null; cs: { code: string; visa: string | null } | null },
+  produit: { csVisa: string | null },
+  jointes: { cs: { code: string; visa: string | null } | null },
 ): string[] {
   const p: string[] = [];
   const normal = (v: string | null) => (v ?? "").replace(/\s+/g, " ").trim();
-  if (jointes.cg && normal(produit.cgVisa) !== normal(jointes.cg.visa)) {
-    p.push(`Visa incohérent : le produit cite « ${produit.cgVisa} », les conditions générales jointes (${jointes.cg.code}) portent « ${jointes.cg.visa} ». Corrigez le paramétrage du produit ou les CG avant d'émettre.`);
-  }
   if (jointes.cs && normal(produit.csVisa) !== normal(jointes.cs.visa)) {
     p.push(`Visa incohérent : le produit cite « ${produit.csVisa} », les conventions spéciales jointes (${jointes.cs.code}) portent « ${jointes.cs.visa} ».`);
   }

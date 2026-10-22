@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Assure } from "@/domaine/cotation/saisie";
 
-import { assurerBranche } from "./branches-test";
+import { assurerBranche, rattacherCgDeTest } from "./branches-test";
 import { obtenirConfig } from "./config";
 import { accepter, creerBrouillon, soumettre, type SaisieCotation } from "./cotations";
 import { emettreCp, verifierJeton } from "./documents";
@@ -85,7 +85,7 @@ async function produit(typeContrat: "GROUPE" | "INDIVIDUEL", cgCode: string, for
       cotation: { validiteMois: 3, formulesMax: 3 },
       seuilValidationTtc: "20000000",
       formules,
-      references: { cgModeleCode: cgCode, cgVisa: VISA_CG, csModeleCode: null, csVisa: null },
+      references: { csModeleCode: null, csVisa: null },
     },
     null,
   );
@@ -133,6 +133,7 @@ beforeAll(async () => {
   await assurerSignature(technique, PNG_REEL_1PX);
 
   const cg = await publier("CG", null, "cg_test.docx", { visa: VISA_CG, dateDocument: "2025-06-19" });
+  await rattacherCgDeTest("MALADIE", cg);
   produitGroupe = await produit(
     "GROUPE",
     cg,

@@ -13,7 +13,7 @@ import type { Analyse } from "@/domaine/documents/analyse";
 import type { Assure } from "@/domaine/cotation/saisie";
 
 import { lireJournal } from "./audit";
-import { assurerBranche } from "./branches-test";
+import { assurerBranche, rattacherCgDeTest } from "./branches-test";
 import { accepter, creerBrouillon, soumettre, valider, type SaisieCotation } from "./cotations";
 import { emettreCp } from "./documents";
 import { initialiserProfilsEtDroits } from "./droits";
@@ -237,7 +237,8 @@ beforeAll(async () => {
   await assurerSignature(technique);
 
   const cg = await publier("CG", null, analyse(["produit.cg_visa"]), { visa: "VISA-INVENTE-01" });
-  const references = { cgModeleCode: cg.code, cgVisa: "VISA-INVENTE-01", csModeleCode: null, csVisa: null };
+  await rattacherCgDeTest("MALADIE", cg.code);
+  const references = { csModeleCode: null, csVisa: null };
   const base = {
     dateEffet: "2020-01-01",
     arrondi: { precision: 1, sens: "PROCHE", niveau: "LIGNE", composanteAbsorbante: "TAXE" },

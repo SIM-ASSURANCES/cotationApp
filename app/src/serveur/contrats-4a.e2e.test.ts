@@ -15,7 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 import { donneesDocument, type SourceDocument } from "@/domaine/documents/donnees";
 
-import { assurerBranche } from "./branches-test";
+import { assurerBranche, rattacherCgDeTest } from "./branches-test";
 import { obtenirConfig } from "./config";
 import { accepter, composerLaPrime, creerBrouillon, lireCotation, soumettre, type SaisieCotation } from "./cotations";
 import { emettreCp } from "./documents";
@@ -63,7 +63,7 @@ async function publier(modeleId: number, nom: string, surcharge: Record<string, 
   return v.id;
 }
 
-const version = (references?: { cgModeleCode: string; cgVisa: string }): VersionSaisie => ({
+const version = (): VersionSaisie => ({
   dateEffet: "2020-01-01",
   arrondi: { precision: 1, sens: "PROCHE", niveau: "LIGNE", composanteAbsorbante: "TAXE" },
   prorata: { actif: true, primeMinimale: null },
@@ -71,7 +71,6 @@ const version = (references?: { cgModeleCode: string; cgVisa: string }): Version
   cotation: { validiteMois: 3, formulesMax: 3 },
   seuilValidationTtc: "20000000",
   formules: [{ code: "STANDARD", libelle: "Standard", tauxCouverture: null, primeUnitaire: "100000", accessoireMode: "FIXE", accessoireValeur: "5000" }],
-  ...(references ? { references: { ...references, csModeleCode: null, csVisa: null } } : {}),
 });
 
 beforeAll(async () => {
@@ -115,7 +114,8 @@ describe("T5 : SECURVIE, trois bénéficiaires, branche DECES (taxe 0 %)", () =>
 
     const code = CODE("SECURVIE");
     await creerProduit(technique, { code, libelle: "Sécur'Vie (bout en bout)", gamme: "RELAX", branchePrincipale: "DECES", branche: "DECES" }, null);
-    await creerVersion(technique, code, version({ cgModeleCode: cgCode, cgVisa: VISA_CG }), null);
+    await rattacherCgDeTest("DECES", cgCode);
+    await creerVersion(technique, code, version(), null);
     // Le CP est déposé SANS ACCROC : l'analyse réelle vérifie le contenu obligatoire du §10.1 (durée, primes, CG, réclamation, date, signature…).
     const cp = await creerModele(technique, { type: "CP", code: CODE("CP"), libelle: "CP SECURVIE", produitCode: code, ...sans }, null);
     await publier(cp, "cp_securvie_test.docx");

@@ -9,7 +9,7 @@ import { fixerDateMinimumEffetPourTests } from "@/domaine/calcul/dates";
 import type { Analyse } from "@/domaine/documents/analyse";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 
-import { assurerBranche } from "./branches-test";
+import { assurerBranche, rattacherCgDeTest, viderCgDeTest } from "./branches-test";
 import { lireJournal } from "./audit";
 import { creerBrouillon, accepter, lireCotation, modifierBrouillon, soumettre, type SaisieCotation } from "./cotations";
 import { annulerParAvoir, documentsDe, emettreCotation, emettreCp, rechercherDocuments, reediter, telechargerDocument, verifierJeton, zipDocuments } from "./documents";
@@ -320,12 +320,13 @@ describe("T12 : facture annulée par un avoir", () => {
 
 // ---------------------------------------------------------------- Contrat : assemblage et visa
 
-describe("conditions particulières : CP → CS → CG, visa contrôlé (§6.8)", () => {
-  it("assemblage avec les CG publiées ; visa incohérent : émission refusée", async () => {
+describe("conditions particulières : CP → CS → CG de la branche (étape 6, D42)", () => {
+  it("le produit reçoit la CG de sa branche, avec le visa lu dans sa version publiée", async () => {
     const cg = await publier("CG", null, "cg docx", ["produit.cg_visa"], { visa: "MFB/DGTCP/DA/N° 01498" });
     const cgPdf = (await obtenirPrisma().modeleVersion.findUniqueOrThrow({ where: { id: cg.versionId } })).pdf!;
+    await rattacherCgDeTest("MALADIE", cg.code);
 
-    const bon = await produit({ cgModeleCode: cg.code, cgVisa: "MFB/DGTCP/DA/N° 01498", csModeleCode: null, csVisa: null });
+    const bon = await produit();
     await publier("CP", bon, "modele cp", CONTENU_CP);
     const id = await cotationT1(bon);
     await accepter(commercial, id, ["SOLO", "FAMILLE"], `TST-2026-000001-G${String(Date.now() % 100000).padStart(5, "0")}`, null);
@@ -336,18 +337,53 @@ describe("conditions particulières : CP → CS → CG, visa contrôlé (§6.8)"
     expect(demandes[0].piecesJointes).toEqual([cgPdf]);
     expect(demandes[0].donnees.produit).toMatchObject({ cg_visa: "MFB/DGTCP/DA/N° 01498", cg_libelle: "SECUR DOMMAGE (test)", cg_date: "2025-06-19" });
     expect(demandes[0].donnees.police).toMatchObject({ numero: cp.numero });
+  });
 
-    const faux = await produit({ cgModeleCode: cg.code, cgVisa: "MFB/DGTCP/DA/N° 01497", csModeleCode: null, csVisa: null });
-    await publier("CP", faux, "modele cp", CONTENU_CP);
-    const id2 = await cotationT1(faux);
-    await accepter(commercial, id2, ["SOLO"], `TST-2026-000002-G${String(Date.now() % 100000).padStart(5, "0")}`, null);
-    await expect(emettreCp(technique, id2, null)).rejects.toThrow(/Visa incohérent/);
-
+  it("une branche sans CG en vigueur, ou un produit sans branche : émission refusée avec un message, aucun document produit", async () => {
+    const prisma = obtenirPrisma();
+    const cg = await publier("CG", null, "cg docx", ["produit.cg_visa"], { visa: "MFB/DGTCP/DA/N° 01498" });
+    await rattacherCgDeTest("MALADIE", cg.code);
+    await viderCgDeTest("RECOLTE");
+    // La branche RÉCOLTE n'a aucune CG : un produit qui y est classé ne peut pas émettre ses CP.
     const sansCg = await produit();
+    await prisma.produit.update({ where: { code: sansCg }, data: { branchePrincipale: "RECOLTE" } });
     await publier("CP", sansCg, "modele cp", CONTENU_CP);
-    const id3 = await cotationT1(sansCg);
-    await accepter(commercial, id3, ["SOLO"], `TST-2026-000003-G${String(Date.now() % 100000).padStart(5, "0")}`, null);
-    await expect(emettreCp(technique, id3, null)).rejects.toThrow(/pas de conditions générales/);
+    const id = await cotationT1(sansCg);
+    await accepter(commercial, id, ["SOLO"], `TST-2026-000003-G${String(Date.now() % 100000).padStart(5, "0")}`, null);
+    await expect(emettreCp(technique, id, null)).rejects.toThrow(/n'a pas de conditions générales en vigueur.*Conditions générales/);
+    expect(await prisma.documentEmis.count({ where: { cotationId: id, type: "CP" } })).toBe(0);
+
+    const sansBranche = await produit();
+    await prisma.produit.update({ where: { code: sansBranche }, data: { branchePrincipale: null } });
+    await publier("CP", sansBranche, "modele cp", CONTENU_CP);
+    const id2 = await cotationT1(sansBranche);
+    await accepter(commercial, id2, ["SOLO"], `TST-2026-000004-G${String(Date.now() % 100000).padStart(5, "0")}`, null);
+    await expect(emettreCp(technique, id2, null)).rejects.toThrow(/n'a pas de branche principale/);
+    expect(await prisma.documentEmis.count({ where: { cotationId: id2, type: "CP" } })).toBe(0);
+    // La cotation, elle, n'est pas bloquée (elle ne joint pas les CG, H23).
+    await publier("COTATION", sansBranche, "modele cotation", SOCLE("doc.numero"));
+    expect((await emettreCotation(commercial, id2, null)).type).toBe("COTATION");
+  });
+
+  it("une nouvelle CG de la branche est sans effet sur une CP émise : la réédition reprend la CG figée", async () => {
+    const prisma = obtenirPrisma();
+    const ancienne = await publier("CG", null, "cg docx", ["produit.cg_visa"], { visa: "VISA-ANCIENNE-01" });
+    await rattacherCgDeTest("MALADIE", ancienne.code);
+    const p = await produit();
+    await publier("CP", p, "modele cp", CONTENU_CP);
+    const id = await cotationT1(p);
+    await accepter(commercial, id, ["SOLO", "FAMILLE"], `TST-2026-000005-G${String(Date.now() % 100000).padStart(5, "0")}`, null);
+    const cp = await emettreCp(technique, id, null);
+    const anciennePdf = (await prisma.modeleVersion.findUniqueOrThrow({ where: { id: ancienne.versionId } })).pdf!;
+
+    // Nouvelle CG rattachée à la branche (autre modèle, autre visa) : elle s'applique aux émissions suivantes seulement.
+    const nouvelle = await publier("CG", null, "cg docx", ["produit.cg_visa"], { visa: "VISA-NOUVELLE-02" });
+    await rattacherCgDeTest("MALADIE", nouvelle.code);
+    demandes.length = 0;
+    const reedition = await reediter(technique, cp.id, null);
+    expect(reedition.version).toBe(2);
+    expect(demandes[0].piecesJointes).toEqual([anciennePdf]);
+    expect(demandes[0].donnees.produit).toMatchObject({ cg_visa: "VISA-ANCIENNE-01" });
   });
 });
 

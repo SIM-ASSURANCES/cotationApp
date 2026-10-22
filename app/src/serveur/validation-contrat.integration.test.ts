@@ -11,7 +11,7 @@ import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Analyse } from "@/domaine/documents/analyse";
 
 import { lireJournal } from "./audit";
-import { assurerBranche } from "./branches-test";
+import { assurerBranche, rattacherCgDeTest } from "./branches-test";
 import { accepter, creerBrouillon, soumettre, valider, type SaisieCotation } from "./cotations";
 import { emettreCp, soumettreCp } from "./documents";
 import { enregistrerDroit, initialiserProfilsEtDroits } from "./droits";
@@ -78,6 +78,7 @@ async function produit(seuil: string | null): Promise<string> {
   await creerTaxe(technique, { branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
   await creerProduit(technique, { code, libelle: "Produit à seuil (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche }, null);
   const cg = await publier("CG", null, VISA);
+  await rattacherCgDeTest("MALADIE", cg);
   const version: VersionSaisie = {
     dateEffet: "2020-01-01",
     arrondi: { precision: 1, sens: "PROCHE", niveau: "LIGNE", composanteAbsorbante: "TAXE" },
@@ -86,7 +87,7 @@ async function produit(seuil: string | null): Promise<string> {
     cotation: { validiteMois: 3, formulesMax: 3 },
     seuilValidationTtc: seuil,
     formules: [{ code: "SOLO", libelle: "Solo", tauxCouverture: "80", primeUnitaire: "93581.33", accessoireMode: "FIXE", accessoireValeur: "3000" }],
-    references: { cgModeleCode: cg, cgVisa: VISA, csModeleCode: null, csVisa: null },
+    references: { csModeleCode: null, csVisa: null },
   };
   await creerVersion(technique, code, version, null);
   await obtenirPrisma().parametre.upsert({

@@ -13,7 +13,7 @@ import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Souscripteur } from "@/domaine/cotation/saisie";
 import type { Analyse } from "@/domaine/documents/analyse";
 
-import { assurerBranche } from "./branches-test";
+import { assurerBranche, rattacherCgDeTest } from "./branches-test";
 import { accepter, composerLaPrime, creerBrouillon, lireCotation, soumettre, type SaisieCotation } from "./cotations";
 import { emettreCotation, emettreCp } from "./documents";
 import { initialiserProfilsEtDroits } from "./droits";
@@ -208,6 +208,7 @@ beforeAll(async () => {
 
   // Modèle de CG publié avec code et visa obligatoires.
   cgCode = await publierModele("CG", null, analyse(["produit.cg_libelle", "produit.cg_visa", "produit.cg_date"]), { visa: VISA_CG });
+  await rattacherCgDeTest("INCENDIE_DOMMAGES", cgCode);
 
   // Produit SECURPRO inventé : branche principale INCENDIE_DOMMAGES, mode GARANTIES, 3 garanties avec montant garanti et accessoires par défaut.
   codeSecurpro = CODE("SECURPRO");
@@ -237,7 +238,7 @@ beforeAll(async () => {
       { libelle: "Vol", branche: IARD, montantGaranti: "10000000", accessoires: "2500" },
       { libelle: "Dégâts des eaux", branche: IARD, montantGaranti: "5000000", accessoires: "2500" },
     ],
-    references: { cgModeleCode: cgCode, cgVisa: VISA_CG, csModeleCode: null, csVisa: null },
+    references: { csModeleCode: null, csVisa: null },
   };
   await creerVersion(technique, codeSecurpro, versionSecurpro, null);
 

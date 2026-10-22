@@ -200,10 +200,11 @@ describe("émission : règles pures (CDC §14)", () => {
     expect(statutPublic({ type: "RECU", annuleParNumero: "AV-1", dateValidite: null }, "2026-10-06").libelle).toBe("Annulé – avoir AV-1");
   });
 
-  it("assemblage : le visa cité par le produit doit être celui des CG jointes (contrôle bloquant)", () => {
-    const cg = { code: "CG_SECUR", visa: "MFB/DGTCP/DA/N° 01498" };
-    expect(problemesVisas({ cgVisa: "MFB/DGTCP/DA/N°  01498", csVisa: null }, { cg, cs: null })).toEqual([]);
-    expect(problemesVisas({ cgVisa: "MFB/DGTCP/DA/N° 01497", csVisa: null }, { cg, cs: null })[0]).toContain("Visa incohérent");
+  it("assemblage : le visa cité par le produit doit être celui des CS jointes (contrôle bloquant) ; les CG n'ont plus de visa saisi", () => {
+    const cs = { code: "CS_SECUR", visa: "MFB/DGTCP/DA/N° 01498" };
+    expect(problemesVisas({ csVisa: "MFB/DGTCP/DA/N°  01498" }, { cs })).toEqual([]);
+    expect(problemesVisas({ csVisa: "MFB/DGTCP/DA/N° 01497" }, { cs })[0]).toContain("Visa incohérent");
+    expect(problemesVisas({ csVisa: null }, { cs: null })).toEqual([]);
   });
 
   it("paramètres de la société : défaut, lecture tolérante, lignes « a ; b »", () => {

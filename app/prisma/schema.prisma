@@ -178,8 +178,26 @@ model BranchePrincipale {
   libelle  String
   creeLe   DateTime  @default(now()) @map("cree_le")
   produits Produit[]
+  cg       BrancheCg[]
 
   @@map("branches_principales")
+}
+
+/// Conditions générales d'une branche principale (étape 6, D42), HISTORISÉES : à partir de `date_effet`, la branche
+/// utilise le modèle de CG `modele_code` ; le visa est lu dans la version publiée du modèle. Jamais modifiée : une
+/// nouvelle CG est une nouvelle ligne datée (déclencheur parametrage_historise).
+model BrancheCg {
+  id                Int               @id @default(autoincrement())
+  branchePrincipale String            @map("branche_principale")
+  modeleCode        String            @map("modele_code")
+  dateEffet         DateTime          @map("date_effet") @db.Date
+  creeLe            DateTime          @default(now()) @map("cree_le")
+  creePar           String            @map("cree_par")
+  branche           BranchePrincipale @relation(fields: [branchePrincipale], references: [code], onDelete: Restrict, onUpdate: Restrict)
+  modele            Modele            @relation(fields: [modeleCode], references: [code], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([branchePrincipale, dateEffet])
+  @@map("branche_cg")
 }
 
 /// Produit d'assurance (CDC §2.3, §7). Aucun produit n'est codé en dur : tout vient d'ici.
@@ -233,8 +251,8 @@ model ProduitVersion {
   garanties                   Json      @default("[]")
   /// Faux : la composition n'accepte que les libellés de la liste des garanties.
   garantiesSaisieLibre        Boolean   @default(true) @map("garanties_saisie_libre")
-  /// Références contractuelles (CDC §7) : code du modèle de CG (et de CS) joint au contrat, et visa
-  /// cité dans les CP. À l'assemblage, ce visa doit être celui des CG jointes (contrôle bloquant, §6.8).
+  /// Références contractuelles (CDC §7) : code du modèle de CS joint au contrat et visa cité dans les CP.
+  /// cg_modele_code et cg_visa : HISTORIQUE seulement (étape 6, D42) ; les CG viennent de la branche principale (branche_cg).
   cgModeleCode                String?   @map("cg_modele_code")
   cgVisa                      String?   @map("cg_visa")
   csModeleCode                String?   @map("cs_modele_code")
@@ -503,6 +521,7 @@ model Modele {
   creePar       String          @map("cree_par")
   produit       Produit?        @relation(fields: [produitId], references: [id], onDelete: Restrict)
   versions      ModeleVersion[]
+  brancheCg     BrancheCg[]
 
   @@index([type])
   @@map("modeles")

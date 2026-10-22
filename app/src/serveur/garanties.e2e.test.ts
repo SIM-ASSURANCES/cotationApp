@@ -10,7 +10,7 @@ process.env.URL_PUBLIQUE = "https://documents.exemple.ci";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { assurerBranche } from "./branches-test";
+import { assurerBranche, rattacherCgDeTest } from "./branches-test";
 import { obtenirConfig } from "./config";
 import { accepter, composerLaPrime, creerBrouillon, lireCotation, soumettre } from "./cotations";
 import { emettreCotation, emettreCp } from "./documents";
@@ -92,6 +92,7 @@ beforeAll(async () => {
     await creerTaxe(technique, { branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: taux, assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
   }
   const cg = await publier("CG", null, "cg_test.docx", { visa: VISA_CG, dateDocument: "2025-06-19" });
+  await rattacherCgDeTest("INCENDIE_DOMMAGES", cg);
   produit = CODE("SECURPRO");
   await creerProduit(technique, { code: produit, libelle: "SECURPRO (produit de test par garanties)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: iard }, null);
   await creerVersion(
@@ -107,7 +108,7 @@ beforeAll(async () => {
       seuilValidationTtc: null,
       formules: [],
       garanties: [{ libelle: "Incendie", branche: incendie }, { libelle: "Vol", branche: iard }, { libelle: "Dégât des eaux", branche: iard }],
-      references: { cgModeleCode: cg, cgVisa: VISA_CG, csModeleCode: null, csVisa: null },
+      references: { csModeleCode: null, csVisa: null },
     },
     null,
   );

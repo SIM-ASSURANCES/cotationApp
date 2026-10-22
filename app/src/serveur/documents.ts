@@ -14,6 +14,7 @@ import { normaliserNumeroPolice, numeroCertificatParDefaut, problemesNumeroCerti
 import type { Assure, Beneficiaire, ContactUrgence, Risque, Souscripteur } from "@/domaine/cotation/saisie";
 import { ecartEnJours } from "@/domaine/calcul/dates";
 import { statutEffectif, type StatutCotation } from "@/domaine/cotation/statuts";
+import { messageCgManquante } from "@/domaine/documents/cg-branche";
 import { donneesDocument, type FormuleSource, type GarantieSource, type SourceDocument } from "@/domaine/documents/donnees";
 import {
   DOCUMENTS,
@@ -31,6 +32,7 @@ import { peutAgir, peutLire, type CodeAction } from "@/domaine/droits";
 import { journaliser, type ActeurAudit } from "./audit";
 import { versIntermediairesDocument } from "./intermediaires";
 import { obtenirConfig } from "./config";
+import { cgDeLaBranche } from "./cg-branches";
 import { niveauDuProfil } from "./droits";
 import { generateur, type ImagePng } from "./generateur";
 import { exigerDetailDesGaranties, fichiersAssocies, lireSeuilListe, modelesAssocies, versionPublieeEnVigueur, type VersionsAssociees } from "./modeles";
@@ -89,12 +91,13 @@ async function exigerSurType(acteur: UtilisateurCourant, type: TypeDocument, ecr
 // ---------------------------------------------------------------- Sources : cotation et police
 
 export type ContexteProduit = {
-  produit: { id: number; code: string; libelle: string; gamme: string; branche: string; branche_libelle: string | null };
+  produit: { id: number; code: string; libelle: string; gamme: string; branche: string; branche_libelle: string | null; branchePrincipale: string | null };
   versionDateEffet: DateIso;
   /** Mode de tarification de la version figée : seul FORMULE a des montants issus du moteur (session 6.2a). */
   modeTarification: string;
   formules: Map<string, { libelle: string; tauxCouverture: string | null }>;
-  references: { cgModeleCode: string | null; cgVisa: string | null; csModeleCode: string | null; csVisa: string | null };
+  /** Conventions spéciales du produit. Les CG viennent de la branche principale (étape 6, D42), jamais du produit. */
+  references: { csModeleCode: string | null; csVisa: string | null };
 };
 
 export async function contexteProduit(produitId: number, versionDateEffet: Date): Promise<ContexteProduit> {
@@ -110,11 +113,12 @@ export async function contexteProduit(produitId: number, versionDateEffet: Date)
       gamme: version.produit.gamme,
       branche: version.produit.branche,
       branche_libelle: version.produit.branchePrincipaleRef?.libelle ?? libelleBranchePrincipale(version.produit.branchePrincipale),
+      branchePrincipale: version.produit.branchePrincipale,
     },
     versionDateEffet: depuisDate(versionDateEffet),
     modeTarification: version.modeTarification,
     formules: new Map(version.formules.map((f) => [f.code, { libelle: f.libelle, tauxCouverture: f.tauxCouverture ? f.tauxCouverture.toFixed() : null }])),
-    references: { cgModeleCode: version.cgModeleCode, cgVisa: version.cgVisa, csModeleCode: version.csModeleCode, csVisa: version.csVisa },
+    references: { csModeleCode: version.csModeleCode, csVisa: version.csVisa },
   };
 }
 
@@ -381,11 +385,17 @@ async function modeleEnVigueur(type: "COTATION" | "CP" | "CERTIFICAT", produitId
   return { versionId: v.id, fichier: v.fichier, champs };
 }
 
-/** CG et CS du produit, publiées et en vigueur ; visas vérifiés (contrôle bloquant, §6.8). */
+/**
+ * CG de la branche principale du produit et CS du produit, publiées et en vigueur à la date d'émission ; visa des CG lu dans leur
+ * version publiée (une seule source), visa des CS contrôlé (§6.8). Obligatoire (CP) : produit sans branche ou branche sans CG en
+ * vigueur = refus avec un message qui dit quoi renseigner, avant toute production de document.
+ */
 async function piecesContractuelles(contexte: ContexteProduit, date: DateIso, obligatoire: boolean) {
   const r = contexte.references;
-  if (obligatoire && !r.cgModeleCode) {
-    throw new ErreurMetier(`Le produit ${contexte.produit.code} n'a pas de conditions générales dans son paramétrage (version du ${contexte.versionDateEffet}) : renseignez-les avant d'émettre le contrat.`);
+  const branchePrincipale = contexte.produit.branchePrincipale;
+  const cgBranche = branchePrincipale ? await cgDeLaBranche(obtenirPrisma(), branchePrincipale, date) : null;
+  if (obligatoire && !cgBranche) {
+    throw new ErreurMetier(messageCgManquante(contexte.produit.code, branchePrincipale ? { code: branchePrincipale, libelle: contexte.produit.branche_libelle ?? branchePrincipale } : null, date));
   }
   const charger = async (code: string | null, quoi: string) => {
     if (!code) return null;
@@ -395,9 +405,10 @@ async function piecesContractuelles(contexte: ContexteProduit, date: DateIso, ob
     if (!v.pdf) throw new ErreurMetier(`${quoi} « ${code} » : PDF absent (il est produit à la publication).`);
     return { versionId: v.id, pdf: v.pdf, code, libelle: retenu.modele.libelle, visa: retenu.version.visa, date: retenu.version.dateDocument };
   };
-  const cg = await charger(r.cgModeleCode, "Conditions générales");
+  const cg = await charger(cgBranche?.modeleCode ?? null, "Conditions générales");
+  if (cg && !cg.visa?.trim()) throw new ErreurMetier(`Conditions générales « ${cg.code} » : la version publiée n'a pas de visa.`);
   const cs = await charger(r.csModeleCode, "Conventions spéciales");
-  const problemes = problemesVisas({ cgVisa: r.cgVisa, csVisa: r.csVisa }, { cg, cs });
+  const problemes = problemesVisas({ csVisa: r.csVisa }, { cs });
   if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
   return { cg, cs };
 }
@@ -443,7 +454,7 @@ function sourceDeCotation(
     dateValidite: c.dateValidite ? depuisDate(c.dateValidite) : null,
     policeNumero: null,
     produit: commun.produit,
-    cg: pieces.cg ? { libelle: pieces.cg.libelle, visa: contexte.references.cgVisa ?? pieces.cg.visa ?? "", date: pieces.cg.date } : null,
+    cg: pieces.cg ? { libelle: pieces.cg.libelle, visa: pieces.cg.visa ?? "", date: pieces.cg.date } : null,
     cs: pieces.cs ? { libelle: pieces.cs.libelle, visa: contexte.references.csVisa ?? pieces.cs.visa ?? "" } : null,
     souscripteur: c.souscripteur as unknown as Souscripteur,
     assures: c.assures as unknown as Assure[],
@@ -592,7 +603,7 @@ async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<
     dateValidite: null,
     policeNumero: police.numero,
     produit: commun.produit,
-    cg: pieces.cg ? { libelle: pieces.cg.libelle, visa: contexte.references.cgVisa ?? "", date: pieces.cg.date } : null,
+    cg: pieces.cg ? { libelle: pieces.cg.libelle, visa: pieces.cg.visa ?? "", date: pieces.cg.date } : null,
     cs: pieces.cs ? { libelle: pieces.cs.libelle, visa: contexte.references.csVisa ?? "" } : null,
     souscripteur: police.souscripteur as unknown as Souscripteur,
     assures: police.assures as unknown as Assure[],
@@ -759,7 +770,7 @@ export async function emettreCertificat(acteur: UtilisateurCourant, policeId: nu
     dateValidite: null,
     policeNumero: numero,
     produit: commun.produit,
-    cg: citees.cg ? { libelle: citees.cg.libelle, visa: contexte.references.cgVisa ?? citees.cg.visa ?? "", date: citees.cg.date } : null,
+    cg: citees.cg ? { libelle: citees.cg.libelle, visa: citees.cg.visa ?? "", date: citees.cg.date } : null,
     cs: citees.cs ? { libelle: citees.cs.libelle, visa: contexte.references.csVisa ?? citees.cs.visa ?? "" } : null,
     souscripteur: police.souscripteur as unknown as Souscripteur,
     assures: [adherent],

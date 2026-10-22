@@ -15,7 +15,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Assure } from "@/domaine/cotation/saisie";
 
 import { lireJournal } from "./audit";
-import { assurerBranche } from "./branches-test";
+import { assurerBranche, rattacherCgDeTest } from "./branches-test";
 import { obtenirConfig } from "./config";
 import { accepter, creerBrouillon, soumettre } from "./cotations";
 import { initialiserProfilsEtDroits } from "./droits";
@@ -142,6 +142,7 @@ beforeAll(async () => {
   await assurerSignature(technique, PNG_REEL_1PX);
 
   const cg = await publier("CG", null, "cg_test.docx", { visa: VISA_CG, dateDocument: "2025-06-19" });
+  await rattacherCgDeTest("MALADIE", cg);
   const code = CODE("T8");
   const branche = await assurerBranche(`SANTE_${code}`);
   await creerTaxe(technique, { branche, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
@@ -158,7 +159,7 @@ beforeAll(async () => {
       cotation: { validiteMois: 3, formulesMax: 3 },
       seuilValidationTtc: "20000000",
       formules: [formule("SOLO", "236453.25", 18, 65), formule("FAMILLE", "307389.16", null, null), formule("SENIOR", "400000", 60, 80)],
-      references: { cgModeleCode: cg, cgVisa: VISA_CG, csModeleCode: null, csVisa: null },
+      references: { csModeleCode: null, csVisa: null },
     },
     null,
   );

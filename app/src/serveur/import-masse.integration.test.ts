@@ -15,7 +15,7 @@ import type { Assure } from "@/domaine/cotation/saisie";
 
 import { lireAdherents } from "./adherents";
 import { lireJournal } from "./audit";
-import { assurerBranche } from "./branches-test";
+import { assurerBranche, rattacherCgDeTest } from "./branches-test";
 import { accepter, creerBrouillon, soumettre, type SaisieCotation } from "./cotations";
 import { emettreCertificat, emettreCp, mettreAJourCp, telechargerDocument, zipDocuments } from "./documents";
 import { initialiserProfilsEtDroits } from "./droits";
@@ -196,6 +196,7 @@ beforeAll(async () => {
   await assurerSignature(technique);
 
   const cg = await publier("CG", null, ["produit.cg_visa"], "MFB/DGTCP/DA/N° 01498");
+  await rattacherCgDeTest("MALADIE", cg);
   const code = CODE("IMP");
   const branche = `SANTE_${code}`;
   await assurerBranche(branche);
@@ -210,7 +211,7 @@ beforeAll(async () => {
     cotation: { validiteMois: 3, formulesMax: 3 },
     seuilValidationTtc: "20000000",
     formules: [formule("SOLO", 18, 65), formule("SENIOR", 60, null)],
-    references: { cgModeleCode: cg, cgVisa: "MFB/DGTCP/DA/N° 01498", csModeleCode: null, csVisa: null },
+    references: { csModeleCode: null, csVisa: null },
   };
   await creerVersion(technique, code, version, null);
   await publier("CERTIFICAT", code, CONTENU_CERTIFICAT);

@@ -735,4 +735,21 @@ Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir)
   - **H115** (**Export ZIP arborescent**) : les archives ZIP conservent la structure arborescente relative complète du volume de stockage.
   - **H116** (**Rangement dev sous session_replication_role**) : mise à jour de la colonne `chemin` en base de développement autorisée uniquement sous désactivation temporaire de session du déclencheur d'immuabilité.
 
+## D42 — Session Étape 6 : CG par branche (22/10/2026)
+
+- **Date** : 22/10/2026. Branche `phase-cg-par-branche`. Réponses de la Technique et arbitrages de Thierry (option A retenue). Ces décisions **remplacent** la phrase du CDC §6.8 « le visa cité dans les CP est lu dans le paramétrage produit » pour les CG (les cas T du CDC restent la référence).
+- **Règle** :
+  1. Une CG se rattache à une **branche principale** (table `branche_cg`), **historisée par date d'effet** comme les versions de produit : jamais de modification d'une ligne (déclencheur `parametrage_historise`), une nouvelle CG est une nouvelle ligne datée, journalisée (`PARAMETRE_MODIFIE`, objet `branche_cg`).
+  2. Un produit **hérite** de la CG de sa branche. Les CS restent propres au produit, inchangées.
+  3. **Visa lu dans la version publiée** de la CG (code et visa déjà obligatoires au dépôt, H108) : plus aucune saisie du visa, ni sur la branche, ni sur le produit. Le contrôle « visa incohérent » ne vaut donc plus que pour les CS.
+  4. **Date de référence** : la CG en vigueur à la date d'**émission** du document, puis figée avec lui (modèle exact enregistré, T10). Une réédition reprend la CG figée, jamais la nouvelle.
+  5. **Produit sans branche principale, ou branche sans CG en vigueur** : émission des CP refusée **avant toute production de document**, avec un message qui dit quoi renseigner. La cotation n'est pas bloquée (elle ne joint pas les CG, H23).
+  6. Droit : celui du paramétrage des produits (Technique par défaut). Écran « Paramétrage > Conditions générales ».
+  7. Les balises `produit.cg_libelle`, `produit.cg_visa` et `produit.cg_date` ne changent pas.
+- **Existant (option A)** : la migration `20261022090000_cg_par_branche` reprend la CG d'une branche **seulement si** la dernière version de **chacun** de ses produits cite le même modèle de CG (type CG, existant), avec la date d'effet 01/01/2026 et une ligne de journal. Sinon la branche reste vide : rien n'est deviné. Les colonnes `cg_modele_code` et `cg_visa` de `produit_versions` sont **conservées pour l'historique** et ne sont plus lues ni saisies.
+- **Hypothèses nouvelles** :
+  - **H117** (**Date d'effet d'un rattachement de CG**) : aujourd'hui ou plus tard (pas de rattachement rétroactif : les documents déjà émis gardent leurs CG), une seule ligne par branche et par date ; le modèle doit être de type CG, avoir une version publiée en vigueur à cette date et un visa.
+  - **H118** (**Mise à jour des CP d'un contrat de groupe**) : `mettreAJourCp` produit une **nouvelle version** du document, donc une nouvelle émission : elle prend la CG en vigueur **ce jour-là**. Seule la réédition à l'identique reprend la CG figée. À confirmer par Thierry si la mise à jour doit aussi garder la CG d'origine.
+  - **H119** (**Rangement dev : générateur injoignable**) : `ranger:dev` s'arrête dès que le générateur ne répond pas (message « lancer le script dans Docker ») ; seul un 404 compte comme « introuvable » ; toute autre erreur de lecture est portée au rapport du document.
+
 

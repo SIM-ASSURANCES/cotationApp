@@ -35,7 +35,7 @@ Volumes persistants : `donnees_postgres`, `donnees_redis`, `documents` (document
 - **Ressources du VPS** (processeurs, mémoire) : elles fixent `CONVERSIONS_SIMULTANEES` (autour du nombre de processeurs moins un).
 - **Limites par service** (audit M5, `docker-compose.yml`) : `generateur` 2 Go / 2 processeurs, `app`, `travailleur`, `postgres` et `outils` 1 Go / 1 processeur, `redis` 256 Mo / 0,5. Valeurs de départ pour un VPS partagé avec le portail RH : les contrôler avec `docker stats` pendant la recette (import de 500 adhérents compris) et les ajuster dans le fichier.
 - **Polices des modèles** (Tahoma notamment) dans `generateur/polices/`, sous licence, jamais dans le dépôt (question Q2).
-- **Sauvegarde quotidienne** de la base **et** du volume `documents`, copiée hors du VPS, avec un test de restauration.
+- **Dossier cible des sauvegardes** (`DOSSIER_SAUVEGARDE`, disque ou serveur distinct du VPS) : à fixer par le superviseur, puis lignes `cron` du §7 ; test de restauration trimestriel.
 
 ## 3. Installation initiale
 
@@ -101,7 +101,7 @@ Le **renouvellement** et la **facturation de l'incorporation d'adhérents** d'un
 
 ## 5. Mise à jour
 
-Avant une mise à jour qui contient une migration (`app/prisma/migrations/`) : **sauvegarder la base et le volume `documents`** (§7).
+Avant une mise à jour qui contient une migration (`app/prisma/migrations/`) : **sauvegarder la base et le volume `documents`** (§7 : `scripts/sauvegarde.sh`).
 
 ```bash
 git pull
@@ -118,24 +118,79 @@ Les migrations sont **dans un seul sens** : revenir à une version précédente 
 1. `git checkout <version-précédente>` puis `docker compose up -d --build` : suffit si la version n'avait pas de migration.
 2. Sinon, restaurer la sauvegarde faite avant la mise à jour (§7), **puis** revenir au code précédent.
 
-## 7. Sauvegarde et restauration (CDC §14.3 : quotidienne)
+## 7. Sauvegarde et restauration (CDC §14.3, étape 8, D43)
 
-À mettre en place par l'administrateur (tâche planifiée `cron`), avec un test de restauration trimestriel :
+Trois scripts bash à la racine du dépôt, dans `scripts/` (Docker seulement : aucun outil à installer sur l'hôte). Ils reçoivent le **nom du projet Docker Compose** avec `-p` (`sim-documents` sur le serveur) et retrouvent conteneurs et volumes par les étiquettes de Compose : on peut donc les essayer sur une pile jetable sans toucher la base en service.
 
-```bash
-# Base de données
-docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB"' > sauvegarde-$(date +%F).dump
-# Documents émis (volume « documents »)
-docker run --rm -v sim-documents_documents:/donnees -v "$PWD":/sauvegarde debian:bookworm-slim tar czf /sauvegarde/documents-$(date +%F).tgz -C /donnees .
-# Restauration de la base
-docker compose exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists' < sauvegarde-AAAA-MM-JJ.dump
+| Script | Rôle |
+| --- | --- |
+| `scripts/sauvegarde.sh -p PROJET -t quotidienne\|hebdomadaire` | `pg_dump -Fc` de la base et archive du volume `documents`, écrits **dans** les conteneurs puis récupérés par `docker cp` (jamais de redirection de flux binaire) ; empreintes SHA-256 ; manifeste (nombre de lignes des tables clés) ; puis rotation. |
+| `scripts/restauration.sh -p PROJET -s DOSSIER_DE_LA_SAUVEGARDE` | Restaure dans une pile **neuve** et vérifie. Refuse toute base de destination non vide et tout volume `documents` non vide. |
+| `scripts/rotation-sauvegardes.sh -d DOSSIER [-n AAAA-MM-JJ] [-s] [-v]` | Applique la conservation. Appelée par `sauvegarde.sh` ; lançable seule avec une date simulée (`-n`) et en simulation (`-s`). |
+
+### Où écrire : `DOSSIER_SAUVEGARDE` (à fixer par le superviseur)
+
+Variable d'environnement **obligatoire**, un chemin absolu vers un dossier **existant** : le script refuse de tourner si elle est vide, si le dossier n'existe pas (un disque non monté ne doit pas être remplacé en silence par un dossier du disque local : le script ne crée jamais le dossier), ou s'il se trouve **à l'intérieur d'un volume du projet** (une sauvegarde qui vit avec les données ne les protège pas). Pour qu'une panne du VPS ne l'emporte pas, il doit être sur un **disque ou un serveur distinct** (disque monté, partage réseau…), en accès restreint : les sauvegardes contiennent des données de santé (fichiers en `600`).
+
+Chaque appel écrit dans le dossier qu'on lui donne : on peut envoyer les quotidiennes sur un disque et les hebdomadaires sur un autre serveur (la rotation s'applique dossier par dossier).
+
+### Ce que contient une sauvegarde, et ce qu'elle ne contient pas
+
+Un dossier `AAAAMMJJ-HHMMSS_quotidienne` (ou `_hebdomadaire`, heure du serveur) avec `base.dump`, `documents.tgz`, `MANIFESTE.txt` et `SHA256SUMS`. Il est écrit dans un dossier provisoire puis renommé : une sauvegarde incomplète n'apparaît jamais. La base est sauvegardée **avant** les documents : chaque fichier cité par la base est dans l'archive.
+
+Non sauvegardés : **le fichier `.env`** (secrets : à conserver à part, dans le coffre de l'administrateur ; sans lui, un serveur de remplacement ne peut pas démarrer), **Redis** (file de tâches : les lots confirmés non terminés sont repris au démarrage du travailleur) et le profil LibreOffice du volume (cache).
+
+### Conservation (CDC §14.3 : 10 ans)
+
+| Rôle | Quoi | Durée |
+| --- | --- | --- |
+| Quotidiennes | les 7 dernières `_quotidienne` | 7 sauvegardes |
+| Hebdomadaires | les 8 dernières `_hebdomadaire` | 8 sauvegardes |
+| Mensuelle | la **première** sauvegarde (de tout type) de chaque mois | 12 mois civils, mois en cours compris |
+| Annuelle | la **première** sauvegarde de chaque année | 10 années civiles, année en cours comprise |
+
+La rotation ne supprime **jamais** une mensuelle ou une annuelle encore dans sa durée : elles se reconnaissent à leur date (aucun état à conserver). Une sauvegarde sans aucun rôle est supprimée ; seuls sont touchés les dossiers `AAAAMMJJ-HHMMSS_<type>` qui contiennent `MANIFESTE.txt`. Compter, en régime établi, une trentaine de copies complètes : **prévoir l'espace disque en conséquence**. Liste et verdict à tout moment : `scripts/rotation-sauvegardes.sh -d "$DOSSIER_SAUVEGARDE" -s -v`.
+
+### Planification (`crontab -e` de l'utilisateur qui lance Docker)
+
+```cron
+# Sauvegarde quotidienne à 2 h, hebdomadaire le dimanche à 3 h (heure du serveur) ; un code de sortie non nul fait envoyer le courrier de cron
+0 2 * * *  DOSSIER_SAUVEGARDE=/mnt/sauvegardes-sim  /opt/sim-documents/scripts/sauvegarde.sh -p sim-documents -t quotidienne   >> /var/log/sim-sauvegarde.log 2>&1
+0 3 * * 0  DOSSIER_SAUVEGARDE=/mnt/sauvegardes-sim  /opt/sim-documents/scripts/sauvegarde.sh -p sim-documents -t hebdomadaire  >> /var/log/sim-sauvegarde.log 2>&1
 ```
 
-Copier les sauvegardes **hors du VPS** (elles contiennent des données de santé : stockage chiffré, accès restreint).
+(Adapter le chemin du dépôt et celui du dossier cible.) Un verrou empêche deux sauvegardes simultanées. Surveiller le journal et la **date de la dernière sauvegarde** : une sauvegarde qui ne tourne plus ne prévient pas.
 
-> Les documents émis sont dans `/donnees/sortie/documents/` du volume (arborescence `{Produit}/{AAAA}/{MM}/{Type}/`), en lecture seule ; la base enregistre leur chemin et leur empreinte SHA-256. Sauvegarder la base et le volume **ensemble** : une restauration doit retrouver chaque fichier que la base cite.
+### Restauration
+
+Toujours dans une pile **neuve** (jamais dans la base en service : le script refuse). Après un sinistre, sur le serveur de remplacement :
+
+```bash
+git clone <adresse-du-dépôt> sim-documents && cd sim-documents    # puis remettre le .env conservé à part
+docker compose up -d postgres generateur                           # base vide, volume « documents » vide
+scripts/restauration.sh -p sim-documents -s /mnt/sauvegardes-sim/AAAAMMJJ-HHMMSS_quotidienne
+docker compose up -d --build                                       # applique les migrations plus récentes que la sauvegarde, démarre le reste
+```
+
+`restauration.sh` contrôle d'abord les empreintes de la sauvegarde, refuse une destination non vide **avant** d'écrire quoi que ce soit, restaure la base en une seule transaction (en cas d'erreur elle reste vide), extrait les documents, puis vérifie : `prisma migrate status` (une sauvegarde plus ancienne que le code laisse des migrations à appliquer : avertissement, pas un échec), nombre de lignes de `clients`, `cotations`, `polices`, `factures`, `documents_emis` et `_prisma_migrations` comparé au manifeste, présence dans le volume de **chaque** fichier cité par `documents_emis`, ouverture du PDF le plus récent par le générateur (empreinte SHA-256 et lecture par pypdf). Code de sortie 0 : tout est conforme ; 4 : restauration faite mais une vérification a échoué.
+
+### Test de restauration trimestriel (CDC §14.3)
+
+Une fois par trimestre, sur le serveur, avec la dernière sauvegarde **telle qu'elle est copiée hors du VPS** (c'est elle qu'on teste) :
+
+```bash
+docker compose -p restauration-test up -d postgres generateur     # pile d'essai : mêmes images, volumes distincts, aucun port publié
+scripts/restauration.sh -p restauration-test -s /mnt/sauvegardes-sim/<la plus récente>
+docker compose -p restauration-test down -v                       # supprime la pile d'essai ET ses copies des données de santé (jamais « -v » sur sim-documents)
+```
+
+Consigner dans [recette.md](recette.md) la date, la sauvegarde utilisée, le résultat et le temps pris.
+
+Essais automatiques des scripts (poste de développement, avec Docker ; données inventées, pile jetable `sauvegarde-test` supprimée à la fin) : `bash scripts/tests/rotation.test.sh` (dates simulées, quelques minutes) et `bash scripts/tests/sauvegarde-restauration.test.sh`.
+
+> Les documents émis sont dans `/donnees/sortie/documents/` du volume (arborescence par branche, produit, client… : D41), en lecture seule ; la base enregistre leur chemin et leur empreinte SHA-256. Sauvegarder la base et le volume **ensemble** : c'est ce que fait `sauvegarde.sh`.
 >
-> **Le volume « documents » est le SEUL exemplaire des documents émis** (décision D11 : plus de dossier partagé réseau). Sa sauvegarde quotidienne, copiée hors du VPS, n'est pas optionnelle : sans elle, la perte du disque fait perdre les contrats émis. Prévoir aussi une surveillance de l'espace disque.
+> **Le volume « documents » est le SEUL exemplaire des documents émis** (décision D11 : plus de dossier partagé réseau). Sa sauvegarde, copiée hors du VPS, n'est pas optionnelle : sans elle, la perte du disque fait perdre les contrats émis. Prévoir aussi une surveillance de l'espace disque.
 
 ## 8. Sécurité : points d'attention
 

@@ -579,6 +579,7 @@ Conséquences retenues pour le code (session 4.0) :
 | SECURPRO, SECURHOME, SECURHOME + et RELAXACCIDENTS : création et première version en mode `GARANTIES`, sur le serveur (étape de mise en production : docs/deploiement.md, « Après l'installation ») | Technique | à la mise en production |
 | H89 à H101 (session 6.2b : voir D32), en particulier H90 (principe retenu : composition précédente proposée en brouillon et confirmée avec un motif, à mettre en œuvre en 6.2c ; en attendant, l'incorporation d'adhérents reste possible mais n'est pas facturée) et le taux de 12,5 % de l'incendie (date d'effet) | Thierry, puis Direction Technique | avant la recette |
 | H120 à H123 (session Étape 8 : voir D43), en particulier H121 (durée des mensuelles et annuelles) et le dossier cible `DOSSIER_SAUVEGARDE` (disque ou serveur distinct, à fixer) | Thierry, puis superviseur | avant la mise en production |
+| H124 et H125 (export d'archive : voir D44), en particulier H125 (manifeste non signé : signature à décider) | Thierry, puis superviseur | avant la mise en production |
 
 Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir), Q3 (plus de dossier partagé : D11), Q4 (`assures[].sexe` ajouté : D12), Q5 (Thierry balise d'abord, puis la Technique : D12), H6 (validité en mois : D10).
 
@@ -767,3 +768,14 @@ Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir)
   - **H121** (**« Jamais supprimée » = tant qu'elle est dans sa durée**) : le nettoyage ne supprime jamais une mensuelle ou une annuelle **encore dans sa durée** (12 mois civils, mois en cours compris ; 10 années civiles, année en cours comprise). Passé ce délai elle perd son rôle et sort avec les autres. L'autre lecture (ne jamais rien supprimer) fait croître le disque sans limite ; à trancher si le superviseur la préfère. Compter une trentaine de copies complètes en régime établi.
   - **H122** (**Périmètre sauvegardé**) : base et documents. Ne sont pas sauvegardés : le `.env` (secrets, conservés à part par l'administrateur), Redis (file de tâches reprise par le travailleur au démarrage) et le profil LibreOffice du volume (cache).
   - **H123** (**Migrations en retard : avertissement**) : une sauvegarde plus ancienne que le code laisse des migrations à appliquer ; la restauration le signale sans échouer (`docker compose up -d --build` les applique). Toute autre sortie anormale de `prisma migrate status` est un échec (code 4).
+
+## D44 — Export d'archive et vérification des empreintes (22/10/2026)
+
+- **Date** : 22/10/2026. Branche `phase-export-archive` (issue de `phase-sauvegarde` : elle réutilise `lib-sauvegarde.sh`). Demande de Thierry en prolongement de l'étape 8 ; CDC §14.3 (empreinte SHA-256 vérifiable à tout moment).
+- **Règle** :
+  1. `scripts/export-archive.sh -p PROJET -d DESTINATION [-s SOUS_DOSSIER]` copie l'arborescence des documents (entière ou depuis un sous-dossier, chemins conservés) par `docker cp` depuis un conteneur qui monte le volume en lecture seule, et écrit `MANIFESTE.csv` (`numero,type,date_emission,chemin,empreinte_sha256`) lu dans la base avant la copie.
+  2. Destination : chemin absolu, vide ou inexistant (jamais d'écrasement), hors des données du projet (garde partagée avec `sauvegarde.sh`, `refuser_dans_donnees`). Sous-dossier validé comme `stockage.py` (segments sûrs, 10 au plus, ni `..` ni chemin absolu) ; filtre par préfixe de segment entier, pas par `LIKE`.
+  3. `scripts/verifier-archive.sh` : autonome (bash, `sha256sum`), copié dans l'archive ; recalcule chaque empreinte et signale empreinte différente, fichier absent, fichier non listé, ligne invalide, doublon (codes 0, 2, 1). L'export se termine par cette vérification.
+- **Hypothèses nouvelles**, à faire confirmer :
+  - **H124** (**Contenu du manifeste**) : les documents émis (toutes versions) et les archives ZIP des imports en masse (`lots_import.zip_chemin`, type `ARCHIVE_IMPORT`, numéro `LOT-<id>`), qui sont aussi des fichiers du volume. Les documents en écriture différée n'ont pas de fichier : signalés, non listés. Un fichier du volume absent du manifeste est un écart (`NON LISTÉ`).
+  - **H125** (**Manifeste non signé**) : la vérification prouve l'absence de changement depuis l'export, pas contre quelqu'un qui modifierait fichier et manifeste ensemble. Parade documentée : noter à part le SHA-256 du manifeste, ou comparer avec un nouvel export tiré de la base. Une signature (clé de l'entreprise) est un besoin à décider, non codé.

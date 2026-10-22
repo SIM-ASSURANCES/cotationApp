@@ -186,6 +186,31 @@ docker compose -p restauration-test down -v                       # supprime la 
 
 Consigner dans [recette.md](recette.md) la date, la sauvegarde utilisée, le résultat et le temps pris.
 
+### Export d'archive et vérification (CDC §14.3 : empreinte vérifiable à tout moment)
+
+Pour remettre, archiver ou auditer des documents émis, sans toucher à la pile (volume monté en lecture seule, base lue par `SELECT`) :
+
+```bash
+scripts/export-archive.sh -p sim-documents -d /mnt/archives/2026-contrats                          # tout
+scripts/export-archive.sh -p sim-documents -d /mnt/archives/client-12 -s SANTE/RELAXSANTE/CLI-12  # un sous-dossier
+```
+
+`-d` doit être un chemin absolu, **vide ou inexistant** (jamais d'écrasement), hors des données du projet ; `-s` est relatif à la racine des documents (mêmes règles de segments que le stockage : D41). La destination reçoit :
+
+| Élément | Contenu |
+| --- | --- |
+| `documents/` | l'arborescence copiée telle quelle ; avec `-s`, le sous-dossier garde son chemin complet, donc les chemins du manifeste restent ceux de la base |
+| `MANIFESTE.csv` | `numero,type,date_emission,chemin,empreinte_sha256`, une ligne par fichier, lue dans la base : documents émis (rééditions comprises) et archives ZIP des imports en masse (type `ARCHIVE_IMPORT`, numéro `LOT-<id>`) |
+| `verifier-archive.sh` | copie du script de vérification, **autonome** (bash et `sha256sum`, ni Docker ni base) : il se lance dans le dossier de l'archive, par exemple chez un auditeur |
+
+L'export se termine en vérifiant l'archive qu'il vient de produire ; son code de sortie est celui de la vérification. Les documents en écriture différée (PDF encore en base) n'ont pas encore de fichier : ils sont signalés et non listés ; relancer l'export plus tard.
+
+**Vérifier une archive**, à tout moment et n'importe où : `cd <archive> && ./verifier-archive.sh` (ou `scripts/verifier-archive.sh -a <archive>`). Le script recalcule le SHA-256 de chaque fichier et signale, un par ligne : `EMPREINTE DIFFÉRENTE` (fichier modifié ou abîmé), `FICHIER ABSENT`, `NON LISTÉ` (fichier présent, absent du manifeste), `LIGNE INVALIDE` (ligne illisible, chemin non conforme, empreinte qui n'a pas 64 caractères hexadécimaux), `DOUBLON`. Code de sortie : 0 conforme, 2 au moins un écart, 1 archive inutilisable (manifeste ou `documents/` absent).
+
+Limite à connaître : le manifeste prouve que les fichiers n'ont pas changé **depuis l'export**, il n'est pas signé ; quelqu'un qui modifierait un fichier **et** sa ligne du manifeste passerait la vérification. Pour une remise qui doit résister à cela, noter à part (courrier, registre) le SHA-256 de `MANIFESTE.csv` (`sha256sum MANIFESTE.csv`), ou refaire un export depuis la base et comparer les deux manifestes (la base garde l'empreinte d'origine).
+
+Essai automatique (poste de développement, Docker, pile jetable `export-test`) : `bash scripts/tests/export-archive.test.sh`.
+
 Essais automatiques des scripts (poste de développement, avec Docker ; données inventées, pile jetable `sauvegarde-test` supprimée à la fin) : `bash scripts/tests/rotation.test.sh` (dates simulées, quelques minutes) et `bash scripts/tests/sauvegarde-restauration.test.sh`.
 
 > Les documents émis sont dans `/donnees/sortie/documents/` du volume (arborescence par branche, produit, client… : D41), en lecture seule ; la base enregistre leur chemin et leur empreinte SHA-256. Sauvegarder la base et le volume **ensemble** : c'est ce que fait `sauvegarde.sh`.

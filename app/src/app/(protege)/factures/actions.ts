@@ -53,7 +53,8 @@ export async function creerFacture(_e: EtatFormulaire, d: FormData): Promise<Eta
   const r = await avecMessage(async (acteur, ip) => {
     if (type === "AFFAIRE_NOUVELLE") return creerFactureAffaireNouvelle(acteur, policeId, lireEnvoyeA(d), ip);
     if (type === "RENOUVELLEMENT") return creerFactureRenouvellement(acteur, policeId, { lignes: lireLignes(d), nombreTranches: tranches(d), envoyeA: lireEnvoyeA(d) }, ip);
-    return creerFactureAvenant(acteur, policeId, identifiant(d, "adherentsVersion"), lireEnvoyeA(d), ip);
+    // Case à cocher « Prorata temporis » : cochée par défaut, absente du formulaire quand elle est décochée.
+    return creerFactureAvenant(acteur, policeId, identifiant(d, "adherentsVersion"), lireEnvoyeA(d), ip, d.get("prorata") === "oui");
   });
   if (!r.ok) return r.etat;
   redirect(`/factures/${r.valeur}`);

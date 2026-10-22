@@ -766,6 +766,57 @@ describe("renouvellement et avenant d'incorporation (H50, H51)", () => {
     await expect(creerFactureAvenant(technique, p.policeId, 2, null, null)).rejects.toThrow(/déjà facturée/);
     await expect(creerFactureAvenant(technique, p.policeId, 1, null, null)).rejects.toThrow(/incorporation/);
   });
+
+  // Étape 7 (H126) : même incorporation (un Solo le 22/07/2026, période du 01/01 au 31/12/2026), prorata OUI puis NON.
+  // Prime unitaire du Solo dans la période facturée : 236 453,25 F net (voir le test précédent), taxe 1,5 %, pas d'accessoires.
+  async function avenantApresIncorporation(prorata: boolean | undefined) {
+    const p = await policeT2();
+    await emettreFacture(technique, await creerFactureAffaireNouvelle(technique, p.policeId, null, null), null);
+    await incorporerAdherents(gestionnaire, p.policeId, "2026-07-22", [{ nom_prenoms: "Nouvel Adhérent Inventé", date_naissance: "1992-02-02", sexe: "M", lien: "Salarié", formule: "SOLO" }], null);
+    const id = prorata === undefined ? await creerFactureAvenant(technique, p.policeId, 2, null, null) : await creerFactureAvenant(technique, p.policeId, 2, null, null, prorata);
+    return { p, id };
+  }
+
+  it("avenant, prorata temporis OUI : 163 jours sur 365 (choix explicite ou par défaut)", async () => {
+    const { id } = await avenantApresIncorporation(true);
+    const lu = (await lireFacture(technique, id))!;
+    expect(lu.prorataAvenant).toBe(true);
+    // 236 453,25 × 163/365 = 105 594,44 → 105 594 ; taxe 1,5 % = 1 583,92 → 1 584 ; TTC 107 178.
+    expect(lu.contenu.totaux).toMatchObject({ nette: "105594", accessoires: "0", taxe: "1584", ttc: "107178" });
+    const parDefaut = await avenantApresIncorporation(undefined);
+    expect((await lireFacture(technique, parDefaut.id))!).toMatchObject({ prorataAvenant: true, ttc: "107178" });
+  });
+
+  it("avenant, prorata temporis NON : prime entière de la période, figée, journalisée et reprise par la réédition", async () => {
+    const { id } = await avenantApresIncorporation(false);
+    const lu = (await lireFacture(technique, id))!;
+    expect(lu.prorataAvenant).toBe(false);
+    // 236 453,25 × 1 = 236 453,25 → 236 453 ; taxe 1,5 % = 3 546,80 → 3 547 ; TTC 240 000 (le même Solo qu'un renouvellement complet).
+    expect(lu.contenu.totaux).toMatchObject({ nette: "236453", accessoires: "0", taxe: "3547", ttc: "240000" });
+    expect(lu.contenu.joursCouverts).toBe(163); // la période reste celle de l'incorporation ; seul le montant ne se réduit pas
+    const creation = (await lireJournal({ action: "FACTURE_CREEE" })).lignes.find((l) => l.objet === `facture ${id}`)!;
+    expect(creation.apres).toMatchObject({ type: "AVENANT", prorata: false, ttc: "240000" });
+
+    const e = await emettreFacture(technique, id, null);
+    if (e.statut !== "EMISE") throw new Error("attendu : émise");
+    const v1 = derniere("FACTURE");
+    expect(v1.donnees.prime).toMatchObject({ nette: "236453", accessoires: "0", taxe: "3547", ttc: "240000" });
+    const emission = (await lireJournal({ action: "FACTURE_EMISE" })).lignes.find((l) => l.objet === `facture ${id}`)!;
+    expect(emission.apres).toMatchObject({ type: "AVENANT", prorata: false, ttc: "240000" });
+
+    // Une réédition (à chaque paiement, H55) reprend le contenu figé : même prime, aucun recalcul au prorata.
+    await enregistrerPaiement(comptable, id, paiement("40 000"), null);
+    const v2 = derniere("FACTURE");
+    expect(doc(v2).version).toBe("v2");
+    expect(v2.donnees.prime).toEqual(v1.donnees.prime);
+    expect((await lireFacture(technique, id))!.prorataAvenant).toBe(false);
+  });
+
+  it("une facture qui n'est pas un avenant calculé n'a pas de prorata d'avenant", async () => {
+    const p = await policeT2();
+    const id = await creerFactureAffaireNouvelle(technique, p.policeId, null, null);
+    expect((await lireFacture(technique, id))!.prorataAvenant).toBeNull();
+  });
 });
 
 describe("formats des numéros (paramétrables, historisés, journalisés)", () => {
@@ -1149,8 +1200,10 @@ describe("session 6.2b : produit par garanties, de la cotation composée à la f
     expect(incorporation.adherents).toBe(3);
 
     // 1. Préparation de l'avenant : brouillon sans montant, état « À composer »
-    const avenantId = await creerFactureAvenant(technique, pol.policeId, incorporation.numero, null, null);
+    // Étape 7 : le choix du prorata est sans objet pour un produit par garanties (composition manuelle), même demandé « Non ».
+    const avenantId = await creerFactureAvenant(technique, pol.policeId, incorporation.numero, null, null, false);
     const lu = (await lireFacture(technique, avenantId))!;
+    expect(lu.prorataAvenant).toBeNull();
     expect(lu.statut).toBe("BROUILLON");
     expect(lu.libelleStatut).toBe("À composer");
     expect(lu.ttc).toBe("0");

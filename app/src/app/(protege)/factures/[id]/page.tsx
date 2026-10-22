@@ -57,6 +57,7 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
     { libelle: "Facturé à", valeur: `${x.souscripteur}${c.souscripteur.adresse ? `, ${c.souscripteur.adresse}` : ""}` },
     { libelle: "Envoyé à", valeur: c.envoyeA ? `${c.envoyeA.nom}, ${c.envoyeA.adresse}` : "— (identique ou non saisi : bloc masqué)" },
     { libelle: "Période", valeur: `du ${formaterDate(c.dateEffet)} au ${formaterDate(c.dateEcheance)} (${c.joursCouverts} jours)` },
+    ...(x.prorataAvenant === null ? [] : [{ libelle: "Prorata temporis", valeur: x.prorataAvenant ? "Oui (jour de l'incorporation à l'échéance)" : "Non (prime entière de la période)" }]),
     { libelle: "Émise le", valeur: `${formaterDate(x.dateEmission)}${x.emisePar ? ` par ${x.emisePar}` : ""}` },
     { libelle: "Préparée par", valeur: x.creePar },
     ...(x.composition && x.composition.composePar

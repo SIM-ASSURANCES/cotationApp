@@ -168,11 +168,18 @@ export default async function PageFacturesDePolice(props: PageProps<"/cotations/
                     options={possibles.avenants.map((a) => ({ valeur: String(a.numero), libelle: `Version ${a.numero} : ${a.adherents} adhérent(s), effet le ${formaterDate(a.dateEffet)}` }))}
                   />
                 </div>
-                <p className="mb-3 text-sm text-neutral">
-                  {police.composee
-                    ? "La facture d'avenant sera préparée sans montant ; la Technique composera la prime additionnelle dans le brouillon."
-                    : "Prime additionnelle au prorata, du jour de l'incorporation à l'échéance de la période facturée."}
-                </p>
+                {police.composee ? (
+                  <p className="mb-3 text-sm text-neutral">La facture d&apos;avenant sera préparée sans montant ; la Technique composera la prime additionnelle dans le brouillon.</p>
+                ) : (
+                  <div className="mb-3 text-sm">
+                    <label className="flex items-center gap-2 font-medium">
+                      <input type="checkbox" name="prorata" value="oui" defaultChecked className="size-4 accent-primary" /> Prorata temporis
+                    </label>
+                    <p className="mt-1 text-neutral">
+                      Cochée : prime additionnelle au prorata, du jour de l&apos;incorporation à l&apos;échéance de la période facturée. Décochée : prime entière de la période. Le choix est figé dans le brouillon ; pour le changer, abandonnez le brouillon et refaites l&apos;avenant.
+                    </p>
+                  </div>
+                )}
                 <EnvoyeA />
               </FormulaireAction>
             ) : (

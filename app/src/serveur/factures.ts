@@ -153,6 +153,12 @@ const echeancesJson = (j: unknown): ContenuFacture["echeances"] => (Array.isArra
 
 const listeCourante = (police: PoliceChargee): Assure[] => police.assures as unknown as Assure[];
 
+/** Prorata temporis retenu pour un avenant calculé (étape 7) ; `null` pour toute autre facture et pour un avenant par garanties (sans objet, H90). */
+function prorataAvenant(type: string, contenu: ContenuFacture): boolean | null {
+  const entree = contenu.entree as DonneesCalcul;
+  return type !== "AVENANT" || estComposition(entree) ? null : (entree as EntreeCalcul).parametres.prorata.actif;
+}
+
 async function contenuCalcule(
   police: PoliceChargee,
   produitId: number,
@@ -221,6 +227,8 @@ async function creer(
     compositionMotif?: string | null;
   },
   adresseIp: string | null,
+  /** Avenant d'incorporation à la formule : choix du prorata temporis, ajouté au journal de création. */
+  avenant?: { prorata: boolean },
 ): Promise<number> {
   const f = await tx.facture.create({
     data: {
@@ -245,7 +253,7 @@ async function creer(
     },
   });
   await journaliser(
-    { acteur: auteur(acteur), action: "FACTURE_CREEE", objetType: "facture", objetId: f.id, apres: { type: d.type, police: police.numero, ttc: d.contenu.totaux.ttc, dateEffet: d.contenu.dateEffet, remplace: d.remplaceId }, adresseIp },
+    { acteur: auteur(acteur), action: "FACTURE_CREEE", objetType: "facture", objetId: f.id, apres: { type: d.type, police: police.numero, ttc: d.contenu.totaux.ttc, dateEffet: d.contenu.dateEffet, remplace: d.remplaceId, ...(avenant ? { prorata: avenant.prorata } : {}) }, adresseIp },
     tx,
   );
   return f.id;
@@ -389,10 +397,19 @@ export async function creerFactureRenouvellement(acteur: UtilisateurCourant, pol
 /**
  * Avenant d'incorporation (H51) : prime additionnelle des adhérents d'UNE incorporation, au prorata du jour de leur
  * adhésion à l'échéance de la période facturée qui la contient. Une unité par adhérent incorporé, dans sa formule ; prime
- * unitaire, taxe et arrondi de cette période ; prorata toujours appliqué, sans prime minimale ; pas d'accessoires ;
- * une seule tranche.
+ * unitaire, taxe et arrondi de cette période ; sans prime minimale ; pas d'accessoires ; une seule tranche.
+ * Prorata temporis au choix (étape 7, H126) : `prorata` vaut `true` par défaut (comportement de H51) ; `false` facture la prime
+ * entière de la période (coefficient 1). Le choix est figé avec le brouillon (`entree.parametres.prorata.actif`), journalisé à la
+ * création et à l'émission, et repris tel quel par toute réédition. Sans objet pour une police par garanties (H90).
  */
-export async function creerFactureAvenant(acteur: UtilisateurCourant, policeId: number, adherentsVersion: number, envoyeA: EnvoyeA | null, adresseIp: string | null): Promise<number> {
+export async function creerFactureAvenant(
+  acteur: UtilisateurCourant,
+  policeId: number,
+  adherentsVersion: number,
+  envoyeA: EnvoyeA | null,
+  adresseIp: string | null,
+  prorata = true,
+): Promise<number> {
   await exiger(acteur, "EMETTRE_FACTURE", "émission de facture");
   return transactionCreation(async (tx) => {
     const police = await chargerPolice(tx, policeId);
@@ -476,7 +493,7 @@ export async function creerFactureAvenant(acteur: UtilisateurCourant, policeId: 
       dateEffet: date,
       dateEcheance: depuisDate(periode.dateEcheance),
       lignes,
-      parametres: { prorata: { actif: true, primeMinimale: null }, arrondi: base.parametres.arrondi, taxe: base.parametres.taxe },
+      parametres: { prorata: { actif: prorata, primeMinimale: null }, arrondi: base.parametres.arrondi, taxe: base.parametres.taxe },
     };
     executerCalcul(entree, { repartitionPourcent: null, decalagesMois: null }, 1); // contrôle : refus lisible si le calcul est impossible
     const contenu = await contenuCalcule(police, periode.produitId, periode.versionDateEffet, entree, {
@@ -491,6 +508,7 @@ export async function creerFactureAvenant(acteur: UtilisateurCourant, policeId: 
       police,
       { type: "AVENANT", produitId: periode.produitId, versionDateEffet: periode.versionDateEffet, contenu, adherentsVersion, remplaceId: await factureRemplacee(tx, policeId, "AVENANT", { adherentsVersion }) },
       adresseIp,
+      { prorata },
     );
   }, "Cette incorporation est déjà facturée.");
 }
@@ -833,6 +851,7 @@ export async function emettreFacture(acteur: UtilisateurCourant, factureId: numb
     }
     const police = (await chargerPolice(tx, f.policeId))!;
     const contenu = contenuDe(f);
+    const prorata = prorataAvenant(f.type, contenu);
     const numero = await allouerNumero(tx, "FAC", date);
     await tx.facture.update({ where: { id: f.id }, data: { statut: "EMISE", numero, dateEmission: versDate(date), emiseParId: acteur.id, emisePar: acteur.identifiant, emiseLe: new Date() } });
     // H47 (09/10/2026) : la facture qui remplace une facture annulée reprend ses paiements, déjà reportés en avance.
@@ -864,7 +883,14 @@ export async function emettreFacture(acteur: UtilisateurCourant, factureId: numb
         action: "FACTURE_EMISE",
         objetType: "facture",
         objetId: f.id,
-        apres: { numero, type: f.type, police: police.numero, ttc: contenu.totaux.ttc, validationDemandeePar: f.statut === "A_VALIDER" ? f.demandePar : null },
+        apres: {
+          numero,
+          type: f.type,
+          police: police.numero,
+          ttc: contenu.totaux.ttc,
+          validationDemandeePar: f.statut === "A_VALIDER" ? f.demandePar : null,
+          ...(prorata !== null ? { prorata } : {}),
+        },
         adresseIp,
       },
       tx,
@@ -1294,6 +1320,8 @@ export type FactureLue = LigneFactureLue & {
   abandon: { par: string; le: Date; motif: string } | null;
   /** Composition manuelle de la prime (produit en mode GARANTIES, session 6.2c-1). */
   composition: { lignes: LigneComposee[]; composePar: string | null; composeLe: Date | null; motif: string | null } | null;
+  /** Avenant calculé : prorata temporis appliqué (`true`) ou prime entière de la période (`false`) ; `null` pour une autre facture. */
+  prorataAvenant: boolean | null;
   garantiesDuProduit: GarantieParametree[];
   garantiesSaisieLibre: boolean;
   branchesActives: { code: string; libelle: string }[];
@@ -1452,6 +1480,7 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
     reports: reports.map((r) => ({ recu: r.paiement?.numeroRecu ?? null, date: depuisDate(r.date), montant: r.montant.toFixed() })),
     abandon: f.statut === "ABANDONNEE" && f.abandonnePar && f.abandonneLe && f.motifAbandon ? { par: f.abandonnePar, le: f.abandonneLe, motif: f.motifAbandon } : null,
     composition,
+    prorataAvenant: prorataAvenant(f.type, contenu),
     garantiesDuProduit: (version?.garanties as unknown as GarantieParametree[]) ?? [],
     garantiesSaisieLibre: version?.garantiesSaisieLibre ?? true,
     branchesActives,

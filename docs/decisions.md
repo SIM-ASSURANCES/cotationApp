@@ -396,7 +396,7 @@ Conséquences retenues pour le code (session 4.0) :
 | H47 bis | Avoir partiel | Les deux, selon le type d'avoir et le cas | P2 |
 | H33 | Trop-perçu | Paiement accepté ; l'excédent est gardé en avance pour la prochaine échéance **ou** restitué | **À corriger** (§2.4) |
 | H52 | Qui décide d'un avoir | **Pas de réponse** | Reste ouverte |
-| H51 | Avenant | Incorporation au prorata **ou** prime entière ; un retrait peut donner lieu à un remboursement ou non | P2 |
+| H51 | Avenant | Incorporation au prorata **ou** prime entière ; un retrait peut donner lieu à un remboursement ou non | P2 ; **prorata au choix tranché (D45, H126)** ; remboursement d'un retrait : toujours ouvert |
 | H31 / H37 | 5 chiffres après G ou I | Numéro personnel de chaque client ; le numéro du contrat garde `00000` | **À corriger** (§2.5) |
 | H46 | `police.reference` | = numéro de police (différent d'une référence de paiement) | **À corriger** (§2.5) |
 | — | Tableau des assurés (santé) | Nom, prénom, date de naissance, filiation (si nécessaire), numéro de pièce d'identité ; un exemple sera envoyé | **À corriger** (§2.6) |
@@ -580,6 +580,7 @@ Conséquences retenues pour le code (session 4.0) :
 | H89 à H101 (session 6.2b : voir D32), en particulier H90 (principe retenu : composition précédente proposée en brouillon et confirmée avec un motif, à mettre en œuvre en 6.2c ; en attendant, l'incorporation d'adhérents reste possible mais n'est pas facturée) et le taux de 12,5 % de l'incendie (date d'effet) | Thierry, puis Direction Technique | avant la recette |
 | H120 à H123 (session Étape 8 : voir D43), en particulier H121 (durée des mensuelles et annuelles) et le dossier cible `DOSSIER_SAUVEGARDE` (disque ou serveur distinct, à fixer) | Thierry, puis superviseur | avant la mise en production |
 | H124 et H125 (export d'archive : voir D44), en particulier H125 (manifeste non signé : signature à décider) | Thierry, puis superviseur | avant la mise en production |
+| H126 (prorata de l'avenant au choix : voir D45), en particulier le choix non modifiable dans le brouillon et la durée affichée en « Non » | Direction Technique | avant la recette |
 
 Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir), Q3 (plus de dossier partagé : D11), Q4 (`assures[].sexe` ajouté : D12), Q5 (Thierry balise d'abord, puis la Technique : D12), H6 (validité en mois : D10).
 
@@ -779,3 +780,14 @@ Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir)
 - **Hypothèses nouvelles**, à faire confirmer :
   - **H124** (**Contenu du manifeste**) : les documents émis (toutes versions) et les archives ZIP des imports en masse (`lots_import.zip_chemin`, type `ARCHIVE_IMPORT`, numéro `LOT-<id>`), qui sont aussi des fichiers du volume. Les documents en écriture différée n'ont pas de fichier : signalés, non listés. Un fichier du volume absent du manifeste est un écart (`NON LISTÉ`).
   - **H125** (**Manifeste non signé**) : la vérification prouve l'absence de changement depuis l'export, pas contre quelqu'un qui modifierait fichier et manifeste ensemble. Parade documentée : noter à part le SHA-256 du manifeste, ou comparer avec un nouvel export tiré de la base. Une signature (clé de l'entreprise) est un besoin à décider, non codé.
+
+## D45 — Session Étape 7 : prorata de l'avenant d'incorporation, oui ou non (22/10/2026)
+
+- **Date** : 22/10/2026. Branche `phase-prorata-avenant`. Réponse de la Technique sur H51 : le prorata temporis de l'avenant d'incorporation est **au choix**.
+- **Règle** :
+  1. À la préparation d'une facture d'avenant (écran « Factures de la police »), case **« Prorata temporis »**, **cochée par défaut** (comportement de H51). Cochée : prime additionnelle au prorata, du jour de l'incorporation à l'échéance de la période facturée. Décochée : **prime entière de la période** (coefficient 1) ; les autres règles de H51 sont inchangées (prime unitaire, taxe et arrondi de la période, sans prime minimale ni accessoires, une tranche).
+  2. **Produit par garanties** : sans objet (composition manuelle, H90). Le choix est ignoré, la case n'est pas affichée, `prorataAvenant` vaut `null`.
+  3. Le choix est **figé avec le brouillon** (`contenu.entree.parametres.prorata.actif` : aucune colonne, aucune migration), **journalisé** à la création (`FACTURE_CREEE`) et à l'émission (`FACTURE_EMISE`), champ `prorata`, et affiché sur la fiche de la facture. Une réédition (à chaque paiement, H55) reprend le contenu figé : aucun recalcul.
+- **Hypothèse nouvelle**, à faire confirmer :
+  - **H126** (**Choix non modifiable dans le brouillon**) : le choix se fait à la préparation ; pour le changer, on abandonne le brouillon (H87) et on refait l'avenant. Choix retenu pour que les montants d'un avenant continuent de venir uniquement de la police (le brouillon ne modifie que « Envoyé à »). Sur la facture, la durée affichée (`duree_jours`) reste celle de l'incorporation à l'échéance, même en « Non » : seul le montant n'est pas réduit. **À confirmer par la Technique** (libellé du modèle de facture : faut-il mentionner « prime entière » ?).
+

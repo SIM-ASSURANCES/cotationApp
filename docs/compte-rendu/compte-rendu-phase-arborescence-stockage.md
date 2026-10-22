@@ -15,8 +15,10 @@ Branche `phase-arborescence-stockage`. Décision **D41**, hypothèses **H114**, 
    - `generateur/app/stockage.py` : préservation des chemins relatifs arborescents dans les archives ZIP.
    - `zipDocuments` : téléchargement multi-documents reproduisant fidèlement l'arborescence complète.
 4. **Script idempotent de dev (`scripts/ranger-fichiers-dev.mts`)** :
-   - Commande `npm run ranger:dev`, bloquée en production (`NODE_ENV === 'production'`).
-   - Déplacement physique des fichiers et mise à jour de la colonne `chemin` via `SET session_replication_role = 'replica';` pour contourner temporairement le trigger `documents_emis_figes`.
+   - Commande `AUTORISER_RANGEMENT_DEV=oui npm run ranger:dev` ; refusée si `NODE_ENV=production` ou si `AUTORISER_RANGEMENT_DEV` n'est pas exactement « oui ».
+   - Copie du fichier vers le nouveau chemin et mise à jour de `chemin` avec `SET LOCAL session_replication_role = replica` et l'UPDATE dans **une seule transaction** (le mode replica s'arrête avec elle ; le déclencheur `documents_emis_figes` reste actif ensuite).
+   - Fichier source introuvable : `chemin` inchangé, compté en « introuvables » et non en « déplacés ». Cible déjà présente : même SHA-256 = idempotent, empreinte différente = erreur au rapport, pas d'UPDATE ; toute autre erreur d'écriture = erreur au rapport, pas d'UPDATE.
+   - **L'ancien fichier n'est jamais supprimé** (stockage en ajout seul) : après le rangement, l'ancien et le nouveau chemin coexistent sur le volume.
 
 ## Tests & Qualité
 

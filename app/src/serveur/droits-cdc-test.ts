@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { ACTIONS, ACTIONS_HORS_CDC, PROFILS, type CodeAction, type CodeNiveau, type CodeProfil } from "@/domaine/droits";
+import { ACTIONS, ACTIONS_HORS_CDC, type CodeAction, type CodeNiveau } from "@/domaine/droits";
 
 /**
  * Traduit une cellule du tableau du CDC §4 en niveau de droit.
@@ -44,23 +44,4 @@ export function lireTableauCdc(): { entete: string[]; corps: string[][] } {
     .map((l) => l.split("|").slice(1, -1).map((c) => c.trim()));
   const [entete, ...corps] = lignes;
   return { entete, corps };
-}
-
-/** Niveau attendu par le CDC pour chaque (profil, action) du tableau. */
-export function matriceDuCdc(): Record<CodeProfil, Partial<Record<CodeAction, CodeNiveau>>> {
-  const { corps } = lireTableauCdc();
-  const matrice = {} as Record<CodeProfil, Partial<Record<CodeAction, CodeNiveau>>>;
-  PROFILS.forEach((profil, colonne) => {
-    matrice[profil.code] = {};
-    corps.forEach((ligne, i) => {
-      const action = ACTIONS_DU_CDC[i];
-      // Fin de l'écart D21 (décision Technique du 20/10/2026, étape 3) : la DG valide contrats et factures (CDC §4.1).
-      if (profil.code === "DIRECTION_GENERALE" && (action === "EMETTRE_CONTRAT" || action === "EMETTRE_FACTURE")) {
-        matrice[profil.code][action] = "VALIDE";
-      } else {
-        matrice[profil.code][action] = niveauDeLaCellule(ligne[colonne + 1]);
-      }
-    });
-  });
-  return matrice;
 }

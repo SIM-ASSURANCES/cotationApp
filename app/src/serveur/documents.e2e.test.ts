@@ -55,9 +55,14 @@ beforeAll(async () => {
   [technique, dg, commercial] = [await nouveau("TECHNIQUE"), await nouveau("DIRECTION_GENERALE"), await nouveau("COMMERCIAL")];
 });
 
+// Le seuil relevé dans beforeAll est rétabli même si la préparation ou un test échoue (afterAll s'exécute dans tous les cas),
+// et la connexion se ferme même si ce rétablissement échoue.
 afterAll(async () => {
-  await retablirSeuilGlobalDeTest();
-  await obtenirPrisma().$disconnect();
+  try {
+    await retablirSeuilGlobalDeTest();
+  } finally {
+    await obtenirPrisma().$disconnect();
+  }
 });
 
 describe("cotation T1 de bout en bout", () => {

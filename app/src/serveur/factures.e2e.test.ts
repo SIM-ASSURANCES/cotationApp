@@ -149,9 +149,14 @@ beforeAll(async () => {
   produitIndividuel = await produit("INDIVIDUEL", cg, [{ code: "F", libelle: "Formule unique", tauxCouverture: "80", primeUnitaire: "270129.11", accessoireMode: "AUCUN", accessoireValeur: "0" }], 1);
 }, 120_000);
 
+// Le seuil relevé dans beforeAll est rétabli même si la préparation ou un test échoue (afterAll s'exécute dans tous les cas),
+// et la connexion se ferme même si ce rétablissement échoue.
 afterAll(async () => {
-  await retablirSeuilGlobalDeTest();
-  await obtenirPrisma().$disconnect();
+  try {
+    await retablirSeuilGlobalDeTest();
+  } finally {
+    await obtenirPrisma().$disconnect();
+  }
 });
 
 describe("T2 : facture de groupe CGE-SN, vrai PDF", () => {

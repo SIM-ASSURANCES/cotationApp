@@ -89,6 +89,41 @@ export async function lireJournal(options: {
   };
 }
 
+const TAILLE_LOT_EXPORT = 2_000;
+
+/**
+ * Lecture du journal pour l'export Excel : du plus récent au plus ancien, par lots, jusqu'à `limite` lignes. `tronque` : il en reste
+ * de plus anciennes (le filtre est le même que celui de l'écran : l'action).
+ */
+export async function lireJournalPourExport(options: { action?: string; limite: number }): Promise<{ lignes: LigneJournal[]; tronque: boolean }> {
+  const lignes: LigneJournal[] = [];
+  let avantId: bigint | undefined;
+  const filtre = (): Prisma.JournalAuditWhereInput => ({ ...(options.action ? { action: options.action } : {}), ...(avantId ? { id: { lt: avantId } } : {}) });
+  while (lignes.length < options.limite) {
+    const lot = await obtenirPrisma().journalAudit.findMany({
+      where: filtre(),
+      orderBy: { id: "desc" },
+      take: Math.min(TAILLE_LOT_EXPORT, options.limite - lignes.length),
+    });
+    if (lot.length === 0) return { lignes, tronque: false };
+    for (const l of lot) {
+      lignes.push({
+        id: l.id.toString(),
+        horodatage: l.horodatage,
+        utilisateur: l.utilisateurIdentifiant,
+        action: l.action,
+        objet: l.objetType ? `${l.objetType}${l.objetId ? ` ${l.objetId}` : ""}` : null,
+        avant: l.avant,
+        apres: l.apres,
+        adresseIp: l.adresseIp,
+      });
+    }
+    avantId = BigInt(lignes[lignes.length - 1].id);
+  }
+  // Limite atteinte : reste-t-il une ligne plus ancienne ?
+  return { lignes, tronque: (await obtenirPrisma().journalAudit.count({ where: filtre() })) > 0 };
+}
+
 /** Une action a-t-elle déjà été journalisée pour cet objet ? (tâche quotidienne rejouée : une seule trace par jour) */
 export async function dejaJournalise(action: ActionAudit, objetType: string, objetId: string): Promise<boolean> {
   return (await obtenirPrisma().journalAudit.count({ where: { action, objetType, objetId } })) > 0;

@@ -26,6 +26,8 @@ export const ACTIONS_AUDIT = [
   "DOCUMENT_REEDITE",
   "AVOIR_EMIS",
   "DOCUMENT_TELECHARGE",
+  // Étape 10, point 9 : export Excel du journal d'audit (CDC §15) ; l'export est lui-même tracé
+  "JOURNAL_EXPORTE",
   "ECRITURE_PARTAGE_ECHEC",
   // Cotations (phase 2)
   "COTATION_CREEE",

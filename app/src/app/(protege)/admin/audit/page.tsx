@@ -1,4 +1,5 @@
 import { Bouton, Carte, EnTetePage, LienBouton, ListeDeroulante, Tableau } from "@/composants/ui";
+import { classesBouton } from "@/composants/ui/stylesBouton";
 import { ACTIONS_AUDIT } from "@/domaine/audit";
 import { peutLire } from "@/domaine/droits";
 import { lireJournal } from "@/serveur/audit";
@@ -38,6 +39,10 @@ export default async function PageAudit(props: PageProps<"/admin/audit">) {
           <Bouton type="submit" variante="secondaire">
             Filtrer
           </Bouton>
+          {/* Lien ordinaire (pas de préchargement) : ouvrir la route journalise l'export. Même filtre que le tableau. */}
+          <a href={`/api/audit/export${actionConnue ? `?${new URLSearchParams({ action: actionConnue })}` : ""}`} className={classesBouton("secondaire")}>
+            Exporter en Excel
+          </a>
         </form>
       </Carte>
 

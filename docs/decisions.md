@@ -807,3 +807,25 @@ Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir)
   - **H130** (**Alerte : seuil et envoi**) : 26 h depuis le nom du dossier (heure du serveur), cron à 7 h pour une quotidienne à 2 h. Le courriel passe par `mail` ou `sendmail` : le VPS doit pouvoir expédier du courrier, **non vérifié** (sans cela, l'alerte reste dans le journal et le courrier de cron). Un dossier introuvable (disque non monté) est une alerte, pas une erreur d'usage.
   - **H131** (**Export du journal**) : limité à 50 000 lignes (les plus récentes), feuille « Informations » qui le dit ; filtre = celui de l'écran (l'action), pas de filtre par date. Un filtre par période est un besoin à décider, non codé.
   - **H132** (**Reconnaissance de nos déclencheurs**) : par le code SQLSTATE d'origine : `P0001` (`RAISE EXCEPTION` sans code : 8 déclencheurs ; PostgreSQL n'émet jamais ce code), ou `23001` / `23514` (42 + 13 déclencheurs) **sans** `constraint`, `table` ni `detail`, qui n'existent que sur les violations natives (clé étrangère `ON DELETE RESTRICT`, contrainte `CHECK` dont le détail donne la ligne en échec). Pas de préfixe convenu : les 62 messages existants n'en ont pas. Le test `declencheurs.test.ts` fait échouer toute migration qui lèverait un autre code ou poserait un de ces champs. Toute autre erreur de base (doublon, requête invalide, base injoignable…) : message générique. Une erreur de validation de requête Prisma (bogue) remonte comme avant.
+
+## D47 — Session B1 : moteur de barème, options de conception (24/10/2026)
+
+- **Date** : 24/10/2026. Branche `bareme-b1-options`. **Aucun code, aucune migration** : le livrable est [propositions-bareme.md](propositions-bareme.md) ; le cahier des charges du moteur est [socle-parametrage.md](socle-parametrage.md) (exploration du 23/10/2026 avec la Direction Technique).
+- **Réponses de la Technique du 23/10/2026** :
+
+| Point | Réponse |
+| --- | --- |
+| A1 | la prime nette totale additionne **toutes** les garanties (défaut du simulateur confirmé) |
+| A2 | capitaux au-dessus de la limite de la classe : **refus** avec un message affiché au Commercial (« le risque ne peut pas être assuré dans ce barème »), texte saisi par la Technique dans le contrôle E4 ; voir H133 |
+| A3 | en marché, plafond des capitaux **paramétrable**, **5 000 000** par défaut ; aucune valeur dans le code |
+| A4 | valeur de liste absente d'une table : **refus** |
+| A5 | un champ n'a **aucun effet par défaut** ; la Technique rattache ou non un sous-jacent (caméra, volet : simples déclarations) |
+| A6 | Vol contenu et Vol caisse = **une seule garantie « Vol »** (une ligne, un accessoire) : une garantie a **plusieurs composantes**, chacune avec sa souscription, son assiette, son taux, son minimum et ses coefficients ; prime de la garantie = somme des composantes souscrites |
+| A7 | les **montants autorisés** par garantie (ou composante) sont saisis par la Technique (champ de type liste) |
+| A8 | arrondi selon les **règles d'arrondi du produit** (déjà paramétrables) |
+
+- **Hypothèses nouvelles** (à faire confirmer ; questions Q1 à Q12 de la section 10 du document) :
+  - **H133** (**Pas de bascule automatique**, suite de A2) : un risque refusé par le barème ne passe **pas** en composition manuelle. Un produit `BAREME` refuse la composition manuelle ; le secours est une nouvelle version du produit en mode `GARANTIES`.
+  - **H134** (**Classes 3 et 4 de la table Incendie**) : le socle ne donne que 0,72 ‰, 0,864 ‰ et 1,24416 ‰ ; les classes 3 et 4 sont posées à 1,0368 ‰ et 1,24416 ‰ (suite géométrique de raison 1,2), **pour le jeu d'essai seulement**. Valeurs réelles : la Technique.
+  - **H135** (**Jeu d'essai SECURPRO inventé**) : les chiffres du simulateur ne sont pas dans le dépôt (D31). Le jeu d'essai du document (types de commerce et classes, limites, accessoires de 2 500 par garantie souscrite, montants) est **inventé**, calé à la main sur **139 420 F TTC** ; à remplacer ou confirmer par un cas réel (Q1).
+  - **H136** (**Montant garanti d'une garantie à composantes**) : la somme des assiettes des composantes souscrites ; la réduction commerciale est un coefficient appliqué **après** le minimum (Q5, Q7).

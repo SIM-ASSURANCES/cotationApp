@@ -1,7 +1,7 @@
 # Propositions — moteur de barème (session B1)
 
 > Document d'options, **aucun code, aucune migration**. Cahier des charges : [socle-parametrage.md](socle-parametrage.md). Décisions déjà prises : instructions B1 (9 points) et réponses de la Technique du 23/10/2026 (A1 à A8, tracées en D47 et H133 à H136 de [decisions.md](decisions.md)).
-> Vocabulaire : le **barème** d'une version de produit = ses champs, garanties, sous-jacents, tables et jeux d'essai. Mode `BAREME` = la prime est calculée ; mode `GARANTIES` (composition manuelle) reste le secours.
+> Vocabulaire : le **barème** d'une version de produit = ses champs, garanties, sous-jacents, tables et jeux d'essai. Mode `BAREME` = la prime est calculée, **mode cible de tous les produits** (D48) ; `FORMULE` reste pour la santé ; la composition manuelle (ex-mode `GARANTIES`) devient un **secours par cotation**.
 
 ## 0. Recommandations en un coup d'œil
 
@@ -13,7 +13,7 @@
 | 4 | Assiettes | 7 opérations fermées, profondeur 2 au plus, **valeurs intermédiaires nommées** pour le reste |
 | 5 | Moteur | `domaine/bareme/`, fonctions pures, decimal.js, **le barème produit des lignes de prime** ; taxe, arrondi et TTC restent à `composer()` |
 | 6 | Intégration | **même type `COMPOSITION`** avec `origine: "BAREME"` ; nouvelle version pour changer de mode ; renouvellement recalculé au barème en vigueur |
-| 7 | Sessions | 8 sessions (B2 à B9), B2 sans écran ni migration |
+| 7 | Sessions | 8 sessions (B2 à B9), B2 sans écran ni migration ; ordre B3 → B9 → B6 → B4, B5 → B7, B8 |
 
 Écart signalé d'entrée : **les chiffres réels du simulateur ne sont pas dans le dépôt** (D31). Le jeu d'essai du §1 est donc **inventé**, calé à la main sur 139 420 F ; la Technique doit le remplacer ou le confirmer (Q1).
 
@@ -136,7 +136,7 @@ Une ligne par état du barème d'une version : `version_id`, `statut` (BROUILLON
      "message":"Les capitaux dépassent la limite de la classe : ce risque ne peut pas être assuré dans ce barème."} ],
   "garanties": [
     {"code":"incendie","nom":"Incendie","taxe":"INCENDIE","souscription":"OBLIGATOIRE","composantes":[
-       {"code":"base","assiette":"capitaux_totaux","taux":{"table":"taux_incendie","unite":"PERMILLE"}} ]},
+       {"code":"base","assiette":"capitaux_totaux","taux":{"source":"E1","unite":"PERMILLE"}} ]},
     {"code":"vol","nom":"Vol","souscription":"OPTIONNELLE","composantes":[
        {"code":"contenu","souscription":"OPTIONNELLE","assiette":["PCT_PLAFOND","contenu","15","2000000"],"taux":{"fixe":"1","unite":"POURCENT"}},
        {"code":"caisse","souscription":"OPTIONNELLE","assiette":"vol_caisse_montant","taux":{"fixe":"2.5","unite":"POURCENT"},"minimum":"2500"} ]},
@@ -146,13 +146,15 @@ Une ligne par état du barème d'une version : `version_id`, `statut` (BROUILLON
     {"code":"tempete","nom":"Tempête","souscription":"OPTIONNELLE","composantes":[{"code":"base","assiette":"tempete_montant","taux":{"fixe":"0.72","unite":"PERMILLE"}}]},
     {"code":"tri","nom":"Tous risques informatique","souscription":"OPTIONNELLE","composantes":[{"code":"base","assiette":"tri_montant","taux":{"fixe":"4","unite":"PERMILLE"}}]} ],
   "jeuxEssai": [ {"nom":"Électronique, locataire, boutique",
-    "entrees":{"type_commerce":"ELECTRONIQUE","occupation":"LOCATAIRE","situation":"BOUTIQUE","gardien":true,"extincteurs":false,"loyer_mensuel":"150000",
-      "stocks":"6866500","materiel":"1000000","mobilier":"500000","amenagement":"500000","informatique":"0","vol_caisse_montant":"200000",
-      "dde_montant":"2000000","de_montant":"1000000","bdg_montant":"500000","tri_montant":"10000000",
+    "entrees":{"champs":{"type_commerce":"ELECTRONIQUE","occupation":"LOCATAIRE","situation":"BOUTIQUE","gardien":true,"extincteurs":false,"camera":true,"volet":false,
+      "loyer_mensuel":"150000","stocks":"6866500","materiel":"1000000","mobilier":"500000","amenagement":"500000","informatique":"0","vol_caisse_montant":"200000",
+      "dde_montant":"2000000","de_montant":"1000000","bdg_montant":"500000","tri_montant":"10000000"},
       "souscrit":["incendie","vol.contenu","vol.caisse","dde","de","bdg","tri"]},
     "attendu":{"lignes":[{"g":"incendie","nette":"20891","acc":"2500","taxe":"2924","ttc":"26315"},{"g":"vol","nette":"20960","acc":"2500","taxe":"1701","ttc":"25161"},
       {"g":"dde","ttc":"15551"},{"g":"de","ttc":"13406"},{"g":"bdg","ttc":"13406"},{"g":"tri","ttc":"45581"}],"ttc":"139420"} } ] }
 ```
+
+Réalisé en B2 : le taux d'une composante est `{fixe, unite}` ou `{source:"E1", unite}` (un sous-jacent E1 le fournit) ; la **réduction** est un sous-jacent E2 avec `reduction:true` (valeur en %, cible = la garantie) ; E5 a trois modes (`MINIMUM`, `PLAFOND`, `AJOUT`) ; tout champ actif est obligatoire sauf `obligatoire:false`.
 
 Notation des opérandes : une chaîne = un champ ou un intermédiaire ; `{"k":"120"}` = constante ; `[OP, …]` = opération (§6). Les nombres sont des **textes décimaux** (D3). `camera` et `volet` sont des déclarations sans effet (A5) : aucun sous-jacent ne les lit.
 
@@ -281,7 +283,7 @@ Règles : profondeur **2 au plus** (une opération dans une opération, ex. `PRE
 
 ## 8. Intégration
 
-- **Mode** : `ModeTarification` gagne `BAREME` (contrainte `CHECK`, D31) ; les contrôles « sûr par défaut » ne l'acceptent que pour la nature de calcul `BAREME`. Les **cinq sites** de D31/D32 (`resoudreContexte`, `construireEntree`, émission, émission de facture de renouvellement, `montantsDu`) doivent être relus : la règle devient « nature figée ↔ mode » à **trois** valeurs (automatique ↔ `FORMULE`, composition manuelle ↔ `GARANTIES`, composition `BAREME` ↔ `BAREME`), via `exigerModeCoherent`. Un produit `BAREME` **refuse** la composition manuelle (hypothèse A2, H133) ; le secours est une nouvelle version en `GARANTIES`.
+- **Mode** : `ModeTarification` gagne `BAREME` (contrainte `CHECK`, D31) ; les contrôles « sûr par défaut » ne l'acceptent que pour la nature de calcul `BAREME`. Les **cinq sites** de D31/D32 (`resoudreContexte`, `construireEntree`, émission, émission de facture de renouvellement, `montantsDu`) doivent être relus : la règle devient « nature figée ↔ mode » à **trois** valeurs (automatique ↔ `FORMULE`, composition manuelle ↔ `GARANTIES`, composition `BAREME` ↔ `BAREME`), via `exigerModeCoherent`. **Mode cible (D48)** : `BAREME` pour tous les produits ; `FORMULE` conservé pour la santé jusqu'à preuve que le barème le remplace ; `GARANTIES` cesse d'être un mode de produit et devient un **secours par cotation**. **Secours en cas de refus**, deux branches selon la réponse de la Technique à Q3 : **(a)** refus sans exception ; **(b)** composition manuelle sur **cette cotation seule**, avec motif et validation obligatoires. **Jamais une nouvelle version du produit pour un seul risque.** **Prorata temporis** : paramètre du produit (actif ou non, jours inclus / 365, comme la formule), appliqué à la prime nette **après la réduction et avant les accessoires**.
 - **Nature figée** : deux options. (i) **même type `COMPOSITION`** avec `origine: "BAREME"`, l'empreinte du barème, la saisie et les taux figés ; (ii) nouveau type `BAREME`. **Recommandation (i)** : `montantsDu`, `recalculer`, les documents et l'aval reconnaissent déjà `estComposition` ; seul `exigerModeCoherent` apprend l'origine. Risque (i) : confondre une composition manuelle et une composition de barème, d'où un test par site (D31).
 - **De `GARANTIES` à `BAREME`** : une **nouvelle version** de date d'effet postérieure (jamais rétroactive). L'éditeur propose « reprendre les garanties de la version précédente » (libellé, catégorie de taxe, montant garanti, accessoires) comme point de départ. Les cotations émises et les polices restent figées (T10, aucune n'est recalculée) ; un brouillon **à composer** d'avant la bascule ne se convertit pas, il se recrée (comme H89).
 - **Cotations existantes** : intactes. Le barème n'est jamais relu pour une cotation émise : on relit ses lignes figées. Un barème publié ne se modifie plus ; une correction = nouvelle version.
@@ -302,13 +304,13 @@ Règles : profondeur **2 au plus** (une opération dans une opération, ex. `PRE
 | B8 | `bareme-b8-renouvellement` | renouvellement et avenant d'une police au barème, passage `GARANTIES` → `BAREME` | renouvellement N+1, bascule |
 | B9 | `bareme-b9-excel` | export / import Excel et JSON, SECURPRO **réel** paramétré par la Technique | revue Direction Technique |
 
-Ordre imposé : B2 → B3 → (B4, B5) → B6 → (B7, B8) → B9. Fin de stage fin octobre : **B2 est le livrable sûr** ; B3 à B9 sont la suite (successeur).
+Ordre retenu : **B2 → B3 → B9 (import Excel) → B6 → (B4, B5) → (B7, B8)**. Le contrat est prolongé : B2 à B9 sont le plan, la fin de stage de fin octobre ne le borne plus.
 
 ## 10. Questions encore ouvertes pour la Technique
 
 1. **Q1** : un cas réel du simulateur corrigé (entrées et TTC) pour remplacer le jeu d'essai inventé ; valeurs réelles des types de commerce et de leurs classes, des limites (classe × situation), classes 3 et 4 de la table Incendie, Incendie obligatoire ?
 2. **Q2** : accessoires de 2 500 : par garantie souscrite (Vol = un seul), ou par contrat ? Les autres produits (par tête, par tranche d'effectif) sont-ils les seuls modes ?
-3. **Q3** : A2 : confirmez-vous qu'un risque refusé **ne bascule pas** en composition manuelle ? (H133)
+3. **Q3** : A2 : un risque refusé par le barème : **(a)** refus sans exception, ou **(b)** composition manuelle sur cette cotation seule (motif et validation obligatoires) ? (H133)
 4. **Q4** : A1 : la prime nette totale additionne bien toutes les garanties, y compris celles à 0 accessoire ?
 5. **Q5** : réduction commerciale : coefficient **après** le minimum (proposé) ou avant ? Même table pour toutes les garanties ?
 6. **Q6** : le Commercial voit-il le détail (taux, coefficients, composantes) ou seulement les lignes (proposé) ? Qui voit l'écart de forçage ?

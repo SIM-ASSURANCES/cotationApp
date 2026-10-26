@@ -829,3 +829,14 @@ Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir)
   - **H134** (**Classes 3 et 4 de la table Incendie**) : le socle ne donne que 0,72 ‰, 0,864 ‰ et 1,24416 ‰ ; les classes 3 et 4 sont posées à 1,0368 ‰ et 1,24416 ‰ (suite géométrique de raison 1,2), **pour le jeu d'essai seulement**. Valeurs réelles : la Technique.
   - **H135** (**Jeu d'essai SECURPRO inventé**) : les chiffres du simulateur ne sont pas dans le dépôt (D31). Le jeu d'essai du document (types de commerce et classes, limites, accessoires de 2 500 par garantie souscrite, montants) est **inventé**, calé à la main sur **139 420 F TTC** ; à remplacer ou confirmer par un cas réel (Q1).
   - **H136** (**Montant garanti d'une garantie à composantes**) : la somme des assiettes des composantes souscrites ; la réduction commerciale est un coefficient appliqué **après** le minimum (Q5, Q7).
+
+## D48 — Mode cible : le barème (décision de Thierry, 24/10/2026)
+
+- **Date** : 24/10/2026. Branche `bareme-b2-moteur`. Complète D47 ; l'étude est [propositions-bareme.md](propositions-bareme.md) (§8, §9).
+- **Décision** :
+  1. Le **barème** (`BAREME`) est le mode cible de **tous** les produits.
+  2. `FORMULE` est conservé pour la santé, jusqu'à preuve que le barème le remplace.
+  3. `GARANTIES` **cesse d'être un mode de produit** : la composition manuelle devient un **secours par cotation** (motif et validation obligatoires). Elle ne se fait **jamais** par une nouvelle version du produit pour un seul risque. Selon la réponse de la Technique à Q3 : (a) refus sans exception, ou (b) composition manuelle sur cette cotation seule (H133).
+  4. Le moteur du barème porte le **prorata temporis** au niveau du produit (actif ou non ; jours inclus / 365, comme la formule), appliqué à la prime nette **après la réduction**, **avant les accessoires**.
+  5. Ordre des sessions : B2 (moteur) → B3 → B9 (import Excel) → B6 → B4, B5 → B7, B8. Le contrat est prolongé.
+- **Pas fait ici** : aucun changement de `ModeTarification`, ni de code de l'application, ni de migration (B3 et B6). Les sites de D31/D32 restent tels quels jusque-là.

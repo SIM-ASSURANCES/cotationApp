@@ -79,11 +79,22 @@ async function verrouillerVersion(tx: Client, versionId: number) {
   await tx.$queryRaw`SELECT id FROM produit_versions WHERE id = ${versionId} FOR NO KEY UPDATE`;
   const v = await tx.produitVersion.findUnique({ where: { id: versionId }, include: { formules: true } });
   if (!v) throw new ErreurMetier("Version de produit introuvable.");
-  if (v.modeTarification !== "BAREME") throw new ErreurMetier("Cette version de produit n'est pas tarifée au barème : un barème ne se rattache qu'à une version en mode BAREME.");
   return v;
 }
 
 type VersionChargee = Awaited<ReturnType<typeof verrouillerVersion>>;
+
+const depuisDate = (d: Date): DateIso => d.toISOString().slice(0, 10);
+
+/**
+ * Un barème se prépare avant la mise en vigueur de sa version (créée dans un autre mode, à une date future), puis la version
+ * bascule au barème ; une version déjà au barème (B3) reste préparable. Une version en vigueur dans un autre mode, jamais.
+ */
+function exigerPreparable(v: VersionChargee): void {
+  if (v.modeTarification !== "BAREME" && depuisDate(v.dateEffet) <= aujourdhui()) {
+    throw new ErreurMetier("Cette version est déjà en vigueur dans un autre mode : elle ne peut plus recevoir de barème. Créez une nouvelle version, à une date d'effet postérieure à aujourd'hui.");
+  }
+}
 
 /**
  * Règles du produit que le barème ne porte pas, lues dans la version : arrondi et prorata. Les taux de taxe sont ceux en vigueur
@@ -115,7 +126,7 @@ export async function enregistrerBrouillonBareme(acteur: UtilisateurCourant, ver
   const empreinte = empreinteBareme(bareme);
 
   return obtenirPrisma().$transaction(async (tx) => {
-    await verrouillerVersion(tx, versionId);
+    exigerPreparable(await verrouillerVersion(tx, versionId));
     if (await tx.baremeDocument.findFirst({ where: { versionId, statut: "PUBLIE" }, select: { id: true } })) {
       throw new ErreurMetier("Cette version a déjà un barème publié, qui ne se modifie plus : une correction est une nouvelle version du produit.");
     }
@@ -165,16 +176,40 @@ export async function publierBareme(acteur: UtilisateurCourant, versionId: numbe
   if (motifPropre.length === 0) throw new ErreurMetier("Le motif de publication est obligatoire.");
   if (motifPropre.length > LONGUEUR_MAX_MOTIF) throw new ErreurMetier(`Le motif de publication est limité à ${LONGUEUR_MAX_MOTIF} caractères.`);
 
-  return obtenirPrisma().$transaction(async (tx) => {
+  const issue = await obtenirPrisma().$transaction(async (tx) => {
     const version = await verrouillerVersion(tx, versionId);
+    exigerPreparable(version);
     const brouillon = await tx.baremeDocument.findFirst({ where: { versionId, statut: "BROUILLON" } });
     if (!brouillon) {
       const publie = await tx.baremeDocument.findFirst({ where: { versionId, statut: "PUBLIE" }, select: { id: true } });
       throw new ErreurMetier(publie ? "Le barème de cette version est déjà publié." : "Cette version n'a pas de brouillon de barème à publier.");
     }
-    const bareme = validerDocumentBareme(brouillon.contenu, { publication: true });
+    const acteurAudit = { id: acteur.id, identifiant: acteur.identifiant };
+    // Un refus de contenu (barème invalide, essai en écart) est journalisé : la transaction est validée avec son journal, l'erreur est levée après.
+    const refuser = async (erreur: ErreurBaremeInvalide | ErreurPublicationBareme, raison: string) => {
+      await journaliser(
+        {
+          acteur: acteurAudit,
+          action: "BAREME_PUBLICATION_REFUSEE",
+          objetType: "bareme_document",
+          objetId: brouillon.id,
+          avant: { versionId, statut: "BROUILLON", empreinte: brouillon.empreinte },
+          apres: { motif: motifPropre, raison, ecarts: erreur.details },
+          adresseIp,
+        },
+        tx,
+      );
+      return { erreur };
+    };
+    let bareme: Bareme;
+    try {
+      bareme = validerDocumentBareme(brouillon.contenu, { publication: true });
+    } catch (e) {
+      if (!(e instanceof ErreurBaremeInvalide)) throw e;
+      return refuser(e, "BAREME_INVALIDE");
+    }
     const ecarts = rejouerJeuxEssai(bareme, await parametresDEssai(tx, version, bareme));
-    if (ecarts.length > 0) throw new ErreurPublicationBareme(ecarts);
+    if (ecarts.length > 0) return refuser(new ErreurPublicationBareme(ecarts), "ESSAIS_EN_ECART");
 
     const empreinte = empreinteBareme(bareme);
     const publieLe = new Date();
@@ -184,7 +219,7 @@ export async function publierBareme(acteur: UtilisateurCourant, versionId: numbe
     });
     await journaliser(
       {
-        acteur: { id: acteur.id, identifiant: acteur.identifiant },
+        acteur: acteurAudit,
         action: "PARAMETRE_MODIFIE",
         objetType: "bareme_document",
         objetId: brouillon.id,
@@ -194,8 +229,56 @@ export async function publierBareme(acteur: UtilisateurCourant, versionId: numbe
       },
       tx,
     );
-    return { id: brouillon.id, empreinte };
+    return { publie: { id: brouillon.id, empreinte } };
   });
+  if ("erreur" in issue) throw issue.erreur;
+  return issue.publie;
+}
+
+/**
+ * Bascule une version au mode BAREME, une fois son barème publié. Seule une version qui n'est pas encore en vigueur peut changer de
+ * mode (la base refuse sinon) : on ne réécrit jamais ce qu'un document a déjà calculé (T10). Journalisée (avant/après).
+ */
+export async function basculerVersionAuBareme(acteur: UtilisateurCourant, versionId: number, adresseIp: string | null): Promise<void> {
+  await exigerEcriture(acteur);
+  await obtenirPrisma().$transaction(async (tx) => {
+    const v = await verrouillerVersion(tx, versionId);
+    if (v.modeTarification === "BAREME") throw new ErreurMetier("Cette version est déjà tarifée au barème.");
+    if (depuisDate(v.dateEffet) <= aujourdhui()) {
+      throw new ErreurMetier("Cette version est déjà en vigueur : son mode ne peut plus changer. Créez une nouvelle version à une date d'effet postérieure à aujourd'hui, importez et publiez son barème, puis basculez-la.");
+    }
+    const publie = await tx.baremeDocument.findFirst({ where: { versionId, statut: "PUBLIE" }, select: { empreinte: true } });
+    if (!publie) throw new ErreurMetier("Aucun barème publié pour cette version : importez et publiez le barème avant de basculer le mode.");
+    await tx.produitVersion.update({ where: { id: versionId }, data: { modeTarification: "BAREME" } });
+    await journaliser(
+      {
+        acteur: { id: acteur.id, identifiant: acteur.identifiant },
+        action: "PARAMETRE_MODIFIE",
+        objetType: "produit_version",
+        objetId: versionId,
+        avant: { modeTarification: v.modeTarification },
+        apres: { modeTarification: "BAREME", baremeEmpreinte: publie.empreinte },
+        adresseIp,
+      },
+      tx,
+    );
+  });
+}
+
+/** État du barème d'une version, pour la fiche : le brouillon et le publié. */
+export type EtatBareme = {
+  brouillon: { id: number; empreinte: string; modifieLe: Date; creePar: string } | null;
+  publie: { id: number; empreinte: string; publieLe: Date; publiePar: string; motif: string } | null;
+};
+
+export async function lireEtatBareme(client: Pick<Client, "baremeDocument">, versionId: number): Promise<EtatBareme> {
+  const lignes = await client.baremeDocument.findMany({ where: { versionId } });
+  const b = lignes.find((l) => l.statut === "BROUILLON");
+  const p = lignes.find((l) => l.statut === "PUBLIE");
+  return {
+    brouillon: b ? { id: b.id, empreinte: b.empreinte, modifieLe: b.modifieLe, creePar: b.creePar } : null,
+    publie: p && p.publieLe && p.publiePar ? { id: p.id, empreinte: p.empreinte, publieLe: p.publieLe, publiePar: p.publiePar, motif: p.motifPublication ?? "" } : null,
+  };
 }
 
 export type BaremePublie = { id: number; bareme: Bareme; empreinte: string };
@@ -225,4 +308,9 @@ export async function calculerAvecBaremePublie(
 ): Promise<{ empreinte: string; resultat: ResultatBareme }> {
   const { bareme, empreinte } = await lireBaremePublie(client, versionId);
   return { empreinte, resultat: calculerBareme(bareme, saisie, parametres) };
+}
+
+/** État du barème d'une version, lu pour la fiche du produit. */
+export async function etatDuBareme(versionId: number): Promise<EtatBareme> {
+  return lireEtatBareme(obtenirPrisma(), versionId);
 }

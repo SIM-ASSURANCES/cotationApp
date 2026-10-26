@@ -17,6 +17,7 @@ import {
   estBranchePrincipaleValide,
   libelleBranchePrincipale,
   MESSAGE_COMPOSITION_IMPOSSIBLE,
+  MESSAGE_TARIFICATION_AU_BAREME,
   MESSAGE_TARIFICATION_PAR_GARANTIES,
   problemesTaxe,
   problemesVersion,
@@ -439,7 +440,7 @@ export type VersionProduit = VersionSaisie & { id: number; modeTarification: Mod
 /** Refus de la composition manuelle pour une version qui n'est pas en mode GARANTIES (session 6.2b). */
 export function exigerComposition(mode: string): void {
   if (!compositionPossible(mode)) {
-    throw new ErreurMetier(MESSAGE_COMPOSITION_IMPOSSIBLE);
+    throw new ErreurMetier(mode === "BAREME" ? MESSAGE_TARIFICATION_AU_BAREME : MESSAGE_COMPOSITION_IMPOSSIBLE);
   }
 }
 
@@ -451,7 +452,7 @@ export function exigerComposition(mode: string): void {
  */
 export function exigerCalculAutomatique(mode: string): void {
   if (!calculAutomatiquePossible(mode)) {
-    throw new ErreurMetier(MESSAGE_TARIFICATION_PAR_GARANTIES);
+    throw new ErreurMetier(mode === "BAREME" ? MESSAGE_TARIFICATION_AU_BAREME : MESSAGE_TARIFICATION_PAR_GARANTIES);
   }
 }
 
@@ -526,6 +527,9 @@ export async function listerVersions(acteur: UtilisateurCourant, codeProduit: st
 export async function creerVersion(acteur: UtilisateurCourant, codeProduit: string, saisie: VersionSaisie, adresseIp: string | null): Promise<void> {
   await exigerEcriture(acteur);
   refuserSiProblemes(problemesVersion(saisie));
+  if (saisie.modeTarification === "BAREME") {
+    throw new ErreurMetier("Une version ne se crée pas directement au barème : créez-la dans un autre mode à une date d'effet future, importez et publiez son barème, puis basculez-la au barème.");
+  }
 
   await obtenirPrisma().$transaction(async (tx) => {
     const produit = await tx.produit.findUnique({ where: { code: codeProduit } });

@@ -83,6 +83,12 @@ export const compositionPossible = (mode: string): boolean => mode === "GARANTIE
 export const MESSAGE_BROUILLON_A_FORMULES =
   "Ce produit se tarife désormais par garanties : ce brouillon, préparé avec des formules, ne peut plus être modifié ni soumis ; créez une nouvelle cotation, dont la Technique composera la prime";
 
+/**
+ * Refus pour un produit au barème (H139, B9) : une version n'est en mode BAREME que si son barème est publié (déclencheur de la base) ;
+ * ni le calcul automatique ni la composition manuelle ne le lisent tant que les cotations ne sont pas branchées (session B6).
+ */
+export const MESSAGE_TARIFICATION_AU_BAREME = "Barème publié pour cette version : le calcul de la prime au barème n'est pas encore ouvert aux cotations (ni calcul automatique, ni composition manuelle)";
+
 /** Refus de la composition manuelle pour un produit à la formule (le tarif existe : la Technique ne compose pas la prime). */
 export const MESSAGE_COMPOSITION_IMPOSSIBLE = "Ce produit se tarifie à la formule : la prime se calcule, elle ne se compose pas";
 

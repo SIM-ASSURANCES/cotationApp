@@ -88,6 +88,9 @@ export const ACTIONS_AUDIT = [
   "INTERMEDIAIRE_CREE",
   "INTERMEDIAIRE_MODIFIE",
   "TACHE_FERMEE",
+  // Session B9 : publication d'un barème refusée (écarts des jeux d'essai ou barème invalide), bascule d'une version au barème
+  "BAREME_PUBLICATION_REFUSEE",
+  "BAREME_IMPORTE",
 ] as const;
 
 export type ActionAudit = (typeof ACTIONS_AUDIT)[number];

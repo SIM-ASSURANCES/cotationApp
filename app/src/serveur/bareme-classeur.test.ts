@@ -4,7 +4,7 @@ import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
 
-import { jsonCanonique, calculerBareme, composerBareme } from "@/domaine/bareme";
+import { jsonCanonique, calculerBareme, composerBareme, lireBareme, type Bareme } from "@/domaine/bareme";
 import { baremeSecurpro, documentSecurpro, parametresEssai } from "@/domaine/bareme/securpro-fixture";
 
 import { analyserClasseur, ETIQUETTE, FEUILLE, TAILLE_MAX_CLASSEUR } from "./bareme-classeur-lecture";
@@ -235,5 +235,40 @@ describe("classeur du barème : fichiers piégés", () => {
       c.getWorksheet(FEUILLE.champs)!.getCell("A25000").value = "x";
     });
     expect(await refs(octets)).toContain("Champs!A1 FEUILLE_TROP_GRANDE");
+  });
+});
+
+describe("classeur du barème : accessoires par tranche d'effectif (B6a)", () => {
+  const avecTranches = (): Bareme => {
+    const d = structuredClone(documentSecurpro) as unknown as { produit: { accessoires: unknown }; garanties: { code: string; accessoires?: unknown }[] };
+    d.produit.accessoires = { mode: "PAR_TRANCHE", tranches: [{ de: 1, a: 5, montant: "2500" }, { de: 6, a: 10, montant: "4000" }] };
+    d.garanties.find((g) => g.code === "vol")!.accessoires = { mode: "PAR_TRANCHE", tranches: [{ de: 1, a: 3, montant: "1000.50" }, { de: 4, a: 9, montant: "3000" }] };
+    return lireBareme(d);
+  };
+
+  it("aller-retour à empreinte identique, au niveau du produit et de la garantie", async () => {
+    const b = avecTranches();
+    const r = await analyserClasseur(await construireClasseur(b, { titre: "Tranches (test)" }));
+    expect(r.erreurs).toEqual([]);
+    expect(empreinteBareme(r.bareme)).toBe(empreinteBareme(b));
+  });
+
+  it("des tranches illisibles ou avec un trou sont nommées par cellule", async () => {
+    const octets = await construireClasseur(avecTranches(), { titre: "Tranches (test)" });
+    const illisibles = await charger(octets);
+    illisibles.getWorksheet(FEUILLE.lisezmoi)!.eachRow((row) => {
+      if (row.getCell(1).value === ETIQUETTE.accessoiresMontant) row.getCell(2).value = "1-5 2500";
+    });
+    const lecture = await analyserClasseur(await ecrire(illisibles));
+    expect(lecture.erreurs.map((e) => e.regle)).toContain("TRANCHES_ILLISIBLES");
+
+    const trou = await charger(octets);
+    const lm = trou.getWorksheet(FEUILLE.lisezmoi)!;
+    lm.eachRow((row) => {
+      if (row.getCell(1).value === ETIQUETTE.accessoiresMontant) row.getCell(2).value = "1-5: 2500; 8-10: 4000";
+    });
+    const e = (await analyserClasseur(await ecrire(trou))).erreurs;
+    expect(e.map((x) => x.regle)).toContain("TRANCHES_TROU");
+    expect(e.find((x) => x.regle === "TRANCHES_TROU")!.message).toContain("effectifs 6 à 7");
   });
 });

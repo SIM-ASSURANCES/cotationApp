@@ -49,7 +49,11 @@ const champ = z
   })
   .strict();
 
-const accessoires = z.object({ mode: z.enum(["PAR_GARANTIE", "PAR_CONTRAT", "PAR_TETE"]), montant: decimal }).strict();
+/** `PAR_TRANCHE` : le montant dépend de l'effectif assuré (tranches bornées, sans trou, à partir de 1). */
+const accessoires = z.union([
+  z.object({ mode: z.enum(["PAR_GARANTIE", "PAR_CONTRAT", "PAR_TETE"]), montant: decimal }).strict(),
+  z.object({ mode: z.literal("PAR_TRANCHE"), tranches: z.array(z.object({ de: z.number().int().min(1), a: z.number().int().min(1), montant: decimal }).strict()).min(1) }).strict(),
+]);
 
 const taux = z.union([
   z.object({ unite: z.enum(["PERMILLE", "POURCENT"]), fixe: decimal }).strict(),

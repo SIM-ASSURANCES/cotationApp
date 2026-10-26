@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 
-import { formaterOperande, type Bareme, type Champ, type ConditionAffichage, type Garantie, type Operande } from "@/domaine/bareme";
+import { formaterOperande, formaterTranches, type Bareme, type Champ, type ConditionAffichage, type Garantie, type Operande } from "@/domaine/bareme";
 import { COMPARATEURS, OPERATIONS, TYPES_CHAMP } from "@/domaine/bareme/schema";
 
 import { ETIQUETTE, FEUILLE } from "./bareme-classeur-lecture";
@@ -20,6 +20,8 @@ const decimal = (t: string | undefined): string | number | undefined => {
   const n = Number(t);
   return Number.isFinite(n) && String(n) === t ? n : t;
 };
+/** Cellule « montant » des accessoires : un décimal, ou, par tranche d'effectif, « 1-5: 2500; 6-10: 4000 ». */
+const montantAccessoires = (acc: Bareme["produit"]["accessoires"]): string | number | undefined => (acc === undefined ? undefined : acc.mode === "PAR_TRANCHE" ? formaterTranches(acc.tranches) : decimal(acc.montant));
 const ouiNon = (b: boolean | undefined): string | undefined => (b === undefined ? undefined : b ? "OUI" : "NON");
 
 function feuilleAvecEntetes(classeur: ExcelJS.Workbook, nom: string, colonnes: readonly string[], largeurs: Record<string, number> = {}): ExcelJS.Worksheet {
@@ -73,7 +75,7 @@ function ecrireGaranties(classeur: ExcelJS.Workbook, b: Bareme) {
   const wc = feuilleAvecEntetes(classeur, FEUILLE.composantes, ["garantie", "code", "souscription", "assiette", "taux_unite", "taux_fixe", "taux_source", "minimum", "par_tete"], { assiette: 44 });
   for (const g of b.garanties as Garantie[]) {
     const [t, cible, valeur] = condition(g.si);
-    wg.addRow({ code: g.code, nom: g.nom, definition: g.definition, afficher_sur_documents: ouiNon(g.afficherSurDocuments), souscription: g.souscription, si_type: t, si_cible: cible, si_valeur: valeur, taxe: g.taxe, accessoires_mode: g.accessoires?.mode, accessoires_montant: decimal(g.accessoires?.montant) });
+    wg.addRow({ code: g.code, nom: g.nom, definition: g.definition, afficher_sur_documents: ouiNon(g.afficherSurDocuments), souscription: g.souscription, si_type: t, si_cible: cible, si_valeur: valeur, taxe: g.taxe, accessoires_mode: g.accessoires?.mode, accessoires_montant: montantAccessoires(g.accessoires) });
     for (const c of g.composantes) {
       wc.addRow({
         garantie: g.code,
@@ -91,7 +93,7 @@ function ecrireGaranties(classeur: ExcelJS.Workbook, b: Bareme) {
   listeDeroulante(wg, "souscription", ["OBLIGATOIRE", "OPTIONNELLE", "CONDITION"]);
   listeDeroulante(wg, "afficher_sur_documents", ["OUI", "NON"]);
   listeDeroulante(wg, "si_type", ["CHAMP_EGAL", "CHAMP_DIFFERENT", "SOUSCRIT"]);
-  listeDeroulante(wg, "accessoires_mode", ["PAR_GARANTIE", "PAR_CONTRAT", "PAR_TETE"]);
+  listeDeroulante(wg, "accessoires_mode", ["PAR_GARANTIE", "PAR_CONTRAT", "PAR_TETE", "PAR_TRANCHE"]);
   listeDeroulante(wc, "souscription", ["OBLIGATOIRE", "OPTIONNELLE"]);
   listeDeroulante(wc, "taux_unite", ["PERMILLE", "POURCENT"]);
   listeDeroulante(wc, "taux_source", ["E1"]);
@@ -171,6 +173,7 @@ const AIDE = [
   "• Champs : une ligne par champ saisi par le Commercial (type, bloc, obligatoire, bornes min/max, condition d'affichage si_type / si_cible / si_valeur).",
   "• Valeurs : les valeurs des champs LISTE (champ, v, l = libellé) ; toute colonne ajoutée (ex. classe) est un attribut tarifaire de la valeur.",
   "• Intermediaires : valeurs calculées nommées (code, expression).",
+  "• Accessoires (produit, dans ce Lisez-moi, ou garantie) : PAR_GARANTIE, PAR_CONTRAT, PAR_TETE ou PAR_TRANCHE. En PAR_TRANCHE le montant dépend de l'effectif assuré : écrivez « 1-5: 2500; 6-10: 4000 » (tranches bornées, à partir de 1, sans trou ni chevauchement).",
   "• Garanties : une ligne par garantie ; Composantes : une ligne par composante (garantie = code de la garantie). Un taux est fixe (taux_fixe) OU tiré d'un sous-jacent E1 (taux_source = E1).",
   "• Tables : un bloc par table — ligne « TABLE | code | clé en lignes | clé en colonnes », puis la grille (clés en colonnes sur la 1re ligne, clés en lignes dans la colonne A).",
   "• SousJacents : effets E1 (taux), E2 (coefficient ou réduction en %), E4 (contrôle qui refuse, avec son message), E5 (minimum, plafond, ajout).",
@@ -202,7 +205,7 @@ export async function construireClasseur(b: Bareme, options: OptionsClasseur): P
     [ETIQUETTE.schema, 1],
     [ETIQUETTE.taxe, b.produit.taxe],
     [ETIQUETTE.accessoiresMode, b.produit.accessoires?.mode],
-    [ETIQUETTE.accessoiresMontant, decimal(b.produit.accessoires?.montant)],
+    [ETIQUETTE.accessoiresMontant, montantAccessoires(b.produit.accessoires)],
     ...(options.empreinte ? [[ETIQUETTE.empreinte, options.empreinte] as const] : []),
   ] as const) {
     const r = lm.addRow([etiquette, valeur]);

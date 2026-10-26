@@ -840,3 +840,17 @@ Questions **réglées le 05/10/2026** : Q1 (VPS du portail, domaine à définir)
   4. Le moteur du barème porte le **prorata temporis** au niveau du produit (actif ou non ; jours inclus / 365, comme la formule), appliqué à la prime nette **après la réduction**, **avant les accessoires**.
   5. Ordre des sessions : B2 (moteur) → B3 → B9 (import Excel) → B6 → B4, B5 → B7, B8. Le contrat est prolongé.
 - **Pas fait ici** : aucun changement de `ModeTarification`, ni de code de l'application, ni de migration (B3 et B6). Les sites de D31/D32 restent tels quels jusque-là.
+
+## D49 — Session B3 : stockage et publication du barème (26/10/2026)
+
+- **Date** : 26/10/2026. Branche `bareme-b3-stockage`. Met en œuvre l'option (c) de [propositions-bareme.md](propositions-bareme.md) §3 (D47, D48). **Aucun écran** : tests d'intégration et script `npm run demo:bareme`.
+- **Décisions de mise en œuvre** :
+  1. Migration `20261026090000_bareme_documents` : mode `BAREME` ajouté à la contrainte de `produit_versions` ; table `bareme_documents` (`version_id`, `statut` BROUILLON/PUBLIE, `schema_version`, `contenu` jsonb, `empreinte`, `cree_par`, `publie_par`, `publie_le`, `motif_publication`). Index uniques partiels : un brouillon et un publié au plus par version. Déclencheurs : une ligne PUBLIE ne se modifie ni ne se supprime ; un barème naît en brouillon, sur une version en mode `BAREME` sans barème publié.
+  2. Service `serveur/bareme.ts` : `enregistrerBrouillonBareme` (zod puis `verifierBareme`, erreurs nommées `[CODE] message`), `rejouerLesEssaisBareme`, `publierBareme` (transaction, verrou de ligne sur la version, essais tous verts sinon `ErreurPublicationBareme` avec l'écart ligne à ligne, motif obligatoire, journal avant/après), `lireBaremePublie` (schéma + empreinte recalculée ; sans barème publié : refus, jamais de montant), `calculerAvecBaremePublie`.
+  3. Droit : `PARAMETRER_PRODUITS` (Q8, défaut). Le publieur est dans `publie_par` et dans le journal (`PARAMETRE_MODIFIE`, objet `bareme_document`).
+  4. Réduction commerciale : **vérifiée, rien à corriger**. La table E2 `reduction` porte un POURCENTAGE (10 pour 10 %), le moteur applique `(100 − taux) / 100`, 100 % et plus est refusé (`effets.test.ts`).
+  5. Sites D31/D32 : `calculAutomatiquePossible` et `compositionPossible` ne reconnaissent que `FORMULE` et `GARANTIES` : `BAREME` est refusé par les cinq sites (testé), rien n'a été modifié. `problemesVersion` ne demande plus de formule pour `BAREME`.
+- **Hypothèses nouvelles** (à faire confirmer) :
+  - **H137** (**Paramètres des essais**) : arrondi et prorata de la version ; taux de taxe du régime individuel en vigueur à la date d'effet de l'essai (la date d'effet de la version, ou aujourd'hui si elle est passée) ; période d'un an. Une catégorie de taxe sans taux en vigueur arrête la publication.
+  - **H138** (**Publication**) : permise même si la version est déjà en vigueur (aucun calcul n'a pu y être fait sans barème publié). Le publieur peut être l'auteur du brouillon : pas de séparation des tâches (à décider avec Q8).
+  - **H139** (**Refus des sites avant B6**) : un produit `BAREME` reçoit encore le message du mode `GARANTIES` (« se tarifie par garanties… »), inexact ; B6 le remplace.

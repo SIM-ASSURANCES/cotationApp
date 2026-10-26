@@ -23,8 +23,8 @@ const version = (surcharge: Partial<VersionSaisie> = {}): VersionSaisie => ({
 });
 
 describe("session 6.2a : mode de tarification", () => {
-  it("deux modes seulement, FORMULE d'abord (c'est le comportement d'avant)", () => {
-    expect([...MODES_TARIFICATION]).toEqual(["FORMULE", "GARANTIES"]);
+  it("trois modes, FORMULE d'abord (c'est le comportement d'avant), BAREME ajouté en B3 (D49)", () => {
+    expect([...MODES_TARIFICATION]).toEqual(["FORMULE", "GARANTIES", "BAREME"]);
   });
 
   it("le message de refus est celui fixé par la Technique, mot pour mot", () => {

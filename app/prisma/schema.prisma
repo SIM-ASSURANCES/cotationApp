@@ -263,9 +263,32 @@ model ProduitVersion {
   creePar                     String    @map("cree_par")
   produit                     Produit   @relation(fields: [produitId], references: [id], onDelete: Restrict)
   formules                    Formule[]
+  baremes                     BaremeDocument[]
 
   @@unique([produitId, dateEffet])
   @@map("produit_versions")
+}
+
+/// Barème d'une version en mode BAREME (session B3, D49) : un brouillon au plus et un publié au plus par version (index
+/// partiels de la migration, que Prisma ne sait pas écrire). Un barème PUBLIE ne se modifie ni ne se supprime (déclencheur).
+/// `contenu` est le document validé par domaine/bareme ; `empreinte` le SHA-256 de son JSON canonique.
+model BaremeDocument {
+  id               Int            @id @default(autoincrement())
+  versionId        Int            @map("version_id")
+  /// BROUILLON ou PUBLIE.
+  statut           String
+  schemaVersion    Int            @map("schema_version")
+  contenu          Json
+  empreinte        String
+  creeLe           DateTime       @default(now()) @map("cree_le")
+  creePar          String         @map("cree_par")
+  modifieLe        DateTime       @default(now()) @map("modifie_le")
+  publiePar        String?        @map("publie_par")
+  publieLe         DateTime?      @map("publie_le")
+  motifPublication String?        @map("motif_publication")
+  version          ProduitVersion @relation(fields: [versionId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@map("bareme_documents")
 }
 
 /// Formule d'une version de produit (Solo, Famille, taux 70 %...). Prime unitaire avec décimales (CDC §8.5).

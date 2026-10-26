@@ -13,6 +13,7 @@ import { listerBranchesPrincipales, listerVersions, type VersionProduit } from "
 import { exigerDroit } from "@/serveur/session";
 
 import { ajouterUneVersion, renseignerBranchePrincipale } from "./actions";
+import { PanneauBareme, versionAvecBareme } from "./panneau-bareme";
 
 const LIBELLE_SENS = { PROCHE: "Au plus proche", SUPERIEUR: "Au supérieur", INFERIEUR: "À l'inférieur" } as const;
 const LIBELLE_NIVEAU = { LIGNE: "Chaque ligne", TOTAL: "Total seulement" } as const;
@@ -49,7 +50,7 @@ function formaterGarantieSaisie(g: NonNullable<VersionProduit["garanties"]>[numb
   return g.branche ? `${g.libelle} ; ${g.branche}` : g.libelle;
 }
 
-function Resume({ v }: { v: VersionProduit }) {
+function Resume({ v, codeProduit, peutEcrire }: { v: VersionProduit; codeProduit: string; peutEcrire: boolean }) {
   return (
     <Carte>
       <h3 className="mb-2 text-base font-bold text-foreground">Version en vigueur depuis le {formaterDate(v.dateEffet)}</h3>
@@ -65,6 +66,7 @@ function Resume({ v }: { v: VersionProduit }) {
       {v.formules.length > 0 || v.modeTarification !== "GARANTIES" ? (
         <Tableau colonnes={COLONNES_FORMULES} lignes={v.formules} cleLigne={(f) => f.code} messageVide="Aucune formule." legende={`Formules de la version du ${formaterDate(v.dateEffet)}`} />
       ) : null}
+      {peutEcrire && versionAvecBareme(v) ? <PanneauBareme codeProduit={codeProduit} version={v} /> : null}
     </Carte>
   );
 }
@@ -136,6 +138,10 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
             Une version « Par garanties » ne calcule rien : la prime est composée par la Technique, garantie par garantie, sur chaque cotation. Elle n&apos;a besoin d&apos;aucune
             formule (la liste des garanties ci-dessous est facultative) ; un assuré n&apos;y a pas de formule.
           </p>
+          <p className="mb-4 text-sm text-muted-foreground">
+            Le mode « Au barème » n&apos;est pas proposé ici : il n&apos;existe qu&apos;une fois un barème publié. Créez la version à une date future, puis, sur sa
+            fiche (historique ci-dessous), importez le classeur du barème, publiez-le et basculez la version au barème.
+          </p>
           <FormulaireAction action={ajouterUneVersion} libelleBouton="Enregistrer la version">
             <input type="hidden" name="codeProduit" value={produit.code} />
             <div className="mb-4 grid max-w-4xl gap-x-6 sm:grid-cols-2">
@@ -144,8 +150,8 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
                 <ListeDeroulante
                   label="Mode de tarification"
                   name="modeTarification"
-                  defaultValue={base?.modeTarification ?? "FORMULE"}
-                  options={MODES_TARIFICATION.map((m) => ({ valeur: m, libelle: LIBELLE_MODE[m] }))}
+                  defaultValue={base && base.modeTarification !== "BAREME" ? base.modeTarification : base ? "GARANTIES" : "FORMULE"}
+                  options={MODES_TARIFICATION.filter((m) => m !== "BAREME").map((m) => ({ valeur: m, libelle: LIBELLE_MODE[m] }))}
                 />
               </div>
               <Champ nom="primeMinimale" libelle="Prime minimale (facultative)" requis={false} valeur={base?.prorata.primeMinimale ? net(base.prorata.primeMinimale) : ""} autoComplete="off" />
@@ -237,7 +243,7 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
         {versions.length === 0 ? (
           <EtatVide message="Aucune version : ce produit ne peut pas encore être calculé." />
         ) : (
-          versions.map((v) => <Resume key={v.id} v={v} />)
+          versions.map((v) => <Resume key={v.id} v={v} codeProduit={produit.code} peutEcrire={peutAgir(niveau)} />)
         )}
       </section>
     </main>

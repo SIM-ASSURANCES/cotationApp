@@ -1,4 +1,5 @@
-// Démonstration de la session B3 : publie le SECURPRO INVENTÉ, puis montre le refus d'un barème dont un essai échoue.
+// Démonstration des sessions B3 et B9 : importe le SECURPRO INVENTÉ par un classeur Excel (généré ici), le publie, bascule la version
+// au barème, puis montre le refus d'un barème dont un essai échoue.
 // Écrit des données de démonstration (comptes, taxes, produits aux codes aléatoires) : réservé à une base de test ou de développement.
 //   npm run demo:bareme          (base dont le nom finit par _test, ou AUTORISER_DEMO_BAREME=oui dans l'environnement)
 // Jamais sur le VPS.
@@ -13,7 +14,11 @@ if (!base.endsWith("_test") && process.env.AUTORISER_DEMO_BAREME !== "oui") {
 }
 
 const { documentSecurpro } = await import("../src/domaine/bareme/securpro-fixture");
-const { enregistrerBrouillonBareme, publierBareme, rejouerLesEssaisBareme, ErreurPublicationBareme } = await import("../src/serveur/bareme");
+const { basculerVersionAuBareme, publierBareme, rejouerLesEssaisBareme, ErreurPublicationBareme } = await import("../src/serveur/bareme");
+const { construireClasseur } = await import("../src/serveur/bareme-classeur-ecriture");
+const { importerBaremeXlsx } = await import("../src/serveur/bareme-excel");
+const { lireBareme } = await import("../src/domaine/bareme");
+const { ajouterJours, aujourdhui } = await import("../src/domaine/calcul/dates");
 const { initialiserProfilsEtDroits } = await import("../src/serveur/droits");
 const { creerProduit, creerTaxe, creerVersion } = await import("../src/serveur/parametrage");
 const { obtenirPrisma } = await import("../src/serveur/prisma");
@@ -45,14 +50,15 @@ const document = () => {
   return d;
 };
 
-async function versionAuBareme(code: string): Promise<number> {
+async function versionACreer(code: string): Promise<number> {
   await creerProduit(technique, { code, libelle: "Sécur Pro (barème inventé)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: IARD }, null);
   await creerVersion(
     technique,
     code,
     {
-      dateEffet: "2020-01-01",
-      modeTarification: "BAREME",
+      // Une version ne naît pas au barème : autre mode, date future ; le barème est importé et publié, puis la version bascule.
+      dateEffet: ajouterJours(aujourdhui(), 1),
+      modeTarification: "GARANTIES",
       arrondi: { precision: 1, sens: "PROCHE", niveau: "LIGNE", composanteAbsorbante: "NETTE" },
       prorata: { actif: false, primeMinimale: null },
       fractionnement: { tranchesMax: 4, repartitionPourcent: null, decalagesMois: null, frais: "0" },
@@ -69,19 +75,22 @@ async function versionAuBareme(code: string): Promise<number> {
 }
 
 console.log("=== 1. Publication du SECURPRO inventé (essais : 139 420 F TTC) ===");
-const versionA = await versionAuBareme(`DEMO_SECURPRO_${suffixe.toUpperCase()}`);
-const brouillon = await enregistrerBrouillonBareme(technique, versionA, document(), null);
-console.log(`brouillon enregistré (empreinte ${brouillon.empreinte.slice(0, 16)}…)`);
+const versionA = await versionACreer(`DEMO_SECURPRO_${suffixe.toUpperCase()}`);
+const classeur = (d: ReturnType<typeof document>) => construireClasseur(lireBareme(d), { titre: "Classeur de démonstration (inventé)" });
+const brouillon = await importerBaremeXlsx(technique, versionA, "securpro.xlsx", await classeur(document()), null);
+console.log(`classeur Excel importé en brouillon (empreinte ${brouillon.empreinte.slice(0, 16)}…)`);
 console.log(`écarts des essais : ${(await rejouerLesEssaisBareme(technique, versionA)).length}`);
 const publie = await publierBareme(technique, versionA, "Démonstration B3 : publication du SECURPRO inventé", null);
 console.log(`PUBLIÉ par ${technique.identifiant} (empreinte ${publie.empreinte.slice(0, 16)}…)`);
+await basculerVersionAuBareme(technique, versionA, null);
+console.log(`version basculée au mode : ${(await prisma.produitVersion.findUniqueOrThrow({ where: { id: versionA } })).modeTarification}`);
 
 console.log("\n=== 2. Refus d'un barème dont un essai échoue ===");
-const versionB = await versionAuBareme(`DEMO_ECART_${suffixe.toUpperCase()}`);
+const versionB = await versionACreer(`DEMO_ECART_${suffixe.toUpperCase()}`);
 const faux = document();
 faux.jeuxEssai[0].attendu.lignes[1].nette = "20961";
 faux.jeuxEssai[0].attendu.ttc = "139421";
-await enregistrerBrouillonBareme(technique, versionB, faux, null);
+await importerBaremeXlsx(technique, versionB, "ecart.xlsx", await classeur(faux), null);
 try {
   await publierBareme(technique, versionB, "Démonstration B3 : publication qui doit être refusée", null);
   console.error("ANOMALIE : la publication aurait dû être refusée.");

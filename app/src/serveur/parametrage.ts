@@ -54,7 +54,7 @@ const texte = (d: { toFixed(): string }) => d.toFixed();
 
 export { aujourdhui };
 
-async function exigerEcriture(acteur: UtilisateurCourant): Promise<void> {
+export async function exigerEcriture(acteur: UtilisateurCourant): Promise<void> {
   // « Oui » (Technique) ou « Valide » (DG). La Comptabilité est en « Lecture » (D21) : elle ne peut pas écrire.
   if (!peutAgir(await niveauDuProfil(acteur.profil, ACTION_PARAMETRAGE))) {
     throw new ErreurAcces("Droit insuffisant : paramétrage des produits et des taxes.");
@@ -249,7 +249,7 @@ export async function exigerCalculAutomatiqueEnVigueur(client: Pick<Prisma.Trans
 }
 
 /** Taux le plus précis pour la branche et le régime de taxe, en vigueur à la date d'effet (D18 ; H29 fermée, session 6.0). */
-async function taxeEnVigueur(client: ClientLecture, branche: string, regime: RegimeTaxe, date: DateIso): Promise<TaxeSaisie & { tauxPourcent: string }> {
+export async function taxeEnVigueur(client: ClientLecture, branche: string, regime: RegimeTaxe, date: DateIso): Promise<TaxeSaisie & { tauxPourcent: string }> {
   const lignes = (await client.taxe.findMany({ where: { branche } })).map(versLigneTaxe);
   try {
     return choisirTaux(lignes, branche, regime, date);
@@ -455,7 +455,7 @@ export function exigerCalculAutomatique(mode: string): void {
   }
 }
 
-function versVersion(v: Prisma.ProduitVersionGetPayload<{ include: { formules: true } }>): VersionProduit {
+export function versVersion(v: Prisma.ProduitVersionGetPayload<{ include: { formules: true } }>): VersionProduit {
   return {
     id: v.id,
     dateEffet: depuisDate(v.dateEffet),

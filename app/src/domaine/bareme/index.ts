@@ -4,3 +4,4 @@ export * from "./essais";
 export * from "./schema";
 export * from "./verification";
 export * from "./canonique";
+export * from "./expression";

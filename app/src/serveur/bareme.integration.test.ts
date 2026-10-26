@@ -7,12 +7,12 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { composerBareme, jsonCanonique, type Saisie } from "@/domaine/bareme";
 import { documentSecurpro, parametresEssai } from "@/domaine/bareme/securpro-fixture";
-import { aujourdhui } from "@/domaine/calcul/dates";
-import { MESSAGE_COMPOSITION_IMPOSSIBLE, MESSAGE_TARIFICATION_PAR_GARANTIES, type VersionSaisie } from "@/domaine/calcul/parametrage";
+import { MESSAGE_COMPOSITION_IMPOSSIBLE, MESSAGE_TARIFICATION_AU_BAREME, MESSAGE_TARIFICATION_PAR_GARANTIES, type VersionSaisie } from "@/domaine/calcul/parametrage";
 
 import { lireJournal } from "./audit";
 import { assurerBranche } from "./branches-test";
 import {
+  basculerVersionAuBareme,
   calculerAvecBaremePublie,
   empreinteBareme,
   enregistrerBrouillonBareme,
@@ -23,6 +23,7 @@ import {
   publierBareme,
   rejouerLesEssaisBareme,
 } from "./bareme";
+import { debutTest } from "./dates-test";
 import { initialiserProfilsEtDroits } from "./droits";
 import { creerProduit, creerTaxe, creerVersion, exigerCalculAutomatiqueEnVigueur, exigerModeCoherent, exigerModeCoherentEnVigueur, resoudreContexte, resoudreContexteComposition } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
@@ -73,11 +74,14 @@ const versionBase = (mode: VersionSaisie["modeTarification"]): VersionSaisie => 
   references: { csModeleCode: null, csVisa: null },
 });
 
-/** Un produit et sa version en vigueur depuis 2020, dans le mode demandé. */
-async function nouvelleVersion(mode: VersionSaisie["modeTarification"]): Promise<{ code: string; versionId: number }> {
+/**
+ * Un produit et sa version dans un mode autre que BAREME (une version ne naît jamais au barème, D50) : datée de demain par défaut
+ * (elle peut recevoir un barème puis basculer), ou en vigueur depuis 2020 (elle ne le peut plus).
+ */
+async function nouvelleVersion(options: { enVigueur?: boolean } = {}): Promise<{ code: string; versionId: number }> {
   const code = CODE("BAREME");
   await creerProduit(technique, { code, libelle: "Produit au barème (inventé)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: IARD }, null);
-  await creerVersion(technique, code, versionBase(mode), null);
+  await creerVersion(technique, code, { ...versionBase("GARANTIES"), dateEffet: options.enVigueur ? "2020-01-01" : debutTest() }, null);
   const v = await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produit: { code } } });
   return { code, versionId: v.id };
 }
@@ -102,51 +106,74 @@ beforeAll(async () => {
 });
 
 describe("Mode BAREME de la version", () => {
-  it("la base accepte BAREME et refuse toute autre valeur", async () => {
-    const { versionId } = await nouvelleVersion("BAREME");
-    expect((await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { id: versionId } })).modeTarification).toBe("BAREME");
+  it("une version ne naît pas au barème : service et base la refusent", async () => {
+    const code = CODE("BAREME");
+    await creerProduit(technique, { code, libelle: "Produit (inventé)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: IARD }, null);
+    await expect(creerVersion(technique, code, { ...versionBase("BAREME"), dateEffet: debutTest() }, null)).rejects.toThrow(/ne se crée pas directement au barème/);
+    const { id } = await obtenirPrisma().produit.findUniqueOrThrow({ where: { code } });
     await expect(
-      obtenirPrisma().$transaction(async (tx) => {
-        await tx.$executeRawUnsafe("SET LOCAL session_replication_role = replica;");
-        await tx.$executeRawUnsafe(`UPDATE produit_versions SET mode_tarification = 'AUTRE' WHERE id = ${versionId}`);
-      }),
-    ).rejects.toThrow();
+      obtenirPrisma().$executeRawUnsafe(
+        `INSERT INTO produit_versions (produit_id, date_effet, arrondi_precision, arrondi_sens, arrondi_niveau, arrondi_composante, prorata_actif, mode_tarification, cree_par) VALUES (${id}, '${debutTest()}', 1, 'PROCHE', 'LIGNE', 'NETTE', false, 'BAREME', 'test')`,
+      ),
+    ).rejects.toThrow(/barème est publié/);
   });
 
-  it("une version BAREME sans formule est acceptée (pas de tarif unitaire)", async () => {
-    await expect(nouvelleVersion("BAREME")).resolves.toBeDefined();
-  });
-
-  it("D31/D32 : les cinq sites refusent le mode BAREME sans rien calculer (B6 les ouvrira)", async () => {
-    const { code, versionId } = await nouvelleVersion("BAREME");
+  it("la bascule exige un barème publié (service et base), puis réussit et se journalise ; la base refuse un mode inconnu", async () => {
+    const { versionId } = await nouvelleVersion();
     const prisma = obtenirPrisma();
+    await expect(basculerVersionAuBareme(technique, versionId, null)).rejects.toThrow(/Aucun barème publié/);
+    await expect(prisma.$executeRawUnsafe(`UPDATE produit_versions SET mode_tarification = 'BAREME' WHERE id = ${versionId}`)).rejects.toThrow(/barème est publié/);
+    await expect(prisma.$executeRawUnsafe(`UPDATE produit_versions SET mode_tarification = 'AUTRE' WHERE id = ${versionId}`)).rejects.toThrow();
+
+    await enregistrerBrouillonBareme(technique, versionId, documentAvecBranches(), null);
+    await expect(basculerVersionAuBareme(technique, versionId, null)).rejects.toThrow(/Aucun barème publié/); // un brouillon ne suffit pas
+    const { empreinte } = await publierBareme(technique, versionId, "Avant bascule", null);
+    await expect(basculerVersionAuBareme(commercial, versionId, null)).rejects.toBeInstanceOf(ErreurAcces);
+    await basculerVersionAuBareme(technique, versionId, "10.0.0.2");
+    expect((await prisma.produitVersion.findUniqueOrThrow({ where: { id: versionId } })).modeTarification).toBe("BAREME");
+    const journal = (await lireJournal({ action: "PARAMETRE_MODIFIE" })).lignes.find((l) => l.objet === `produit_version ${versionId}`)!;
+    expect(journal.avant).toEqual({ modeTarification: "GARANTIES" });
+    expect(journal.apres).toEqual({ modeTarification: "BAREME", baremeEmpreinte: empreinte });
+    await expect(basculerVersionAuBareme(technique, versionId, null)).rejects.toThrow(/déjà tarifée au barème/);
+  });
+
+  it("une version déjà en vigueur ne reçoit plus de barème et ne bascule pas (service et base)", async () => {
+    const { versionId } = await nouvelleVersion({ enVigueur: true });
+    await expect(enregistrerBrouillonBareme(technique, versionId, documentAvecBranches(), null)).rejects.toThrow(/déjà en vigueur/);
+    await expect(basculerVersionAuBareme(technique, versionId, null)).rejects.toThrow(/déjà en vigueur/);
+    await expect(
+      obtenirPrisma().$executeRawUnsafe(`INSERT INTO bareme_documents (version_id, statut, schema_version, contenu, empreinte, cree_par) VALUES (${versionId}, 'BROUILLON', 1, '{}', '${"a".repeat(64)}', 'test')`),
+    ).rejects.toThrow(/déjà en vigueur/);
+  });
+
+  it("D31/D32 : les sites refusent le mode BAREME avec le message du barème (H139), sans rien calculer (B6 les ouvrira)", async () => {
+    const { code, versionId } = await nouvelleVersion();
+    const prisma = obtenirPrisma();
+    await enregistrerBrouillonBareme(technique, versionId, documentAvecBranches(), null);
+    await publierBareme(technique, versionId, "Avant bascule", null);
+    await basculerVersionAuBareme(technique, versionId, null);
     const { produitId } = await prisma.produitVersion.findUniqueOrThrow({ where: { id: versionId } });
+    const demain = debutTest();
     const calcul = { type: "CALCUL" } as never;
     const composition = { type: "COMPOSITION", lignes: [{}] } as never;
-    // resoudreContexte (calcul automatique) et resoudreContexteComposition
-    await expect(resoudreContexte(prisma, code, aujourdhui(), aujourdhui(), "INDIVIDUEL")).rejects.toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
-    await expect(resoudreContexteComposition(prisma, code, aujourdhui())).rejects.toThrow(MESSAGE_COMPOSITION_IMPOSSIBLE);
+    await expect(resoudreContexte(prisma, code, demain, demain, "INDIVIDUEL")).rejects.toThrow(MESSAGE_TARIFICATION_AU_BAREME);
+    await expect(resoudreContexteComposition(prisma, code, demain)).rejects.toThrow(MESSAGE_TARIFICATION_AU_BAREME);
     // exigerModeCoherent (émission) : ni calcul figé ni composition figée ne se rattache à une version BAREME
-    expect(() => exigerModeCoherent("BAREME", calcul)).toThrow(ErreurMetier);
-    expect(() => exigerModeCoherent("BAREME", composition)).toThrow(ErreurMetier);
+    expect(() => exigerModeCoherent("BAREME", calcul)).toThrow(MESSAGE_TARIFICATION_AU_BAREME);
+    expect(() => exigerModeCoherent("BAREME", composition)).toThrow(MESSAGE_TARIFICATION_AU_BAREME);
     // variantes « en vigueur » (documents préparés avant une bascule)
-    await expect(exigerCalculAutomatiqueEnVigueur(prisma, produitId, aujourdhui())).rejects.toThrow(ErreurMetier);
-    await expect(exigerModeCoherentEnVigueur(prisma, produitId, aujourdhui(), calcul)).rejects.toThrow(ErreurMetier);
-    await expect(exigerModeCoherentEnVigueur(prisma, produitId, aujourdhui(), composition)).rejects.toThrow(ErreurMetier);
+    await expect(exigerCalculAutomatiqueEnVigueur(prisma, produitId, demain)).rejects.toThrow(MESSAGE_TARIFICATION_AU_BAREME);
+    await expect(exigerModeCoherentEnVigueur(prisma, produitId, demain, calcul)).rejects.toThrow(MESSAGE_TARIFICATION_AU_BAREME);
+    await expect(exigerModeCoherentEnVigueur(prisma, produitId, demain, composition)).rejects.toThrow(MESSAGE_TARIFICATION_AU_BAREME);
+    // Les autres modes gardent leur message.
+    expect(() => exigerModeCoherent("GARANTIES", calcul)).toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
+    expect(() => exigerModeCoherent("FORMULE", composition)).toThrow(MESSAGE_COMPOSITION_IMPOSSIBLE);
   });
 });
 
 describe("Enregistrement du brouillon", () => {
-  it("une version qui n'est pas en mode BAREME refuse le barème (service et base)", async () => {
-    const { versionId } = await nouvelleVersion("GARANTIES");
-    await expect(enregistrerBrouillonBareme(technique, versionId, documentAvecBranches(), null)).rejects.toThrow(/pas tarifée au barème/);
-    await expect(
-      obtenirPrisma().$executeRawUnsafe(`INSERT INTO bareme_documents (version_id, statut, schema_version, contenu, empreinte, cree_par) VALUES (${versionId}, 'BROUILLON', 1, '{}', '${"a".repeat(64)}', 'test')`),
-    ).rejects.toThrow(/pas en mode BAREME/);
-  });
-
   it("un document qui échoue au schéma est refusé avec des erreurs nommées, sans rien écrire", async () => {
-    const { versionId } = await nouvelleVersion("BAREME");
+    const { versionId } = await nouvelleVersion();
     const faux = documentAvecBranches();
     delete faux.garanties;
     const e = await enregistrerBrouillonBareme(technique, versionId, faux, null).catch((x) => x);
@@ -157,7 +184,7 @@ describe("Enregistrement du brouillon", () => {
   });
 
   it("un document qui échoue à verifierBareme est refusé avec le code et le message du problème", async () => {
-    const { versionId } = await nouvelleVersion("BAREME");
+    const { versionId } = await nouvelleVersion();
     const faux = documentAvecBranches();
     delete faux.tables[0].lignes[Object.keys(faux.tables[0].lignes)[0]];
     const e = (await enregistrerBrouillonBareme(technique, versionId, faux, null).catch((x) => x)) as ErreurBaremeInvalide;
@@ -168,7 +195,7 @@ describe("Enregistrement du brouillon", () => {
   });
 
   it("un seul brouillon par version : le second enregistrement le remplace, le journal garde l'avant/après", async () => {
-    const { versionId } = await nouvelleVersion("BAREME");
+    const { versionId } = await nouvelleVersion();
     const premier = await enregistrerBrouillonBareme(technique, versionId, documentAvecBranches(), null);
     const modifie = documentAvecBranches();
     modifie.jeuxEssai[0].nom = "Essai renommé (inventé)";
@@ -188,7 +215,7 @@ describe("Enregistrement du brouillon", () => {
   });
 
   it("l'empreinte est le SHA-256 du JSON canonique du contenu relu en base (l'ordre des clés de jsonb ne compte pas)", async () => {
-    const { versionId } = await nouvelleVersion("BAREME");
+    const { versionId } = await nouvelleVersion();
     const { empreinte } = await enregistrerBrouillonBareme(technique, versionId, documentAvecBranches(), null);
     const [ligne] = await lignesBareme(versionId);
     expect(empreinteBareme(ligne.contenu)).toBe(empreinte);
@@ -196,7 +223,7 @@ describe("Enregistrement du brouillon", () => {
   });
 
   it("le droit est celui du paramétrage des produits : Commercial et Comptabilité (lecture) refusés, Technique et DG admis", async () => {
-    const { versionId } = await nouvelleVersion("BAREME");
+    const { versionId } = await nouvelleVersion();
     await expect(enregistrerBrouillonBareme(commercial, versionId, documentAvecBranches(), null)).rejects.toBeInstanceOf(ErreurAcces);
     await expect(enregistrerBrouillonBareme(comptable, versionId, documentAvecBranches(), null)).rejects.toBeInstanceOf(ErreurAcces);
     await expect(rejouerLesEssaisBareme(commercial, versionId)).rejects.toBeInstanceOf(ErreurAcces);
@@ -207,7 +234,7 @@ describe("Enregistrement du brouillon", () => {
 
 describe("Publication", () => {
   it("rejoue les essais, publie, journalise le publieur et l'avant/après ; le barème publié se relit et calcule 139 420 F TTC", async () => {
-    const { versionId } = await nouvelleVersion("BAREME");
+    const { versionId } = await nouvelleVersion();
     const { empreinte: empreinteBrouillon, id } = await enregistrerBrouillonBareme(technique, versionId, documentAvecBranches(), null);
     expect(await rejouerLesEssaisBareme(technique, versionId)).toEqual([]);
 
@@ -237,14 +264,14 @@ describe("Publication", () => {
   });
 
   it("le motif est obligatoire", async () => {
-    const { versionId } = await nouvelleVersion("BAREME");
+    const { versionId } = await nouvelleVersion();
     await enregistrerBrouillonBareme(technique, versionId, documentAvecBranches(), null);
     await expect(publierBareme(technique, versionId, "   ", null)).rejects.toThrow(/motif de publication est obligatoire/);
     expect((await lignesBareme(versionId))[0].statut).toBe("BROUILLON");
   });
 
   it("un essai qui échoue refuse la publication avec l'écart ligne à ligne, et le brouillon reste un brouillon", async () => {
-    const { versionId } = await nouvelleVersion("BAREME");
+    const { versionId } = await nouvelleVersion();
     const faux = documentAvecBranches();
     faux.jeuxEssai[0].attendu.lignes[1].nette = "20961"; // vol : 20960 attendu par le calcul
     faux.jeuxEssai[0].attendu.ttc = "139421";
@@ -261,10 +288,28 @@ describe("Publication", () => {
     expect(lignes).toHaveLength(1);
     expect(lignes[0]).toMatchObject({ statut: "BROUILLON", publiePar: null });
     await expect(lireBaremePublie(obtenirPrisma(), versionId)).rejects.toThrow(MESSAGE_BAREME_NON_PUBLIE);
+
+    // Le refus est journalisé avec ses écarts (B9, correctif B3).
+    const refus = (await lireJournal({ action: "BAREME_PUBLICATION_REFUSEE" })).lignes.find((l) => l.objet === `bareme_document ${lignes[0].id}`)!;
+    expect(refus.utilisateur).toBe(technique.identifiant);
+    expect(refus.avant).toMatchObject({ versionId, statut: "BROUILLON" });
+    expect(refus.apres).toMatchObject({ motif: "Tentative", raison: "ESSAIS_EN_ECART", ecarts: e.details });
+  });
+
+  it("un barème invalide à la publication est aussi un refus journalisé", async () => {
+    const { versionId } = await nouvelleVersion();
+    const sans = documentAvecBranches();
+    sans.jeuxEssai = [];
+    await enregistrerBrouillonBareme(technique, versionId, sans, null);
+    await expect(publierBareme(technique, versionId, "Sans essai", null)).rejects.toBeInstanceOf(ErreurBaremeInvalide);
+    const [ligne] = await lignesBareme(versionId);
+    const refus = (await lireJournal({ action: "BAREME_PUBLICATION_REFUSEE" })).lignes.find((l) => l.objet === `bareme_document ${ligne.id}`)!;
+    expect(refus.apres).toMatchObject({ raison: "BAREME_INVALIDE" });
+    expect(JSON.stringify(refus.apres)).toContain("AUCUN_ESSAI");
   });
 
   it("un barème sans jeu d'essai ne se publie pas", async () => {
-    const { versionId } = await nouvelleVersion("BAREME");
+    const { versionId } = await nouvelleVersion();
     const sans = documentAvecBranches();
     sans.jeuxEssai = [];
     await enregistrerBrouillonBareme(technique, versionId, sans, null);
@@ -273,12 +318,12 @@ describe("Publication", () => {
   });
 
   it("sans brouillon, rien à publier", async () => {
-    const { versionId } = await nouvelleVersion("BAREME");
+    const { versionId } = await nouvelleVersion();
     await expect(publierBareme(technique, versionId, "motif", null)).rejects.toThrow(/pas de brouillon/);
   });
 
   it("deux publications simultanées : une seule aboutit, l'autre voit le barème déjà publié", async () => {
-    const { versionId } = await nouvelleVersion("BAREME");
+    const { versionId } = await nouvelleVersion();
     await enregistrerBrouillonBareme(technique, versionId, documentAvecBranches(), null);
     const resultats = await Promise.allSettled([publierBareme(technique, versionId, "Publication A", null), publierBareme(dg, versionId, "Publication B", null)]);
     expect(resultats.filter((r) => r.status === "fulfilled")).toHaveLength(1);
@@ -293,7 +338,7 @@ describe("Publication", () => {
 
 describe("Gel d'un barème publié (déclencheur)", () => {
   it("ni modification, ni suppression, ni nouveau brouillon, ni second publié ; le service refuse aussi", async () => {
-    const { versionId } = await nouvelleVersion("BAREME");
+    const { versionId } = await nouvelleVersion();
     await enregistrerBrouillonBareme(technique, versionId, documentAvecBranches(), null);
     const { id } = await publierBareme(technique, versionId, "Publication à geler", null);
     const prisma = obtenirPrisma();
@@ -311,7 +356,7 @@ describe("Gel d'un barème publié (déclencheur)", () => {
   });
 
   it("la base impose la cohérence d'une publication (publieur, date et motif présents) et la naissance en brouillon", async () => {
-    const { versionId } = await nouvelleVersion("BAREME");
+    const { versionId } = await nouvelleVersion();
     const sql = (statut: string, suite = "") => `INSERT INTO bareme_documents (version_id, statut, schema_version, contenu, empreinte, cree_par${suite ? ", publie_par, publie_le, motif_publication" : ""}) VALUES (${versionId}, '${statut}', 1, '{}', '${"a".repeat(64)}', 'test'${suite})`;
     await expect(obtenirPrisma().$executeRawUnsafe(sql("PUBLIE", ", 'x', now(), 'motif'"))).rejects.toThrow(/naît en brouillon/);
     await expect(obtenirPrisma().$executeRawUnsafe(sql("BROUILLON", ", 'x', now(), 'motif'"))).rejects.toThrow();
@@ -319,7 +364,7 @@ describe("Gel d'un barème publié (déclencheur)", () => {
   });
 
   it("un contenu altéré hors application (déclencheurs contournés) est détecté à la lecture : aucun calcul", async () => {
-    const { versionId } = await nouvelleVersion("BAREME");
+    const { versionId } = await nouvelleVersion();
     await enregistrerBrouillonBareme(technique, versionId, documentAvecBranches(), null);
     const { id } = await publierBareme(technique, versionId, "Publication à altérer", null);
     await obtenirPrisma().$transaction(async (tx) => {

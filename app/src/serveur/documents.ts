@@ -5,7 +5,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { Prisma } from "@/generated/prisma/client";
 
 import { calculer } from "@/domaine/calcul/calcul";
-import { composer, estComposition, tauxUnique, type DonneesCalcul } from "@/domaine/calcul/composition";
+import { composer, estComposition, estCompositionBareme, tauxUnique, type DonneesCalcul } from "@/domaine/calcul/composition";
 import { ZERO as ZERO_MONTANT } from "@/domaine/calcul/montant";
 import { libelleBranchePrincipale } from "@/domaine/calcul/parametrage";
 import type { DateIso } from "@/domaine/calcul/dates";
@@ -36,7 +36,7 @@ import { cgDeLaBranche } from "./cg-branches";
 import { niveauDuProfil } from "./droits";
 import { generateur, type ImagePng } from "./generateur";
 import { exigerDetailDesGaranties, fichiersAssocies, lireSeuilListe, modelesAssocies, versionPublieeEnVigueur, type VersionsAssociees } from "./modeles";
-import { aujourdhui, exigerCalculAutomatique, exigerComposition, MESSAGE_NON_COMPOSEE } from "./parametrage";
+import { aujourdhui, exigerBareme, exigerCalculAutomatique, exigerComposition, MESSAGE_NON_COMPOSEE } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { lireImageSociete, lireParametresSociete } from "./societe";
 import { differerEcriture, ecrituresDifferees, lireDocumentEmis, programmerReprise, stockage, tenterEcriture } from "./stockage";
@@ -130,7 +130,8 @@ export async function contexteProduit(produitId: number, versionDateEffet: Date)
 export function montantsDu(donnees: DonneesCalcul, contexte: ContexteProduit) {
   const t = (m: { toFixed(): string }) => m.toFixed();
   if (estComposition(donnees)) {
-    exigerComposition(contexte.modeTarification);
+    if (estCompositionBareme(donnees)) exigerBareme(contexte.modeTarification);
+    else exigerComposition(contexte.modeTarification);
     if (donnees.lignes.length === 0) throw new ErreurMetier(MESSAGE_NON_COMPOSEE);
     const resultat = composer(donnees);
     let base = ZERO_MONTANT;

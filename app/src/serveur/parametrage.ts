@@ -6,7 +6,7 @@ import { peutAgir, peutLire, type CodeAction } from "@/domaine/droits";
 import { calculer, VERSION_MOTEUR, type EntreeCalcul, type AssietteTaxe, type ModeAccessoire, type ResultatCalcul, type RegleArrondi } from "@/domaine/calcul/calcul";
 import { ajouterJours, aujourdhui, dateValide, type DateIso } from "@/domaine/calcul/dates";
 import { genererEcheancier, type Tranche } from "@/domaine/calcul/echeancier";
-import { composer, VERSION_COMPOSITION, estComposition, type DonneesCalcul, type EntreeComposition, type LigneComposee, type LigneDePrime } from "@/domaine/calcul/composition";
+import { composer, VERSION_COMPOSITION, estComposition, natureDuCalcul, type DonneesCalcul, type EntreeComposition, type LigneComposee, type LigneDePrime } from "@/domaine/calcul/composition";
 import { ErreurCalcul, montant, type Precision } from "@/domaine/calcul/montant";
 import {
   BRANCHES_PRINCIPALES,
@@ -17,6 +17,7 @@ import {
   estBranchePrincipaleValide,
   libelleBranchePrincipale,
   MESSAGE_COMPOSITION_IMPOSSIBLE,
+  MESSAGE_BAREME_INCOHERENT,
   MESSAGE_TARIFICATION_AU_BAREME,
   MESSAGE_TARIFICATION_PAR_GARANTIES,
   problemesTaxe,
@@ -695,7 +696,11 @@ export const MESSAGE_NON_COMPOSEE = "La prime n'est pas encore composée : la Te
  * automatique ne se rattache qu'à une version à la formule, une composition qu'à une version par garanties ET non vide (jamais de 0 silencieux).
  */
 export function exigerModeCoherent(mode: string, donnees: DonneesCalcul): void {
-  if (estComposition(donnees)) {
+  const nature = natureDuCalcul(donnees);
+  if (nature === "BAREME") {
+    exigerBareme(mode);
+    if (donnees.lignes.length === 0) throw new ErreurMetier(MESSAGE_NON_COMPOSEE);
+  } else if (nature === "COMPOSITION") {
     exigerComposition(mode);
     if (donnees.lignes.length === 0) throw new ErreurMetier(MESSAGE_NON_COMPOSEE);
   } else {
@@ -703,13 +708,29 @@ export function exigerModeCoherent(mode: string, donnees: DonneesCalcul): void {
   }
 }
 
+/** B6a, D51 : un calcul d'origine BAREME ne se rattache qu'à une version en mode BAREME (la troisième valeur de la règle « nature ↔ mode »). */
+export function exigerBareme(mode: string): void {
+  if (mode !== "BAREME") throw new ErreurMetier(MESSAGE_BAREME_INCOHERENT);
+}
+
 /** Idem pour la version EN VIGUEUR à `date` (un document préparé avant une bascule de mode ne s'émet plus : sessions 6.2a et 6.2b). */
 export async function exigerModeCoherentEnVigueur(client: Pick<Prisma.TransactionClient, "produitVersion">, produitId: number, date: DateIso, donnees: DonneesCalcul): Promise<void> {
   const versions = await client.produitVersion.findMany({ where: { produitId }, select: { dateEffet: true, modeTarification: true } });
   const enCours = enVigueur(versions.map((v) => ({ dateEffet: depuisDate(v.dateEffet), modeTarification: v.modeTarification })), date);
   if (!enCours) return;
-  if (estComposition(donnees)) exigerComposition(enCours.modeTarification);
+  const nature = natureDuCalcul(donnees);
+  if (nature === "BAREME") exigerBareme(enCours.modeTarification);
+  else if (nature === "COMPOSITION") exigerComposition(enCours.modeTarification);
   else exigerCalculAutomatique(enCours.modeTarification);
+}
+
+/** Version en vigueur d'un produit au barème (B6a) : le mode doit être BAREME, sinon refus. Les taxes sont résolues par `parametresDeCalcul` (serveur/bareme.ts). */
+export async function resoudreContexteBareme(client: ClientLecture, codeProduit: string, dateDocument: DateIso): Promise<ContexteComposition> {
+  const { produit, version } = await resoudreVersion(client, codeProduit, dateDocument);
+  if (version.modeTarification !== "BAREME") {
+    throw new ErreurMetier("Ce produit ne se tarife pas au barème : le barème n'est lu que pour une version au barème.");
+  }
+  return { produit: { id: produit.id, code: produit.code, libelle: produit.libelle }, version };
 }
 
 /** Paramètres d'une composition manuelle (session 6.2b) : le produit et sa version en vigueur, qui doit être en mode GARANTIES. Pas de taxe ici : chaque ligne a la sienne. */

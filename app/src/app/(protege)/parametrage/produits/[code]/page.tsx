@@ -16,7 +16,7 @@ import { ajouterUneVersion, renseignerBranchePrincipale } from "./actions";
 
 const LIBELLE_SENS = { PROCHE: "Au plus proche", SUPERIEUR: "Au supérieur", INFERIEUR: "À l'inférieur" } as const;
 const LIBELLE_NIVEAU = { LIGNE: "Chaque ligne", TOTAL: "Total seulement" } as const;
-const LIBELLE_MODE = { FORMULE: "Par formule (calcul automatique)", GARANTIES: "Par garanties (prime composée par la Technique, calcul automatique refusé)" } as const;
+const LIBELLE_MODE = { FORMULE: "Par formule (calcul automatique)", GARANTIES: "Par garanties (prime composée par la Technique, calcul automatique refusé)", BAREME: "Au barème (prime tirée du barème publié de la version)" } as const;
 /** Intertitre d'un bloc à l'intérieur d'une carte de formulaire. */
 const SOUS_TITRE = "mb-1 text-base font-bold text-foreground";
 const CASE = "size-4 accent-primary";

@@ -17,6 +17,7 @@
     "initialiser": "tsx --conditions=react-server scripts/initialiser.mts",
     "creer-admin": "tsx --conditions=react-server scripts/creer-admin.mts",
     "seed:dev": "tsx --conditions=react-server scripts/seed-dev.mts",
+    "demo:bareme": "tsx --conditions=react-server scripts/demo-bareme.mts",
     "ranger:dev": "tsx --conditions=react-server scripts/ranger-fichiers-dev.mts",
     "travailleur": "tsx --conditions=react-server scripts/travailleur.mts",
     "test:integration:preparer": "node scripts/preparer-base-test.mjs",

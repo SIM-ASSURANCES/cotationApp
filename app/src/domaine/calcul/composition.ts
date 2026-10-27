@@ -11,6 +11,7 @@ import {
   type ResultatCalcul,
   type ResultatLigne,
 } from "./calcul";
+import type { Saisie as SaisieBareme } from "../bareme/schema";
 import type { DateIso } from "./dates";
 import { ErreurCalcul, ZERO, arrondir, montant, DecimalMontant } from "./montant";
 
@@ -47,6 +48,12 @@ export const LONGUEUR_MAX_LIBELLE_LIGNE = 100;
 export const LONGUEUR_MAX_MOTIF_COMPOSITION = 500;
 export const LONGUEUR_MIN_MOTIF_COMPOSITION = 3;
 
+/**
+ * Barème qui a produit les lignes d'une composition d'origine BAREME (B6a, D51) : la version du produit, l'empreinte du barème publié
+ * et la saisie du Commercial, figées avec la cotation. Le barème lui-même n'est jamais relu pour une cotation émise (T10).
+ */
+export type BaremeFige = { versionId: number; empreinte: string; saisie: SaisieBareme };
+
 /** Entrée de la composition : ce qui est figé avec la cotation, à la place de l'entrée du moteur à la formule. */
 export type EntreeComposition = {
   type: "COMPOSITION";
@@ -56,6 +63,9 @@ export type EntreeComposition = {
   arrondi: RegleArrondi;
   /** Vide : cotation créée par le Commercial, pas encore composée par la Technique. */
   lignes: LigneComposee[];
+  /** Absent : composition manuelle de la Technique (GARANTIES). `BAREME` : lignes calculées par le barème publié (`bareme` est alors présent). */
+  origine?: "BAREME";
+  bareme?: BaremeFige;
 };
 
 /** Ce que contient la colonne `donnees_calcul` d'une cotation, d'une police ou d'une facture. */
@@ -63,6 +73,15 @@ export type DonneesCalcul = EntreeCalcul | EntreeComposition;
 
 export const estComposition = (donnees: unknown): donnees is EntreeComposition =>
   typeof donnees === "object" && donnees !== null && (donnees as { type?: unknown }).type === "COMPOSITION";
+
+/** Composition calculée par un barème (origine BAREME), par opposition à la composition manuelle de la Technique. */
+export const estCompositionBareme = (donnees: unknown): donnees is EntreeComposition & { origine: "BAREME"; bareme: BaremeFige } =>
+  estComposition(donnees) && donnees.origine === "BAREME" && donnees.bareme !== undefined;
+
+/** Les trois natures d'un calcul figé, et le mode de tarification de version qui les accepte (D31, D32, D48). */
+export type NatureCalcul = "AUTOMATIQUE" | "COMPOSITION" | "BAREME";
+export const natureDuCalcul = (donnees: DonneesCalcul): NatureCalcul => (estCompositionBareme(donnees) ? "BAREME" : estComposition(donnees) ? "COMPOSITION" : "AUTOMATIQUE");
+export const MODE_DE_LA_NATURE: Record<NatureCalcul, "FORMULE" | "GARANTIES" | "BAREME"> = { AUTOMATIQUE: "FORMULE", COMPOSITION: "GARANTIES", BAREME: "BAREME" };
 
 /** Composition sans aucune ligne : la prime n'est pas encore composée. */
 export const estNonComposee = (donnees: DonneesCalcul): boolean => estComposition(donnees) && donnees.lignes.length === 0;

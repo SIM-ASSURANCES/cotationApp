@@ -87,7 +87,15 @@ export const MESSAGE_BROUILLON_A_FORMULES =
  * Refus pour un produit au barème (H139, B9) : une version n'est en mode BAREME que si son barème est publié (déclencheur de la base) ;
  * ni le calcul automatique ni la composition manuelle ne le lisent tant que les cotations ne sont pas branchées (session B6).
  */
-export const MESSAGE_TARIFICATION_AU_BAREME = "Barème publié pour cette version : le calcul de la prime au barème n'est pas encore ouvert aux cotations (ni calcul automatique, ni composition manuelle)";
+export const MESSAGE_TARIFICATION_AU_BAREME =
+  "Ce produit se tarife au barème publié de sa version : la prime se calcule depuis le barème, sans calcul automatique à la formule ni composition manuelle (un risque que le barème refuse ne peut pas être assuré)";
+
+/** Un calcul figé au barème ne se rattache qu'à une version au barème (D48) : la version a changé de mode depuis. */
+export const MESSAGE_BAREME_INCOHERENT = "Ce calcul a été fait au barème, mais la version du produit n'est plus tarifée au barème : il ne peut plus être émis ni repris";
+
+/** Brouillon préparé avec des formules, que son produit a quittées pour le barème : il ne se convertit pas, on le recrée. */
+export const MESSAGE_BROUILLON_A_FORMULES_BAREME =
+  "Ce produit se tarife désormais au barème : ce brouillon, préparé avec des formules, ne peut plus être modifié ni soumis ; créez une nouvelle cotation";
 
 /** Refus de la composition manuelle pour un produit à la formule (le tarif existe : la Technique ne compose pas la prime). */
 export const MESSAGE_COMPOSITION_IMPOSSIBLE = "Ce produit se tarifie à la formule : la prime se calcule, elle ne se compose pas";
@@ -305,4 +313,16 @@ export function problemesTaxe(t: TaxeSaisie): string[] {
 /** Version en vigueur à une date : la plus récente dont la date d'effet n'est pas postérieure. */
 export function enVigueur<T extends { dateEffet: DateIso }>(versions: T[], date: DateIso): T | null {
   return versions.filter((v) => v.dateEffet <= date).sort((a, b) => (a.dateEffet < b.dateEffet ? 1 : -1))[0] ?? null;
+}
+
+/**
+ * Alerte H140 (B6a) : une version FUTURE créée « Par garanties » pour recevoir un barème, et dont le barème n'est pas publié, deviendra une
+ * version par garanties (composition manuelle) à sa date d'effet si la bascule n'a pas eu lieu. Rend ces versions, avec les jours restants.
+ */
+export function versionsProvisoiresSansBareme<V extends { id: number; dateEffet: DateIso; modeTarification: string }>(versions: V[], idsAvecBaremePublie: ReadonlySet<number>, aujourdhui: DateIso): (V & { joursRestants: number })[] {
+  const jours = (a: DateIso, b: DateIso) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+  return versions
+    .filter((v) => v.modeTarification === "GARANTIES" && v.dateEffet > aujourdhui && !idsAvecBaremePublie.has(v.id))
+    .map((v) => ({ ...v, joursRestants: jours(aujourdhui, v.dateEffet) }))
+    .sort((x, y) => x.joursRestants - y.joursRestants);
 }

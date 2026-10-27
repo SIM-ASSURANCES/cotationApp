@@ -4,6 +4,7 @@ import { ErreurBareme } from "./erreurs";
 import type { Evaluateur } from "./operandes";
 import type { Bareme, Composante, Garantie, SousJacent } from "./schema";
 import { chercher } from "./tables";
+import { montantDeTranche } from "./tranches";
 
 export type DetailComposante = { code: string; assiette: Montant; tauxApplique: Montant; prime: Montant };
 
@@ -93,7 +94,12 @@ export function calculerGarantie(b: Bareme, g: Garantie, ctx: Contexte, ev: Eval
   const acc = g.accessoires ?? b.produit.accessoires;
   let accessoires = ZERO;
   if (acc) {
-    if (acc.mode === "PAR_GARANTIE") accessoires = montant(acc.montant);
+    if (acc.mode === "PAR_TRANCHE") {
+      const effectif = ctx.saisie.effectif ?? 1;
+      const m = montantDeTranche(acc.tranches, effectif);
+      if (m === undefined) throw new ErreurBareme("EFFECTIF_HORS_TRANCHES", `${g.nom} : l'effectif ${effectif} n'est dans aucune tranche d'accessoires (de 1 à ${Math.max(...acc.tranches.map((t) => t.a))}).`, undefined, g.code);
+      accessoires = m;
+    } else if (acc.mode === "PAR_GARANTIE") accessoires = montant(acc.montant);
     else if (acc.mode === "PAR_TETE") accessoires = montant(acc.montant).mul(ctx.saisie.effectif ?? 1);
     else if (!contratCompte.fait) {
       accessoires = montant(acc.montant);

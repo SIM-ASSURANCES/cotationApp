@@ -2,12 +2,17 @@ import "server-only";
 
 import { Prisma } from "@/generated/prisma/client";
 
+import { calculerBareme, descripteurSaisie, saisieDepuisFormulaire, versComposition, type DescripteurSaisie, type Saisie as SaisieBareme } from "@/domaine/bareme";
 import { type ResultatCalcul } from "@/domaine/calcul/calcul";
 import {
   LONGUEUR_MAX_MOTIF_COMPOSITION,
   LONGUEUR_MIN_MOTIF_COMPOSITION,
   estComposition,
+  estCompositionBareme,
   estNonComposee,
+  VERSION_COMPOSITION,
+  type BaremeFige,
+  type EntreeComposition,
   problemesLignesDePrime,
   recalculer,
   saisieDesLignes,
@@ -15,10 +20,10 @@ import {
   type LigneComposee,
   type LigneDePrime,
 } from "@/domaine/calcul/composition";
-import { compositionPossible, MESSAGE_BROUILLON_A_FORMULES, problemesLibellesGaranties, type GarantieParametree } from "@/domaine/calcul/parametrage";
+import { compositionPossible, MESSAGE_BROUILLON_A_FORMULES, MESSAGE_BROUILLON_A_FORMULES_BAREME, MESSAGE_TARIFICATION_AU_BAREME, problemesLibellesGaranties, type GarantieParametree } from "@/domaine/calcul/parametrage";
 import { problemesDateEffetCotation, type DateIso } from "@/domaine/calcul/dates";
 import type { Tranche } from "@/domaine/calcul/echeancier";
-import { montant } from "@/domaine/calcul/montant";
+import { ErreurCalcul, montant } from "@/domaine/calcul/montant";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
 import {
   problemesAssures,
@@ -59,6 +64,7 @@ import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
 import type { IntermediaireDocument } from "@/domaine/intermediaires";
 
 import { journaliser, type ActeurAudit } from "./audit";
+import { lireBaremePublie, parametresDeCalcul } from "./bareme";
 import { versSouscripteur } from "./clients";
 import { niveauDuProfil } from "./droits";
 import { allouerNumero } from "./numerotation";
@@ -72,6 +78,7 @@ import {
   figerLesTaux,
   MESSAGE_NON_COMPOSEE,
   resoudreContexte,
+  resoudreContexteBareme,
   resoudreContexteComposition,
   resoudreVersion,
   type LigneDemande,
@@ -110,6 +117,13 @@ export type SaisieCotation = {
    * écrit. Toujours absent pour un produit à la formule.
    */
   composition?: LigneDePrime[];
+  /**
+   * Produit au barème (B6a, D51) : saisie du Commercial pour le moteur du barème (`bareme`, déjà typée), ou champs bruts du formulaire
+   * (`baremeBrut`, convertis ici d'après le barème publié). Absente à la modification d'un brouillon : la saisie enregistrée est reprise.
+   * Toujours absente pour un produit à la formule ou par garanties. Aucun montant ne vient de la saisie : tout vient du barème.
+   */
+  bareme?: SaisieBareme;
+  baremeBrut?: { champs: Record<string, string[]>; souscrit: string[]; effectif?: string };
   motifForcage: string | null;
   assures: Assure[];
   /**
@@ -220,7 +234,10 @@ async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: Saisie
     throw new ErreurMetier("Choisissez le régime de taxe (individuel ou groupe) : il détermine le taux de taxe.");
   }
   // Le mode de la version en vigueur choisit la voie : calcul automatique (FORMULE) ou composition par la Technique (GARANTIES, 6.2b).
-  const parGaranties = compositionPossible((await resoudreVersion(tx, saisie.codeProduit, dateDocument)).version.modeTarification);
+  const modeVersion = (await resoudreVersion(tx, saisie.codeProduit, dateDocument)).version.modeTarification;
+  if (modeVersion === "BAREME") return calculerAuBareme(tx, saisie, dateDocument, typeContrat, regimeTaxe);
+  if (saisie.bareme !== undefined || saisie.baremeBrut !== undefined) throw new ErreurMetier("Ce produit ne se tarife pas au barème : aucune saisie de barème n'est attendue.");
+  const parGaranties = compositionPossible(modeVersion);
   if (parGaranties) return calculerComposition(tx, saisie, dateDocument, typeContrat, regimeTaxe);
   if ((saisie.composition ?? []).length > 0) throw new ErreurMetier("Ce produit se tarifie à la formule : la prime se calcule, elle ne se compose pas.");
   const contexte = await resoudreContexte(tx, saisie.codeProduit, dateDocument, saisie.dateEffet, regimeTaxe);
@@ -276,6 +293,160 @@ async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: Saisie
     regimeTaxe,
     forcages,
   };
+}
+
+/** Refus du barème (dont le message de la Technique, E4) : le premier message en titre, les autres dessous. */
+const refusBareme = (refus: { message: string }[]) => new ErreurMetier(refus[0]?.message ?? "Le barème refuse cette saisie.", refus.slice(1).map((r) => r.message));
+
+type CalculBareme = { contexte: Awaited<ReturnType<typeof resoudreContexteBareme>>; entree: EntreeComposition & { origine: "BAREME"; bareme: BaremeFige } };
+
+/**
+ * Calcule la prime d'une saisie au barème PUBLIÉ de la version en vigueur à `dateDocument` : le moteur du barème rend les lignes de prime, le
+ * taux de taxe de chaque catégorie est résolu à la date d'effet, et le tout est figé avec l'empreinte du barème et la saisie
+ * (composition d'origine BAREME). `composer()` fera la taxe, l'arrondi et le TTC. Un refus du barème (contrôle E4, valeur absente d'une table,
+ * champ obligatoire…) est une `ErreurMetier` qui porte le message de la Technique.
+ */
+async function lignesAuBareme(
+  tx: Tx,
+  demande: { codeProduit: string; dateDocument: DateIso; dateEffet: DateIso; dateEcheance: DateIso; regimeTaxe: RegimeTaxe; nombreTranches: number; bareme?: SaisieBareme; baremeBrut?: SaisieCotation["baremeBrut"] },
+): Promise<CalculBareme> {
+  const contexte = await resoudreContexteBareme(tx, demande.codeProduit, demande.dateDocument);
+  const { version } = contexte;
+  const { bareme, empreinte } = await lireBaremePublie(tx, version.id);
+  const saisie = demande.bareme ?? (demande.baremeBrut ? saisieDepuisFormulaire(bareme, demande.baremeBrut) : undefined);
+  if (!saisie) throw new ErreurMetier("Renseignez les champs du barème : la prime ne peut pas être calculée sans eux.");
+  if (!Number.isInteger(demande.nombreTranches) || demande.nombreTranches < 1 || demande.nombreTranches > version.fractionnement.tranchesMax) {
+    throw new ErreurMetier(`Ce produit autorise de 1 à ${version.fractionnement.tranchesMax} tranche(s).`);
+  }
+  if (demande.nombreTranches > 1 && !montant(version.fractionnement.frais).isZero()) {
+    throw new ErreurMetier("Les frais de fractionnement de cette version ne s'ajoutent pas à une prime calculée au barème : demandez à la Technique une version sans frais.");
+  }
+  const parametres = await parametresDeCalcul(tx, version, bareme, demande.regimeTaxe, demande.dateEffet, demande.dateEcheance);
+  let calcul;
+  try {
+    calcul = calculerBareme(bareme, saisie, parametres);
+  } catch (erreur) {
+    if (erreur instanceof ErreurCalcul) throw new ErreurMetier(erreur.message);
+    throw erreur;
+  }
+  if (!calcul.ok) throw refusBareme(calcul.refus);
+  const lignes: LigneComposee[] = versComposition(calcul.lignes, parametres).lignes;
+  const entree: CalculBareme["entree"] = {
+    type: "COMPOSITION",
+    version: VERSION_COMPOSITION,
+    dateEffet: demande.dateEffet,
+    dateEcheance: demande.dateEcheance,
+    arrondi: version.arrondi,
+    lignes,
+    origine: "BAREME",
+    bareme: { versionId: version.id, empreinte, saisie },
+  };
+  return { contexte, entree };
+}
+
+/**
+ * Voie du barème (produit en mode BAREME, B6a). Pas de formule, pas de forçage (B7), PAS de secours par composition manuelle (réponse de la
+ * Technique à Q3 : refus sans exception, H133) : un risque que le barème refuse ne s'assure pas.
+ */
+async function calculerAuBareme(tx: Tx, saisie: SaisieCotation, dateDocument: DateIso, typeContrat: TypeContrat, regimeTaxe: RegimeTaxe): Promise<Calcul> {
+  if ((saisie.composition ?? []).length > 0) throw new ErreurMetier(MESSAGE_TARIFICATION_AU_BAREME);
+  if (saisie.lignes.length > 0) throw new ErreurMetier(MESSAGE_BROUILLON_A_FORMULES_BAREME);
+  const souscripteur = await souscripteurDe(tx, saisie);
+  const problemes = [
+    ...problemesSouscripteur(souscripteur, dateDocument),
+    ...problemesAssures(saisie.assures, [], dateDocument),
+    ...problemesBeneficiaires(saisie.beneficiaires ?? []),
+    ...problemesContactsUrgence(saisie.contactsUrgence ?? []),
+    ...problemesRisque(saisie.risque),
+  ];
+  if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
+  const { contexte, entree } = await lignesAuBareme(tx, {
+    codeProduit: saisie.codeProduit,
+    dateDocument,
+    dateEffet: saisie.dateEffet,
+    dateEcheance: saisie.dateEcheance,
+    regimeTaxe,
+    nombreTranches: saisie.nombreTranches,
+    bareme: saisie.bareme,
+    baremeBrut: saisie.baremeBrut,
+  });
+  const { version } = contexte;
+  const { resultat, echeancier } = executerCalcul(entree, version.fractionnement, saisie.nombreTranches);
+  const seuilValidation = await lireSeuilValidationGlobal(saisie.dateEffet);
+  return {
+    versionDateEffet: version.dateEffet,
+    validiteMois: version.cotation.validiteMois,
+    seuil: seuilValidation,
+    fractionnement: version.fractionnement,
+    produitId: contexte.produit.id,
+    entree,
+    resultat,
+    echeancier,
+    lignesStockees: [],
+    raisons: raisonsDeValidation({ forcages: [], ttc: resultat.totaux.arrondi.ttc, seuil: seuilValidation }),
+    souscripteur,
+    typeContrat,
+    regimeTaxe,
+    forcages: [],
+  };
+}
+
+/** Résultat du bouton « Calculer » : lignes de composition arrondies et totaux, rien n'est enregistré. */
+export type ResultatCalculBareme = {
+  empreinte: string;
+  lignes: { libelle: string; branche: string; montantGaranti: string | null; nette: string; accessoires: string; taxe: string; ttc: string }[];
+  totaux: { nette: string; accessoires: string; taxe: string; ttc: string };
+};
+
+/**
+ * Bouton « Calculer » de l'écran de cotation au barème : mêmes règles que l'enregistrement (c'est le même calcul), sans rien écrire.
+ * Le résultat d'un calcul n'est jamais lu par l'enregistrement : le serveur recalcule toujours depuis la saisie.
+ */
+export async function calculerCotationBareme(
+  acteur: UtilisateurCourant,
+  demande: { codeProduit: string; typeContrat: string; regimeTaxe: string; dateEffet: DateIso; dateEcheance: DateIso; nombreTranches: number; baremeBrut: NonNullable<SaisieCotation["baremeBrut"]> },
+): Promise<ResultatCalculBareme> {
+  await exigerAgir(acteur);
+  const problemesDateEffet = problemesDateEffetCotation(demande.dateEffet);
+  if (problemesDateEffet.length > 0) throw new ErreurMetier(problemesDateEffet.join(" "));
+  const regime = estRegimeTaxe(demande.regimeTaxe) ? demande.regimeTaxe : estTypeContrat(demande.typeContrat) ? REGIME_PAR_DEFAUT[demande.typeContrat] : undefined;
+  if (regime === undefined) throw new ErreurMetier("Choisissez le type de contrat et le régime de taxe avant de calculer : ils déterminent le taux de taxe.");
+  return obtenirPrisma().$transaction(async (tx) => {
+    const { entree } = await lignesAuBareme(tx, { ...demande, dateDocument: aujourdhui(), regimeTaxe: regime });
+    let resultat: ResultatCalcul;
+    try {
+      resultat = executerCalcul(entree, { repartitionPourcent: null, decalagesMois: null }, 1).resultat;
+    } catch (erreur) {
+      if (erreur instanceof ErreurCalcul) throw new ErreurMetier(erreur.message);
+      throw erreur;
+    }
+    const t = (m: { toFixed(): string }) => m.toFixed();
+    const a = resultat.totaux.arrondi;
+    return {
+      empreinte: entree.bareme.empreinte,
+      lignes: resultat.lignes.map((l, i) => ({
+        libelle: entree.lignes[i].libelle,
+        branche: entree.lignes[i].branche,
+        montantGaranti: entree.lignes[i].montantGaranti ?? null,
+        nette: t(l.arrondi.nette),
+        accessoires: t(l.arrondi.accessoires),
+        taxe: t(l.arrondi.taxe),
+        ttc: t(l.arrondi.ttc),
+      })),
+      totaux: { nette: t(a.nette), accessoires: t(a.accessoires), taxe: t(a.taxe), ttc: t(a.ttc) },
+    };
+  });
+}
+
+/**
+ * Descripteur de l'écran de cotation d'un produit au barème : blocs, champs et choix de souscription du barème PUBLIÉ de la version en
+ * vigueur aujourd'hui (jamais de taux ni de table : le Commercial ne voit pas le tarif).
+ */
+export async function lireDescripteurBareme(acteur: UtilisateurCourant, codeProduit: string): Promise<{ descripteur: DescripteurSaisie; empreinte: string }> {
+  await exigerAgir(acteur);
+  const { version } = await resoudreContexteBareme(obtenirPrisma(), codeProduit, aujourdhui());
+  const { bareme, empreinte } = await lireBaremePublie(obtenirPrisma(), version.id);
+  return { descripteur: descripteurSaisie(bareme), empreinte };
 }
 
 /** Souscripteur de la cotation : celui du client choisi (copie) ou celui saisi. */
@@ -472,12 +643,14 @@ export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, 
     const anciennes = avant.donneesCalcul as unknown as DonneesCalcul | null;
     // Un brouillon préparé avec des formules ne se convertit pas en brouillon « à composer » (H89) : l'écran de modification d'un produit passé
     // « par garanties » n'envoie plus de formule, donc ce n'est pas le contenu de la saisie qui le trahit, mais la nature de l'enregistré.
-    if (anciennes && !estComposition(anciennes) && compositionPossible((await resoudreVersion(tx, saisie.codeProduit, aujourdhui())).version.modeTarification)) {
-      throw new ErreurMetier(MESSAGE_BROUILLON_A_FORMULES);
-    }
+    const modeEnVigueur = (await resoudreVersion(tx, saisie.codeProduit, aujourdhui())).version.modeTarification;
+    if (anciennes && !estComposition(anciennes) && compositionPossible(modeEnVigueur)) throw new ErreurMetier(MESSAGE_BROUILLON_A_FORMULES);
+    if (anciennes && !estComposition(anciennes) && modeEnVigueur === "BAREME") throw new ErreurMetier(MESSAGE_BROUILLON_A_FORMULES_BAREME);
     // H98 : qu'est-ce qui change, parmi ce dont dépendent les montants composés ?
     const raisonsDeVidage: string[] = [];
-    if (anciennes && estComposition(anciennes) && anciennes.lignes.length > 0) {
+    // Une composition d'origine BAREME n'est jamais « vidée » : elle est recalculée du barème à chaque enregistrement (période, régime, saisie).
+    const deBareme = anciennes !== null && estCompositionBareme(anciennes);
+    if (anciennes && estComposition(anciennes) && !deBareme && anciennes.lignes.length > 0) {
       const regimeApres = saisie.regimeTaxe ?? (estTypeContrat(saisie.typeContrat) ? REGIME_PAR_DEFAUT[saisie.typeContrat] : undefined);
       if (depuisDate(avant.dateEffet) !== saisie.dateEffet || depuisDate(avant.dateEcheance) !== saisie.dateEcheance) raisonsDeVidage.push("la période");
       if (avant.typeContrat !== saisie.typeContrat) raisonsDeVidage.push("le type de contrat");
@@ -485,7 +658,9 @@ export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, 
     }
     const compositionVidee = raisonsDeVidage.length > 0;
     if (compositionVidee) saisie = { ...saisie, composition: [] };
-    else if (saisie.composition === undefined && anciennes && estComposition(anciennes)) saisie = { ...saisie, composition: saisieDesLignes(anciennes.lignes) };
+    else if (deBareme) {
+      if (saisie.bareme === undefined && saisie.baremeBrut === undefined) saisie = { ...saisie, bareme: anciennes.bareme.saisie };
+    } else if (saisie.composition === undefined && anciennes && estComposition(anciennes)) saisie = { ...saisie, composition: saisieDesLignes(anciennes.lignes) };
     const c = await calculerSaisie(tx, acteur, saisie, aujourdhui());
     const intermediairesAvant = (await tx.cotationIntermediaire.findMany({ where: { cotationId: id }, orderBy: { ordre: "asc" } })).map((i) => i.code);
     const intermediaires = saisie.intermediaires === undefined ? null : await resoudreIntermediaires(tx, saisie.intermediaires, intermediairesAvant);
@@ -560,7 +735,8 @@ function saisieDepuisCotation(cotation: Prisma.CotationGetPayload<{ include: { p
     dateEcheance: depuisDate(cotation.dateEcheance),
     nombreTranches: cotation.nombreTranches,
     lignes: lignes.map((l) => ({ codeFormule: l.code, effectif: l.effectif, primeForcee: l.primeForcee, accessoireValeur: l.accessoireSaisi ?? null })),
-    composition: donnees && estComposition(donnees) ? saisieDesLignes(donnees.lignes) : undefined,
+    composition: donnees && estComposition(donnees) && !estCompositionBareme(donnees) ? saisieDesLignes(donnees.lignes) : undefined,
+    ...(donnees && estCompositionBareme(donnees) ? { bareme: donnees.bareme.saisie } : {}),
     motifForcage: cotation.motifForcage,
     assures: cotation.assures as unknown as Assure[],
     beneficiaires: (cotation.beneficiaires as unknown as Beneficiaire[] | null) ?? null,
@@ -996,12 +1172,12 @@ export type DetailCotation = {
 };
 
 /** Lignes de prime d'une cotation composée, avec le taux résolu et figé de chacune ; `lignes` vide : la prime est « à composer ». */
-export type CompositionLue = { lignes: LigneComposee[]; composePar: string | null; composeLe: Date | null; motif: string | null };
+export type CompositionLue = { lignes: LigneComposee[]; composePar: string | null; composeLe: Date | null; motif: string | null; bareme: BaremeFige | null };
 
 function lireComposition(c: { donneesCalcul: unknown; compositionPar: string | null; compositionLe: Date | null; compositionMotif: string | null }): CompositionLue | null {
   const donnees = c.donneesCalcul as DonneesCalcul | null;
   if (!donnees || !estComposition(donnees)) return null;
-  return { lignes: donnees.lignes, composePar: c.compositionPar, composeLe: c.compositionLe, motif: c.compositionMotif };
+  return { lignes: donnees.lignes, composePar: c.compositionPar, composeLe: c.compositionLe, motif: c.compositionMotif, bareme: estCompositionBareme(donnees) ? donnees.bareme : null };
 }
 
 export async function lireCotation(acteur: UtilisateurCourant, id: number): Promise<DetailCotation | null> {
@@ -1052,7 +1228,7 @@ export async function lireCotation(acteur: UtilisateurCourant, id: number): Prom
     composition: lireComposition(c),
     garantiesDuProduit: (version.garanties as GarantieParametree[] | null) ?? [],
     garantiesSaisieLibre: version.garantiesSaisieLibre,
-    brouillonAFormulesSousGaranties: versionEnVigueur !== null && compositionPossible(versionEnVigueur.version.modeTarification),
+    brouillonAFormulesSousGaranties: versionEnVigueur !== null && (compositionPossible(versionEnVigueur.version.modeTarification) || versionEnVigueur.version.modeTarification === "BAREME"),
     echeancier: jsonVersTranches(c.echeancier),
     auteurId: c.auteurId,
     auteurIdentifiant: c.auteurIdentifiant,

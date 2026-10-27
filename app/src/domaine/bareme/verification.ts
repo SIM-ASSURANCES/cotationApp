@@ -1,4 +1,5 @@
 import { codeValeur } from "./contexte";
+import { problemesTranches } from "./tranches";
 import type { Probleme } from "./erreurs";
 import { DECIMAL, OPERATIONS, type Bareme, type Champ, type ConditionAffichage, type Operande } from "./schema";
 
@@ -121,6 +122,15 @@ export function verifierBareme(b: Bareme, options: { publication?: boolean } = {
     const presentes = Object.keys(t.lignes);
     for (const k of attendues.filter((x) => !presentes.includes(x))) ajoute("TABLE_INCOMPLETE", `${ou} : la ligne « ${k} » manque.`);
     for (const k of presentes.filter((x) => !attendues.includes(x))) ajoute("LIGNE_INCONNUE", `${ou} : la ligne « ${k} » ne correspond à aucune valeur des champs lus.`);
+  }
+
+  // Accessoires par tranche d'effectif
+  const accessoiresDe: [string, NonNullable<Bareme["produit"]["accessoires"]>][] = [
+    ...(b.produit.accessoires ? [["Produit", b.produit.accessoires] as [string, NonNullable<Bareme["produit"]["accessoires"]>]] : []),
+    ...b.garanties.flatMap((g) => (g.accessoires ? [[`Garantie « ${g.code} »`, g.accessoires] as [string, NonNullable<Bareme["produit"]["accessoires"]>]] : [])),
+  ];
+  for (const [ou, acc] of accessoiresDe) {
+    if (acc.mode === "PAR_TRANCHE") for (const pb of problemesTranches(acc.tranches)) ajoute(pb.code, `${ou} : accessoires par tranche : ${pb.message}.`);
   }
 
   // Garanties et composantes

@@ -62,7 +62,8 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
   // Produit tarifé par garanties (session 6.2b) : la prime se compose, elle ne se calcule pas.
   const composition = c.composition;
   const aComposer = composition !== null && composition.lignes.length === 0;
-  const peutComposer = composition !== null && peutModifier(c.statut) && peutAgir(niveauComposition);
+  // Une prime calculée au barème ne se compose pas à la main : pas de secours (Q3, réponse A), un risque refusé par le barème ne s'assure pas.
+  const peutComposer = composition !== null && composition.bareme === null && peutModifier(c.statut) && peutAgir(niveauComposition);
   const branchesActives = peutComposer ? (await listerBranches(utilisateur)).filter((b) => b.actif) : [];
   const x = c.resultat;
   const forcees = c.lignes.filter((l) => l.primeForcee !== null);
@@ -296,6 +297,12 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
             ]}
           />
         )}
+        {composition?.bareme ? (
+          <Bandeau ton="neutre" className="mt-3">
+            <strong>Prime calculée au barème publié</strong> (empreinte {composition.bareme.empreinte}). La saisie et les taux de taxe sont figés avec la cotation ; le barème n&apos;est plus relu une fois la cotation émise.
+            {peutModifier(c.statut) ? " Brouillon : la prime est recalculée du barème en vigueur à chaque enregistrement et à la soumission." : ""}
+          </Bandeau>
+        ) : null}
         {composition && !aComposer && composition.composePar ? (
           <Bandeau ton="neutre" className="mt-3">
             <strong>Prime composée par {composition.composePar}</strong>

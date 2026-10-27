@@ -9,7 +9,10 @@ import type { LigneClient } from "@/serveur/clients";
 import type { IntermediaireDocument } from "@/domaine/intermediaires";
 import type { DetailCotation } from "@/serveur/cotations";
 
+import type { DescripteurSaisie, Saisie as SaisieBareme } from "@/domaine/bareme";
+
 import { enregistrerCotation } from "./actions";
+import { ChampsBareme } from "./champs-bareme";
 
 // Tableau manuel (cellules = champs) aux classes du composant Tableau. Pas de zébrure : un champ teinté ne doit pas reposer sur un fond bg-muted.
 const ENTETE = "border-b border-border bg-muted px-3 py-2 font-medium text-neutral";
@@ -25,6 +28,7 @@ export function FormulaireCotation({
   formulesMax,
   intermediaires,
   parGaranties = false,
+  bareme,
   base,
 }: {
   produit: { code: string; libelle: string };
@@ -36,6 +40,8 @@ export function FormulaireCotation({
   intermediaires: IntermediaireDocument[];
   /** Produit en mode GARANTIES (session 6.2b) : pas de formules, la prime est composée ensuite par la Technique. */
   parGaranties?: boolean;
+  /** Produit au barème (B6a) : écran généré depuis le barème publié ; la saisie enregistrée (modification) pré-remplit les champs. */
+  bareme?: { descripteur: DescripteurSaisie; saisie?: SaisieBareme };
   base?: DetailCotation;
 }) {
   const ligneDe = (code: string) => base?.lignes.find((l) => l.code === code);
@@ -44,7 +50,7 @@ export function FormulaireCotation({
   const s = base?.souscripteur;
   return (
     // Chaque rubrique est une carte : les champs (fond teinté) reposent toujours sur le fond blanc de la carte.
-    <FormulaireAction action={enregistrerCotation} libelleBouton={base ? "Enregistrer le brouillon" : "Créer le brouillon"} className="space-y-6">
+    <FormulaireAction action={enregistrerCotation} libelleBouton={base ? "Enregistrer le brouillon" : "Créer le brouillon"} className="space-y-6" conserverSaisie>
       <input type="hidden" name="codeProduit" value={produit.code} />
       {base ? <input type="hidden" name="id" value={base.id} /> : null}
 
@@ -108,7 +114,9 @@ export function FormulaireCotation({
         </div>
       </Carte>
 
-      {parGaranties ? (
+      {bareme ? (
+        <ChampsBareme descripteur={bareme.descripteur} initiale={bareme.saisie} />
+      ) : parGaranties ? (
         <Carte titre="Prime" className="max-w-3xl">
           <p className="text-sm">
             Ce produit se tarife par garanties : la prime n&apos;est pas calculée automatiquement. Créez le brouillon (souscripteur, assurés, dates) ; la
@@ -185,7 +193,7 @@ export function FormulaireCotation({
       <Carte titre="Assurés (facultatif)">
         <LignesAssures
           // Par garanties (6.2b) : pas de formule d'assuré (la composition ne distingue pas de formules) ; la colonne n'est pas proposée.
-          formules={parGaranties ? [] : formules}
+          formules={parGaranties || bareme ? [] : formules}
           initiales={(base?.assures ?? []).map((a) => ({ nom: a.nom_prenoms, naissance: a.date_naissance, sexe: a.sexe, lien: a.lien, identification: a.num_identification ?? "", formule: a.formule }))}
         />
       </Carte>

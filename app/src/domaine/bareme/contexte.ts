@@ -164,7 +164,7 @@ export class Contexte {
     return this.bareme.garanties.some(
       (g) =>
         this.garantieSouscrite(g) &&
-        ((g.accessoires ?? this.bareme.produit.accessoires)?.mode === "PAR_TETE" || g.composantes.some((c) => c.parTete && this.composanteSouscrite(g, c.code))),
+        (["PAR_TETE", "PAR_TRANCHE"].includes((g.accessoires ?? this.bareme.produit.accessoires)?.mode ?? "") || g.composantes.some((c) => c.parTete && this.composanteSouscrite(g, c.code))),
     );
   }
 

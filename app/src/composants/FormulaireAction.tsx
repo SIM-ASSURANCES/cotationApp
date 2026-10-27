@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, type ReactNode } from "react";
+import { startTransition, useActionState, type FormEvent, type ReactNode } from "react";
 
 import { Bouton, Champ as ChampSaisie, ChampDate as ChampDateSaisie, Icone } from "@/composants/ui";
 
@@ -19,6 +19,7 @@ export function FormulaireAction({
   className = "",
   discret = false,
   pleineLargeur = false,
+  conserverSaisie = false,
 }: {
   action: ActionFormulaire;
   libelleBouton: string;
@@ -28,13 +29,26 @@ export function FormulaireAction({
   discret?: boolean;
   /** Bouton sur toute la largeur (écran de connexion). */
   pleineLargeur?: boolean;
+  /**
+   * React 19 remet à zéro un formulaire dès que son action se termine, REFUS compris : le visiteur perd sa saisie. Avec cette option,
+   * l'envoi est intercepté et l'action lancée à la main (même `FormData`, même état d'erreur) : le formulaire n'est jamais remis à
+   * zéro, seul un enregistrement réussi quitte la page (redirection). À réserver aux longs formulaires ; l'envoi par `action` reste
+   * le repli avant l'hydratation.
+   */
+  conserverSaisie?: boolean;
 }) {
   const [etat, executer, enCours] = useActionState(action, etatInitial);
+  const envoyer = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (enCours) return;
+    const donnees = new FormData(e.currentTarget, (e.nativeEvent as SubmitEvent).submitter);
+    startTransition(() => executer(donnees));
+  };
   return (
-    <form action={executer} className={className}>
+    <form action={executer} onSubmit={conserverSaisie ? envoyer : undefined} className={className}>
       {children}
       {/* `type="submit"` : le spinner suit l'envoi du formulaire (useFormStatus) ; `disabled` garde le verrou de l'ancien bouton. */}
-      <Bouton type="submit" variante={discret ? "secondaire" : "principal"} disabled={enCours} className={pleineLargeur ? "w-full" : undefined}>
+      <Bouton type="submit" variante={discret ? "secondaire" : "principal"} disabled={enCours} attente={conserverSaisie && enCours} className={pleineLargeur ? "w-full" : undefined}>
         {enCours ? "En cours…" : libelleBouton}
       </Bouton>
       {etat.erreur ? (

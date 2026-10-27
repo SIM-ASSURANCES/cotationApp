@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
 
 import { aujourdhui, ajouterJours, type DateIso } from "@/domaine/calcul/dates";
+import type { RegimeTaxe } from "@/domaine/calcul/taxes";
 import {
   VERSION_SCHEMA_BAREME,
   calculerBareme,
@@ -22,7 +23,7 @@ import {
 } from "@/domaine/bareme";
 
 import { journaliser } from "./audit";
-import { exigerEcriture, taxeEnVigueur, versVersion } from "./parametrage";
+import { exigerEcriture, taxeEnVigueur, versVersion, type VersionProduit } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { ErreurMetier, type UtilisateurCourant } from "./types";
 
@@ -104,13 +105,28 @@ function exigerPreparable(v: VersionChargee): void {
 async function parametresDEssai(tx: Client, version: VersionChargee, bareme: Bareme): Promise<ParametresBareme> {
   const lue = versVersion(version);
   const dateEffet: DateIso = lue.dateEffet > aujourdhui() ? lue.dateEffet : aujourdhui();
+  return parametresDeCalcul(tx, lue, bareme, "INDIVIDUEL", dateEffet, ajouterJours(dateEffet, 364));
+}
+
+/**
+ * Paramètres d'un calcul au barème : arrondi et prorata de la version du produit, taux de taxe de chaque catégorie du barème
+ * (régime de taxe de la cotation, en vigueur à la date d'effet). Une catégorie sans taux en vigueur arrête le calcul.
+ */
+export async function parametresDeCalcul(
+  client: Parameters<typeof taxeEnVigueur>[0],
+  version: VersionProduit,
+  bareme: Bareme,
+  regime: RegimeTaxe,
+  dateEffet: DateIso,
+  dateEcheance: DateIso,
+): Promise<ParametresBareme> {
   const categories = new Set<string>([bareme.produit.taxe, ...bareme.garanties.flatMap((g) => (g.taxe ? [g.taxe] : []))]);
   const taxes: ParametresBareme["taxes"] = {};
   for (const code of categories) {
-    const t = await taxeEnVigueur(tx, code, "INDIVIDUEL", dateEffet);
+    const t = await taxeEnVigueur(client, code, regime, dateEffet);
     taxes[code] = { tauxPourcent: t.tauxPourcent, assiette: t.assiette };
   }
-  return { arrondi: lue.arrondi, prorata: { actif: lue.prorata.actif }, dateEffet, dateEcheance: ajouterJours(dateEffet, 364), taxes };
+  return { arrondi: version.arrondi, prorata: { actif: version.prorata.actif }, dateEffet, dateEcheance, taxes };
 }
 
 const resume = (b: Bareme) => ({ garanties: b.garanties.length, champs: b.champs.length, jeuxEssai: b.jeuxEssai.length });

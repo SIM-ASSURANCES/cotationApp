@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 
-import { ErreurExpression, lireOperande, schemaBareme, VERSION_SCHEMA_BAREME, verifierBareme, type Bareme } from "@/domaine/bareme";
+import { ErreurExpression, lireOperande, lireTranches, schemaBareme, VERSION_SCHEMA_BAREME, verifierBareme, type Bareme } from "@/domaine/bareme";
 import { problemesArchiveXlsx } from "@/domaine/imports/archive";
 
 import { ErreurMetier } from "./types";
@@ -269,6 +269,23 @@ const APPLICABLE: Record<string, readonly string[]> = {
   E4: ["quand_type", "quand_gauche", "quand_comparateur", "quand_droite", "message"],
 };
 
+/** Accessoires (mode + montant) : un décimal, ou, en mode PAR_TRANCHE, la liste « 1-5: 2500; 6-10: 4000 ». */
+function lireAccessoires(modeCellule: Cellule, montantCellule: Cellule, lec: Lecture): Objet | undefined {
+  const mode = lire.texte(modeCellule, lec);
+  if (mode === "PAR_TRANCHE") {
+    const texte = lire.texte(montantCellule, lec);
+    if (texte === undefined) return { mode };
+    try {
+      return { mode, tranches: lireTranches(texte) };
+    } catch (e) {
+      lec.erreur(montantCellule.ref, "TRANCHES_ILLISIBLES", `tranches illisibles : ${e instanceof Error ? e.message : ""}`);
+      return undefined;
+    }
+  }
+  const montant = lire.decimal(montantCellule, lec);
+  return mode !== undefined || montant !== undefined ? { ...(mode !== undefined ? { mode } : {}), ...(montant !== undefined ? { montant } : {}) } : undefined;
+}
+
 function lireParametres(ws: ExcelJS.Worksheet | undefined, lec: Lecture, doc: Objet) {
   const nom = FEUILLE.lisezmoi;
   if (!ws) {
@@ -289,15 +306,15 @@ function lireParametres(ws: ExcelJS.Worksheet | undefined, lec: Lecture, doc: Ob
   if (!valeurs.has(ETIQUETTE.taxe)) lec.erreur(`${nom}!A1`, "PARAMETRE_ABSENT", `ligne « ${ETIQUETTE.taxe} » absente de la feuille ${nom}`);
   const produit: Objet = {};
   poser(produit, "taxe", lire.texte(cell(ETIQUETTE.taxe), lec));
-  const mode = lire.texte(cell(ETIQUETTE.accessoiresMode), lec);
-  const montant = lire.decimal(cell(ETIQUETTE.accessoiresMontant), lec);
-  if (mode !== undefined || montant !== undefined) produit.accessoires = { ...(mode !== undefined ? { mode } : {}), ...(montant !== undefined ? { montant } : {}) };
+  const accessoires = lireAccessoires(cell(ETIQUETTE.accessoiresMode), cell(ETIQUETTE.accessoiresMontant), lec);
+  if (accessoires) produit.accessoires = accessoires;
   doc.produit = produit;
   lec.noter("produit", cell(ETIQUETTE.taxe));
   lec.noter("produit.taxe", cell(ETIQUETTE.taxe));
   lec.noter("produit.accessoires", cell(ETIQUETTE.accessoiresMode).v !== undefined ? cell(ETIQUETTE.accessoiresMode) : cell(ETIQUETTE.accessoiresMontant));
   lec.noter("produit.accessoires.mode", cell(ETIQUETTE.accessoiresMode));
   lec.noter("produit.accessoires.montant", cell(ETIQUETTE.accessoiresMontant));
+  lec.noter("produit.accessoires.tranches", cell(ETIQUETTE.accessoiresMontant));
 }
 
 function lireBlocs(ws: ExcelJS.Worksheet | undefined, lec: Lecture, doc: Objet) {
@@ -430,10 +447,10 @@ function lireGaranties(classeur: ExcelJS.Workbook, lec: Lecture, doc: Objet) {
     lec.noter(`${base}.composantes`, l.cellule("code"));
     const si = lireCondition(l, "si", `${base}.si`, lec);
     if (si) o.si = si;
-    const mode = lire.texte(l.cellule("accessoires_mode"), lec);
-    const montant = lire.decimal(l.cellule("accessoires_montant"), lec);
-    if (mode !== undefined || montant !== undefined) o.accessoires = { ...(mode !== undefined ? { mode } : {}), ...(montant !== undefined ? { montant } : {}) };
-    lec.noter(`${base}.accessoires`, mode !== undefined ? l.cellule("accessoires_mode") : l.cellule("accessoires_montant"));
+    const accessoires = lireAccessoires(l.cellule("accessoires_mode"), l.cellule("accessoires_montant"), lec);
+    if (accessoires) o.accessoires = accessoires;
+    lec.noter(`${base}.accessoires`, l.cellule("accessoires_mode").v !== undefined ? l.cellule("accessoires_mode") : l.cellule("accessoires_montant"));
+    lec.noter(`${base}.accessoires.tranches`, l.cellule("accessoires_montant"));
     lec.noter(`${base}.accessoires.mode`, l.cellule("accessoires_mode"));
     lec.noter(`${base}.accessoires.montant`, l.cellule("accessoires_montant"));
     o.composantes = [];

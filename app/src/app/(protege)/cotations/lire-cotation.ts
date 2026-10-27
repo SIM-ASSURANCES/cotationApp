@@ -25,7 +25,18 @@ export type SaisieFormulaire = {
   risque: Risque;
   /** Codes des intermédiaires choisis (session 6.0), contrôlés par le service. */
   intermediaires: string[];
+  /** Produit au barème (B6a) : champs bruts du barème, convertis par le service d'après le barème publié. Absent pour les autres modes. */
+  baremeBrut?: { champs: Record<string, string[]>; souscrit: string[]; effectif?: string };
 };
+
+/** Champs du barème (`bareme_<code>`), cases de souscription et effectif d'un formulaire de cotation au barème ; undefined si le formulaire n'en est pas un. */
+export function lireBaremeBrut(d: FormData): SaisieFormulaire["baremeBrut"] {
+  if (d.get("baremeProduit") === null) return undefined;
+  const champs: Record<string, string[]> = {};
+  for (const cle of new Set([...d.keys()].filter((k) => k.startsWith("bareme_")))) champs[cle.slice("bareme_".length)] = d.getAll(cle).map((v) => String(v).trim());
+  const effectif = champ(d, "effectif");
+  return { champs, souscrit: d.getAll("souscrit").map((v) => String(v).trim()), ...(effectif !== "" ? { effectif } : {}) };
+}
 
 const champ = (d: FormData, nom: string) => String(d.get(nom) ?? "").trim();
 const colonne = (d: FormData, nom: string) => d.getAll(nom).map((v) => String(v).trim());
@@ -96,5 +107,6 @@ export function lireCotation(d: FormData): SaisieFormulaire {
     risque,
     // Deux listes de choix « intermédiaire » : les vides sont retirés par le serveur.
     intermediaires: d.getAll("intermediaire").map((v) => String(v)),
+    baremeBrut: lireBaremeBrut(d),
   };
 }

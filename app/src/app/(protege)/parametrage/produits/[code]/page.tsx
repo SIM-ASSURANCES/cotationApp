@@ -6,10 +6,11 @@ import { Bandeau, Carte, EnTetePage, EtatVide, LienBouton, ListeDeroulante, Tabl
 import { NIVEAUX_ARRONDI } from "@/domaine/calcul/calcul";
 import { formaterDate } from "@/domaine/calcul/dates";
 import { PRECISIONS, SENS_ARRONDI, montant } from "@/domaine/calcul/montant";
-import { MODES_TARIFICATION } from "@/domaine/calcul/parametrage";
+import { MODES_TARIFICATION, versionsProvisoiresSansBareme } from "@/domaine/calcul/parametrage";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
-import { listerBranchesPrincipales, listerVersions, type VersionProduit } from "@/serveur/parametrage";
+import { etatDuBareme } from "@/serveur/bareme";
+import { aujourdhui, listerBranchesPrincipales, listerVersions, type VersionProduit } from "@/serveur/parametrage";
 import { exigerDroit } from "@/serveur/session";
 
 import { ajouterUneVersion, renseignerBranchePrincipale } from "./actions";
@@ -84,6 +85,10 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
   }
   const { produit, versions } = donnees;
   const base = versions[0]; // la plus récente : point de départ de la nouvelle version
+  // H140 : version future créée pour recevoir un barème, sans barème publié.
+  const futures = versions.filter((v) => v.modeTarification === "GARANTIES" && v.dateEffet > aujourdhui());
+  const publiees = new Set((await Promise.all(futures.map(async (v) => ((await etatDuBareme(v.id)).publie ? v.id : null)))).filter((id): id is number => id !== null));
+  const alertesBareme = versionsProvisoiresSansBareme(versions, publiees, aujourdhui());
 
   return (
     <main className="space-y-6">
@@ -97,6 +102,17 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
           </LienBouton>
         }
       />
+
+      {alertesBareme.length > 0 ? (
+        <Bandeau ton="avertissement" role="alert" titre="Version sans barème publié">
+          {alertesBareme.map((v) => (
+            <p key={v.id}>
+              La version du {formaterDate(v.dateEffet)} (dans {v.joursRestants} jour{v.joursRestants > 1 ? "s" : ""}) n&apos;a pas de barème publié : sans bascule avant cette date, elle s&apos;appliquera « Par garanties »
+              (composition manuelle de la prime). Importez et publiez son barème, puis basculez-la, sur sa fiche ci-dessous.
+            </p>
+          ))}
+        </Bandeau>
+      ) : null}
 
       {!produit.branchePrincipale ? (
         <Bandeau ton="avertissement">

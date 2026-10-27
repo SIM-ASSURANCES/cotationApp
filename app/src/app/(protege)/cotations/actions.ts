@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 
 import type { EtatFormulaire } from "@/composants/types";
 import { avertissementNumeroContrat } from "@/domaine/cotation/police";
-import { accepter, composerLaPrime, creerBrouillon, modifierBrouillon, refuser, renvoyerEnBrouillon, soumettre, valider } from "@/serveur/cotations";
+import { accepter, calculerCotationBareme, composerLaPrime, creerBrouillon, modifierBrouillon, refuser, renvoyerEnBrouillon, soumettre, valider, type ResultatCalculBareme } from "@/serveur/cotations";
 import { emettreCotation, reediter, soumettreCp } from "@/serveur/documents";
 import { ErreurMetier, type UtilisateurCourant } from "@/serveur/types";
 
@@ -129,4 +129,20 @@ export async function accepterCotation(_e: EtatFormulaire, d: FormData): Promise
 export async function refuserCotation(_e: EtatFormulaire, d: FormData): Promise<EtatFormulaire> {
   const id = idDe(d);
   return executerAction((acteur, ip) => refuser(acteur, id, champ(d, "motif"), champ(d, "commentaire"), ip), "Refus enregistré.", `/cotations/${id}`);
+}
+
+// ---------------------------------------------------------------- Cotation au barème (B6a, D51)
+
+/** État du bouton « Calculer » : le résultat (lignes de prime et totaux), ou le refus du barème (message de la Technique et détails). */
+export type EtatCalculBareme = { erreur?: string; details?: string[]; resultat?: ResultatCalculBareme };
+
+/** Bouton « Calculer » : mêmes règles que l'enregistrement du brouillon, sans rien écrire. */
+export async function calculerLaPrimeBareme(_etat: EtatCalculBareme, donnees: FormData): Promise<EtatCalculBareme> {
+  const saisie = lireCotation(donnees);
+  if (!saisie.baremeBrut) return { erreur: "Ce formulaire n'est pas celui d'un produit au barème." };
+  const baremeBrut = saisie.baremeBrut;
+  const r = await avecMessage((acteur) =>
+    calculerCotationBareme(acteur, { codeProduit: saisie.codeProduit, typeContrat: saisie.typeContrat, regimeTaxe: saisie.regimeTaxe, dateEffet: saisie.dateEffet, dateEcheance: saisie.dateEcheance, nombreTranches: saisie.nombreTranches, baremeBrut }),
+  );
+  return r.ok ? { resultat: r.valeur } : { erreur: r.etat.erreur, ...(r.etat.details?.length ? { details: r.etat.details } : {}) };
 }

@@ -4,4 +4,6 @@ export * from "./essais";
 export * from "./schema";
 export * from "./verification";
 export * from "./canonique";
+export * from "./tranches";
 export * from "./expression";
+export * from "./formulaire";

@@ -56,7 +56,7 @@ export default async function PageUtilisateurs() {
                   {u.verrouille ? <PastilleStatut libelle="verrouillé" className="ml-2" /> : null}
                 </td>
                 <td className={CELLULE}>
-                  <FormulaireAction action={modifierUnUtilisateur} libelleBouton="Enregistrer" discret className="flex flex-wrap items-center gap-2">
+                  <FormulaireAction action={modifierUnUtilisateur} garderApresSucces libelleBouton="Enregistrer" discret className="flex flex-wrap items-center gap-2">
                     <input type="hidden" name="id" value={u.id} />
                     <div className="min-w-40 flex-1">
                       <ChampSaisie name="nom" defaultValue={u.nom} aria-label="Nom" required />

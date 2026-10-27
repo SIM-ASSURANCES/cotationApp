@@ -122,7 +122,7 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
 
       {peutAgir(niveau) ? (
         <Carte titre="Branche principale du produit" className="max-w-md">
-          <FormulaireAction action={renseignerBranchePrincipale} libelleBouton="Enregistrer la branche">
+          <FormulaireAction action={renseignerBranchePrincipale} garderApresSucces libelleBouton="Enregistrer la branche">
             <input type="hidden" name="codeProduit" value={produit.code} />
             <div className="mb-4">
               <ListeDeroulante

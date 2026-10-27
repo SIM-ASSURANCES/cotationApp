@@ -27,7 +27,7 @@ export default async function PageIntermediaires() {
             className: "min-w-64 align-top",
             // Le formulaire reste celui de l'ancien écran (mêmes champs, même action) : le `Tableau` ne fait que le loger.
             rendu: (i: LigneIntermediaire) => (
-              <FormulaireAction action={modifierUnIntermediaire} libelleBouton="Enregistrer">
+              <FormulaireAction action={modifierUnIntermediaire} garderApresSucces libelleBouton="Enregistrer">
                 <input type="hidden" name="code" value={i.code} />
                 <Champ nom="nom" libelle="Nom" valeur={i.nom} autoComplete="off" />
                 <Champ nom="role" libelle="Rôle" valeur={i.role} autoComplete="off" />

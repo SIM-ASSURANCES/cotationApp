@@ -19,7 +19,7 @@ export default async function PageDroits() {
         sousTitre="Tableau du cahier des charges (§4), modifiable. Chaque changement est journalisé. L'Admin système garde toujours la gestion des utilisateurs, pour ne jamais se verrouiller hors de l'administration."
       />
       <Carte>
-        <FormulaireAction action={enregistrerLesDroits} libelleBouton="Enregistrer les droits">
+        <FormulaireAction action={enregistrerLesDroits} garderApresSucces libelleBouton="Enregistrer les droits">
           {/* Matrice à cases de formulaire : tableau manuel aux classes du composant Tableau (région défilante, en-tête collant). */}
           <div tabIndex={0} role="region" aria-label="Droits par profil" className="relative mb-4 max-h-[calc(100vh-18rem)] overflow-auto rounded-md border border-border shadow-elevated">
             <table className="w-full min-w-[60rem] border-separate border-spacing-0 text-sm">

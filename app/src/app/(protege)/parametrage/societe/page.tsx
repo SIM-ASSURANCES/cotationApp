@@ -69,7 +69,7 @@ export default async function PageSociete() {
       </p>
 
       <Carte titre="Identité et mentions des documents">
-        <FormulaireAction action={enregistrerLaSociete} libelleBouton={ecriture ? "Enregistrer" : "Consultation seule"}>
+        <FormulaireAction action={enregistrerLaSociete} garderApresSucces libelleBouton={ecriture ? "Enregistrer" : "Consultation seule"}>
           <fieldset disabled={!ecriture} className="grid min-w-0 gap-x-6 sm:grid-cols-2">
             <Champ nom="raison_sociale" libelle="Raison sociale" valeur={s.raison_sociale} autoComplete="off" />
             <Champ nom="forme" libelle="Forme juridique" requis={false} valeur={s.forme} autoComplete="off" />
@@ -144,7 +144,7 @@ export default async function PageSociete() {
         }
       >
         {ecriture ? (
-          <FormulaireAction action={enregistrerLeFormatPolice} libelleBouton="Enregistrer le format">
+          <FormulaireAction action={enregistrerLeFormatPolice} garderApresSucces libelleBouton="Enregistrer le format">
             <div className="mb-4 grid gap-x-6 gap-y-4 sm:grid-cols-3">
               <div className="sm:col-span-2">
                 <Champ nom="format" libelle="Expression régulière (commence par ^, finit par $)" valeur={lu.formatPolice.enVigueur} autoComplete="off" />
@@ -175,7 +175,7 @@ export default async function PageSociete() {
           <Tableau colonnes={colonnesFormats} lignes={lu.formats} cleLigne={(x) => x.prefixe} legende="Formats de numéro des documents" />
         </div>
         {ecriture ? (
-          <FormulaireAction action={enregistrerLeFormatNumero} libelleBouton="Enregistrer le format">
+          <FormulaireAction action={enregistrerLeFormatNumero} garderApresSucces libelleBouton="Enregistrer le format">
             <div className="mb-4 grid gap-x-6 gap-y-4 sm:grid-cols-3">
               <ListeDeroulante label="Document" name="prefixe" required invite="— Choisir —" options={lu.formats.map((x) => ({ valeur: x.prefixe, libelle: x.libelle }))} />
               <Champ nom="format" libelle="Format (ex. FAC-{AAAA}-{MM}-{NNNN})" autoComplete="off" />
@@ -195,7 +195,7 @@ export default async function PageSociete() {
         }
       >
         {ecriture ? (
-          <FormulaireAction action={enregistrerLeSeuilValidation} libelleBouton="Enregistrer le seuil">
+          <FormulaireAction action={enregistrerLeSeuilValidation} garderApresSucces libelleBouton="Enregistrer le seuil">
             <div className="mb-4 grid gap-x-6 gap-y-4 sm:grid-cols-3">
               <div className="sm:col-span-2">
                 <Champ nom="seuil" libelle="Seuil de validation (FCFA TTC)" valeur={formaterMontant(montant(lu.seuilValidation.enVigueur))} autoComplete="off" />

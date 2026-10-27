@@ -259,7 +259,7 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
           titre={x.composition?.composePar ? "Recomposer la prime" : x.type === "RENOUVELLEMENT" ? "Confirmer la composition" : "Composer la prime"}
           description="Saisissez ou adaptez, pour chaque garantie souscrite (et chaque surprime ou majoration), la prime nette et les accessoires. Le module résout le taux de taxe de la branche de chaque ligne (régime de taxe de la cotation, date d'effet de la facture), calcule la taxe et totalise. Le motif est obligatoire (3 à 500 caractères) et la composition est journalisée. Vous ne pourrez pas valider cette facture si elle dépasse le seuil (séparation des tâches)."
         >
-          <FormulaireAction action={composerLaPrimeFacture} libelleBouton={x.composition?.composePar ? "Enregistrer la composition" : x.type === "RENOUVELLEMENT" ? "Confirmer la composition" : "Enregistrer la composition"}>
+          <FormulaireAction action={composerLaPrimeFacture} garderApresSucces libelleBouton={x.composition?.composePar ? "Enregistrer la composition" : x.type === "RENOUVELLEMENT" ? "Confirmer la composition" : "Enregistrer la composition"}>
             {cache}
             <div className="mb-4">
               <LignesComposition
@@ -290,7 +290,7 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
       <div className="grid max-w-3xl gap-6">
         {x.actions.modifier ? (
           <Carte titre="Modifier le brouillon">
-            <FormulaireAction action={modifierLaFacture} libelleBouton="Enregistrer" discret>
+            <FormulaireAction action={modifierLaFacture} garderApresSucces libelleBouton="Enregistrer" discret>
               {cache}
               <div className="mb-3 grid gap-3 sm:grid-cols-2">
                 <ChampSaisie label="« Envoyé à » : destinataire" name="envoyeNom" defaultValue={c.envoyeA?.nom ?? ""} />

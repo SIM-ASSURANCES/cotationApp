@@ -26,7 +26,7 @@ export default async function PageBranches() {
             className: "min-w-64 align-top",
             // Le formulaire reste celui de l'ancien écran (mêmes champs, même action) : le `Tableau` ne fait que le loger.
             rendu: (b: LigneBranche) => (
-              <FormulaireAction action={modifierUneBranche} libelleBouton="Enregistrer">
+              <FormulaireAction action={modifierUneBranche} garderApresSucces libelleBouton="Enregistrer">
                 <input type="hidden" name="code" value={b.code} />
                 <Champ nom="libelle" libelle="Libellé" valeur={b.libelle} autoComplete="off" />
                 <label className="mb-4 flex min-h-10 items-center gap-2 text-sm font-medium lg:min-h-0">

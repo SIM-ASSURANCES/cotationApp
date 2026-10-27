@@ -467,7 +467,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           titre={aComposer ? "Composer la prime" : "Recomposer la prime"}
           description="Saisissez, pour chaque garantie souscrite (et chaque surprime ou majoration, qui est une ligne comme une autre), la prime nette et les accessoires calculés dans le simulateur de la Technique. Le module résout le taux de taxe de la branche de chaque ligne (régime de taxe de la cotation, date d'effet), calcule la taxe, arrondit selon la règle du produit et totalise. Aucun prorata n'est appliqué : les montants sont ceux de la période du contrat. Le motif est obligatoire et la composition est journalisée ; vous ne pourrez pas valider cette cotation."
         >
-          <FormulaireAction action={composerPrime} libelleBouton={aComposer ? "Enregistrer la composition" : "Recomposer la prime"}>
+          <FormulaireAction action={composerPrime} garderApresSucces libelleBouton={aComposer ? "Enregistrer la composition" : "Recomposer la prime"}>
             <input type="hidden" name="id" value={c.id} />
             <div className="mb-4">
               <LignesComposition

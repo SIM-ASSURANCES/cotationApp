@@ -64,6 +64,14 @@ export function libelleBranchePrincipale(code: string | null | undefined): strin
 export const MODES_TARIFICATION = ["FORMULE", "GARANTIES", "BAREME"] as const;
 export type ModeTarification = (typeof MODES_TARIFICATION)[number];
 
+/**
+ * Tableau des formules d'une version, sur la page du produit (B6b) : une version au barème n'a pas de formule (la prime vient du barème),
+ * une version « Par garanties » n'en a pas non plus, sauf héritage d'avant le changement de mode ; seule une version à la formule affiche
+ * toujours son tableau, même vide (« Aucune formule. » est alors une anomalie à voir).
+ */
+export const afficheTableauFormules = (v: { modeTarification: ModeTarification; formules: readonly unknown[] }): boolean =>
+  v.modeTarification === "BAREME" ? false : v.modeTarification === "GARANTIES" ? v.formules.length > 0 : true;
+
 /** Libellé court d'un mode de tarification (portefeuille) : le mode s'écrit toujours, le ton ne porte pas le sens seul. */
 export const LIBELLE_MODE_COURT: Record<ModeTarification, string> = { FORMULE: "Par formule", GARANTIES: "Par garanties", BAREME: "Au barème" };
 

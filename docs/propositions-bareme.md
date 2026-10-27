@@ -321,3 +321,44 @@ Ordre retenu : **B2 → B3 → B9 (import Excel) → B6 → (B4, B5) → (B7, B8
 10. ✅ **Q10 — tranchée de fait en B2** : boucles à graine fixe sous vitest, pas de dépendance `fast-check`.
 11. **Q11** : blocs de champs réutilisables entre produits (socle, 9.3) : utiles, ou un bloc par produit (proposé pour B4) ?
 12. **Q12** : renouvellement d'une police au barème : recalcul au tarif de l'année N+1 confirmé ? Forçages non reportés ?
+
+## 11. Import en masse des adhérents sur un produit au barème (B6b, options à trancher)
+
+> Écrit le 27/10/2026, **sans code**, avant la suite de la session B6b. Branche `bareme-b6b-documents` (créée depuis `bareme-b6a-cotation`, qui n'est pas encore fusionnée dans `main` : B6b en dépend).
+
+### 11.1 Ce que le code fait aujourd'hui (vérifié)
+
+- L'import en masse (CDC §13, D24) ne sert **pas à tarifer** : il incorpore une liste d'adhérents dans une police mère de groupe (une seule nouvelle version de la liste) et le travailleur émet un **certificat d'adhésion par ligne**. Colonnes : numéro de certificat, nom et prénoms, date de naissance, sexe, lien, pièce d'identité, **formule**. Aucun montant n'est lu ni calculé.
+- Une police au barème est une `COMPOSITION` d'origine `BAREME` (D51). L'import teste `estComposition(police.donneesCalcul)` : il la traite donc **déjà comme une police composée (H100)** : colonne « formule » facultative et **refusée si remplie**. Le contrôle des lignes fonctionne.
+- Le **fichier modèle** en revanche est faux pour un produit au barème : il décide `parGaranties` par `modeTarification === "GARANTIES"`, donc pour `BAREME` il rend la colonne « formule » obligatoire, avec une formule d'exemple et une liste déroulante vide ; la feuille d'aide ne dit rien du barème. C'est le défaut à corriger dans tous les cas.
+- Rien ne relie le nombre d'adhérents incorporés à l'**effectif** figé dans la saisie du barème (`bareme.saisie.effectif`). Or un barème dont l'accessoire est par tête ou par tranche (`PAR_TETE`, `PAR_TRANCHE`) ou dont une composante est par tête tarife un effectif donné : des certificats au-delà de cet effectif ne sont couverts par aucune prime.
+- Le recalcul d'une prime après incorporation est l'**avenant d'incorporation** (D45 : pas de prorata automatique), refusé pour une police au barème jusqu'à B8 (H143).
+
+### 11.2 Options
+
+| | Option 1 — Refus explicite | Option 2 — Prise en charge « liste seule » | Option 3 — Prise en charge avec recalcul |
+|---|---|---|---|
+| Principe | l'import est refusé sur une police au barème, avec un message qui renvoie à l'avenant (B8) | comme H100 : on incorpore et on émet les certificats, **la prime de la police ne bouge pas** | chaque ligne porte les champs du barème ; l'import calcule une prime additionnelle (avenant) |
+| Champs par adhérent | sans objet | les six colonnes actuelles ; **« formule » vide** (refusée si remplie) ; aucune colonne de barème | colonnes d'identité **plus** une colonne par champ du barème (`risque.<code>`) ; ou un fichier par risque |
+| Recalcul | aucun | aucun (la prime figée reste celle de la cotation, T10) | oui, par `calculerBareme`, un résultat par ligne ou par groupe de lignes |
+| Effectif | sans objet | **à décider** : 2a aucun contrôle ; 2b avertissement si le total d'adhérents dépasse l'effectif figé ; 2c refus dans ce cas, seulement si le barème tarife par effectif | calculé : l'effectif est le nombre de lignes |
+| Avantages | aucun risque d'incohérence ; trivial | les certificats d'un contrat de groupe au barème sortent (c'est tout l'usage de l'import) ; réutilise H100 ; petit changement (modèle, aide, contrôle de l'effectif) | prime exacte à l'incorporation |
+| Limites | **bloque les certificats** des polices de groupe au barème, donc le groupe ne peut pas passer au barème ; contournement impossible | la prime ne suit pas les arrivées (c'est l'avenant d'incorporation qui la corrige, B8) ; 2a laisse des assurés sans prime | un adhérent n'a pas de « risque » au sens du barème (local, capitaux…) : le modèle de données ne s'y prête pas ; dépend de B8 (avenant) ; fichier de 5 000 lignes × champs du barème ; très lourd |
+| Risque | produit au barème inutilisable en groupe | assurés couverts hors prime en 2a | décision métier non prise (barème par adhérent ou par groupe ?) ; refonte du fichier |
+| Effort | faible (un refus + le modèle) | faible à moyen (modèle, aide, contrôle 2b ou 2c, tests) | élevé, après B8 |
+
+### 11.3 Recommandation
+
+**Option 2, variante 2c, restreinte aux barèmes qui tarifent par effectif.**
+
+1. Un produit au barème prend l'import en charge **comme une police composée** (colonne « formule » vide) : c'est ce que le code fait déjà ; on corrige le fichier modèle et sa feuille d'aide (« police tarifée au barème : colonne formule vide ; le nombre d'adhérents est limité à l'effectif de la cotation : N »).
+2. Si le descripteur du barème demande un effectif (accessoire ou composante par tête ou par tranche), l'import **refuse** les lignes qui feraient dépasser l'effectif figé de la cotation, avec un message qui renvoie à l'avenant d'incorporation (qui recalculera la prime, B8). Sinon (barème sans effectif), aucun contrôle.
+3. L'option 1 est écartée (elle interdit le groupe au barème). L'option 3 est reportée : elle suppose B8 et une décision métier sur le « risque » d'un adhérent.
+
+Variante moins stricte si la Direction Technique préfère ne pas bloquer : **2b** (avertissement affiché sur le lot contrôlé, sans blocage), au prix d'assurés temporairement sans prime.
+
+### 11.4 Questions pour Thierry
+
+1. Option 1, 2 (et laquelle de 2a, 2b, 2c) ou 3 ? Recommandation : **2c**.
+2. Pour 2c : le plafond est-il l'effectif **saisi à la cotation** (recommandé, déjà figé), ou un autre nombre paramétré par la Technique ?
+3. L'ordre de B6b (balises `risque.<code>`, portefeuille, tableau des formules, message H145) ne dépend pas de cette réponse : il peut démarrer sans attendre, seul l'import en masse attend.

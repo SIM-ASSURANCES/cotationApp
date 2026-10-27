@@ -57,7 +57,7 @@ export default async function PageRelances(props: PageProps<"/parametrage/produi
 
       {ecriture ? (
         <Carte titre="Nouveaux paramètres">
-          <FormulaireAction action={enregistrerLesRelances} libelleBouton="Enregistrer">
+          <FormulaireAction action={enregistrerLesRelances} garderApresSucces libelleBouton="Enregistrer">
             <input type="hidden" name="produit" value={lu.produitCode} />
             <div className="mb-4 grid gap-x-6 gap-y-4 sm:grid-cols-2">
               <Champ label="Délai de l'avis d'échéance (jours avant l'échéance)" name="delaiAvisJours" defaultValue={p.delaiAvisJours} inputMode="numeric" required />

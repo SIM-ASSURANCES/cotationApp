@@ -148,7 +148,7 @@ export default async function PageModeles() {
             <p className="mb-4 text-sm text-muted-foreground">Valeur par défaut du CDC : 10.</p>
           )}
           {peutAgir(parametrage) ? (
-            <FormulaireAction action={enregistrerLeSeuil} libelleBouton="Enregistrer le seuil">
+            <FormulaireAction action={enregistrerLeSeuil} garderApresSucces libelleBouton="Enregistrer le seuil">
               <Champ nom="seuil" libelle="Nouveau seuil (nombre de lignes)" autoComplete="off" />
               <ChampDate nom="dateEffet" libelle="À partir du (JJ/MM/AAAA, jamais dans le passé)" valeur={aujourdhui()} min={aujourdhui()} />
             </FormulaireAction>

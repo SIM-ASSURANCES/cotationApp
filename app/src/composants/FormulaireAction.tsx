@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, type FormEvent, type ReactNode } from "react";
+import { startTransition, useActionState, useRef, type FormEvent, type ReactNode } from "react";
 
 import { Bouton, Champ as ChampSaisie, ChampDate as ChampDateSaisie, Icone } from "@/composants/ui";
 
@@ -19,7 +19,7 @@ export function FormulaireAction({
   className = "",
   discret = false,
   pleineLargeur = false,
-  conserverSaisie = false,
+  garderApresSucces = false,
 }: {
   action: ActionFormulaire;
   libelleBouton: string;
@@ -30,14 +30,23 @@ export function FormulaireAction({
   /** Bouton sur toute la largeur (écran de connexion). */
   pleineLargeur?: boolean;
   /**
-   * React 19 remet à zéro un formulaire dès que son action se termine, REFUS compris : le visiteur perd sa saisie. Avec cette option,
-   * l'envoi est intercepté et l'action lancée à la main (même `FormData`, même état d'erreur) : le formulaire n'est jamais remis à
-   * zéro, seul un enregistrement réussi quitte la page (redirection). À réserver aux longs formulaires ; l'envoi par `action` reste
-   * le repli avant l'hydratation.
+   * React 19 remet à zéro un formulaire dès que son action se termine, REFUS compris : le visiteur perdait sa saisie. Ici l'envoi est
+   * toujours intercepté et l'action lancée à la main (même `FormData`, même état d'erreur) : un REFUS (validation, règle métier, droit)
+   * ne touche jamais à la saisie. Après un SUCCÈS, le formulaire est remis à zéro (création : prêt pour la saisie suivante ; une
+   * redirection quitte la page avant). `garderApresSucces` : formulaire de MODIFICATION, qui garde les valeurs enregistrées.
+   * Seuls les champs mot de passe sont vidés après un refus (jamais conservés à l'écran). L'envoi par `action` reste le repli avant
+   * l'hydratation.
    */
-  conserverSaisie?: boolean;
+  garderApresSucces?: boolean;
 }) {
-  const [etat, executer, enCours] = useActionState(action, etatInitial);
+  const formulaire = useRef<HTMLFormElement>(null);
+  const [etat, executer, enCours] = useActionState(async (precedent: EtatFormulaire, donnees: FormData) => {
+    const resultat = await action(precedent, donnees);
+    if (resultat.erreur) {
+      for (const el of formulaire.current?.querySelectorAll<HTMLInputElement>('input[type="password"]') ?? []) el.value = "";
+    } else if (resultat.succes && !garderApresSucces) formulaire.current?.reset();
+    return resultat;
+  }, etatInitial);
   const envoyer = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (enCours) return;
@@ -45,10 +54,10 @@ export function FormulaireAction({
     startTransition(() => executer(donnees));
   };
   return (
-    <form action={executer} onSubmit={conserverSaisie ? envoyer : undefined} className={className}>
+    <form ref={formulaire} action={executer} onSubmit={envoyer} className={className}>
       {children}
       {/* `type="submit"` : le spinner suit l'envoi du formulaire (useFormStatus) ; `disabled` garde le verrou de l'ancien bouton. */}
-      <Bouton type="submit" variante={discret ? "secondaire" : "principal"} disabled={enCours} attente={conserverSaisie && enCours} className={pleineLargeur ? "w-full" : undefined}>
+      <Bouton type="submit" variante={discret ? "secondaire" : "principal"} disabled={enCours} attente={enCours} className={pleineLargeur ? "w-full" : undefined}>
         {enCours ? "En cours…" : libelleBouton}
       </Bouton>
       {etat.erreur ? (

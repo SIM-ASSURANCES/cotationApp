@@ -4,7 +4,8 @@ import ExcelJS from "exceljs";
 
 import { Prisma } from "@/generated/prisma/client";
 
-import { estComposition, type DonneesCalcul } from "@/domaine/calcul/composition";
+import { baremeTarifeParEffectif } from "@/domaine/bareme";
+import { estComposition, estCompositionBareme, type BaremeFige, type DonneesCalcul } from "@/domaine/calcul/composition";
 import { dateValide, type DateIso } from "@/domaine/calcul/dates";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
 import { normaliserNumeroPolice, numeroCertificatParDefaut } from "@/domaine/cotation/police";
@@ -27,6 +28,7 @@ import {
 import { problemesArchiveXlsx } from "@/domaine/imports/archive";
 
 import { incorporerDansTransaction } from "./adherents";
+import { lireBaremePublie } from "./bareme";
 import { journaliser, type ActeurAudit } from "./audit";
 import { obtenirConfig } from "./config";
 import { emettreCertificat } from "./documents";
@@ -71,15 +73,26 @@ async function formulesEnVigueur(produitCode: string) {
     include: { formules: { orderBy: { code: "asc" } } },
   });
   if (!version) throw new ErreurMetier(`Le produit ${produitCode} n'a pas de version en vigueur.`);
-  return { produit, parGaranties: version.modeTarification === "GARANTIES", formules: version.formules.map((f) => ({ code: f.code, libelle: f.libelle, ageMin: f.ageMin, ageMax: f.ageMax })) };
+  // Barème (B6b) : la police est une composition, la colonne « formule » reste vide ; l'effectif maximal vient de la cotation, il n'est pas connu ici.
+  return { produit, parGaranties: version.modeTarification === "GARANTIES" || version.modeTarification === "BAREME", auBareme: version.modeTarification === "BAREME", formules: version.formules.map((f) => ({ code: f.code, libelle: f.libelle, ageMin: f.ageMin, ageMax: f.ageMax })) };
 }
 
 const ENTETE = { font: { bold: true, color: { argb: "FFFFFFFF" } }, fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F3A68" } } } as const;
 
 /** Fichier modèle .xlsx d'un produit : colonnes du dictionnaire, une ligne d'exemple inventée, une feuille d'aide. */
-export async function modeleImport(acteur: UtilisateurCourant, produitCode: string): Promise<{ nom: string; contenu: Uint8Array }> {
+export async function modeleImport(acteur: UtilisateurCourant, produitCode: string, policeId?: number): Promise<{ nom: string; contenu: Uint8Array }> {
   await exiger(acteur, false);
-  const { produit, formules, parGaranties } = await formulesEnVigueur(produitCode);
+  const { produit, formules, parGaranties, auBareme } = await formulesEnVigueur(produitCode);
+  // Police connue (lien de sa page) : l'effectif maximal de sa cotation est indiqué dans l'aide.
+  let effectif: { maximal: number; actifs: number } | null = null;
+  if (auBareme && policeId !== undefined) {
+    const police = await obtenirPrisma().police.findUnique({ where: { id: policeId }, select: { produitCode: true, donneesCalcul: true, assures: true } });
+    const donnees = police?.donneesCalcul as unknown as DonneesCalcul | undefined;
+    if (police && police.produitCode === produit.code && estCompositionBareme(donnees)) {
+      const maximal = await effectifMaximal(obtenirPrisma(), donnees.bareme);
+      if (maximal !== undefined) effectif = { maximal, actifs: (police.assures as unknown as Assure[]).length };
+    }
+  }
   const classeur = new ExcelJS.Workbook();
   classeur.creator = "SIM Documents";
   const feuille = classeur.addWorksheet("Adhérents");
@@ -105,7 +118,9 @@ export async function modeleImport(acteur: UtilisateurCourant, produitCode: stri
   const t = aide.addRow(["Colonne", "Obligatoire", "Contenu", "Format"]);
   t.eachCell((c) => Object.assign(c, { font: ENTETE.font, fill: ENTETE.fill }));
   for (const c of COLONNES_IMPORT) aide.addRow([c.cle, c.obligatoire && !(parGaranties && c.cle === "formule") ? "oui" : "non", c.libelle, c.format]);
-  if (parGaranties) aide.addRow(["", "", "Produit tarifé par garanties : pour une police dont la prime a été composée, la colonne « formule » reste VIDE (une formule saisie serait refusée). Elle n'est obligatoire que pour une police préparée avec des formules avant le changement de mode du produit."]);
+  if (auBareme) aide.addRow(["", "", "Produit tarifé au barème : la colonne « formule » reste VIDE (une formule saisie serait refusée). Si le barème tarife par effectif (accessoire par tête ou par tranche, composante par tête), le nombre d'adhérents actifs de la police est limité à l'effectif saisi à la cotation ; les lignes en trop sont refusées et passent par un avenant d'incorporation, qui recalculera la prime."]);
+  if (effectif) aide.addRow(["", "", `Effectif maximal de cette police : ${effectif.maximal} assurés ; ${effectif.actifs} sont déjà actifs, il reste ${Math.max(0, effectif.maximal - effectif.actifs)} places.`]);
+  if (!auBareme && parGaranties) aide.addRow(["", "", "Produit tarifé par garanties : pour une police dont la prime a été composée, la colonne « formule » reste VIDE (une formule saisie serait refusée). Elle n'est obligatoire que pour une police préparée avec des formules avant le changement de mode du produit."]);
   aide.addRow([]);
   const tf = aide.addRow(["Formule", "Âges", "Libellé"]);
   tf.eachCell((c) => Object.assign(c, { font: ENTETE.font, fill: ENTETE.fill }));
@@ -217,6 +232,13 @@ export async function lireFichierImport(nom: string, contenu: Uint8Array, option
 
 type PoliceAvecVersion = Prisma.PoliceGetPayload<{ include: { cotation: { select: { produitId: true; versionDateEffet: true } } } }>;
 
+/** Effectif figé dans la cotation, si le barème de la police tarife par effectif (D52) ; sinon aucun plafond. */
+async function effectifMaximal(client: Prisma.TransactionClient, bareme: BaremeFige): Promise<number | undefined> {
+  if (bareme.saisie.effectif === undefined) return undefined;
+  const publie = await lireBaremePublie(client, bareme.versionId);
+  return baremeTarifeParEffectif(publie.bareme) ? bareme.saisie.effectif : undefined;
+}
+
 async function contexteControle(police: PoliceAvecVersion, dateEffet: DateIso, numeros: string[], lotEnCours: number | null = null, client: Prisma.TransactionClient = obtenirPrisma()): Promise<ContexteControle> {
   const version = await client.produitVersion.findUniqueOrThrow({
     where: { produitId_dateEffet: { produitId: police.cotation.produitId, dateEffet: police.cotation.versionDateEffet } },
@@ -237,6 +259,8 @@ async function contexteControle(police: PoliceAvecVersion, dateEffet: DateIso, n
       select: { donnees: true },
     }),
   ]);
+  const donnees = police.donneesCalcul as unknown as DonneesCalcul;
+  const effectifMax = estCompositionBareme(donnees) ? await effectifMaximal(client, donnees.bareme) : undefined;
   const reserves = lignes.map((l) => (l.donnees as unknown as DonneesLigne).numero_certificat).filter((n) => uniques.includes(n));
   return {
     dateEffet,
@@ -244,6 +268,7 @@ async function contexteControle(police: PoliceAvecVersion, dateEffet: DateIso, n
     formulesProduit: new Map(version.formules.map((f) => [f.code, { ageMin: f.ageMin, ageMax: f.ageMax }])),
     formulesPolice: police.formulesRetenues as unknown as string[],
     sansFormule: estComposition(police.donneesCalcul as unknown as DonneesCalcul),
+    ...(effectifMax !== undefined ? { effectifMax } : {}),
     adherents,
     numerosPris: new Set([...polices, ...documents].map((x) => x.numero).concat(reserves)),
     numeroPolice: police.numero,

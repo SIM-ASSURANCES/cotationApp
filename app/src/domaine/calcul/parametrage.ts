@@ -64,6 +64,17 @@ export function libelleBranchePrincipale(code: string | null | undefined): strin
 export const MODES_TARIFICATION = ["FORMULE", "GARANTIES", "BAREME"] as const;
 export type ModeTarification = (typeof MODES_TARIFICATION)[number];
 
+/**
+ * Tableau des formules d'une version, sur la page du produit (B6b) : une version au barème n'a pas de formule (la prime vient du barème),
+ * une version « Par garanties » n'en a pas non plus, sauf héritage d'avant le changement de mode ; seule une version à la formule affiche
+ * toujours son tableau, même vide (« Aucune formule. » est alors une anomalie à voir).
+ */
+export const afficheTableauFormules = (v: { modeTarification: ModeTarification; formules: readonly unknown[] }): boolean =>
+  v.modeTarification === "BAREME" ? false : v.modeTarification === "GARANTIES" ? v.formules.length > 0 : true;
+
+/** Libellé court d'un mode de tarification (portefeuille) : le mode s'écrit toujours, le ton ne porte pas le sens seul. */
+export const LIBELLE_MODE_COURT: Record<ModeTarification, string> = { FORMULE: "Par formule", GARANTIES: "Par garanties", BAREME: "Au barème" };
+
 /** Refus du calcul automatique d'un produit tarifé par garanties. Texte fixé par la Technique et Thierry (6.2a). */
 export const MESSAGE_TARIFICATION_PAR_GARANTIES = "Ce produit se tarifie par garanties : la prime doit être composée par la Technique (composition manuelle)";
 
@@ -96,6 +107,13 @@ export const MESSAGE_BAREME_INCOHERENT = "Ce calcul a été fait au barème, mai
 /** Brouillon préparé avec des formules, que son produit a quittées pour le barème : il ne se convertit pas, on le recrée. */
 export const MESSAGE_BROUILLON_A_FORMULES_BAREME =
   "Ce produit se tarife désormais au barème : ce brouillon, préparé avec des formules, ne peut plus être modifié ni soumis ; créez une nouvelle cotation";
+
+/**
+ * Message de la fiche d'un brouillon à formules que son produit a quittées (H89, H145) : celui du mode en vigueur, « par garanties » ou
+ * « au barème ». Aucun message pour un mode qui accepte encore les formules.
+ */
+export const messageBrouillonAFormules = (modeEnVigueur: ModeTarification): string | null =>
+  modeEnVigueur === "BAREME" ? MESSAGE_BROUILLON_A_FORMULES_BAREME : modeEnVigueur === "GARANTIES" ? MESSAGE_BROUILLON_A_FORMULES : null;
 
 /** Refus de la composition manuelle pour un produit à la formule (le tarif existe : la Technique ne compose pas la prime). */
 export const MESSAGE_COMPOSITION_IMPOSSIBLE = "Ce produit se tarifie à la formule : la prime se calcule, elle ne se compose pas";

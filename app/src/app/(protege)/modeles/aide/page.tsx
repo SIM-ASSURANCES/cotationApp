@@ -110,7 +110,7 @@ export default async function PageAide() {
         description={
           <>
             « assures[].nom_prenoms » : champ de chaque assuré, à écrire dans une boucle (<code className={code}>{"{{ a.nom_prenoms }}"}</code>).
-            Les champs <code className={code}>risque.*</code> sont propres à chaque produit (minuscules, chiffres et _).
+            Les champs <code className={code}>risque.*</code> sont propres à chaque produit (minuscules, chiffres et _). Pour un produit tarifé au barème, chaque champ du barème est une balise <code className={code}>risque.&lt;code&gt;</code> (le code du champ dans le barème) : elle donne la valeur saisie à la cotation (code de la liste, OUI ou NON, montant), et reste vide pour un champ qui ne s&apos;applique pas ou facultatif laissé vide. Une balise qui n&apos;est pas un champ du barème publié du produit est signalée au dépôt.
           </>
         }
       >

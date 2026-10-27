@@ -5,6 +5,8 @@
 // Données de test INVENTÉES (aucun barème du simulateur).
 import { createHash } from "node:crypto";
 
+import ExcelJS from "exceljs";
+
 process.env.URL_PUBLIQUE = "https://documents.exemple.ci";
 
 import { beforeAll, describe, expect, it } from "vitest";
@@ -12,7 +14,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { lireBareme, type Bareme } from "@/domaine/bareme";
 import { documentSecurpro } from "@/domaine/bareme/securpro-fixture";
 import { MODE_DE_LA_NATURE, natureDuCalcul } from "@/domaine/calcul/composition";
-import { MESSAGE_BAREME_INCOHERENT, MESSAGE_BROUILLON_A_FORMULES_BAREME, MESSAGE_TARIFICATION_AU_BAREME } from "@/domaine/calcul/parametrage";
+import { LIBELLE_MODE_COURT, MESSAGE_BAREME_INCOHERENT, MESSAGE_BROUILLON_A_FORMULES_BAREME, MESSAGE_TARIFICATION_AU_BAREME } from "@/domaine/calcul/parametrage";
 
 import { ajouterJours, aujourdhui } from "@/domaine/calcul/dates";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
@@ -27,7 +29,10 @@ import { debutTest } from "./dates-test";
 import { fixerSeuilGlobalDeTest, retablirSeuilGlobalDeTest } from "./parametres-test";
 
 import { accepter, calculerCotationBareme, composerLaPrime, creerBrouillon, lireCotation, modifierBrouillon, soumettre, valider, type SaisieCotation } from "./cotations";
+import { retirerAdherents, lireAdherents } from "./adherents";
 import { emettreCotation, emettreCp, montantsDu } from "./documents";
+import { listerProduitsPortefeuille } from "./portefeuille";
+import { confirmerImport, controlerImport, lireLot, modeleImport } from "./imports";
 import { initialiserProfilsEtDroits } from "./droits";
 import { creerFactureAffaireNouvelle, creerFactureRenouvellement, emettreFacture, enregistrerPaiement, lireFacture } from "./factures";
 import { remplacerGenerateur, type DemandePdf } from "./generateur";
@@ -547,4 +552,146 @@ const demandeCalcul = (e: EntreesEssai) => ({
   dateEcheance: ajouterJours(aujourdhui(), 364),
   nombreTranches: 1,
   baremeBrut: brutDe(e),
+});
+
+describe("B6b, D52 : import en masse sur une police au barème (plafond = effectif figé de la cotation)", () => {
+  const EFFECTIF = 5;
+  let produitParTete: string;
+  let seq = 0;
+  // Une racine propre à chaque police : les numéros de certificat proposés (racine + ordre) ne heurtent jamais ceux d'une autre police.
+  const numeroGroupe = () => `TST-2026-${String((Date.now() + ++seq) % 1_000_000).padStart(6, "0")}-G00000`;
+  const csv = (k: number, debut = 1) => ({
+    nom: "adherents.csv",
+    contenu: texte(["nom_prenoms;date_naissance", ...Array.from({ length: k }, (_, i) => `Nouveau ${debut + i} Inventé;${String(1 + (i % 28)).padStart(2, "0")}/03/1990`)].join("\n")),
+  });
+
+  /** Le SECURPRO inventé avec un accessoire PAR TÊTE : le barème tarife par effectif. */
+  function baremeParTete(): Bareme {
+    const d = structuredClone(documentSecurpro) as unknown as { produit: { taxe: string; accessoires: unknown }; garanties: { taxe?: string }[]; jeuxEssai: { entrees: { effectif?: number }; attendu: unknown }[] };
+    const carte: Record<string, string> = { IARD, INCENDIE };
+    d.produit.taxe = carte[d.produit.taxe];
+    for (const g of d.garanties) if (g.taxe) g.taxe = carte[g.taxe];
+    d.produit.accessoires = { mode: "PAR_TETE", montant: "1000" };
+    d.jeuxEssai = d.jeuxEssai.slice(0, 1).map((j) => ({ ...j, entrees: { ...j.entrees, effectif: EFFECTIF }, attendu: {} }));
+    return lireBareme(d);
+  }
+
+  beforeAll(async () => {
+    produitParTete = CODE("PARTETE");
+    await creerProduit(technique, { code: produitParTete, libelle: "Sécur Pro par tête (inventé)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: IARD }, null);
+    await creerVersion(
+      technique,
+      produitParTete,
+      {
+        dateEffet: debutTest(),
+        modeTarification: "GARANTIES",
+        arrondi: { precision: 1, sens: "PROCHE", niveau: "LIGNE", composanteAbsorbante: "NETTE" },
+        prorata: { actif: false, primeMinimale: null },
+        fractionnement: { tranchesMax: 4, repartitionPourcent: null, decalagesMois: null, frais: "0" },
+        cotation: { validiteMois: 3, formulesMax: 3 },
+        seuilValidationTtc: null,
+        formules: [],
+        garantiesSaisieLibre: true,
+        garanties: [],
+        references: { csModeleCode: null, csVisa: null },
+      } satisfies VersionSaisie,
+      null,
+    );
+    const id = (await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produit: { code: produitParTete } } })).id;
+    await importerBaremeXlsx(technique, id, "partete.xlsx", await construireClasseur(baremeParTete(), { titre: "Par tête inventé (test B6b)" }), null);
+    await publierBareme(technique, id, "Barème par tête inventé (test B6b)", null);
+    await basculerVersionAuBareme(technique, id, null);
+    await changerLaVersionPourTest(id, "date_effet = DATE '2020-01-01'");
+    await publierModele("COTATION", produitParTete, analyse(CONTENU_COTATION));
+  });
+
+  /** Police mère de groupe au barème : deux adhérents actifs, effectif figé à la cotation (ou aucun pour le barème sans effectif). */
+  async function policeDeGroupe(code: string, effectif: number | undefined) {
+    const essai = (await lireBaremePublie(obtenirPrisma(), versionId)).bareme.jeuxEssai[0].entrees as EntreesEssai;
+    const assures = [1, 2].map((ordre) => ({ ordre, nom_prenoms: `Existant ${ordre} Inventé`, date_naissance: `1980-01-0${ordre}`, sexe: "M" as const, lien: "Salarié", formule: "" }));
+    const entrees = { ...essai, ...(effectif !== undefined ? { effectif } : {}) };
+    const id = await creerBrouillon(commercial, { ...saisieAuBareme(entrees, { typeContrat: "GROUPE", assures }), codeProduit: code }, null);
+    await soumettre(commercial, id, null);
+    const { numeroPolice } = await accepter(commercial, id, [], numeroGroupe(), null);
+    return (await obtenirPrisma().police.findUniqueOrThrow({ where: { numero: numeroPolice } })).id;
+  }
+  const refusEffectif = async (lotId: number) => (await lireLot(technique, lotId))!.lignesEnErreur.filter((l) => /tarifé pour/.test(JSON.stringify(l)));
+  const controler = (policeId: number, k: number, debut = 1) => controlerImport(technique, policeId, aujourdhui(), csv(k, debut), null);
+
+  it("barème par tête : limite exacte acceptée, limite + 1 refusée avec le message, les lignes dans la limite restent valides", async () => {
+    const policeId = await policeDeGroupe(produitParTete, EFFECTIF);
+    expect(await lireLot(technique, await controler(policeId, 3))).toMatchObject({ total: 3, valides: 3, erreurs: 0 });
+    const lot = await lireLot(technique, await controler(policeId, 4));
+    expect(lot).toMatchObject({ total: 4, valides: 3, erreurs: 1 });
+    expect(JSON.stringify(lot!.lignesEnErreur[0])).toContain("Ce contrat est tarifé pour 5 assurés ; 2 sont déjà actifs. Les 1 lignes en trop doivent passer par un avenant d'incorporation, qui recalculera la prime.");
+    // La confirmation incorpore seulement les lignes valides, jusqu'à l'effectif.
+    await confirmerImport(technique, lot!.id, null);
+    expect((await lireAdherents(technique, policeId))!.courants).toHaveLength(5);
+    expect(await refusEffectif(await controler(policeId, 1, 10))).toHaveLength(1); // plus aucune place
+  });
+
+  it("retrait puis ajout : un retrait libère une place ; seuls les adhérents actifs comptent", async () => {
+    const policeId = await policeDeGroupe(produitParTete, EFFECTIF);
+    await retirerAdherents(technique, policeId, aujourdhui(), [1], null);
+    expect((await lireAdherents(technique, policeId))!.courants).toHaveLength(1);
+    expect(await refusEffectif(await controler(policeId, 4))).toHaveLength(0); // 1 actif + 4 = 5
+    const lot = await controler(policeId, 5);
+    expect(await refusEffectif(lot)).toHaveLength(1);
+    expect(JSON.stringify(await refusEffectif(lot))).toContain("1 sont déjà actifs");
+  });
+
+  it("barème sans effectif (accessoire par garantie) : aucun contrôle ; modèle et aide corrigés (colonne formule vide)", async () => {
+    const policeId = await policeDeGroupe(codeSecurpro, undefined);
+    expect(await lireLot(technique, await controler(policeId, 30))).toMatchObject({ total: 30, valides: 30, erreurs: 0 });
+
+    const classeur = new ExcelJS.Workbook();
+    await classeur.xlsx.load(Buffer.from((await modeleImport(technique, codeSecurpro, policeId)).contenu) as unknown as ArrayBuffer);
+    const feuille = classeur.getWorksheet("Adhérents")!;
+    const colonne = (cle: string) => (feuille.getRow(1).values as unknown[]).slice(1).indexOf(cle) + 1;
+    expect(feuille.getRow(2).getCell(colonne("formule")).value ?? "").toBe("");
+    expect(feuille.getRow(3).getCell(colonne("formule")).dataValidation).toBeUndefined();
+    const aide = JSON.stringify(classeur.getWorksheet("Aide")!.getSheetValues());
+    expect(aide).toContain("Produit tarifé au barème");
+    expect(aide).not.toContain("Effectif maximal");
+  });
+
+  it("le fichier modèle d'une police au barème par tête indique l'effectif maximal et les places restantes", async () => {
+    const policeId = await policeDeGroupe(produitParTete, EFFECTIF);
+    const classeur = new ExcelJS.Workbook();
+    await classeur.xlsx.load(Buffer.from((await modeleImport(technique, produitParTete, policeId)).contenu) as unknown as ArrayBuffer);
+    expect(JSON.stringify(classeur.getWorksheet("Aide")!.getSheetValues())).toContain("Effectif maximal de cette police : 5 assurés ; 2 sont déjà actifs, il reste 3 places.");
+  });
+});
+
+describe("B6b, D52 : balises risque.<code> d'un produit au barème", () => {
+  it("la cotation porte les champs du barème dans risque (vide pour un champ inapplicable) et le document les reçoit", async () => {
+    const essai = (await lireBaremePublie(obtenirPrisma(), versionId)).bareme.jeuxEssai[0];
+    const id = await creerBrouillon(commercial, saisieAuBareme(essai.entrees as EntreesEssai, {}), null);
+    const ligne = await obtenirPrisma().cotation.findUniqueOrThrow({ where: { id } });
+    expect(ligne.risque).toMatchObject({ type_commerce: "ELECTRONIQUE", occupation: "LOCATAIRE", gardien: "OUI", loyer_mensuel: "150000", valeur_batiment: "" });
+    await soumettre(commercial, id, null);
+    await emettreCotation(commercial, id, null);
+    expect(derniereDemande("COTATION").donnees.risque).toMatchObject({ type_commerce: "ELECTRONIQUE", loyer_mensuel: "150000", valeur_batiment: "" });
+  });
+
+  it("le dépôt d'un modèle du produit signale une balise risque.<code> inconnue du barème publié, sans la rejeter", async () => {
+    const produit = await obtenirPrisma().produit.findUniqueOrThrow({ where: { code: codeSecurpro } });
+    const id = await creerModele(technique, { type: "COTATION", code: CODE("COT_RISQUE"), libelle: "Cotation avec risque", produitCode: codeSecurpro, ...sans }, null);
+    prochaineAnalyse = analyse([...CONTENU_COTATION, "risque.type_commerce", "risque.typo_commerce"]);
+    const { avertissements } = await deposerVersion(technique, id, { fichier: texte("docx"), nomFichier: "m.docx", commentaire: "test", dateEffet: aujourdhui(), visa: null, dateDocument: null }, null);
+    expect(produit.id).toBeGreaterThan(0);
+    const messages = avertissements.map((a) => a.message);
+    expect(messages.some((m) => m.includes("risque.typo_commerce") && /barème publié/.test(m))).toBe(true);
+    expect(messages.some((m) => m.includes("risque.type_commerce"))).toBe(false);
+  });
+});
+
+describe("B6b : portefeuille", () => {
+  it("un produit dont la dernière version est au barème s'affiche « Au barème » (le mode de la version, pas le contenu de ses garanties)", async () => {
+    const { produits } = await listerProduitsPortefeuille(commercial, "INCENDIE_DOMMAGES");
+    const p = produits.find((x) => x.code === codeSecurpro)!;
+    expect(p.modeTarification).toBe("BAREME");
+    expect(LIBELLE_MODE_COURT[p.modeTarification]).toBe("Au barème");
+    expect(LIBELLE_MODE_COURT).toEqual({ FORMULE: "Par formule", GARANTIES: "Par garanties", BAREME: "Au barème" });
+  });
 });

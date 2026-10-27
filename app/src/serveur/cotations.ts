@@ -2,7 +2,7 @@ import "server-only";
 
 import { Prisma } from "@/generated/prisma/client";
 
-import { calculerBareme, descripteurSaisie, saisieDepuisFormulaire, versComposition, type DescripteurSaisie, type Saisie as SaisieBareme } from "@/domaine/bareme";
+import { calculerBareme, descripteurSaisie, risqueDuBareme, saisieDepuisFormulaire, versComposition, type DescripteurSaisie, type Saisie as SaisieBareme } from "@/domaine/bareme";
 import { type ResultatCalcul } from "@/domaine/calcul/calcul";
 import {
   LONGUEUR_MAX_MOTIF_COMPOSITION,
@@ -20,7 +20,7 @@ import {
   type LigneComposee,
   type LigneDePrime,
 } from "@/domaine/calcul/composition";
-import { compositionPossible, MESSAGE_BROUILLON_A_FORMULES, MESSAGE_BROUILLON_A_FORMULES_BAREME, MESSAGE_TARIFICATION_AU_BAREME, problemesLibellesGaranties, type GarantieParametree } from "@/domaine/calcul/parametrage";
+import { compositionPossible, MESSAGE_BROUILLON_A_FORMULES, MESSAGE_BROUILLON_A_FORMULES_BAREME, MESSAGE_TARIFICATION_AU_BAREME, messageBrouillonAFormules, problemesLibellesGaranties, type GarantieParametree, type ModeTarification } from "@/domaine/calcul/parametrage";
 import { problemesDateEffetCotation, type DateIso } from "@/domaine/calcul/dates";
 import type { Tranche } from "@/domaine/calcul/echeancier";
 import { ErreurCalcul, montant } from "@/domaine/calcul/montant";
@@ -218,6 +218,8 @@ type Calcul = {
   typeContrat: TypeContrat;
   regimeTaxe: RegimeTaxe;
   forcages: ReturnType<typeof detecterForcages>;
+  /** Champs du barème résolus pour les balises `risque.<code>` (B6b) : s'ajoutent à ceux de la saisie, qu'ils remplacent s'ils portent le même nom. */
+  risque?: Risque;
 };
 
 /**
@@ -298,7 +300,7 @@ async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: Saisie
 /** Refus du barème (dont le message de la Technique, E4) : le premier message en titre, les autres dessous. */
 const refusBareme = (refus: { message: string }[]) => new ErreurMetier(refus[0]?.message ?? "Le barème refuse cette saisie.", refus.slice(1).map((r) => r.message));
 
-type CalculBareme = { contexte: Awaited<ReturnType<typeof resoudreContexteBareme>>; entree: EntreeComposition & { origine: "BAREME"; bareme: BaremeFige } };
+type CalculBareme = { contexte: Awaited<ReturnType<typeof resoudreContexteBareme>>; entree: EntreeComposition & { origine: "BAREME"; bareme: BaremeFige }; risque: Risque };
 
 /**
  * Calcule la prime d'une saisie au barème PUBLIÉ de la version en vigueur à `dateDocument` : le moteur du barème rend les lignes de prime, le
@@ -341,7 +343,7 @@ async function lignesAuBareme(
     origine: "BAREME",
     bareme: { versionId: version.id, empreinte, saisie },
   };
-  return { contexte, entree };
+  return { contexte, entree, risque: risqueDuBareme(bareme, saisie) };
 }
 
 /**
@@ -360,7 +362,7 @@ async function calculerAuBareme(tx: Tx, saisie: SaisieCotation, dateDocument: Da
     ...problemesRisque(saisie.risque),
   ];
   if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
-  const { contexte, entree } = await lignesAuBareme(tx, {
+  const { contexte, entree, risque } = await lignesAuBareme(tx, {
     codeProduit: saisie.codeProduit,
     dateDocument,
     dateEffet: saisie.dateEffet,
@@ -388,6 +390,7 @@ async function calculerAuBareme(tx: Tx, saisie: SaisieCotation, dateDocument: Da
     typeContrat,
     regimeTaxe,
     forcages: [],
+    risque,
   };
 }
 
@@ -563,7 +566,7 @@ function donneesAEcrire(saisie: SaisieCotation, c: Calcul) {
     assures: saisie.assures as unknown as Prisma.InputJsonValue,
     beneficiaires: listeOuNull(saisie.beneficiaires),
     contactsUrgence: listeOuNull(saisie.contactsUrgence),
-    risque: saisie.risque as unknown as Prisma.InputJsonValue,
+    risque: { ...saisie.risque, ...c.risque } as unknown as Prisma.InputJsonValue,
     donneesCalcul: c.entree as unknown as Prisma.InputJsonValue,
     resultat: serialiser(c.resultat) as unknown as Prisma.InputJsonValue,
     // Une prime « à composer » n'a pas de TTC (jamais un 0 affiché comme un montant).
@@ -1169,6 +1172,8 @@ export type DetailCotation = {
   garantiesSaisieLibre: boolean;
   /** Brouillon préparé avec des formules alors que le produit se tarife désormais par garanties : il ne se modifie ni ne se soumet (H89), on le recrée. */
   brouillonAFormulesSousGaranties: boolean;
+  /** Message de la fiche pour ce brouillon (mode en vigueur : par garanties ou au barème) ; null si le brouillon n'est pas concerné. */
+  messageBrouillonAFormules: string | null;
 };
 
 /** Lignes de prime d'une cotation composée, avec le taux résolu et figé de chacune ; `lignes` vide : la prime est « à composer ». */
@@ -1229,6 +1234,7 @@ export async function lireCotation(acteur: UtilisateurCourant, id: number): Prom
     garantiesDuProduit: (version.garanties as GarantieParametree[] | null) ?? [],
     garantiesSaisieLibre: version.garantiesSaisieLibre,
     brouillonAFormulesSousGaranties: versionEnVigueur !== null && (compositionPossible(versionEnVigueur.version.modeTarification) || versionEnVigueur.version.modeTarification === "BAREME"),
+    messageBrouillonAFormules: versionEnVigueur !== null ? messageBrouillonAFormules(versionEnVigueur.version.modeTarification as ModeTarification) : null,
     echeancier: jsonVersTranches(c.echeancier),
     auteurId: c.auteurId,
     auteurIdentifiant: c.auteurIdentifiant,

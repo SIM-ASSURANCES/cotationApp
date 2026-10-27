@@ -110,7 +110,7 @@ export function ChampsBareme({ descripteur, initiale }: { descripteur: Descripte
 
       <Carte titre="Prime">
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <Bouton type="button" onClick={lancerLeCalcul} variante="secondaire" attente={enCours} disabled={enCours}>
+          <Bouton type="button" data-calculer onClick={lancerLeCalcul} variante="secondaire" attente={enCours} disabled={enCours}>
             {enCours ? "Calcul en cours…" : "Calculer"}
           </Bouton>
           <span className="text-sm text-neutral">Le calcul vérifie la saisie ; l&apos;enregistrement du brouillon recalcule toujours depuis le barème publié.</span>

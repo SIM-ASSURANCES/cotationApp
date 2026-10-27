@@ -6,7 +6,7 @@ import { Bandeau, Carte, EnTetePage, EtatVide, LienBouton, ListeDeroulante, Tabl
 import { NIVEAUX_ARRONDI } from "@/domaine/calcul/calcul";
 import { formaterDate } from "@/domaine/calcul/dates";
 import { PRECISIONS, SENS_ARRONDI, montant } from "@/domaine/calcul/montant";
-import { MODES_TARIFICATION, versionsProvisoiresSansBareme } from "@/domaine/calcul/parametrage";
+import { MODES_TARIFICATION, afficheTableauFormules, versionsProvisoiresSansBareme } from "@/domaine/calcul/parametrage";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
 import { etatDuBareme } from "@/serveur/bareme";
@@ -63,8 +63,8 @@ function Resume({ v, codeProduit, peutEcrire }: { v: VersionProduit; codeProduit
         {net(v.fractionnement.frais) !== "0" ? `, frais ${net(v.fractionnement.frais)}` : ""} · Validité {v.cotation.validiteMois} mois
         {v.seuilValidationTtc ? ` · Double validation au-delà de ${net(v.seuilValidationTtc)} F TTC` : ""}
       </p>
-      {/* Une version « Par garanties » n'a pas de formule (6.2b) : pas de tableau vide à lire. */}
-      {v.formules.length > 0 || v.modeTarification !== "GARANTIES" ? (
+      {/* Une version « Par garanties » (6.2b) ou au barème (B6b) n'a pas de formule : pas de tableau vide à lire. */}
+      {afficheTableauFormules(v) ? (
         <Tableau colonnes={COLONNES_FORMULES} lignes={v.formules} cleLigne={(f) => f.code} messageVide="Aucune formule." legende={`Formules de la version du ${formaterDate(v.dateEffet)}`} />
       ) : null}
       {peutEcrire && versionAvecBareme(v) ? <PanneauBareme codeProduit={codeProduit} version={v} /> : null}

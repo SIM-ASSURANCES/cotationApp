@@ -189,3 +189,53 @@ describe("âges limites dans le paramétrage d'une formule", () => {
     expect(problemesVersion(version(null, Number.NaN))[0]).toMatch(/nombres entiers/);
   });
 });
+
+describe("plafond d'effectif d'une police au barème (B6b, D52)", () => {
+  const actif = (ordre: number) => ({ ordre, nom_prenoms: `Actif ${ordre} Inventé`, date_naissance: "1980-01-01", sexe: "M" as const, lien: "Salarié", formule: "" });
+  const contexte = (actifs: number, effectifMax?: number): ContexteControle => ({
+    ...ctx,
+    sansFormule: true,
+    adherents: Array.from({ length: actifs }, (_, i) => actif(i + 1)),
+    numerosPris: new Set(),
+    prochainOrdre: actifs + 1,
+    ...(effectifMax !== undefined ? { effectifMax } : {}),
+  });
+  const fichier = (k: number) => Array.from({ length: k }, () => ligne({ formule: null }));
+  const refus = (l: ReturnType<typeof controlerLignes>[number]) => l.erreurs.filter((e) => /tarifé pour/.test(e.message));
+
+  it("limite exacte : tout le fichier est accepté", () => {
+    const r = controlerLignes(fichier(3), contexte(2, 5));
+    expect(r.every((l) => l.erreurs.length === 0)).toBe(true);
+  });
+
+  it("limite + 1 : la dernière ligne est refusée avec le message de la Technique, les autres restent acceptées", () => {
+    const r = controlerLignes(fichier(4), contexte(2, 5));
+    expect(r.slice(0, 3).every((l) => l.erreurs.length === 0)).toBe(true);
+    expect(refus(r[3])).toEqual([{ colonne: "ligne", valeur: "", message: "Ce contrat est tarifé pour 5 assurés ; 2 sont déjà actifs. Les 1 lignes en trop doivent passer par un avenant d'incorporation, qui recalculera la prime." }]);
+  });
+
+  it("retrait puis ajout : seuls les actifs comptent, un retrait libère des places", () => {
+    expect(refus(controlerLignes(fichier(1), contexte(5, 5))[0])).toHaveLength(1); // liste pleine
+    expect(refus(controlerLignes(fichier(1), contexte(4, 5))[0])).toHaveLength(0); // un retrait : une place
+    const r = controlerLignes(fichier(3), contexte(4, 5));
+    expect(r.map((l) => refus(l).length)).toEqual([0, 1, 1]);
+    expect(refus(r[1])[0].message).toMatch(/4 sont déjà actifs\. Les 2 lignes en trop/);
+  });
+
+  it("effectif dépassé d'avance (plus d'actifs que l'effectif) : aucune place, jamais de nombre négatif", () => {
+    const r = controlerLignes(fichier(2), contexte(7, 5));
+    expect(r.map((l) => refus(l).length)).toEqual([1, 1]);
+  });
+
+  it("barème sans effectif : aucun contrôle, quel que soit le nombre de lignes", () => {
+    const r = controlerLignes(fichier(30), contexte(100));
+    expect(r.every((l) => l.erreurs.length === 0)).toBe(true);
+  });
+
+  it("une ligne déjà en erreur ne consomme pas de place", () => {
+    const lignes = [ligne({ formule: null, nom_prenoms: "" }), ...fichier(2)];
+    const r = controlerLignes(lignes, contexte(3, 5));
+    expect(r[0].erreurs.length).toBeGreaterThan(0);
+    expect(r.slice(1).every((l) => l.erreurs.length === 0)).toBe(true);
+  });
+});

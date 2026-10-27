@@ -143,6 +143,22 @@ for (const taille of TAILLES) {
   await calculer(page);
   verifier(libelle("recalcul après retour à la valeur : TTC 139 420"), /139 420/.test(normaliser(await texteTable(page))));
 
+  // 2 bis. Touche Entrée (B6b) : dans un champ du barème, puis dans un champ du souscripteur, elle lance « Calculer » et jamais l'enregistrement.
+  await champ(page, "stocks").fill("6000000");
+  await champ(page, "stocks").press("Enter");
+  await page.locator('[aria-live="polite"] table').first().waitFor({ timeout: 20000 }).catch(() => {});
+  verifier(libelle("Entrée dans un champ du barème : le calcul est lancé (résultat affiché)"), (await page.locator("table", { hasText: "Prime nette" }).count()) === 1);
+  verifier(libelle("Entrée dans un champ du barème : aucun enregistrement (même page)"), new URL(page.url()).pathname === "/cotations/nouvelle", page.url());
+  const apresEntree = await instantane(page);
+  verifier(libelle("Entrée dans un champ du barème : champs conservés"), differences({ ...avantCalcul, "bareme_stocks#0": "6000000" }, apresEntree).length === 0, differences({ ...avantCalcul, "bareme_stocks#0": "6000000" }, apresEntree).join(" ; "));
+  await champ(page, "stocks").fill("6866500");
+  await page.locator('input[name="souscripteur_nom"]').press("Enter");
+  await page.locator('[aria-live="polite"] table').first().waitFor({ timeout: 20000 }).catch(() => {});
+  verifier(libelle("Entrée dans un champ du souscripteur : calcul lancé, TTC 139 420"), /139 420/.test(normaliser(await texteTable(page))));
+  await page.waitForTimeout(1500);
+  verifier(libelle("Entrée dans un champ du souscripteur : aucun enregistrement (même page, pas d'erreur de formulaire)"), new URL(page.url()).pathname === "/cotations/nouvelle" && (await page.locator("form > [role=alert]").count()) === 0, page.url());
+  verifier(libelle("Entrée : champs conservés"), differences(await instantane(page), { ...avantCalcul }).length === 0, differences(await instantane(page), { ...avantCalcul }).join(" ; "));
+
   // 3. Refus E4 au calcul (en marché, capitaux au-dessus de la limite) : message de la Technique, champs conservés.
   await champ(page, "situation").selectOption("MARCHE");
   const avantE4 = await instantane(page);
@@ -176,8 +192,8 @@ for (const taille of TAILLES) {
   verifier(libelle("enregistrement réussi : la fiche de la cotation s'ouvre"), /^\/cotations\/\d+/.test(new URL(page.url()).pathname), page.url());
   verifier(libelle("fiche : TTC 139 420"), /139 420/.test(normaliser(await page.locator("main").innerText())));
   const largeur = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-  // Constat à part (hors du défaut de saisie) : il ne compte pas dans les échecs.
-  console.log(`NOTE    ${taille.nom} : fiche de la cotation : ${largeur ? "défilement horizontal de la page" : "pas de défilement horizontal"}`);
+  // B6b : la fiche d'une cotation au barème ne déborde pas de l'écran (aucun défilement horizontal de la page).
+  verifier(libelle("fiche : aucun défilement horizontal de la page"), !largeur, await page.evaluate(() => `scrollWidth ${document.documentElement.scrollWidth} / clientWidth ${document.documentElement.clientWidth}`));
   await contexte.close();
 }
 

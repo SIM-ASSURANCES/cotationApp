@@ -13,7 +13,6 @@ import { formaterMontant, montant, type Montant } from "@/domaine/calcul/montant
 import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
 import { avertissementNumeroContrat, FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
-import { MESSAGE_BROUILLON_A_FORMULES } from "@/domaine/calcul/parametrage";
 import { LIBELLE_STATUT, peutAccepter, peutEtreValidee, peutModifier } from "@/domaine/cotation/statuts";
 import { LIBELLE_RAISON } from "@/domaine/cotation/validation";
 import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
@@ -148,9 +147,9 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           (aucun prorata n&apos;est appliqué). La prime est de nouveau « À composer » ; l&apos;ancienne composition, avec son auteur et son motif, est gardée au journal.
         </Bandeau>
       ) : null}
-      {c.brouillonAFormulesSousGaranties ? (
+      {c.messageBrouillonAFormules ? (
         <Bandeau ton="avertissement" role="alert">
-          <strong>Brouillon à recréer.</strong> {MESSAGE_BROUILLON_A_FORMULES}.
+          <strong>Brouillon à recréer.</strong> {c.messageBrouillonAFormules}.
         </Bandeau>
       ) : null}
       <TachesPolice taches={taches} cotationId={c.id} chemin={`/cotations/${c.id}`} />
@@ -299,7 +298,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         )}
         {composition?.bareme ? (
           <Bandeau ton="neutre" className="mt-3">
-            <strong>Prime calculée au barème publié</strong> (empreinte {composition.bareme.empreinte}). La saisie et les taux de taxe sont figés avec la cotation ; le barème n&apos;est plus relu une fois la cotation émise.
+            <strong>Prime calculée au barème publié</strong> (empreinte <span className="break-all">{composition.bareme.empreinte}</span>). La saisie et les taux de taxe sont figés avec la cotation ; le barème n&apos;est plus relu une fois la cotation émise.
             {peutModifier(c.statut) ? " Brouillon : la prime est recalculée du barème en vigueur à chaque enregistrement et à la soumission." : ""}
           </Bandeau>
         ) : null}

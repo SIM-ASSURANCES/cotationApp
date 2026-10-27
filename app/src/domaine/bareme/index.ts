@@ -7,3 +7,4 @@ export * from "./canonique";
 export * from "./tranches";
 export * from "./expression";
 export * from "./formulaire";
+export * from "./documents";

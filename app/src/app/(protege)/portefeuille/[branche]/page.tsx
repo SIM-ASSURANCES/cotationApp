@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { EnTetePage, LienBouton, Pastille, Tableau, type ColonneTableau } from "@/composants/ui";
+import { LIBELLE_MODE_COURT } from "@/domaine/calcul/parametrage";
 import { listerProduitsPortefeuille, type ProduitPortefeuille } from "@/serveur/portefeuille";
 import { exigerUtilisateur } from "@/serveur/session";
 import { ErreurAcces } from "@/serveur/types";
@@ -40,9 +41,7 @@ export default async function PagePortefeuilleBranche(props: { params: Promise<{
       cle: "mode",
       entete: "Tarification",
       rendu: (p) => (
-        <Pastille ton={p.modeTarification === "GARANTIES" ? "info" : "neutre"}>
-          {p.modeTarification === "GARANTIES" ? "Par garanties" : "Par formule"}
-        </Pastille>
+        <Pastille ton={p.modeTarification === "FORMULE" ? "neutre" : "info"}>{LIBELLE_MODE_COURT[p.modeTarification]}</Pastille>
       ),
     },
     {

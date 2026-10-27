@@ -14,7 +14,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { lireBareme, type Bareme } from "@/domaine/bareme";
 import { documentSecurpro } from "@/domaine/bareme/securpro-fixture";
 import { MODE_DE_LA_NATURE, natureDuCalcul } from "@/domaine/calcul/composition";
-import { MESSAGE_BAREME_INCOHERENT, MESSAGE_BROUILLON_A_FORMULES_BAREME, MESSAGE_TARIFICATION_AU_BAREME } from "@/domaine/calcul/parametrage";
+import { LIBELLE_MODE_COURT, MESSAGE_BAREME_INCOHERENT, MESSAGE_BROUILLON_A_FORMULES_BAREME, MESSAGE_TARIFICATION_AU_BAREME } from "@/domaine/calcul/parametrage";
 
 import { ajouterJours, aujourdhui } from "@/domaine/calcul/dates";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
@@ -31,6 +31,7 @@ import { fixerSeuilGlobalDeTest, retablirSeuilGlobalDeTest } from "./parametres-
 import { accepter, calculerCotationBareme, composerLaPrime, creerBrouillon, lireCotation, modifierBrouillon, soumettre, valider, type SaisieCotation } from "./cotations";
 import { retirerAdherents, lireAdherents } from "./adherents";
 import { emettreCotation, emettreCp, montantsDu } from "./documents";
+import { listerProduitsPortefeuille } from "./portefeuille";
 import { confirmerImport, controlerImport, lireLot, modeleImport } from "./imports";
 import { initialiserProfilsEtDroits } from "./droits";
 import { creerFactureAffaireNouvelle, creerFactureRenouvellement, emettreFacture, enregistrerPaiement, lireFacture } from "./factures";
@@ -682,5 +683,15 @@ describe("B6b, D52 : balises risque.<code> d'un produit au barème", () => {
     const messages = avertissements.map((a) => a.message);
     expect(messages.some((m) => m.includes("risque.typo_commerce") && /barème publié/.test(m))).toBe(true);
     expect(messages.some((m) => m.includes("risque.type_commerce"))).toBe(false);
+  });
+});
+
+describe("B6b : portefeuille", () => {
+  it("un produit dont la dernière version est au barème s'affiche « Au barème » (le mode de la version, pas le contenu de ses garanties)", async () => {
+    const { produits } = await listerProduitsPortefeuille(commercial, "INCENDIE_DOMMAGES");
+    const p = produits.find((x) => x.code === codeSecurpro)!;
+    expect(p.modeTarification).toBe("BAREME");
+    expect(LIBELLE_MODE_COURT[p.modeTarification]).toBe("Au barème");
+    expect(LIBELLE_MODE_COURT).toEqual({ FORMULE: "Par formule", GARANTIES: "Par garanties", BAREME: "Au barème" });
   });
 });

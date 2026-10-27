@@ -1,6 +1,7 @@
 import "server-only";
 
 import { formaterDate } from "@/domaine/calcul/dates";
+import { MODES_TARIFICATION, type ModeTarification } from "@/domaine/calcul/parametrage";
 import { LIBELLE_STATUT, type StatutCotation } from "@/domaine/cotation/statuts";
 import type { Souscripteur } from "@/domaine/cotation/saisie";
 import { peutLire } from "@/domaine/droits";
@@ -20,7 +21,7 @@ export type ProduitPortefeuille = {
   code: string;
   libelle: string;
   gamme: string;
-  modeTarification: "FORMULE" | "GARANTIES";
+  modeTarification: ModeTarification;
   nombreClients: number;
   nombreCotations: number;
   nombrePolices: number;
@@ -154,7 +155,7 @@ export async function listerProduitsPortefeuille(
       versions: {
         orderBy: { dateEffet: "desc" },
         take: 1,
-        select: { garanties: true },
+        select: { modeTarification: true },
       },
       cotations: {
         select: {
@@ -169,10 +170,10 @@ export async function listerProduitsPortefeuille(
 
   const lignes: ProduitPortefeuille[] = produits.map((p) => {
     const derniereVersion = p.versions[0];
-    const modeTarification: "FORMULE" | "GARANTIES" =
-      derniereVersion && Array.isArray(derniereVersion.garanties) && derniereVersion.garanties.length > 0
-        ? "GARANTIES"
-        : "FORMULE";
+    // Le mode de la dernière version, tel que la Technique l'a réglé (une version au barème n'a pas de garanties de produit).
+    const modeTarification: ModeTarification = (MODES_TARIFICATION as readonly string[]).includes(derniereVersion?.modeTarification ?? "")
+      ? (derniereVersion!.modeTarification as ModeTarification)
+      : "FORMULE";
 
     const clientsEnregistres = new Set(p.cotations.filter((c) => c.clientId !== null).map((c) => c.clientId));
     const prospects = p.cotations.filter((c) => c.clientId === null);

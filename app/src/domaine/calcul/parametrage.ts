@@ -64,6 +64,9 @@ export function libelleBranchePrincipale(code: string | null | undefined): strin
 export const MODES_TARIFICATION = ["FORMULE", "GARANTIES", "BAREME"] as const;
 export type ModeTarification = (typeof MODES_TARIFICATION)[number];
 
+/** Libellé court d'un mode de tarification (portefeuille) : le mode s'écrit toujours, le ton ne porte pas le sens seul. */
+export const LIBELLE_MODE_COURT: Record<ModeTarification, string> = { FORMULE: "Par formule", GARANTIES: "Par garanties", BAREME: "Au barème" };
+
 /** Refus du calcul automatique d'un produit tarifé par garanties. Texte fixé par la Technique et Thierry (6.2a). */
 export const MESSAGE_TARIFICATION_PAR_GARANTIES = "Ce produit se tarifie par garanties : la prime doit être composée par la Technique (composition manuelle)";
 

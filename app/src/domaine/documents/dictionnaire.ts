@@ -135,7 +135,7 @@ export const CHAMPS: readonly Champ[] = [
   c("envoye_a", "objet", "« Envoyé à » d'une facture (extension D23) : vide s'il n'est pas saisi ou s'il est identique à « Facturé à » (bloc à masquer)", undefined, S2),
   c("envoye_a.nom", "texte", "Destinataire de la facture", "SERVICE COMPTABLE EXEMPLE", S2),
   c("envoye_a.adresse", "texte", "Adresse du destinataire", "Plateau, rue inventée", S2),
-  c("risque", "objet", "Champs propres au produit : risque.marque, risque.statut… (tout nom en minuscules)", undefined, S2),
+  c("risque", "objet", "Champs propres au produit : risque.marque, risque.statut… (tout nom en minuscules). Produit au barème : un champ par champ du barème (risque.<code>), vide s'il ne s'applique pas à la saisie", undefined, S2),
 
   // ---------------------------------------------------------------- 6.3.3
   c("police.numero", "texte", "N° de police", "POL-2026-000001", S3),
@@ -259,6 +259,18 @@ export const estFacultatif = (chemin: string): boolean => PAR_CHEMIN.get(chemin)
  * s'écrit vide même passé dans un filtre (« | date », « | pct »…) ; un champ obligatoire vide arrête la génération.
  */
 export const CHAMPS_FACULTATIFS: readonly string[] = CHAMPS.filter((champ) => champ.facultatif).map((champ) => champ.chemin);
+
+/**
+ * Champs `risque.<code>` facultatifs d'un document (B6b, D52, H146) : ceux dont la donnée est vide. Un champ du barème qui ne s'applique pas à la
+ * saisie, ou qui est facultatif et laissé vide, est fourni vide ; un modèle qui l'emploie l'écrit vide au lieu de bloquer la génération.
+ */
+export function champsRisqueFacultatifs(donnees: Record<string, unknown>): string[] {
+  const risque = donnees.risque;
+  if (typeof risque !== "object" || risque === null) return [];
+  return Object.entries(risque)
+    .filter(([, valeur]) => valeur === "")
+    .map(([code]) => `risque.${code}`);
+}
 
 /**
  * Marqueur d'une donnée que l'application NE FOURNIT PAS (profession non saisie, bénéficiaires non gérés…).

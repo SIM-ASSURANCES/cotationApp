@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 
 import type { DateIso } from "@/domaine/calcul/dates";
-import { controlerDepot, type Constat } from "@/domaine/documents/controles";
+import { avertissementsRisque, controlerDepot, type Constat } from "@/domaine/documents/controles";
 import { IMAGES, donneesExemple } from "@/domaine/documents/dictionnaire";
 import {
   CLE_SEUIL_LISTE,
@@ -33,6 +33,7 @@ import {
 import { peutAgir, peutLire } from "@/domaine/droits";
 
 import { journaliser, type ActeurAudit } from "./audit";
+import { codesRisqueDuProduit } from "./bareme";
 import { niveauDuProfil } from "./droits";
 import { generateur, type ImagePng } from "./generateur";
 import { aujourdhui } from "./parametrage";
@@ -289,6 +290,11 @@ export async function deposerVersion(acteur: UtilisateurCourant, modeleId: numbe
   const empreinte = sha256(depot.fichier);
   const analyse = await generateur().analyser(depot.fichier);
   const { rejets, avertissements } = controlerDepot(type, analyse);
+  // Produit au barème (B6b, D52) : une balise risque.<code> qui n'est pas un champ de son barème publié est signalée.
+  if (modele.produitId !== null) {
+    const codes = await codesRisqueDuProduit(prisma, modele.produitId);
+    if (codes.size > 0) avertissements.push(...avertissementsRisque(analyse, codes));
+  }
   const details = (c: Constat) => (c.emplacement ? `${c.message} — ${c.emplacement}` : c.message);
 
   if (rejets.length > 0) {

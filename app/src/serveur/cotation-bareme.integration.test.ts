@@ -661,3 +661,26 @@ describe("B6b, D52 : import en masse sur une police au barème (plafond = effect
     expect(JSON.stringify(classeur.getWorksheet("Aide")!.getSheetValues())).toContain("Effectif maximal de cette police : 5 assurés ; 2 sont déjà actifs, il reste 3 places.");
   });
 });
+
+describe("B6b, D52 : balises risque.<code> d'un produit au barème", () => {
+  it("la cotation porte les champs du barème dans risque (vide pour un champ inapplicable) et le document les reçoit", async () => {
+    const essai = (await lireBaremePublie(obtenirPrisma(), versionId)).bareme.jeuxEssai[0];
+    const id = await creerBrouillon(commercial, saisieAuBareme(essai.entrees as EntreesEssai, {}), null);
+    const ligne = await obtenirPrisma().cotation.findUniqueOrThrow({ where: { id } });
+    expect(ligne.risque).toMatchObject({ type_commerce: "ELECTRONIQUE", occupation: "LOCATAIRE", gardien: "OUI", loyer_mensuel: "150000", valeur_batiment: "" });
+    await soumettre(commercial, id, null);
+    await emettreCotation(commercial, id, null);
+    expect(derniereDemande("COTATION").donnees.risque).toMatchObject({ type_commerce: "ELECTRONIQUE", loyer_mensuel: "150000", valeur_batiment: "" });
+  });
+
+  it("le dépôt d'un modèle du produit signale une balise risque.<code> inconnue du barème publié, sans la rejeter", async () => {
+    const produit = await obtenirPrisma().produit.findUniqueOrThrow({ where: { code: codeSecurpro } });
+    const id = await creerModele(technique, { type: "COTATION", code: CODE("COT_RISQUE"), libelle: "Cotation avec risque", produitCode: codeSecurpro, ...sans }, null);
+    prochaineAnalyse = analyse([...CONTENU_COTATION, "risque.type_commerce", "risque.typo_commerce"]);
+    const { avertissements } = await deposerVersion(technique, id, { fichier: texte("docx"), nomFichier: "m.docx", commentaire: "test", dateEffet: aujourdhui(), visa: null, dateDocument: null }, null);
+    expect(produit.id).toBeGreaterThan(0);
+    const messages = avertissements.map((a) => a.message);
+    expect(messages.some((m) => m.includes("risque.typo_commerce") && /barème publié/.test(m))).toBe(true);
+    expect(messages.some((m) => m.includes("risque.type_commerce"))).toBe(false);
+  });
+});

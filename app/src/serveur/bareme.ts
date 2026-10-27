@@ -9,6 +9,7 @@ import type { RegimeTaxe } from "@/domaine/calcul/taxes";
 import {
   VERSION_SCHEMA_BAREME,
   calculerBareme,
+  codesRisqueDuBareme,
   jsonCanonique,
   lireBareme,
   rejouerJeuxEssai,
@@ -329,4 +330,10 @@ export async function calculerAvecBaremePublie(
 /** État du barème d'une version, lu pour la fiche du produit. */
 export async function etatDuBareme(versionId: number): Promise<EtatBareme> {
   return lireEtatBareme(obtenirPrisma(), versionId);
+}
+
+/** Codes des champs de tous les barèmes publiés d'un produit (B6b, D52) : vide si aucun barème n'est publié (aucun contrôle des balises `risque.<code>`). */
+export async function codesRisqueDuProduit(client: Pick<Client, "baremeDocument">, produitId: number): Promise<Set<string>> {
+  const lignes = await client.baremeDocument.findMany({ where: { statut: "PUBLIE", version: { produitId } }, select: { contenu: true } });
+  return new Set(lignes.flatMap((l) => codesRisqueDuBareme(lireBareme(l.contenu))));
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { startTransition, useActionState, type FormEvent, type ReactNode } from "react";
+import { startTransition, useActionState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 
 import { Bouton, Champ as ChampSaisie, ChampDate as ChampDateSaisie, Icone } from "@/composants/ui";
 
@@ -20,6 +20,7 @@ export function FormulaireAction({
   discret = false,
   pleineLargeur = false,
   conserverSaisie = false,
+  entreeSur,
 }: {
   action: ActionFormulaire;
   libelleBouton: string;
@@ -36,6 +37,12 @@ export function FormulaireAction({
    * le repli avant l'hydratation.
    */
   conserverSaisie?: boolean;
+  /**
+   * Sélecteur CSS d'un bouton du formulaire à cliquer quand la touche Entrée est pressée dans un champ, À LA PLACE de l'envoi
+   * (cotation au barème : Entrée lance « Calculer », jamais l'enregistrement). Ni les zones de texte (Entrée = saut de ligne)
+   * ni les boutons ne sont concernés.
+   */
+  entreeSur?: string;
 }) {
   const [etat, executer, enCours] = useActionState(action, etatInitial);
   const envoyer = (e: FormEvent<HTMLFormElement>) => {
@@ -44,8 +51,15 @@ export function FormulaireAction({
     const donnees = new FormData(e.currentTarget, (e.nativeEvent as SubmitEvent).submitter);
     startTransition(() => executer(donnees));
   };
+  const surEntree = (e: KeyboardEvent<HTMLFormElement>) => {
+    if (!entreeSur || e.key !== "Enter" || e.nativeEvent.isComposing) return;
+    const cible = e.target as HTMLElement;
+    if (cible.tagName !== "INPUT") return; // une liste déroulante garde Entrée pour choisir son option
+    e.preventDefault();
+    e.currentTarget.querySelector<HTMLButtonElement>(entreeSur)?.click();
+  };
   return (
-    <form action={executer} onSubmit={conserverSaisie ? envoyer : undefined} className={className}>
+    <form action={executer} onSubmit={conserverSaisie ? envoyer : undefined} onKeyDown={entreeSur ? surEntree : undefined} className={className}>
       {children}
       {/* `type="submit"` : le spinner suit l'envoi du formulaire (useFormStatus) ; `disabled` garde le verrou de l'ancien bouton. */}
       <Bouton type="submit" variante={discret ? "secondaire" : "principal"} disabled={enCours} attente={conserverSaisie && enCours} className={pleineLargeur ? "w-full" : undefined}>

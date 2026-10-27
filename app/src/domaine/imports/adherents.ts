@@ -51,7 +51,12 @@ export type ContexteControle = {
   formulesPolice: readonly string[];
   /** Police dont la prime a été composée par garanties (session 6.2b) : aucune formule, la colonne reste vide (et n'est pas acceptée remplie). */
   sansFormule?: boolean;
-  /** Liste courante des adhérents de la police (doublons). */
+  /**
+   * Police au barème qui tarife par effectif (B6b, D52) : effectif figé dans la cotation. Les adhérents actifs (la liste courante) et les
+   * lignes valides du fichier ne doivent pas le dépasser ; les lignes en trop sont refusées. Absent : aucun contrôle.
+   */
+  effectifMax?: number;
+  /** Liste courante des adhérents de la police (doublons) : les adhérents ACTIFS, les retraits en sont déjà ôtés. */
   adherents: readonly Assure[];
   /** Numéros déjà pris (police, document émis ou ligne d'un import confirmé), parmi ceux à contrôler. */
   numerosPris: ReadonlySet<string>;
@@ -148,6 +153,9 @@ function controlerLigne(l: LigneBrute, ctx: ContexteControle): LigneControlee {
   return { numero: l.numero, donnees: { ...valeurs, numero_certificat: numero, date_naissance: naissance || valeurs.date_naissance, sexe, formule }, erreurs };
 }
 
+export const messageEffectifDepasse = (effectif: number, actifs: number, enTrop: number): string =>
+  `Ce contrat est tarifé pour ${effectif} assurés ; ${actifs} sont déjà actifs. Les ${enTrop} lignes en trop doivent passer par un avenant d'incorporation, qui recalculera la prime.`;
+
 /**
  * Contrôle de toutes les lignes (CDC §13) : chaque ligne seule, puis les doublons (H63) — dans le fichier (la
  * première occurrence VALIDE reste valide, les suivantes sont en erreur ; une ligne déjà en erreur ne compte pas) et
@@ -197,6 +205,12 @@ export function controlerLignes(lignes: readonly LigneBrute[], ctx: ContexteCont
       nouvelle = true;
     });
     if (!nouvelle) break;
+  }
+  if (ctx.effectifMax !== undefined) {
+    const places = Math.max(0, ctx.effectifMax - ctx.adherents.length);
+    const enTrop = resultat.filter((l) => l.erreurs.length === 0).slice(places);
+    const message = messageEffectifDepasse(ctx.effectifMax, ctx.adherents.length, enTrop.length);
+    for (const l of enTrop) l.erreurs.push({ colonne: "ligne", valeur: "", message });
   }
   // Une ligne en erreur garde le numéro du fichier (vide s'il n'y en avait pas) : rien ne lui est proposé.
   for (const l of resultat) if (l.erreurs.length > 0) l.donnees.numero_certificat = saisis.get(l) ?? "";

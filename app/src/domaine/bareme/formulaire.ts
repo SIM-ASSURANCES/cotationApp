@@ -39,8 +39,12 @@ export type DescripteurSaisie = {
   effectif: boolean;
 };
 
+const accParTete = (a: Bareme["produit"]["accessoires"]) => a?.mode === "PAR_TETE" || a?.mode === "PAR_TRANCHE";
+
+/** Le barème tarife par effectif : un accessoire par tête ou par tranche, ou une composante par tête (B6b, D52 : plafond de l'import en masse). */
+export const baremeTarifeParEffectif = (b: Bareme): boolean => b.garanties.some((g) => accParTete(g.accessoires ?? b.produit.accessoires) || g.composantes.some((c) => c.parTete === true));
+
 export function descripteurSaisie(b: Bareme): DescripteurSaisie {
-  const accParTete = (a: Bareme["produit"]["accessoires"]) => a?.mode === "PAR_TETE" || a?.mode === "PAR_TRANCHE";
   return {
     blocs: b.blocs.map((x) => ({ code: x.code, libelle: x.libelle })),
     champs: b.champs.map((c) => ({
@@ -63,7 +67,7 @@ export function descripteurSaisie(b: Bareme): DescripteurSaisie {
       ...(g.si ? { si: g.si } : {}),
       composantes: g.composantes.map((c) => ({ code: c.code, optionnelle: c.souscription === "OPTIONNELLE" })),
     })),
-    effectif: b.garanties.some((g) => accParTete(g.accessoires ?? b.produit.accessoires) || g.composantes.some((c) => c.parTete === true)),
+    effectif: baremeTarifeParEffectif(b),
   };
 }
 

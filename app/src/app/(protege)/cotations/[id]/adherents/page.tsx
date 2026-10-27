@@ -109,7 +109,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
               Une ligne par adhérent. La colonne du numéro de certificat peut rester vide : le numéro proposé est alors la racine de la police mère suivie du numéro d'ordre de l'adhérent sur 5 chiffres. Le fichier est d'abord <strong>contrôlé</strong> : rien n'est créé avant votre
               confirmation sur l'écran de contrôle. Les lignes valides deviennent alors <strong>une seule</strong> incorporation, et un certificat
               d'adhésion est produit pour chacune, en tâche de fond.{" "}
-              <a href={`/api/imports/modele?produit=${encodeURIComponent(produitCode)}`} className="text-primary underline">
+              <a href={`/api/imports/modele?produit=${encodeURIComponent(produitCode)}&police=${policeId}`} className="text-primary underline">
                 Télécharger le fichier modèle ({produitCode})
               </a>
             </>

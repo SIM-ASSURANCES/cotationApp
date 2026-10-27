@@ -115,6 +115,11 @@ async function droitsFacturation(acteur: UtilisateurCourant) {
   return { facture, avoir, paiement, lire: peutLire(facture) || peutLire(avoir) || peutLire(paiement) };
 }
 
+/** Le profil peut-il lire les factures ? Pour les pages qui n'affichent la facturation que si c'est le cas (les services, eux, refusent). */
+export async function peutLireFactures(acteur: UtilisateurCourant): Promise<boolean> {
+  return (await droitsFacturation(acteur)).lire;
+}
+
 async function exigerLecture(acteur: UtilisateurCourant) {
   const d = await droitsFacturation(acteur);
   if (!d.lire) throw new ErreurAcces("Droit insuffisant : factures.");

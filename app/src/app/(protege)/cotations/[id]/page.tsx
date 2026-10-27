@@ -20,13 +20,10 @@ import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
 import { listerMotifsRefus } from "@/serveur/clients";
 import { listerBranches } from "@/serveur/parametrage";
 import { lireCotation } from "@/serveur/cotations";
-import { documentsDe } from "@/serveur/documents";
-import { facturesDePolice } from "@/serveur/factures";
+import { chargerPartiesLiees } from "@/serveur/fiche-cotation";
 import { niveauDuProfil } from "@/serveur/droits";
 import { lireFormatNumeroPolice } from "@/serveur/societe";
 import { exigerDroit } from "@/serveur/session";
-import { tachesDeCotation } from "@/serveur/taches-police";
-import { lireValidationContrat } from "@/serveur/validation-contrat";
 
 import { accepterCotation, composerPrime, emettreCpDeCotation, emettrePdfDeCotation, reediterDocument, refuserCotation, renvoyerCotation, soumettreCotation, validerCotation } from "../actions";
 
@@ -43,19 +40,17 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
     notFound();
   }
 
-  const [niveauCotation, niveauValidation, niveauComposition, niveauContrat, motifs, documents, formatPolice, vueFactures] = await Promise.all([
+  // Parties liées (documents, contrat, tâches, factures) : chargées selon les droits du profil (voir chargerPartiesLiees).
+  const [niveauCotation, niveauValidation, niveauComposition, niveauContrat, motifs, formatPolice, liees] = await Promise.all([
     niveauDuProfil(utilisateur.profil, "CREER_COTATION"),
     niveauDuProfil(utilisateur.profil, "VALIDER_COTATION"),
     niveauDuProfil(utilisateur.profil, "COMPOSER_PRIME"),
     niveauDuProfil(utilisateur.profil, "EMETTRE_CONTRAT"),
     listerMotifsRefus(),
-    documentsDe(utilisateur, { cotationId: c.id }),
     lireFormatNumeroPolice(),
-    c.numeroPolice ? facturesDePolice(utilisateur, c.id) : null,
+    chargerPartiesLiees(utilisateur, c),
   ]);
-  // Contrat au-dessus du seuil de validation : demande de validation en cours, ou validation exigée de ce profil (CDC §4.1).
-  const etatContrat = c.numeroPolice && peutLire(niveauContrat) ? await lireValidationContrat(utilisateur, c.id) : null;
-  const taches = c.numeroPolice ? await tachesDeCotation(utilisateur, c.id) : [];
+  const { documents, vueFactures, accesFactures: peutFactures, etatContrat, taches } = liees;
   const pdfCotation = documents.filter((d) => d.type === "COTATION");
   const pdfCp = documents.filter((d) => d.type === "CP");
   const emise = c.numero !== null && c.statut !== "BROUILLON" && c.statut !== "A_VALIDER";
@@ -174,7 +169,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         ) : null}
       </Carte>
 
-      {c.numeroPolice && vueFactures ? (
+      {c.numeroPolice && (vueFactures || !peutFactures) ? (
         <Carte titre="Contrat, avenants et facturation de la police">
           <div className="space-y-4">
             <p className="text-sm">
@@ -196,7 +191,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
               </div>
             ) : null}
 
-            {estContratDeGroupe(c.typeContrat) ? (
+            {estContratDeGroupe(c.typeContrat) && peutLire(niveauContrat) ? (
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="font-semibold text-foreground">Avenants :</span>
                 <Link href={`/cotations/${c.id}/adherents`} className="font-medium text-primary underline">
@@ -205,7 +200,9 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
               </div>
             ) : null}
 
-            {vueFactures.factures.length > 0 ? (
+            {!vueFactures ? (
+              <p className="text-sm text-neutral">Factures, avoirs, reçus et relances : accès réservé.</p>
+            ) : vueFactures.factures.length > 0 ? (
               <div>
                 <h4 className="mb-2 text-sm font-semibold text-foreground">Factures et avoirs de la police</h4>
                 <Tableau
@@ -243,11 +240,13 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
               <p className="text-sm text-neutral">Aucune facture émise pour le moment pour ce contrat.</p>
             )}
 
-            <div className="pt-2">
-              <LienBouton href={`/cotations/${c.id}/factures`}>
-                Gérer toutes les factures, avoirs et paiements de la police
-              </LienBouton>
-            </div>
+            {vueFactures ? (
+              <div className="pt-2">
+                <LienBouton href={`/cotations/${c.id}/factures`}>
+                  Gérer toutes les factures, avoirs et paiements de la police
+                </LienBouton>
+              </div>
+            ) : null}
           </div>
         </Carte>
       ) : null}

@@ -298,7 +298,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
         )}
         {composition?.bareme ? (
           <Bandeau ton="neutre" className="mt-3">
-            <strong>Prime calculée au barème publié</strong> (empreinte {composition.bareme.empreinte}). La saisie et les taux de taxe sont figés avec la cotation ; le barème n&apos;est plus relu une fois la cotation émise.
+            <strong>Prime calculée au barème publié</strong> (empreinte <span className="break-all">{composition.bareme.empreinte}</span>). La saisie et les taux de taxe sont figés avec la cotation ; le barème n&apos;est plus relu une fois la cotation émise.
             {peutModifier(c.statut) ? " Brouillon : la prime est recalculée du barème en vigueur à chaque enregistrement et à la soumission." : ""}
           </Bandeau>
         ) : null}

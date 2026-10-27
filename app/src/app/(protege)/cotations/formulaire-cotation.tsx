@@ -50,7 +50,7 @@ export function FormulaireCotation({
   const s = base?.souscripteur;
   return (
     // Chaque rubrique est une carte : les champs (fond teinté) reposent toujours sur le fond blanc de la carte.
-    <FormulaireAction action={enregistrerCotation} libelleBouton={base ? "Enregistrer le brouillon" : "Créer le brouillon"} className="space-y-6">
+    <FormulaireAction action={enregistrerCotation} libelleBouton={base ? "Enregistrer le brouillon" : "Créer le brouillon"} className="space-y-6" conserverSaisie>
       <input type="hidden" name="codeProduit" value={produit.code} />
       {base ? <input type="hidden" name="id" value={base.id} /> : null}
 

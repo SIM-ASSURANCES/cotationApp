@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, type ChangeEvent } from "react";
+import { startTransition, useActionState, useState, type ChangeEvent, type MouseEvent } from "react";
 
 import { ChampDate } from "@/composants/FormulaireAction";
 import { Bandeau, Bouton, Carte, Champ, ListeDeroulante, Tableau } from "@/composants/ui";
@@ -25,6 +25,15 @@ export function ChampsBareme({ descripteur, initiale }: { descripteur: Descripte
   // Le résultat est celui d'un état précis du formulaire : une modification le périme (l'objet d'état reçu n'est plus affiché).
   const [perime, setPerime] = useState<EtatCalculBareme | null>(null);
   const resultat = etat === perime ? {} : etat;
+
+  // « Calculer » ne soumet PAS le formulaire : React 19 le remettrait à zéro à la fin de l'action (les champs saisis seraient perdus).
+  // Le bouton lit les valeurs (FormData) et lance le calcul dans une transition ; aucun champ n'est touché.
+  const lancerLeCalcul = (e: MouseEvent<HTMLButtonElement>) => {
+    const formulaire = e.currentTarget.form;
+    if (!formulaire) return;
+    const donnees = new FormData(formulaire);
+    startTransition(() => calculer(donnees));
+  };
 
   // Un changement d'un champ du formulaire relit les champs du barème visibles ; ceux qui sont masqués gardent leur valeur.
   const aChange = (e: ChangeEvent<HTMLElement>) => {
@@ -101,7 +110,7 @@ export function ChampsBareme({ descripteur, initiale }: { descripteur: Descripte
 
       <Carte titre="Prime">
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <Bouton type="submit" formAction={calculer} formNoValidate variante="secondaire" attente={enCours} disabled={enCours}>
+          <Bouton type="button" onClick={lancerLeCalcul} variante="secondaire" attente={enCours} disabled={enCours}>
             {enCours ? "Calcul en cours…" : "Calculer"}
           </Bouton>
           <span className="text-sm text-neutral">Le calcul vérifie la saisie ; l&apos;enregistrement du brouillon recalcule toujours depuis le barème publié.</span>

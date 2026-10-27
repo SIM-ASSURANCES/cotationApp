@@ -20,7 +20,7 @@ import {
   type LigneComposee,
   type LigneDePrime,
 } from "@/domaine/calcul/composition";
-import { compositionPossible, MESSAGE_BROUILLON_A_FORMULES, MESSAGE_BROUILLON_A_FORMULES_BAREME, MESSAGE_TARIFICATION_AU_BAREME, problemesLibellesGaranties, type GarantieParametree } from "@/domaine/calcul/parametrage";
+import { compositionPossible, MESSAGE_BROUILLON_A_FORMULES, MESSAGE_BROUILLON_A_FORMULES_BAREME, MESSAGE_TARIFICATION_AU_BAREME, messageBrouillonAFormules, problemesLibellesGaranties, type GarantieParametree, type ModeTarification } from "@/domaine/calcul/parametrage";
 import { problemesDateEffetCotation, type DateIso } from "@/domaine/calcul/dates";
 import type { Tranche } from "@/domaine/calcul/echeancier";
 import { ErreurCalcul, montant } from "@/domaine/calcul/montant";
@@ -1172,6 +1172,8 @@ export type DetailCotation = {
   garantiesSaisieLibre: boolean;
   /** Brouillon préparé avec des formules alors que le produit se tarife désormais par garanties : il ne se modifie ni ne se soumet (H89), on le recrée. */
   brouillonAFormulesSousGaranties: boolean;
+  /** Message de la fiche pour ce brouillon (mode en vigueur : par garanties ou au barème) ; null si le brouillon n'est pas concerné. */
+  messageBrouillonAFormules: string | null;
 };
 
 /** Lignes de prime d'une cotation composée, avec le taux résolu et figé de chacune ; `lignes` vide : la prime est « à composer ». */
@@ -1232,6 +1234,7 @@ export async function lireCotation(acteur: UtilisateurCourant, id: number): Prom
     garantiesDuProduit: (version.garanties as GarantieParametree[] | null) ?? [],
     garantiesSaisieLibre: version.garantiesSaisieLibre,
     brouillonAFormulesSousGaranties: versionEnVigueur !== null && (compositionPossible(versionEnVigueur.version.modeTarification) || versionEnVigueur.version.modeTarification === "BAREME"),
+    messageBrouillonAFormules: versionEnVigueur !== null ? messageBrouillonAFormules(versionEnVigueur.version.modeTarification as ModeTarification) : null,
     echeancier: jsonVersTranches(c.echeancier),
     auteurId: c.auteurId,
     auteurIdentifiant: c.auteurIdentifiant,

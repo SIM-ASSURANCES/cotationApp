@@ -246,6 +246,7 @@ describe("GARANTIES : aucun montant automatique", () => {
     expect(apres.composition).toBeNull();
     expect(apres.lignes.length).toBeGreaterThan(0); // les formules préparées sont intactes
     expect(apres.brouillonAFormulesSousGaranties).toBe(true); // la fiche l'explique et ne propose plus de le modifier ni de le soumettre
+    expect(apres.messageBrouillonAFormules).toBe(MESSAGE_BROUILLON_A_FORMULES); // produit « par garanties » : le message du mode par garanties
 
     // T10 : la cotation émise sous l'ancienne version garde ses montants et son acceptation reste possible.
     const figee = (await lireCotation(commercial, emise))!;

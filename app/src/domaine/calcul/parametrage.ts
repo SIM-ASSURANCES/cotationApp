@@ -108,6 +108,13 @@ export const MESSAGE_BAREME_INCOHERENT = "Ce calcul a été fait au barème, mai
 export const MESSAGE_BROUILLON_A_FORMULES_BAREME =
   "Ce produit se tarife désormais au barème : ce brouillon, préparé avec des formules, ne peut plus être modifié ni soumis ; créez une nouvelle cotation";
 
+/**
+ * Message de la fiche d'un brouillon à formules que son produit a quittées (H89, H145) : celui du mode en vigueur, « par garanties » ou
+ * « au barème ». Aucun message pour un mode qui accepte encore les formules.
+ */
+export const messageBrouillonAFormules = (modeEnVigueur: ModeTarification): string | null =>
+  modeEnVigueur === "BAREME" ? MESSAGE_BROUILLON_A_FORMULES_BAREME : modeEnVigueur === "GARANTIES" ? MESSAGE_BROUILLON_A_FORMULES : null;
+
 /** Refus de la composition manuelle pour un produit à la formule (le tarif existe : la Technique ne compose pas la prime). */
 export const MESSAGE_COMPOSITION_IMPOSSIBLE = "Ce produit se tarifie à la formule : la prime se calcule, elle ne se compose pas";
 

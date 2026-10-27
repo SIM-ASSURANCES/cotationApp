@@ -13,7 +13,6 @@ import { formaterMontant, montant, type Montant } from "@/domaine/calcul/montant
 import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
 import { avertissementNumeroContrat, FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
-import { MESSAGE_BROUILLON_A_FORMULES } from "@/domaine/calcul/parametrage";
 import { LIBELLE_STATUT, peutAccepter, peutEtreValidee, peutModifier } from "@/domaine/cotation/statuts";
 import { LIBELLE_RAISON } from "@/domaine/cotation/validation";
 import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
@@ -148,9 +147,9 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
           (aucun prorata n&apos;est appliqué). La prime est de nouveau « À composer » ; l&apos;ancienne composition, avec son auteur et son motif, est gardée au journal.
         </Bandeau>
       ) : null}
-      {c.brouillonAFormulesSousGaranties ? (
+      {c.messageBrouillonAFormules ? (
         <Bandeau ton="avertissement" role="alert">
-          <strong>Brouillon à recréer.</strong> {MESSAGE_BROUILLON_A_FORMULES}.
+          <strong>Brouillon à recréer.</strong> {c.messageBrouillonAFormules}.
         </Bandeau>
       ) : null}
       <TachesPolice taches={taches} cotationId={c.id} chemin={`/cotations/${c.id}`} />

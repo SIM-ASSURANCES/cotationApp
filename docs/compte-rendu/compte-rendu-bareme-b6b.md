@@ -2,8 +2,8 @@
 
 Branche `bareme-b6b-documents`. Décisions : D52 (`docs/decisions.md`), hypothèse H146. Commits locaux, rien de poussé ni fusionné.
 
-## Écart de départ
-- B6a n'est **pas** dans `main` (ni local ni `origin/main`) : le rebase demandé était sans objet. La branche portait B6a sous d'autres hashes mais pas le correctif `a90c54a` (saisie conservée) : repris par cherry-pick. `main` (correctif fiche cotation sans droit factures) n'est **pas** intégré : la fusion est interdite par les instructions, à faire par Thierry.
+## Base
+- Branche rebasée sur `main` à jour (B6a et son correctif de saisie y sont fusionnés : leurs commits ne sont plus dans la branche), sans conflit.
 
 ## Points
 1. Import en masse, option 2c : plafond = effectif figé, adhérents actifs, barème par effectif seulement ; modèle et aide corrigés (`&police=` pour l'effectif maximal).
@@ -14,8 +14,8 @@ Branche `bareme-b6b-documents`. Décisions : D52 (`docs/decisions.md`), hypothè
 6. Entrée = « Calculer » (`entreeSur`). 7. Fiche à 390 px : l'empreinte (64 car.) faisait déborder la page, `break-all`.
 
 ## Tests
-- Unitaires 668/668 ; intégration 350 réussis, 10 ignorés ; lint, typecheck, build : verts.
-- Navigateur (`verifier-cotation-bareme.mjs`, Edge, base `_test` à part supprimée) : 1440 et 390 px, tous les contrôles passent, dont Entrée (points 6) et absence de défilement horizontal (point 7).
+- Après rebase : unitaires 668/668 ; intégration 358 réussis, 10 ignorés ; lint, typecheck, build : verts.
+- Navigateur (`verifier-cotation-bareme.mjs`, Edge, base `_test` à part supprimée), rejoué après rebase : 1440 et 390 px, tous les contrôles passent, dont Entrée (points 6) et absence de défilement horizontal (point 7).
 - **Non exécutés** : e2e (générateur injoignable sur 8001), pytest. Le script n'a pas été rejoué sur l'ancien code pour les points 6 et 7.
 
 ## Écarts, hypothèses ouvertes, besoins découverts (non codés)
@@ -27,3 +27,4 @@ Branche `bareme-b6b-documents`. Décisions : D52 (`docs/decisions.md`), hypothè
 - Autres formulaires qui se vident au refus : voir le compte rendu du correctif B6a.
 
 ## Commits
+(voir `git log main..bareme-b6b-documents`)

@@ -1,4 +1,4 @@
-// Balises risque.<code> d'un produit au barème (B6b, D52). Barème et saisies inventés (securpro-fixture).
+// Balises risque.<code> et risque_code.<code> d'un produit au barème (B6b, D52 ; libellés D55 ; valeurs calculées D54). Barème et saisies inventés (securpro-fixture).
 import { describe, expect, it } from "vitest";
 
 import { avertissementsRisque } from "../documents/controles";
@@ -88,6 +88,56 @@ describe("risque_code dans le dictionnaire et au dépôt", () => {
 
   it("les balises risque_code vides sont facultatives, comme celles de risque", () => {
     expect(champsRisqueFacultatifs({ risque: { a: "x", b: "" }, risque_code: { a: "X", c: "" } })).toEqual(["risque.b", "risque_code.c"]);
+  });
+});
+
+describe("valeurs intermédiaires et attributs tarifaires, dans risque ET risque_code (D54, SECURPRO inventé)", () => {
+  /** Les deux racines portent la MÊME valeur : ni une liste ni un oui / non, rien à traduire. */
+  const les2 = (b: typeof bareme, s: Saisie) => {
+    const r = risqueDuBareme(b, s);
+    expect(risqueCodeDuBareme(b, s)).toMatchObject(Object.fromEntries(Object.entries(r).filter(([k]) => /^(contenu|capital_immo|capitaux_totaux|seul_batiment|type_commerce_classe)$/.test(k))));
+    return r;
+  };
+
+  it("les valeurs intermédiaires figées sont celles du moteur : contenu, capital immobilier, capitaux totaux", () => {
+    const r = les2(bareme, locataire);
+    expect(r).toMatchObject({ contenu: "8866500", capital_immo: "18000000", capitaux_totaux: "26866500" }); // 6 866 500 + 1 000 000 + 500 000 + 500 000 ; 150 000 × 120
+    expect(les2(bareme, proprietaire)).toMatchObject({ contenu: "1000000", capital_immo: "20000000", capitaux_totaux: "21000000" });
+  });
+
+  it("l'attribut tarifaire de la valeur choisie d'une liste : risque.type_commerce_classe", () => {
+    expect(les2(bareme, locataire).type_commerce_classe).toBe("2"); // Électronique
+    expect(les2(bareme, proprietaire).type_commerce_classe).toBe("1"); // Bureau
+    const quincaillerie: Saisie = { ...locataire, champs: { ...locataire.champs, type_commerce: "QUINCAILLERIE" } };
+    expect(les2(bareme, quincaillerie).type_commerce_classe).toBe("4");
+  });
+
+  it("une liste sans attribut (occupation) n'a pas de balise d'attribut ; les codes publiés comprennent champs, attributs et intermédiaires", () => {
+    const codes = codesRisqueDuBareme(bareme);
+    expect(codes).toEqual(expect.arrayContaining(["type_commerce", "type_commerce_classe", "contenu", "capital_immo", "capitaux_totaux"]));
+    expect(codes.filter((c) => c.startsWith("occupation_"))).toEqual([]);
+    expect(Object.keys(risqueDuBareme(bareme, locataire)).sort()).toEqual([...codes].sort());
+    expect(Object.keys(risqueCodeDuBareme(bareme, locataire)).sort()).toEqual([...codes].sort());
+  });
+
+  it("un champ liste non applicable donne un attribut vide ; une valeur intermédiaire qui en dépend est vide, jamais un zéro", () => {
+    const variante = structuredClone(documentSecurpro) as unknown as { champs: { code: string; si?: unknown }[]; intermediaires: { code: string; op: unknown }[] };
+    variante.champs.find((c) => c.code === "type_commerce")!.si = { champ: "occupation", egal: "PROPRIETAIRE" };
+    variante.intermediaires.push({ code: "seul_batiment", op: "valeur_batiment" });
+    const b = lireBareme(variante);
+    const r = les2(b, locataire);
+    expect(r.type_commerce).toBe("");
+    expect(r.type_commerce_classe).toBe("");
+    expect(r.seul_batiment).toBe(""); // valeur_batiment : propriétaire seulement
+    expect(les2(b, proprietaire).seul_batiment).toBe("20000000");
+  });
+
+  it("un code déjà pris par un champ n'est pas masqué par une valeur intermédiaire de même code", () => {
+    const variante = structuredClone(documentSecurpro) as unknown as { intermediaires: { code: string; op: unknown }[] };
+    variante.intermediaires.push({ code: "stocks", op: { k: "1" } });
+    const b = lireBareme(variante);
+    expect(risqueDuBareme(b, locataire).stocks).toBe("6866500");
+    expect(risqueCodeDuBareme(b, locataire).stocks).toBe("6866500");
   });
 });
 

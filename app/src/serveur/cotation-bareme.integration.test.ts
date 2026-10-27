@@ -714,15 +714,27 @@ describe("B6b, D52 : balises risque.<code> d'un produit au barème", () => {
     });
   });
 
+  it("D54 : la cotation porte aussi les valeurs intermédiaires et l'attribut tarifaire de la liste, figés, et le document les reçoit", async () => {
+    const essai = (await lireBaremePublie(obtenirPrisma(), versionId)).bareme.jeuxEssai[0]; // Électronique (classe 2), locataire : 150 000 × 120 de loyer
+    const id = await creerBrouillon(commercial, saisieAuBareme(essai.entrees as EntreesEssai, {}), null);
+    const attendu = { type_commerce_classe: "2", contenu: "8866500", capital_immo: "18000000", capitaux_totaux: "26866500" };
+    expect((await obtenirPrisma().cotation.findUniqueOrThrow({ where: { id } })).risque).toMatchObject(attendu);
+    await soumettre(commercial, id, null);
+    await emettreCotation(commercial, id, null);
+    expect(derniereDemande("COTATION").donnees.risque).toMatchObject(attendu);
+  });
+
   it("le dépôt d'un modèle du produit signale une balise risque.<code> inconnue du barème publié, sans la rejeter", async () => {
     const produit = await obtenirPrisma().produit.findUniqueOrThrow({ where: { code: codeSecurpro } });
     const id = await creerModele(technique, { type: "COTATION", code: CODE("COT_RISQUE"), libelle: "Cotation avec risque", produitCode: codeSecurpro, ...sans }, null);
-    prochaineAnalyse = analyse([...CONTENU_COTATION, "risque.type_commerce", "risque.typo_commerce"]);
+    prochaineAnalyse = analyse([...CONTENU_COTATION, "risque.type_commerce", "risque.typo_commerce", "risque.type_commerce_classe", "risque.capitaux_totaux", "risque.contenu"]);
     const { avertissements } = await deposerVersion(technique, id, { fichier: texte("docx"), nomFichier: "m.docx", commentaire: "test", dateEffet: aujourdhui(), visa: null, dateDocument: null }, null);
     expect(produit.id).toBeGreaterThan(0);
     const messages = avertissements.map((a) => a.message);
     expect(messages.some((m) => m.includes("risque.typo_commerce") && /barème publié/.test(m))).toBe(true);
     expect(messages.some((m) => m.includes("risque.type_commerce"))).toBe(false);
+    // D54 : les attributs et les valeurs intermédiaires du barème sont des balises connues.
+    expect(messages.some((m) => /risque\.(type_commerce_classe|capitaux_totaux|contenu)/.test(m))).toBe(false);
   });
 });
 

@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { ajouterJours, ajouterMois, fixerDateMinimumEffetPourTests, MESSAGE_DATE_EFFET_PASSEE } from "@/domaine/calcul/dates";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
-import { FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
+import { CLE_FORMAT_NUMERO_POLICE, FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
 import type { Souscripteur } from "@/domaine/cotation/saisie";
 
 import { assurerBranche } from "./branches-test";
@@ -520,10 +520,22 @@ describe("acceptation et transformation en police (CDC §9.4)", () => {
     await expect(enregistrerFormatNumeroPolice(technique, "P\\d+", "2020-01-01", null)).rejects.toThrow(/\^/);
     await expect(enregistrerFormatNumeroPolice(technique, "^P(\\d+$", "2020-01-01", null)).rejects.toBeInstanceOf(ErreurMetier);
 
-    const futur = "2999-01-01";
-    await enregistrerFormatNumeroPolice(technique, "^P\\d{3}$", futur, null);
-    expect(await lireFormatNumeroPolice(futur)).toBe("^P\\d{3}$");
-    expect(await lireFormatNumeroPolice()).toBe(FORMAT_NUMERO_POLICE_DEFAUT); // pas encore en vigueur
+    // Cent ans après aujourd'hui, et la valeur est effacée ensuite : l'application n'efface jamais un paramètre (une valeur par date d'effet),
+    // donc un test qui en laisse une échoue à sa relance sur la même base (« Une valeur est déjà enregistrée à cette date d'effet »).
+    const futur = ajouterJours(aujourdhui(), 36500);
+    const effacer = () =>
+      obtenirPrisma().$transaction(async (tx) => {
+        await tx.$executeRawUnsafe("SET LOCAL session_replication_role = replica;"); // déclencheur d'immuabilité : base de test seulement
+        await tx.$executeRawUnsafe(`DELETE FROM parametres WHERE cle = '${CLE_FORMAT_NUMERO_POLICE}' AND date_effet = DATE '${futur}'`);
+      });
+    await effacer(); // reste d'une exécution interrompue
+    try {
+      await enregistrerFormatNumeroPolice(technique, "^P\\d{3}$", futur, null);
+      expect(await lireFormatNumeroPolice(futur)).toBe("^P\\d{3}$");
+      expect(await lireFormatNumeroPolice()).toBe(FORMAT_NUMERO_POLICE_DEFAUT); // pas encore en vigueur
+    } finally {
+      await effacer();
+    }
   });
 
   it("une cotation non émise ne peut pas être acceptée", async () => {

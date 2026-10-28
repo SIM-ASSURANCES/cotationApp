@@ -714,15 +714,72 @@ describe("B6b, D52 : balises risque.<code> d'un produit au barème", () => {
     });
   });
 
+  it("D54 : la cotation porte aussi les valeurs intermédiaires et l'attribut tarifaire de la liste, figés, et le document les reçoit", async () => {
+    const essai = (await lireBaremePublie(obtenirPrisma(), versionId)).bareme.jeuxEssai[0]; // Électronique (classe 2), locataire : 150 000 × 120 de loyer
+    const id = await creerBrouillon(commercial, saisieAuBareme(essai.entrees as EntreesEssai, {}), null);
+    const attendu = { type_commerce_classe: "2", contenu: "8866500", capital_immo: "18000000", capitaux_totaux: "26866500" };
+    expect((await obtenirPrisma().cotation.findUniqueOrThrow({ where: { id } })).risque).toMatchObject(attendu);
+    await soumettre(commercial, id, null);
+    await emettreCotation(commercial, id, null);
+    expect(derniereDemande("COTATION").donnees.risque).toMatchObject(attendu);
+    expect(derniereDemande("COTATION").donnees.risque_code).toMatchObject(attendu);
+  });
+
+  describe("D54 : cotation enregistrée avant D54 (sans les valeurs intermédiaires ni l'attribut)", () => {
+    const CLES = ["contenu", "capital_immo", "capitaux_totaux", "type_commerce_classe"];
+    let compteur = 0;
+
+    /** Police au barème (jeu d'essai 1) dont `risque`, sur la cotation et sur la police, est ramené à celui d'avant D54 (base de test, déclencheurs contournés). */
+    async function policeAncienne(modifierCalcul = ""): Promise<{ cotationId: number; policeId: number; avant: unknown }> {
+      const essai = (await lireBaremePublie(obtenirPrisma(), versionId)).bareme.jeuxEssai[0].entrees as EntreesEssai;
+      const cotationId = await creerBrouillon(commercial, saisieAuBareme(essai, {}), null);
+      await soumettre(commercial, cotationId, null);
+      const { numeroPolice } = await accepter(commercial, cotationId, [], `SB-2026-${String((Date.now() + ++compteur) % 1_000_000).padStart(6, "0")}-I00001`, null);
+      const policeId = (await obtenirPrisma().police.findUniqueOrThrow({ where: { numero: numeroPolice } })).id;
+      const retirer = CLES.map((k) => `- '${k}'`).join(" ");
+      await obtenirPrisma().$transaction(async (tx) => {
+        await tx.$executeRawUnsafe("SET LOCAL session_replication_role = replica;");
+        await tx.$executeRawUnsafe(`UPDATE cotations SET risque = risque ${retirer} WHERE id = ${cotationId}`);
+        await tx.$executeRawUnsafe(`UPDATE polices SET risque = risque ${retirer}${modifierCalcul ? `, donnees_calcul = donnees_calcul ${modifierCalcul}` : ""} WHERE id = ${policeId}`);
+      });
+      const avant = (await obtenirPrisma().police.findUniqueOrThrow({ where: { id: policeId } })).risque;
+      for (const k of CLES) expect(avant).not.toHaveProperty(k);
+      return { cotationId, policeId, avant };
+    }
+
+    it("la CP se génère avec contenu et classe recalculés depuis la saisie et le barème figés ; rien n'est écrit en base", async () => {
+      const { cotationId, policeId, avant } = await policeAncienne();
+      await emettreCp(technique, cotationId, null);
+      const valeurs = { type_commerce_classe: "2", contenu: "8866500", capital_immo: "18000000", capitaux_totaux: "26866500" };
+      expect(derniereDemande("CP").donnees.risque).toMatchObject({ ...valeurs, type_commerce: "Électronique" });
+      expect(derniereDemande("CP").donnees.risque_code).toMatchObject({ ...valeurs, type_commerce: "ELECTRONIQUE" }); // même valeur dans les deux : ni liste ni oui / non
+      expect((await obtenirPrisma().police.findUniqueOrThrow({ where: { id: policeId } })).risque).toEqual(avant); // calcul pur : la police est inchangée
+      expect((await obtenirPrisma().cotation.findUniqueOrThrow({ where: { id: cotationId } })).risque).not.toHaveProperty("contenu");
+    });
+
+    it("une saisie figée incomplète donne des clés présentes et vides, jamais une erreur", async () => {
+      const { cotationId } = await policeAncienne("#- '{bareme,saisie,champs,stocks}'"); // le stock manque : contenu et capitaux totaux ne se calculent plus
+      await emettreCp(technique, cotationId, null);
+      const risque = derniereDemande("CP").donnees.risque as Record<string, string>;
+      expect(risque).toMatchObject({ contenu: "", capitaux_totaux: "", capital_immo: "18000000", type_commerce_classe: "2" });
+      for (const k of CLES) expect(risque).toHaveProperty(k);
+      const code = derniereDemande("CP").donnees.risque_code as Record<string, string>;
+      expect(code).toMatchObject({ contenu: "", capitaux_totaux: "", capital_immo: "18000000", type_commerce_classe: "2" });
+      for (const k of CLES) expect(code).toHaveProperty(k);
+    });
+  });
+
   it("le dépôt d'un modèle du produit signale une balise risque.<code> inconnue du barème publié, sans la rejeter", async () => {
     const produit = await obtenirPrisma().produit.findUniqueOrThrow({ where: { code: codeSecurpro } });
     const id = await creerModele(technique, { type: "COTATION", code: CODE("COT_RISQUE"), libelle: "Cotation avec risque", produitCode: codeSecurpro, ...sans }, null);
-    prochaineAnalyse = analyse([...CONTENU_COTATION, "risque.type_commerce", "risque.typo_commerce"]);
+    prochaineAnalyse = analyse([...CONTENU_COTATION, "risque.type_commerce", "risque.typo_commerce", "risque.type_commerce_classe", "risque.capitaux_totaux", "risque.contenu"]);
     const { avertissements } = await deposerVersion(technique, id, { fichier: texte("docx"), nomFichier: "m.docx", commentaire: "test", dateEffet: aujourdhui(), visa: null, dateDocument: null }, null);
     expect(produit.id).toBeGreaterThan(0);
     const messages = avertissements.map((a) => a.message);
     expect(messages.some((m) => m.includes("risque.typo_commerce") && /barème publié/.test(m))).toBe(true);
     expect(messages.some((m) => m.includes("risque.type_commerce"))).toBe(false);
+    // D54 : les attributs et les valeurs intermédiaires du barème sont des balises connues.
+    expect(messages.some((m) => /risque\.(type_commerce_classe|capitaux_totaux|contenu)/.test(m))).toBe(false);
   });
 });
 

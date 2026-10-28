@@ -76,6 +76,8 @@ export type SourceDocument = {
   /** Intermédiaires de la cotation (0 à 2, session 6.0) ; absent : document qui ne les connaît pas (liste vide, D19). */
   intermediaires?: IntermediaireDocument[];
   risque: Risque;
+  /** Produit au barème : le code de la valeur de chaque champ (D55) ; vide pour un produit sans barème. */
+  risqueCode: Risque;
   dateEffet: DateIso;
   dateEcheance: DateIso;
   joursCouverts: number;
@@ -202,6 +204,7 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
     // « Envoyé à » (D23) : null, donc bloc masqué, s'il n'est pas saisi ou s'il est identique à « Facturé à ».
     envoye_a: fa?.envoyeA ? { nom: fa.envoyeA.nom, adresse: fa.envoyeA.adresse } : null,
     risque: s.risque,
+    risque_code: s.risqueCode,
     police: {
       numero: s.policeNumero,
       // La référence de la police est son numéro (réponse de la Technique, D27 ; H46 fermée).

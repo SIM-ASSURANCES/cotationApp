@@ -129,7 +129,7 @@ export function controlerDepot(type: TypeModele, analyse: Analyse): ResultatCont
 }
 
 /**
- * Balises `risque.<code>` qu'un produit au barème ne connaît pas (B6b, D52) : le code n'est pas un champ de son barème publié. Un
+ * Balises `risque.<code>` et `risque_code.<code>` qu'un produit au barème ne connaît pas (B6b, D52) : le code n'est pas un champ de son barème publié. Un
  * avertissement et non un rejet : le barème et le modèle ont leurs propres dates d'effet, et un champ peut arriver avec une version
  * publiée plus tard. `codes` : champs de tous les barèmes publiés du produit (jamais vide : sans barème, le contrôle ne s'applique pas).
  */
@@ -138,7 +138,7 @@ export function avertissementsRisque(analyse: Analyse, codes: ReadonlySet<string
   const avertissements: Constat[] = [];
   for (const reference of analyse.references) {
     const [racine, code] = reference.chemin.split(".");
-    if (racine !== "risque" || code === undefined || codes.has(code) || vus.has(reference.chemin)) continue;
+    if ((racine !== "risque" && racine !== "risque_code") || code === undefined || codes.has(code) || vus.has(reference.chemin)) continue;
     vus.add(reference.chemin);
     avertissements.push(constat(`Balise « ${reference.chemin} » : « ${code} » n'est pas un champ du barème publié de ce produit (champs : ${[...codes].sort().join(", ")}). Elle ne sera pas renseignée.`, reference.emplacement));
   }

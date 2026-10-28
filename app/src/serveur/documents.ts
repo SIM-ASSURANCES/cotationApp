@@ -11,7 +11,7 @@ import { libelleBranchePrincipale } from "@/domaine/calcul/parametrage";
 import type { DateIso } from "@/domaine/calcul/dates";
 import { dateAdhesion, estContratDeGroupe, type VersionAdherents } from "@/domaine/cotation/adherents";
 import { normaliserNumeroPolice, numeroCertificatParDefaut, problemesNumeroCertificat } from "@/domaine/cotation/police";
-import type { Assure, Beneficiaire, ContactUrgence, Risque, Souscripteur } from "@/domaine/cotation/saisie";
+import type { Assure, Beneficiaire, ContactUrgence, Souscripteur } from "@/domaine/cotation/saisie";
 import { ecartEnJours } from "@/domaine/calcul/dates";
 import { statutEffectif, type StatutCotation } from "@/domaine/cotation/statuts";
 import { messageCgManquante } from "@/domaine/documents/cg-branche";
@@ -29,6 +29,7 @@ import {
 import { IMAGES_SOCIETE } from "@/domaine/documents/societe";
 import { peutAgir, peutLire, type CodeAction } from "@/domaine/droits";
 
+import { avecRisqueDuDocument, type RisqueDuDocument } from "./bareme";
 import { journaliser, type ActeurAudit } from "./audit";
 import { versIntermediairesDocument } from "./intermediaires";
 import { obtenirConfig } from "./config";
@@ -448,7 +449,7 @@ async function sourceCommune(contexte: ContexteProduit, date: DateIso) {
 // ---------------------------------------------------------------- Cotation (CDC §9)
 
 export async function chargerCotation(id: number) {
-  const c = await obtenirPrisma().cotation.findUnique({ where: { id }, include: { produit: true, intermediaires: true } });
+  const c = await avecRisqueDuDocument(obtenirPrisma(), await obtenirPrisma().cotation.findUnique({ where: { id }, include: { produit: true, intermediaires: true } }));
   if (!c) throw new ErreurMetier("Cotation introuvable.");
   // doc.auteur_nom (D20) : nom de l'utilisateur qui a créé la cotation.
   const auteur = await obtenirPrisma().utilisateur.findUnique({ where: { id: c.auteurId }, select: { nom: true } });
@@ -482,7 +483,8 @@ function sourceDeCotation(
     contactsUrgence: (c.contactsUrgence as unknown as ContactUrgence[] | null) ?? null,
     intermediaires: versIntermediairesDocument(c.intermediaires),
     policeMere: null,
-    risque: c.risque as unknown as Risque,
+    risque: c.risque,
+    risqueCode: c.risqueCode,
     dateEffet: depuisDate(c.dateEffet),
     dateEcheance: depuisDate(c.dateEcheance),
     joursCouverts: m.resultat.joursCouverts,
@@ -577,7 +579,7 @@ export async function apercuCotation(acteur: UtilisateurCourant, cotationId: num
 
 // ---------------------------------------------------------------- Contrat : conditions particulières
 
-type PoliceChargee = Prisma.PoliceGetPayload<{ include: { adherents: true } }>;
+type PoliceChargee = Omit<Prisma.PoliceGetPayload<{ include: { adherents: true } }>, "risque"> & RisqueDuDocument;
 type CotationChargee = Awaited<ReturnType<typeof chargerCotation>>;
 
 /** Versions de la liste des adhérents d'une police de groupe, au format du domaine. */
@@ -631,7 +633,8 @@ async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<
     contactsUrgence: (police.contactsUrgence as unknown as ContactUrgence[] | null) ?? null,
     intermediaires: versIntermediairesDocument(c.intermediaires),
     policeMere: null,
-    risque: police.risque as unknown as Risque,
+    risque: police.risque,
+    risqueCode: police.risqueCode,
     dateEffet: depuisDate(police.dateEffet),
     dateEcheance: depuisDate(police.dateEcheance),
     joursCouverts: m.resultat.joursCouverts,
@@ -674,7 +677,7 @@ async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<
 async function preparerCp(acteur: UtilisateurCourant, cotationId: number) {
   await exigerSurType(acteur, "CP", true);
   const c = await chargerCotation(cotationId);
-  const police = await obtenirPrisma().police.findUnique({ where: { cotationId }, include: { adherents: true } });
+  const police = await avecRisqueDuDocument(obtenirPrisma(), await obtenirPrisma().police.findUnique({ where: { cotationId }, include: { adherents: true } }));
   if (!police) throw new ErreurMetier("Pas de police : les conditions particulières s'émettent après l'acceptation de la cotation.");
   if (await obtenirPrisma().documentEmis.findFirst({ where: { policeId: police.id, type: "CP" } })) {
     throw new ErreurMetier("Les conditions particulières de cette police sont déjà émises : utilisez « Rééditer ».");
@@ -720,7 +723,7 @@ export async function soumettreCp(acteur: UtilisateurCourant, cotationId: number
  */
 export async function mettreAJourCp(acteur: UtilisateurCourant, policeId: number, adresseIp: string | null): Promise<DocumentLu> {
   await exigerSurType(acteur, "CP", true);
-  const police = await obtenirPrisma().police.findUnique({ where: { id: policeId }, include: { adherents: true } });
+  const police = await avecRisqueDuDocument(obtenirPrisma(), await obtenirPrisma().police.findUnique({ where: { id: policeId }, include: { adherents: true } }));
   if (!police) throw new ErreurMetier("Police introuvable.");
   if (!estContratDeGroupe(police.typeContrat)) throw new ErreurMetier("Seul un contrat de groupe a une liste d'adhérents qui évolue.");
   const derniere = await obtenirPrisma().documentEmis.findFirst({ where: { policeId, type: "CP" }, orderBy: { version: "desc" } });
@@ -751,7 +754,7 @@ async function numeroReserveParImport(policeId: number, adherentOrdre: number, n
  */
 export async function emettreCertificat(acteur: UtilisateurCourant, policeId: number, adherentOrdre: number, numeroSaisi: string, adresseIp: string | null): Promise<DocumentLu> {
   await exigerSurType(acteur, "CERTIFICAT", true);
-  const police = await obtenirPrisma().police.findUnique({ where: { id: policeId }, include: { adherents: true } });
+  const police = await avecRisqueDuDocument(obtenirPrisma(), await obtenirPrisma().police.findUnique({ where: { id: policeId }, include: { adherents: true } }));
   if (!police) throw new ErreurMetier("Police introuvable.");
   if (!estContratDeGroupe(police.typeContrat)) throw new ErreurMetier("Un certificat d'adhésion n'existe que pour un contrat de groupe.");
   const adherent = (police.assures as unknown as Assure[]).find((a) => a.ordre === adherentOrdre);
@@ -798,7 +801,8 @@ export async function emettreCertificat(acteur: UtilisateurCourant, policeId: nu
     contactsUrgence: null,
     intermediaires: versIntermediairesDocument(c.intermediaires),
     policeMere: police.numero,
-    risque: police.risque as unknown as Risque,
+    risque: police.risque,
+    risqueCode: police.risqueCode,
     dateEffet: adhesion,
     dateEcheance: depuisDate(police.dateEcheance),
     joursCouverts: ecartEnJours(adhesion, depuisDate(police.dateEcheance)) + 1,

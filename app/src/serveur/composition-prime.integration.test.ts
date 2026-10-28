@@ -862,6 +862,7 @@ describe("D37 : montant garanti et accessoires par défaut sur les garanties du 
       policeMere: null,
       risque: {},
       dateEffet: "2026-01-01",
+      risqueCode: {},
       dateEcheance: "2026-12-31",
       joursCouverts: m.resultat.joursCouverts,
       formules: m.formules,

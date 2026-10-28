@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import type { Prisma } from "@/generated/prisma/client";
 
 import { aujourdhui, ajouterJours, type DateIso } from "@/domaine/calcul/dates";
+import { estCompositionBareme } from "@/domaine/calcul/composition";
 import type { RegimeTaxe } from "@/domaine/calcul/taxes";
 import {
   VERSION_SCHEMA_BAREME,
@@ -13,6 +14,8 @@ import {
   jsonCanonique,
   lireBareme,
   rejouerJeuxEssai,
+  risqueCodeDuBareme,
+  risqueDuBareme,
   schemaBareme,
   verifierBareme,
   type Bareme,
@@ -336,4 +339,31 @@ export async function etatDuBareme(versionId: number): Promise<EtatBareme> {
 export async function codesRisqueDuProduit(client: Pick<Client, "baremeDocument">, produitId: number): Promise<Set<string>> {
   const lignes = await client.baremeDocument.findMany({ where: { statut: "PUBLIE", version: { produitId } }, select: { contenu: true } });
   return new Set(lignes.flatMap((l) => codesRisqueDuBareme(lireBareme(l.contenu))));
+}
+
+/** Valeurs de `risque.*` (libellés) et de `risque_code.*` (codes) d'un document. */
+export type RisqueDuDocument = { risque: Record<string, string>; risqueCode: Record<string, string> };
+
+/**
+ * `risque` et `risque_code` d'un document d'une cotation ou d'une police au barème (D55). Pour un calcul figé d'origine BAREME, les deux sont
+ * recalculés depuis la SAISIE et le BARÈME FIGÉS de la cotation (barème lu par sa version ET son empreinte) : une cotation enregistrée avant
+ * D55 stockait des CODES dans `risque.<champ>`, elle rend désormais des libellés comme les autres. Calcul pur : ni prime, ni ligne, ni
+ * cotation n'est modifiée, rien n'est écrit. Les clés propres à la cotation (hors barème) sont gardées ; une valeur que la saisie ne permet pas
+ * de donner est vide. Barème introuvable ou altéré : `risque` tel qu'enregistré, `risque_code` vide.
+ */
+export async function risqueDuDocument(client: Pick<Client, "baremeDocument">, risque: unknown, donneesCalcul: unknown): Promise<RisqueDuDocument> {
+  const enregistre = (risque ?? {}) as Record<string, string>;
+  if (!estCompositionBareme(donneesCalcul)) return { risque: enregistre, risqueCode: {} };
+  const { versionId, empreinte, saisie } = donneesCalcul.bareme;
+  const ligne = await client.baremeDocument.findFirst({ where: { versionId, empreinte } });
+  if (!ligne || ligne.schemaVersion !== VERSION_SCHEMA_BAREME || empreinteBareme(ligne.contenu) !== empreinte) return { risque: enregistre, risqueCode: {} };
+  const bareme = lireBareme(ligne.contenu);
+  return { risque: { ...enregistre, ...risqueDuBareme(bareme, saisie) }, risqueCode: risqueCodeDuBareme(bareme, saisie) };
+}
+
+/** Une cotation ou une police chargée, avec `risque` (libellés) et `risqueCode` (codes) complétés pour le document ; `null` reste `null`. */
+export async function avecRisqueDuDocument<T extends { risque: unknown; donneesCalcul: unknown }>(client: Pick<Client, "baremeDocument">, ligne: T | null): Promise<(Omit<T, "risque"> & RisqueDuDocument) | null> {
+  if (!ligne) return null;
+  const { risque, risqueCode } = await risqueDuDocument(client, ligne.risque, ligne.donneesCalcul);
+  return { ...ligne, risque, risqueCode };
 }

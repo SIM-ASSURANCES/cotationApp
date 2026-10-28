@@ -250,6 +250,7 @@ describe("données d'une cotation T1 (dictionnaire, montants du moteur)", () => 
     contactsUrgence: null,
     policeMere: null,
     risque: {},
+    risqueCode: {},
     dateEffet: entreeT1.dateEffet,
     dateEcheance: entreeT1.dateEcheance,
     joursCouverts: r.joursCouverts,

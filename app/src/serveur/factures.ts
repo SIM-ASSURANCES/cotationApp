@@ -49,6 +49,7 @@ import {
   type TypeFacture,
 } from "@/domaine/facturation/factures";
 
+import { avecRisqueDuDocument } from "./bareme";
 import { journaliser, type ActeurAudit } from "./audit";
 import { contexteProduit, montantsDu } from "./documents";
 import { avanceDisponible, encaissementsDe, inclusionImputations, reportsEnAttente, versEncaissements, type ReportEnAttente } from "./encaissements";
@@ -128,8 +129,11 @@ async function exigerLecture(acteur: UtilisateurCourant) {
 
 // ---------------------------------------------------------------- Chargements
 
-export const chargerPolice = (client: Tx, policeId: number) =>
-  client.police.findUnique({ where: { id: policeId }, include: { adherents: { orderBy: { numero: "asc" } }, cotation: { select: { produitId: true, versionDateEffet: true, regimeTaxe: true, intermediaires: true } } } });
+export const chargerPolice = async (client: Tx, policeId: number) =>
+  avecRisqueDuDocument(
+    client,
+    await client.police.findUnique({ where: { id: policeId }, include: { adherents: { orderBy: { numero: "asc" } }, cotation: { select: { produitId: true, versionDateEffet: true, regimeTaxe: true, intermediaires: true } } } }),
+  );
 type PoliceChargee = NonNullable<Awaited<ReturnType<typeof chargerPolice>>>;
 
 /** Verrou de la ligne de la facture jusqu'à la fin de la transaction : deux émissions, deux paiements passent l'un après l'autre. */
@@ -691,7 +695,7 @@ export function donnees(
   version: number,
   dateEmission: DateIso,
   contenu: ContenuFacture,
-  police: { numero: string; risque: unknown },
+  police: { numero: string; risque: unknown; risqueCode: unknown },
   commun: Commun,
   facturation: Facturation,
   auteurNom: string,
@@ -715,6 +719,7 @@ export function donnees(
     intermediaires: contenu.intermediaires,
     policeMere: null,
     risque: police.risque as Risque,
+    risqueCode: police.risqueCode as Risque,
     dateEffet: contenu.dateEffet,
     dateEcheance: contenu.dateEcheance,
     joursCouverts: contenu.joursCouverts,

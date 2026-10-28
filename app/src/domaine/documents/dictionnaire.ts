@@ -11,7 +11,8 @@
  * les reçus (D23), `envoye_a.*`, `formules[].base_taxe` et `paiements[].payeur` ; pour les avis d'échéance et les
  * relances (D25), `echeance_appelee.*` et `relance.*` ; `solde.avance` (D28, session 6.0) ; pour les produits tarifés par garanties
  * (D32, session 6.2b), `garanties_souscrites[]`, et `prime.taux_taxe` devient facultatif (vide quand plusieurs taux s'appliquent).
- * `risque.*` est ouvert : chaque produit y met ses propres champs (CDC §6.3, « extensible »).
+ * `risque.*` est ouvert : chaque produit y met ses propres champs (CDC §6.3, « extensible »). `risque_code.*` (D55) : pour un produit au barème,
+ * le CODE de la valeur de chaque champ (`risque.<champ>` en donne le libellé), à utiliser dans les conditions et les cases à cocher.
  * Les champs des éléments de `societe.rib[]`, `societe.mobile_money[]` et `societe.recours[]` ne
  * sont pas nommés par le CDC : les noms retenus ici sont des hypothèses (decisions.md, D14).
  *
@@ -135,7 +136,8 @@ export const CHAMPS: readonly Champ[] = [
   c("envoye_a", "objet", "« Envoyé à » d'une facture (extension D23) : vide s'il n'est pas saisi ou s'il est identique à « Facturé à » (bloc à masquer)", undefined, S2),
   c("envoye_a.nom", "texte", "Destinataire de la facture", "SERVICE COMPTABLE EXEMPLE", S2),
   c("envoye_a.adresse", "texte", "Adresse du destinataire", "Plateau, rue inventée", S2),
-  c("risque", "objet", "Champs propres au produit : risque.marque, risque.statut… (tout nom en minuscules). Produit au barème : un champ par champ du barème (risque.<code>), vide s'il ne s'applique pas à la saisie", undefined, S2),
+  c("risque", "objet", "Champs propres au produit : risque.marque, risque.statut… (tout nom en minuscules). Produit au barème : un champ par champ du barème (risque.<code>) = la valeur vue par le Commercial (libellé d'une liste, Oui / Non), à AFFICHER ; vide s'il ne s'applique pas à la saisie ou s'il n'est pas imprimable", undefined, S2),
+  c("risque_code", "objet", "Produit au barème : le CODE de la valeur de chaque champ (risque_code.<code> : code d'une liste, OUI / NON), à utiliser dans les conditions et les cases à cocher, par exemple (risque_code.occupation == \"LOCATAIRE\") | case. Même règle de vide que risque", undefined, S2),
 
   // ---------------------------------------------------------------- 6.3.3
   c("police.numero", "texte", "N° de police", "POL-2026-000001", S3),
@@ -242,7 +244,7 @@ export const IMAGES = CHAMPS.filter((champ) => champ.type === "image").map((cham
 
 /** Un chemin relevé dans un modèle est-il un nom du dictionnaire ? */
 export function estConnu(chemin: string): boolean {
-  if (chemin === "risque" || /^risque(\.[a-z][a-z0-9_]*)+$/.test(chemin)) return true;
+  if (chemin === "risque" || chemin === "risque_code" || /^risque(_code)?(\.[a-z][a-z0-9_]*)+$/.test(chemin)) return true;
   return PAR_CHEMIN.has(chemin) || CONTENEURS.has(chemin) || PAR_CHEMIN.get(chemin.replace(/\[\]$/, ""))?.type === "liste";
 }
 
@@ -265,11 +267,13 @@ export const CHAMPS_FACULTATIFS: readonly string[] = CHAMPS.filter((champ) => ch
  * saisie, ou qui est facultatif et laissé vide, est fourni vide ; un modèle qui l'emploie l'écrit vide au lieu de bloquer la génération.
  */
 export function champsRisqueFacultatifs(donnees: Record<string, unknown>): string[] {
-  const risque = donnees.risque;
-  if (typeof risque !== "object" || risque === null) return [];
-  return Object.entries(risque)
-    .filter(([, valeur]) => valeur === "")
-    .map(([code]) => `risque.${code}`);
+  return ["risque", "risque_code"].flatMap((racine) => {
+    const objet = donnees[racine];
+    if (typeof objet !== "object" || objet === null) return [];
+    return Object.entries(objet)
+      .filter(([, valeur]) => valeur === "")
+      .map(([code]) => `${racine}.${code}`);
+  });
 }
 
 /**
@@ -347,7 +351,8 @@ export function donneesExemple(options: { nombreAssures?: number } = {}): Donnee
     const nombre = tailles[champ.chemin] ?? 2;
     placer(donnees, champ.chemin.split("."), Array.from({ length: nombre }, (_, i) => element(champ.chemin, i + 1)));
   }
-  placer(donnees, ["risque"], { statut: "PROPRIETAIRE", marque: "MARQUE EXEMPLE", nb_pieces: "4" });
+  placer(donnees, ["risque"], { statut: "Propriétaire", marque: "MARQUE EXEMPLE", nb_pieces: "4" });
+  placer(donnees, ["risque_code"], { statut: "PROPRIETAIRE", marque: "MARQUE EXEMPLE", nb_pieces: "4" });
   return donnees;
 }
 
@@ -358,7 +363,7 @@ export function donneesExemple(options: { nombreAssures?: number } = {}): Donnee
 export function champsInconnus(donnees: Donnees): string[] {
   const inconnus: string[] = [];
   const parcourir = (valeur: unknown, chemin: string): void => {
-    if (chemin.startsWith("risque.") || chemin === "risque") return;
+    if (chemin.startsWith("risque.") || chemin === "risque" || chemin.startsWith("risque_code.") || chemin === "risque_code") return;
     if (Array.isArray(valeur)) {
       if (!estConnu(chemin)) inconnus.push(chemin);
       valeur.forEach((v) => parcourir(v, `${chemin}[]`));
@@ -383,7 +388,7 @@ export const FILTRES = [
   { nom: "date", syntaxe: "{{ police.date_effet | date }}", rendu: "01/09/2026", note: "" },
   { nom: "dateheure", syntaxe: "{{ police.date_effet | dateheure }}", rendu: "01/09/2026 à 08h00", note: "La donnée doit contenir une heure." },
   { nom: "pct", syntaxe: "{{ f.taux_couverture | pct }}", rendu: "80 %", note: "Espace insécable avant %." },
-  { nom: "case", syntaxe: '{{ (risque.statut == "PROPRIETAIRE") | case }} Propriétaire', rendu: "☒ Propriétaire", note: "Condition OBLIGATOIREMENT entre parenthèses : sans elles, case s'applique au seul texte \"PROPRIETAIRE\" et la case affichée est fausse (le dépôt est refusé)." },
+  { nom: "case", syntaxe: '{{ (risque_code.statut == "PROPRIETAIRE") | case }} Propriétaire', rendu: "☒ Propriétaire", note: "Produit au barème : comparer avec risque_code.<champ> (le code), jamais avec risque.<champ> (le libellé, qui peut changer). Condition OBLIGATOIREMENT entre parenthèses : sans elles, case s'applique au seul texte \"PROPRIETAIRE\" et la case affichée est fausse (le dépôt est refusé)." },
 ] as const;
 
 /** Filtres de Jinja également permis (« default » est exclu : il masquerait une donnée absente). */

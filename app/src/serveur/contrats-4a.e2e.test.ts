@@ -234,6 +234,7 @@ describe("T6 : VOL (IARD), cases à cocher et date d'émission dynamique — doc
       contactsUrgence: [],
       policeMere: null,
       risque: { capital_vol_caisse: "100000", gardiennage: "NUIT", statut: "LOCATAIRE" },
+      risqueCode: {},
       dateEffet: debutTest(),
       dateEcheance: finTest(debutTest()),
       joursCouverts: 365,

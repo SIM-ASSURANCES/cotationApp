@@ -133,7 +133,9 @@ describe("valeurs intermédiaires et attributs tarifaires, dans risque ET risque
   });
 
   it("une saisie incomplète ne lève jamais d'erreur : les valeurs qui n'en découlent pas sont vides, les autres restent calculées", () => {
-    const { stocks: _stocks, loyer_mensuel: _loyer, ...reste } = locataire.champs;
+    const reste = { ...locataire.champs };
+    delete reste.stocks;
+    delete reste.loyer_mensuel;
     const r = risqueDuBareme(bareme, { ...locataire, champs: reste });
     expect(r).toMatchObject({ contenu: "", capital_immo: "", capitaux_totaux: "", type_commerce_classe: "2", stocks: "", loyer_mensuel: "" });
     const vide = risqueDuBareme(bareme, { champs: {}, souscrit: [] });

@@ -132,6 +132,15 @@ describe("valeurs intermédiaires et attributs tarifaires, dans risque ET risque
     expect(les2(b, proprietaire).seul_batiment).toBe("20000000");
   });
 
+  it("une saisie incomplète ne lève jamais d'erreur : les valeurs qui n'en découlent pas sont vides, les autres restent calculées", () => {
+    const { stocks: _stocks, loyer_mensuel: _loyer, ...reste } = locataire.champs;
+    const r = risqueDuBareme(bareme, { ...locataire, champs: reste });
+    expect(r).toMatchObject({ contenu: "", capital_immo: "", capitaux_totaux: "", type_commerce_classe: "2", stocks: "", loyer_mensuel: "" });
+    const vide = risqueDuBareme(bareme, { champs: {}, souscrit: [] });
+    expect(Object.keys(vide).sort()).toEqual(codesRisqueDuBareme(bareme).sort());
+    expect(Object.values(vide).every((v) => v === "")).toBe(true);
+  });
+
   it("un code déjà pris par un champ n'est pas masqué par une valeur intermédiaire de même code", () => {
     const variante = structuredClone(documentSecurpro) as unknown as { intermediaires: { code: string; op: unknown }[] };
     variante.intermediaires.push({ code: "stocks", op: { k: "1" } });

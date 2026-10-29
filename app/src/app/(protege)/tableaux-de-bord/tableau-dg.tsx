@@ -185,3 +185,4 @@ export function TableauDeBordDG({ t, erreur }: { t: TableauDirectionGenerale; er
     </main>
   );
 }
+

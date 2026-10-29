@@ -204,3 +204,4 @@ export function TableauDeBordTechnique({ t, erreur }: { t: TableauTechnique; err
     </main>
   );
 }
+

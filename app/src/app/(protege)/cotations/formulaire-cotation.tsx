@@ -2,6 +2,7 @@ import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireActio
 import { Bandeau, Carte, Champ as ChampSaisie, ListeDeroulante } from "@/composants/ui";
 import { ComplementsSouscripteur } from "@/composants/ComplementsSouscripteur";
 import { LignesAssures, LignesBeneficiaires, LignesContactsUrgence, LignesRisque } from "@/composants/LignesDynamiques";
+import { SelectionIntermediaires } from "@/composants/SelectionIntermediaires";
 import { aujourdhui } from "@/domaine/calcul/dates";
 import { montant } from "@/domaine/calcul/montant";
 import { ChoixContrat } from "@/composants/ChoixContrat";
@@ -93,17 +94,10 @@ export function FormulaireCotation({
       </Carte>
 
       <Carte titre="Intermédiaires (0 à 2)">
-        <div className="grid max-w-3xl gap-x-6 gap-y-4 sm:grid-cols-2">
-          {[0, 1].map((n) => (
-            <ListeDeroulante
-              key={n}
-              label={`Intermédiaire ${n + 1} (facultatif)`}
-              name="intermediaire"
-              defaultValue={base?.intermediaires[n]?.code ?? ""}
-              options={[{ valeur: "", libelle: "— Aucun —" }, ...choixPossibles.map((i) => ({ valeur: i.code, libelle: `${i.nom} (${i.code}, ${i.role})` }))]}
-            />
-          ))}
-        </div>
+        <SelectionIntermediaires
+          initialChoix={choixPossibles}
+          valeursInitiales={[base?.intermediaires[0]?.code ?? "", base?.intermediaires[1]?.code ?? ""]}
+        />
       </Carte>
 
       <Carte titre="Période et fractionnement">

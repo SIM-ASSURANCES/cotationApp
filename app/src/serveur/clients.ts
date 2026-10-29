@@ -99,6 +99,93 @@ export async function creerClient(acteur: UtilisateurCourant, s: Souscripteur, a
   });
 }
 
+export type FicheClient = {
+  id: number;
+  souscripteur: Souscripteur;
+  creeLe: Date;
+  creePar: string;
+  cotations: {
+    id: number;
+    numero: string | null;
+    statut: string;
+    produitCode: string;
+    dateEffet: string;
+    dateEcheance: string;
+    creeLe: Date;
+  }[];
+  polices: {
+    id: number;
+    numero: string;
+    typeContrat: string | null;
+    produitCode: string;
+    dateEffet: string;
+    dateEcheance: string;
+    ttcTotal: string;
+    creeLe: Date;
+  }[];
+};
+
+/** Fiche détaillée d'un client avec ses cotations et polices associées. */
+export async function obtenirClient(acteur: UtilisateurCourant, id: number): Promise<FicheClient | null> {
+  const [cotation, contrat] = await Promise.all([
+    niveauDuProfil(acteur.profil, "CREER_COTATION"),
+    niveauDuProfil(acteur.profil, "EMETTRE_CONTRAT"),
+  ]);
+  if (!peutLire(cotation) && !peutLire(contrat)) {
+    throw new ErreurAcces("Droit insuffisant : consultation du client.");
+  }
+
+  const client = await obtenirPrisma().client.findUnique({
+    where: { id },
+    include: {
+      cotations: {
+        orderBy: { creeLe: "desc" },
+        include: {
+          produit: { select: { code: true } },
+          police: true,
+        },
+      },
+    },
+  });
+  if (!client) return null;
+
+  const polices: FicheClient["polices"] = [];
+  const cotations: FicheClient["cotations"] = [];
+
+  for (const c of client.cotations) {
+    cotations.push({
+      id: c.id,
+      numero: c.numero,
+      statut: c.statut,
+      produitCode: c.produit.code,
+      dateEffet: c.dateEffet.toISOString().slice(0, 10),
+      dateEcheance: c.dateEcheance.toISOString().slice(0, 10),
+      creeLe: c.creeLe,
+    });
+    if (c.police) {
+      polices.push({
+        id: c.police.id,
+        numero: c.police.numero,
+        typeContrat: c.police.typeContrat,
+        produitCode: c.police.produitCode,
+        dateEffet: c.police.dateEffet.toISOString().slice(0, 10),
+        dateEcheance: c.police.dateEcheance.toISOString().slice(0, 10),
+        ttcTotal: c.police.ttcTotal.toString(),
+        creeLe: c.police.creeLe,
+      });
+    }
+  }
+
+  return {
+    id: client.id,
+    souscripteur: versSouscripteur(client),
+    creeLe: client.creeLe,
+    creePar: client.creePar,
+    cotations,
+    polices,
+  };
+}
+
 // ---------------------------------------------------------------- Motifs de refus
 
 export const MOTIFS_REFUS_PAR_DEFAUT = [

@@ -1,3 +1,4 @@
+import { montant } from "../calcul/montant";
 import { Contexte, codeValeur, texteDeValeur } from "./contexte";
 import { ErreurBareme } from "./erreurs";
 import { Evaluateur } from "./operandes";
@@ -95,3 +96,73 @@ export const risqueDuBareme = (bareme: Bareme, saisie: Saisie): Record<string, s
  * comparent.
  */
 export const risqueCodeDuBareme = (bareme: Bareme, saisie: Saisie): Record<string, string> => valeursDuBareme(bareme, saisie, "code");
+
+const MONTANT_EXEMPLE = "1000000";
+const TEXTE_EXEMPLE = "EXEMPLE";
+
+/** Valeur d'exemple d'un champ : liste → première valeur ; montant, nombre → valeur dans les bornes ; oui / non → oui ; date → `jour` ; texte → « EXEMPLE ». */
+function valeurExemple(c: Champ, jour: string): ValeurSaisie {
+  switch (c.type) {
+    case "LISTE": {
+      const premiere = (c.valeurs ?? [])[0];
+      return premiere === undefined ? TEXTE_EXEMPLE : codeValeur(premiere);
+    }
+    case "CHOIX_MULTIPLES": {
+      const premiere = (c.valeurs ?? [])[0];
+      return premiere === undefined ? [] : [codeValeur(premiere)];
+    }
+    case "OUI_NON":
+      return true;
+    case "DATE":
+      return jour;
+    case "TEXTE":
+      return TEXTE_EXEMPLE;
+    case "MONTANT":
+    case "NOMBRE": {
+      let v = montant(c.type === "MONTANT" ? MONTANT_EXEMPLE : "1");
+      if (c.min !== undefined && v.lt(c.min)) v = montant(c.min);
+      if (c.max !== undefined && v.gt(c.max)) v = montant(c.max);
+      return v.toFixed();
+    }
+  }
+}
+
+/**
+ * `risque` et `risque_code` FICTIFS d'un produit au barème, pour l'aperçu d'un modèle (CDC §6.6) : les MÊMES clés que l'émission
+ * (`codesRisqueDuBareme`), construites par la même fonction que l'émission sur une saisie d'exemple (`valeurExemple` pour chaque champ, toute
+ * garantie et composante optionnelle souscrite). Les conditions d'affichage sont neutralisées : tous les champs sont remplis, aucune balise
+ * n'est vide à cause d'une branche non choisie (seul `surDocuments: false` reste vide, comme à l'émission). Attribut tarifaire : celui de la
+ * première valeur de la liste, à défaut « EXEMPLE ». Valeur intermédiaire : celle du moteur sur cette saisie si elle se calcule, à défaut
+ * « 1000000 ». Ne lève jamais d'erreur.
+ */
+export function risqueExempleDuBareme(bareme: Bareme, jour: string): { risque: Record<string, string>; risqueCode: Record<string, string> } {
+  const sansCondition: Bareme = { ...bareme, champs: bareme.champs.map((c) => ({ ...c, si: undefined })) };
+  const saisie: Saisie = {
+    champs: Object.fromEntries(bareme.champs.map((c) => [c.code, valeurExemple(c, jour)])),
+    souscrit: bareme.garanties.flatMap((g) => [
+      ...(g.souscription === "OPTIONNELLE" ? [g.code] : []),
+      ...g.composantes.filter((x) => x.souscription === "OPTIONNELLE").map((x) => `${g.code}.${x.code}`),
+    ]),
+  };
+  const risque = risqueDuBareme(sansCondition, saisie);
+  const risqueCode = risqueCodeDuBareme(sansCondition, saisie);
+
+  const champs = new Map(bareme.champs.map((c) => [c.code, c]));
+  const nonImprimables = new Set(bareme.champs.filter((c) => c.surDocuments === false).map((c) => c.code));
+  const attributs = new Map<string, string>(); // balise de l'attribut → champ liste dont il vient
+  for (const c of bareme.champs) for (const a of attributsDuChamp(c)) attributs.set(`${c.code}_${a}`, c.code);
+  for (const [rendu, valeurs] of [["libelle", risque], ["code", risqueCode]] as const) {
+    for (const code of codesRisqueDuBareme(bareme)) {
+      if (valeurs[code] !== "") continue;
+      const champ = champs.get(code);
+      if (champ !== undefined) {
+        if (!nonImprimables.has(code)) valeurs[code] = texteDuChamp(champ, valeurExemple(champ, jour), rendu);
+      } else if (attributs.has(code)) {
+        if (!nonImprimables.has(attributs.get(code)!)) valeurs[code] = TEXTE_EXEMPLE;
+      } else {
+        valeurs[code] = MONTANT_EXEMPLE;
+      }
+    }
+  }
+  return { risque, risqueCode };
+}

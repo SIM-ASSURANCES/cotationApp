@@ -16,6 +16,7 @@ import {
   rejouerJeuxEssai,
   risqueCodeDuBareme,
   risqueDuBareme,
+  risqueExempleDuBareme,
   schemaBareme,
   verifierBareme,
   type Bareme,
@@ -339,6 +340,30 @@ export async function etatDuBareme(versionId: number): Promise<EtatBareme> {
 export async function codesRisqueDuProduit(client: Pick<Client, "baremeDocument">, produitId: number): Promise<Set<string>> {
   const lignes = await client.baremeDocument.findMany({ where: { statut: "PUBLIE", version: { produitId } }, select: { contenu: true } });
   return new Set(lignes.flatMap((l) => codesRisqueDuBareme(lireBareme(l.contenu))));
+}
+
+/**
+ * Barème qui sert à l'aperçu d'un modèle d'un produit (H154) : celui de la version publiée en vigueur à `jour` (la plus récente dont la date d'effet est
+ * passée), sinon la dernière version publiée, sinon le brouillon le plus récent. Un document illisible est écarté : jamais d'erreur, `null` si le produit
+ * n'a pas de barème (FORMULE, GARANTIES).
+ */
+export async function baremePourApercu(client: Pick<Client, "baremeDocument">, produitId: number, jour: DateIso): Promise<Bareme | null> {
+  const lignes = await client.baremeDocument.findMany({ where: { version: { produitId } }, include: { version: { select: { dateEffet: true } } } });
+  const effet = (l: (typeof lignes)[number]) => l.version.dateEffet.toISOString().slice(0, 10);
+  const recent = (a: (typeof lignes)[number], b: (typeof lignes)[number]) => effet(b).localeCompare(effet(a)) || b.id - a.id;
+  const publies = lignes.filter((l) => l.statut === "PUBLIE").sort(recent);
+  const candidats = [...publies.filter((l) => effet(l) <= jour), ...publies.filter((l) => effet(l) > jour).reverse(), ...lignes.filter((l) => l.statut === "BROUILLON").sort(recent)];
+  for (const l of candidats) {
+    const lu = schemaBareme.safeParse(l.contenu);
+    if (lu.success) return lu.data;
+  }
+  return null;
+}
+
+/** `risque` et `risque_code` fictifs du barème d'un produit pour l'aperçu d'un modèle ; `null` si le produit n'a pas de barème. */
+export async function risqueExempleDuProduit(client: Pick<Client, "baremeDocument">, produitId: number, jour: DateIso): Promise<RisqueDuDocument | null> {
+  const bareme = await baremePourApercu(client, produitId, jour);
+  return bareme ? risqueExempleDuBareme(bareme, jour) : null;
 }
 
 /** Valeurs de `risque.*` (libellés) et de `risque_code.*` (codes) d'un document. */

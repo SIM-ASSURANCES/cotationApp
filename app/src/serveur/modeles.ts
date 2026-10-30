@@ -33,7 +33,7 @@ import {
 import { peutAgir, peutLire } from "@/domaine/droits";
 
 import { journaliser, type ActeurAudit } from "./audit";
-import { codesRisqueDuProduit } from "./bareme";
+import { codesRisqueDuProduit, risqueExempleDuProduit } from "./bareme";
 import { niveauDuProfil } from "./droits";
 import { generateur, type ImagePng } from "./generateur";
 import { aujourdhui } from "./parametrage";
@@ -646,6 +646,9 @@ export async function apercuVersion(acteur: UtilisateurCourant, versionId: numbe
     const donnees = donneesExemple({ nombreAssures: options.nombreAssures });
     const p = v.modele.produit;
     if (p) donnees.produit = { ...(donnees.produit as object), code: p.code, libelle: p.libelle, gamme: p.gamme, branche: p.branche };
+    // Produit au barème (H154) : risque et risque_code reprennent TOUS les champs du barème ; sans barème, l'aperçu est inchangé.
+    const exemple = v.modele.produitId !== null ? await risqueExempleDuProduit(prisma, v.modele.produitId, jour) : null;
+    if (exemple) Object.assign(donnees, { risque: exemple.risque, risque_code: exemple.risqueCode });
     const { annexes, sousModeles } = await modelesAssocies(v.modele.produitId, jour);
     const images: Record<string, ImagePng> = Object.fromEntries(IMAGES.map((nom) => [nom, { png: IMAGE_APERCU, largeurMm: LARGEUR_IMAGE_MM[nom] ?? 30 }]));
     contenu = await generateur().genererPdf({ modele: v.fichier, donnees, seuilListe, annexes, sousModeles, images });

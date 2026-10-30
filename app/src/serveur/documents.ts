@@ -992,6 +992,9 @@ export async function documentsDe(acteur: UtilisateurCourant, critere: { cotatio
 
 /** Documents émis rattachés à un client (toutes cotations, polices et factures du client). */
 export async function documentsDuClient(acteur: UtilisateurCourant, clientId: number): Promise<DocumentLu[]> {
+  // Même droit que la fiche client (`obtenirClient`) EN PLUS des types de documents lisibles.
+  const [cotation, contrat] = await Promise.all([niveauDuProfil(acteur.profil, "CREER_COTATION"), niveauDuProfil(acteur.profil, "EMETTRE_CONTRAT")]);
+  if (!peutLire(cotation) && !peutLire(contrat)) throw new ErreurAcces("Droit insuffisant : documents du client.");
   const lisibles = await typesLisibles(acteur);
   if (lisibles.length === 0) return [];
 
@@ -1031,8 +1034,13 @@ export type ClientAvecDocuments = {
   dernierDocumentLe: Date | null;
 };
 
-/** Liste des clients avec leur décompte de documents pour la vue de rangement par client. */
+/**
+ * Liste des clients avec leur décompte de documents pour la vue de rangement par client. Même droit que `listerClients`
+ * (lecture de « Créer une cotation ») EN PLUS des types de documents lisibles : le décompte ne révèle rien d'autre.
+ * Deux requêtes pour tous les clients (les clients et leurs cotations, puis les documents), jamais une par client.
+ */
 export async function listerClientsAvecDocuments(acteur: UtilisateurCourant, recherche?: string): Promise<ClientAvecDocuments[]> {
+  if (!peutLire(await niveauDuProfil(acteur.profil, "CREER_COTATION"))) throw new ErreurAcces("Droit insuffisant : clients.");
   const lisibles = await typesLisibles(acteur);
   if (lisibles.length === 0) return [];
 
@@ -1048,55 +1056,61 @@ export async function listerClientsAvecDocuments(acteur: UtilisateurCourant, rec
           ],
         }
       : {},
-    include: {
-      cotations: {
-        select: {
-          id: true,
-          police: { select: { id: true, numero: true } },
-        },
-      },
-    },
+    include: { cotations: { select: { id: true, police: { select: { id: true, numero: true } } } } },
     orderBy: [{ nom: "asc" }, { raisonSociale: "asc" }],
     take: 100,
   });
 
-  const resultat: ClientAvecDocuments[] = [];
+  // Quel client possède quelle cotation, police (id) et police (numéro) ?
+  const parCotation = new Map<number, number>();
+  const parPoliceId = new Map<number, number>();
+  const parPoliceNumero = new Map<string, number>();
   for (const c of clients) {
-    const cotationIds = c.cotations.map((x) => x.id);
-    const policeIds = c.cotations.map((x) => x.police?.id).filter((id): id is number => id != null);
-    const policeNumeros = c.cotations.map((x) => x.police?.numero).filter((n): n is string => n != null);
-
-    const orConditions: Prisma.DocumentEmisWhereInput[] = [];
-    if (cotationIds.length > 0) orConditions.push({ cotationId: { in: cotationIds } });
-    if (policeIds.length > 0) orConditions.push({ policeId: { in: policeIds } });
-    if (policeNumeros.length > 0) orConditions.push({ policeNumero: { in: policeNumeros } });
-
-    let nbDocs = 0;
-    let dernierDoc: Date | null = null;
-    if (orConditions.length > 0) {
-      const docs = await obtenirPrisma().documentEmis.findMany({
-        where: { type: { in: lisibles }, OR: orConditions },
-        select: { emisLe: true },
-        orderBy: { emisLe: "desc" },
-      });
-      nbDocs = docs.length;
-      dernierDoc = docs[0]?.emisLe ?? null;
+    for (const x of c.cotations) {
+      parCotation.set(x.id, c.id);
+      if (x.police) {
+        parPoliceId.set(x.police.id, c.id);
+        parPoliceNumero.set(x.police.numero, c.id);
+      }
     }
+  }
+  const criteres: Prisma.DocumentEmisWhereInput[] = [];
+  if (parCotation.size > 0) criteres.push({ cotationId: { in: [...parCotation.keys()] } });
+  if (parPoliceId.size > 0) criteres.push({ policeId: { in: [...parPoliceId.keys()] } });
+  if (parPoliceNumero.size > 0) criteres.push({ policeNumero: { in: [...parPoliceNumero.keys()] } });
+  const documents =
+    criteres.length === 0
+      ? []
+      : await obtenirPrisma().documentEmis.findMany({
+          where: { type: { in: lisibles }, OR: criteres },
+          select: { id: true, cotationId: true, policeId: true, policeNumero: true, emisLe: true },
+        });
 
-    const nomAffiche = c.type === "MORALE" ? c.raisonSociale : `${c.nom} ${c.prenoms}`.trim();
-    resultat.push({
-      id: c.id,
-      nom: nomAffiche,
-      type: c.type === "MORALE" ? "Morale" : "Physique",
-      telephone: c.telephone,
-      email: c.email,
-      nombreDocuments: nbDocs,
-      nombrePolices: policeIds.length,
-      dernierDocumentLe: dernierDoc,
-    });
+  // Un document compte une fois pour le client qui le possède, même s'il le relie par plusieurs clés.
+  const nombre = new Map<number, number>();
+  const dernier = new Map<number, Date>();
+  for (const d of documents) {
+    const proprietaires = new Set<number>();
+    for (const id of [d.cotationId != null ? parCotation.get(d.cotationId) : undefined, d.policeId != null ? parPoliceId.get(d.policeId) : undefined, d.policeNumero != null ? parPoliceNumero.get(d.policeNumero) : undefined]) {
+      if (id !== undefined) proprietaires.add(id);
+    }
+    for (const id of proprietaires) {
+      nombre.set(id, (nombre.get(id) ?? 0) + 1);
+      const vu = dernier.get(id);
+      if (!vu || d.emisLe > vu) dernier.set(id, d.emisLe);
+    }
   }
 
-  return resultat;
+  return clients.map((c) => ({
+    id: c.id,
+    nom: c.type === "MORALE" ? c.raisonSociale : `${c.nom} ${c.prenoms}`.trim(),
+    type: c.type === "MORALE" ? "Morale" : "Physique",
+    telephone: c.telephone,
+    email: c.email,
+    nombreDocuments: nombre.get(c.id) ?? 0,
+    nombrePolices: c.cotations.filter((x) => x.police).length,
+    dernierDocumentLe: dernier.get(c.id) ?? null,
+  }));
 }
 
 /** Lit un document émis et vérifie son intégrité (empreinte, CDC §14.3) ; en attente d'écriture (T14) : depuis la base. */

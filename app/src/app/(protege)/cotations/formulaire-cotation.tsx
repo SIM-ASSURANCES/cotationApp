@@ -12,7 +12,7 @@ import type { DetailCotation } from "@/serveur/cotations";
 
 import type { DescripteurSaisie, Saisie as SaisieBareme } from "@/domaine/bareme";
 
-import { enregistrerCotation } from "./actions";
+import { creerIntermediaireDepuisCotation, enregistrerCotation } from "./actions";
 import { ChampsBareme } from "./champs-bareme";
 
 // Tableau manuel (cellules = champs) aux classes du composant Tableau. Pas de zébrure : un champ teinté ne doit pas reposer sur un fond bg-muted.
@@ -74,7 +74,7 @@ export function FormulaireCotation({
         <SelectionIntermediaires
           initialChoix={choixPossibles}
           valeursInitiales={[base?.intermediaires[0]?.code ?? "", base?.intermediaires[1]?.code ?? ""]}
-          peutCreer={peutCreerIntermediaire}
+          creer={peutCreerIntermediaire ? creerIntermediaireDepuisCotation : undefined}
         />
       </Carte>
 
@@ -90,9 +90,6 @@ export function FormulaireCotation({
         <ChampsBareme descripteur={bareme.descripteur} initiale={bareme.saisie} />
       ) : parGaranties ? (
         <Carte titre="Prime" className="max-w-3xl">
-          <Bandeau ton="info" className="mb-3">
-            Mode transitoire « Par garanties » en cours d&apos;extinction : la prime est composée manuellement par la Technique. Ce mode est conservé pour l&apos;existant avant migration complète vers le mode « Au barème ».
-          </Bandeau>
           <p className="text-sm">
             Ce produit se tarife par garanties : la prime n&apos;est pas calculée automatiquement. Créez le brouillon (souscripteur, assurés, dates) ; la
             Technique <strong>composera</strong> ensuite la prime, garantie par garantie, depuis la fiche de la cotation. Tant que la prime n&apos;est pas
@@ -169,7 +166,6 @@ export function FormulaireCotation({
         formules={formules}
         parGaranties={parGaranties}
         estBareme={Boolean(bareme)}
-        codeProduit={produit.code}
         initialAssures={(base?.assures ?? []).map((a) => ({
           nom: a.nom_prenoms,
           naissance: a.date_naissance,

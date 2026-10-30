@@ -189,6 +189,22 @@ describe("cotation figée dès l'émission (CDC §4.1)", () => {
     await expect(prisma.$executeRawUnsafe(`DELETE FROM cotations WHERE id = ${id}`)).rejects.toThrow(/suppression interdite/);
   });
 
+  it("H112 : client_id est figé avec la cotation émise puis acceptée ; l'acceptation ne crée aucun client (le prospect reste en saisie libre)", async () => {
+    const id = await emise();
+    const prisma = obtenirPrisma();
+    const clientId = await creerClient(commercial, { ...prospect, nom: "CLIENT FIGE" }, null);
+    const clientsAvant = await prisma.client.count();
+
+    // EMISE : client_id ne se modifie pas.
+    await expect(prisma.$executeRawUnsafe(`UPDATE cotations SET client_id = ${clientId} WHERE id = ${id}`)).rejects.toThrow(/cotation figée/);
+
+    // ACCEPTEE : la cotation reste sans client et aucun client n'est créé ; client_id ne se modifie toujours pas.
+    await accepter(commercial, id, ["SOLO"], numeroPolice(), null);
+    expect((await prisma.cotation.findUniqueOrThrow({ where: { id } })).clientId).toBeNull();
+    expect(await prisma.client.count()).toBe(clientsAvant);
+    await expect(prisma.$executeRawUnsafe(`UPDATE cotations SET client_id = ${clientId} WHERE id = ${id}`)).rejects.toThrow(/cotation figée/);
+  });
+
   it("H9 : tout agent ayant le droit de modifier une cotation modifie le brouillon d'un autre, et c'est tracé", async () => {
     const id = await creerBrouillon(commercial, saisie(), null);
 

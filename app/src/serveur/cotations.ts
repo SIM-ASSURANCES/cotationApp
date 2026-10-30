@@ -1033,50 +1033,6 @@ async function accepterDansTransaction(
       if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
     }
 
-    // Conversion automatique prospect -> client si la cotation n'a pas encore de client enregistré
-    let clientId = cotation.clientId;
-    if (clientId === null) {
-      const s = souscripteur;
-      const nouveauClient = await tx.client.create({
-        data: {
-          type: s.type,
-          nom: s.nom.trim(),
-          prenoms: s.prenoms.trim(),
-          raisonSociale: s.raison_sociale.trim(),
-          telephone: s.telephone.trim(),
-          email: s.email.trim(),
-          adresse: s.adresse.trim(),
-          numIdentification: (s.num_identification ?? "").trim(),
-          dateNaissance: s.date_naissance ? new Date(`${s.date_naissance}T00:00:00.000Z`) : null,
-          lieuNaissance: (s.lieu_naissance ?? "").trim(),
-          profession: (s.profession ?? "").trim(),
-          activite: (s.activite ?? "").trim(),
-          employeur: (s.employeur ?? "").trim(),
-          bp: (s.bp ?? "").trim(),
-          localite: (s.localite ?? "").trim(),
-          sousPrefecture: (s.sous_prefecture ?? "").trim(),
-          whatsapp: (s.whatsapp ?? "").trim(),
-          mobileMoney: (s.mobile_money ?? "").trim(),
-          situationMatrimoniale: (s.situation_matrimoniale ?? "").trim(),
-          nbEnfants: s.nb_enfants ?? null,
-          groupeSanguin: (s.groupe_sanguin ?? "").trim(),
-          creePar: acteur.identifiant,
-        },
-      });
-      clientId = nouveauClient.id;
-      await journaliser(
-        {
-          acteur: auteur(acteur),
-          action: "CLIENT_CREE",
-          objetType: "client",
-          objetId: nouveauClient.id,
-          apres: { ...s, source: "CONVERSION_PROSPECT_COTATION", cotationId: cotation.id },
-          adresseIp,
-        },
-        tx,
-      );
-    }
-
     const police = await tx.police.create({
       data: {
         numero: numeroPolice,
@@ -1104,7 +1060,7 @@ async function accepterDansTransaction(
         data: { policeId: police.id, numero: 1, motif: "INITIALE", dateEffet: cotation.dateEffet, adherents: cotation.assures as Prisma.InputJsonValue, concernes: [], creePar: acteur.identifiant },
       });
     }
-    await tx.cotation.update({ where: { id }, data: { statut: "ACCEPTEE", formulesRetenues: codesRetenus as unknown as Prisma.InputJsonValue, accepteeLe: new Date(), clientId } });
+    await tx.cotation.update({ where: { id }, data: { statut: "ACCEPTEE", formulesRetenues: codesRetenus as unknown as Prisma.InputJsonValue, accepteeLe: new Date() } });
     await journaliser({ acteur: auteur(acteur), action: "COTATION_ACCEPTEE", objetType: "cotation", objetId: id, apres: { formules: codesRetenus, numeroPolice }, adresseIp }, tx);
     await journaliser({ acteur: auteur(acteur), action: "POLICE_CREEE", objetType: "police", objetId: numeroPolice, apres: { cotation: cotation.numero, ttc: resultat.totaux.arrondi.ttc.toFixed(), complementsSaisis: complements !== undefined, beneficiaires: beneficiaires?.length ?? null, contactsUrgence: contactsUrgence?.length ?? null }, adresseIp }, tx);
     return { numeroPolice };

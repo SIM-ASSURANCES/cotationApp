@@ -29,6 +29,7 @@ export function FormulaireCotation({
   formulesMax,
   intermediaires,
   parGaranties = false,
+  peutCreerIntermediaire = false,
   bareme,
   base,
 }: {
@@ -41,6 +42,8 @@ export function FormulaireCotation({
   intermediaires: IntermediaireDocument[];
   /** Produit en mode GARANTIES (session 6.2b) : pas de formules, la prime est composée ensuite par la Technique. */
   parGaranties?: boolean;
+  /** Le profil a le droit de paramétrage (H79) : le bouton « Nouvel intermédiaire » s'affiche. */
+  peutCreerIntermediaire?: boolean;
   /** Produit au barème (B6a) : écran généré depuis le barème publié ; la saisie enregistrée (modification) pré-remplit les champs. */
   bareme?: { descripteur: DescripteurSaisie; saisie?: SaisieBareme };
   base?: DetailCotation;
@@ -71,6 +74,7 @@ export function FormulaireCotation({
         <SelectionIntermediaires
           initialChoix={choixPossibles}
           valeursInitiales={[base?.intermediaires[0]?.code ?? "", base?.intermediaires[1]?.code ?? ""]}
+          peutCreer={peutCreerIntermediaire}
         />
       </Carte>
 

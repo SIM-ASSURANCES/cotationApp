@@ -30,9 +30,9 @@ async function exigerEcriture(acteur: UtilisateurCourant): Promise<void> {
   if (!peutAgir(await niveauDuProfil(acteur.profil, ACTION))) throw new ErreurAcces("Droit insuffisant : référentiel des intermédiaires.");
 }
 
-async function exigerCreation(acteur: UtilisateurCourant): Promise<void> {
-  const [parametrage, cotation] = await Promise.all([niveauDuProfil(acteur.profil, ACTION), niveauDuProfil(acteur.profil, "CREER_COTATION")]);
-  if (!peutAgir(parametrage) && !peutAgir(cotation)) throw new ErreurAcces("Droit insuffisant : création d'un intermédiaire.");
+/** Le profil peut-il créer un intermédiaire ? Même condition que la garde de `creerIntermediaire` (H79), pour afficher ou non le bouton. */
+export async function peutCreerIntermediaire(acteur: UtilisateurCourant): Promise<boolean> {
+  return peutAgir(await niveauDuProfil(acteur.profil, ACTION));
 }
 
 async function exigerConsultation(acteur: UtilisateurCourant): Promise<void> {
@@ -52,7 +52,7 @@ export async function listerIntermediaires(acteur: UtilisateurCourant, filtre: {
 }
 
 export async function creerIntermediaire(acteur: UtilisateurCourant, saisie: IntermediaireSaisi, adresseIp: string | null): Promise<IntermediaireDocument> {
-  await exigerCreation(acteur);
+  await exigerEcriture(acteur);
   const donnees = { code: saisie.code.trim().toUpperCase(), nom: saisie.nom.trim(), role: saisie.role.trim() };
   refuser(problemesIntermediaire(donnees));
   try {

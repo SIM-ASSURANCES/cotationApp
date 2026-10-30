@@ -34,7 +34,6 @@ const texte = (t: string) => new TextEncoder().encode(t);
 let technique: UtilisateurCourant;
 let dg: UtilisateurCourant;
 let commercial: UtilisateurCourant;
-let comptabilite: UtilisateurCourant;
 
 // ---------------------------------------------------------------- Doubles : générateur et stockage
 
@@ -169,7 +168,7 @@ beforeAll(async () => {
     await creerUtilisateur(a, { identifiant, nom: profil, profil, motDePasse: MDP }, null);
     return compte(identifiant);
   };
-  [technique, dg, commercial, comptabilite] = [await nouveau("TECHNIQUE"), await nouveau("DIRECTION_GENERALE"), await nouveau("COMMERCIAL"), await nouveau("COMPTABILITE")];
+  [technique, dg, commercial] = [await nouveau("TECHNIQUE"), await nouveau("DIRECTION_GENERALE"), await nouveau("COMMERCIAL")];
   // Les CP utilisent {{ signature_sim }} (CDC §10.1) : la signature scannée de SIM doit être paramétrée (image inventée).
   await assurerSignature(technique);
   await obtenirPrisma().parametre.upsert({
@@ -419,8 +418,8 @@ describe("documents émis : ajout seul, recherche, intégrité", () => {
 describe("intermédiaires : référentiel, choix sur la cotation, documents, tableau de bord", () => {
   it("référentiel réservé au paramétrage, journalisé ; 0 à 2 par cotation, dans l'ordre ; repris dans intermediaires[] ; taux de transformation", async () => {
     const [a, b, c] = [CODE("INT"), CODE("INT"), CODE("INT")];
-    await expect(creerIntermediaire(comptabilite, { code: a, nom: "Courtier A inventé", role: "Apporteur" }, null)).rejects.toBeInstanceOf(ErreurAcces);
-    await creerIntermediaire(commercial, { code: a, nom: "Courtier A inventé", role: "Apporteur" }, null);
+    await expect(creerIntermediaire(commercial, { code: a, nom: "Courtier A inventé", role: "Apporteur" }, null)).rejects.toBeInstanceOf(ErreurAcces);
+    await creerIntermediaire(technique, { code: a, nom: "Courtier A inventé", role: "Apporteur" }, null);
     await creerIntermediaire(technique, { code: b, nom: "Agent B inventé", role: "Gestionnaire" }, null);
     await creerIntermediaire(technique, { code: c, nom: "Agent C inventé", role: "Apporteur" }, null);
     await expect(creerIntermediaire(technique, { code: a, nom: "Autre", role: "Apporteur" }, null)).rejects.toThrow(/existe déjà/);

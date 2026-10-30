@@ -18,13 +18,15 @@ const ROLES_SUGGERES = [
 export type SelectionIntermediairesProps = {
   initialChoix: IntermediaireDocument[];
   valeursInitiales?: [string, string];
+  /** Droit de paramétrage des produits (H79) : sans lui, ni bouton ni panneau de création (la garde serveur refuserait). */
+  peutCreer?: boolean;
 };
 
 /**
  * Sélection de 0 à 2 intermédiaires pour une cotation (CDC §10.1).
  * Permet également la création inline d'un intermédiaire en base sans quitter le formulaire.
  */
-export function SelectionIntermediaires({ initialChoix, valeursInitiales }: SelectionIntermediairesProps) {
+export function SelectionIntermediaires({ initialChoix, valeursInitiales, peutCreer = false }: SelectionIntermediairesProps) {
   const [choix, setChoix] = useState<IntermediaireDocument[]>(initialChoix);
   const [selection1, setSelection1] = useState(valeursInitiales?.[0] ?? "");
   const [selection2, setSelection2] = useState(valeursInitiales?.[1] ?? "");
@@ -128,9 +130,9 @@ export function SelectionIntermediaires({ initialChoix, valeursInitiales }: Sele
 
       <div className="flex max-w-3xl items-center justify-between gap-4 pt-1">
         <p className="text-xs text-muted-foreground">
-          Associez jusqu&apos;à 2 intermédiaires. L&apos;intermédiaire manquant peut être créé directement en base ci-dessous.
+          Associez jusqu&apos;à 2 intermédiaires.{peutCreer ? " L'intermédiaire manquant peut être créé directement en base ci-dessous." : ""}
         </p>
-        {!panneauOuvert ? (
+        {peutCreer && !panneauOuvert ? (
           <Bouton
             type="button"
             variante="secondaire"
@@ -146,7 +148,7 @@ export function SelectionIntermediaires({ initialChoix, valeursInitiales }: Sele
         ) : null}
       </div>
 
-      {panneauOuvert ? (
+      {peutCreer && panneauOuvert ? (
         <div className="max-w-3xl rounded-lg border border-border bg-card p-4 space-y-3 shadow-subtle">
           <div className="flex items-center justify-between border-b border-border pb-2">
             <div>

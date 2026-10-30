@@ -1,11 +1,14 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import type { EtatFormulaire } from "@/composants/types";
 import { avertissementNumeroContrat } from "@/domaine/cotation/police";
+import type { IntermediaireDocument } from "@/domaine/intermediaires";
 import { accepter, calculerCotationBareme, composerLaPrime, creerBrouillon, modifierBrouillon, refuser, renvoyerEnBrouillon, soumettre, valider, type ResultatCalculBareme } from "@/serveur/cotations";
 import { emettreCotation, reediter, soumettreCp } from "@/serveur/documents";
+import { creerIntermediaire } from "@/serveur/intermediaires";
 import { ErreurMetier, type UtilisateurCourant } from "@/serveur/types";
 
 import { avecMessage, champ, executerAction } from "../executer";
@@ -145,4 +148,27 @@ export async function calculerLaPrimeBareme(_etat: EtatCalculBareme, donnees: Fo
     calculerCotationBareme(acteur, { codeProduit: saisie.codeProduit, typeContrat: saisie.typeContrat, regimeTaxe: saisie.regimeTaxe, dateEffet: saisie.dateEffet, dateEcheance: saisie.dateEcheance, nombreTranches: saisie.nombreTranches, baremeBrut }),
   );
   return r.ok ? { resultat: r.valeur } : { erreur: r.etat.erreur, ...(r.etat.details?.length ? { details: r.etat.details } : {}) };
+}
+
+// ---------------------------------------------------------------- Création inline d'intermédiaire (Étape 2)
+
+export type ResultatCreationIntermediaire =
+  | { succes: true; intermediaire: IntermediaireDocument }
+  | { succes: false; erreur: string };
+
+/** Création inline d'un intermédiaire depuis le formulaire de cotation. Enregistre en base et retourne le document. */
+export async function creerIntermediaireDepuisCotation(saisie: {
+  code: string;
+  nom: string;
+  role: string;
+}): Promise<ResultatCreationIntermediaire> {
+  const code = (saisie.code || "").trim().toUpperCase();
+  const nom = (saisie.nom || "").trim();
+  const role = (saisie.role || "").trim();
+  const r = await avecMessage((acteur, ip) => creerIntermediaire(acteur, { code, nom, role }, ip));
+  if (!r.ok) {
+    return { succes: false, erreur: r.etat.erreur ?? "Impossible de créer l'intermédiaire." };
+  }
+  revalidatePath("/parametrage/intermediaires");
+  return { succes: true, intermediaire: r.valeur };
 }

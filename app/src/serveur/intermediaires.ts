@@ -30,6 +30,11 @@ async function exigerEcriture(acteur: UtilisateurCourant): Promise<void> {
   if (!peutAgir(await niveauDuProfil(acteur.profil, ACTION))) throw new ErreurAcces("Droit insuffisant : référentiel des intermédiaires.");
 }
 
+async function exigerCreation(acteur: UtilisateurCourant): Promise<void> {
+  const [parametrage, cotation] = await Promise.all([niveauDuProfil(acteur.profil, ACTION), niveauDuProfil(acteur.profil, "CREER_COTATION")]);
+  if (!peutAgir(parametrage) && !peutAgir(cotation)) throw new ErreurAcces("Droit insuffisant : création d'un intermédiaire.");
+}
+
 async function exigerConsultation(acteur: UtilisateurCourant): Promise<void> {
   const [parametrage, cotation] = await Promise.all([niveauDuProfil(acteur.profil, ACTION), niveauDuProfil(acteur.profil, "CREER_COTATION")]);
   if (!peutLire(parametrage) && !peutLire(cotation)) throw new ErreurAcces("Droit insuffisant : consultation des intermédiaires.");
@@ -46,8 +51,8 @@ export async function listerIntermediaires(acteur: UtilisateurCourant, filtre: {
   return lignes.map((i) => ({ id: i.id, code: i.code, nom: i.nom, role: i.role, actif: i.actif, creePar: i.creePar, creeLe: i.creeLe }));
 }
 
-export async function creerIntermediaire(acteur: UtilisateurCourant, saisie: IntermediaireSaisi, adresseIp: string | null): Promise<void> {
-  await exigerEcriture(acteur);
+export async function creerIntermediaire(acteur: UtilisateurCourant, saisie: IntermediaireSaisi, adresseIp: string | null): Promise<IntermediaireDocument> {
+  await exigerCreation(acteur);
   const donnees = { code: saisie.code.trim().toUpperCase(), nom: saisie.nom.trim(), role: saisie.role.trim() };
   refuser(problemesIntermediaire(donnees));
   try {
@@ -55,6 +60,7 @@ export async function creerIntermediaire(acteur: UtilisateurCourant, saisie: Int
       const cree = await tx.intermediaire.create({ data: { ...donnees, creePar: acteur.identifiant } });
       await journaliser({ acteur: { id: acteur.id, identifiant: acteur.identifiant }, action: "INTERMEDIAIRE_CREE", objetType: "intermediaire", objetId: cree.code, apres: { ...donnees, actif: true }, adresseIp }, tx);
     });
+    return donnees;
   } catch (erreur) {
     if (erreur instanceof Prisma.PrismaClientKnownRequestError && erreur.code === "P2002") throw new ErreurMetier(`L'intermédiaire « ${donnees.code} » existe déjà.`);
     throw erreur;

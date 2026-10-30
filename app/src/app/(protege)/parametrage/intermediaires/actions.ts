@@ -8,7 +8,9 @@ import { champ, executerAction } from "../../executer";
 export async function creerUnIntermediaire(_etat: EtatFormulaire, donnees: FormData): Promise<EtatFormulaire> {
   const code = champ(donnees, "code").toUpperCase();
   return executerAction(
-    (acteur, ip) => creerIntermediaire(acteur, { code, nom: champ(donnees, "nom"), role: champ(donnees, "role") }, ip),
+    async (acteur, ip) => {
+      await creerIntermediaire(acteur, { code, nom: champ(donnees, "nom"), role: champ(donnees, "role") }, ip);
+    },
     `Intermédiaire ${code} ajouté : il peut maintenant être choisi sur une cotation.`,
     "/parametrage/intermediaires",
   );

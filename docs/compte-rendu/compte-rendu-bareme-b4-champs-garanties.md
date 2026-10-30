@@ -17,7 +17,7 @@ Précision : la copie a la **même empreinte** que le publié (l'empreinte est l
 
 ## Tests
 - Unitaires : `edition.test.ts` (32 : propositions de code, profondeur, références croisées, refus nommés, renommages, attributs) ; `EditeurBareme.test.tsx` (22 : onglets et panneaux accessibles, lecture seule, contrôles, sept opérandes, conditions par listes).
-- Intégration : `bareme-edition.integration.test.ts` (15) : barème vide, enregistrement avec journal avant/après, contrôle bloquant (publication refusée, journalisée), mêmes erreurs qu'à l'import, publié intouchable (service et base), refus sans droit, aller-retour export / réimport (même empreinte), nouvelle version depuis un publié avec cotation citante inchangée, date passée refusée, version à venir déjà au barème, même date, brouillon refusé.
+- Intégration : `bareme-edition.integration.test.ts` (16) : barème vide, enregistrement avec journal avant/après, contrôle bloquant (publication refusée, journalisée), mêmes erreurs qu'à l'import, publié intouchable (service et base), refus sans droit, aller-retour export / réimport (même empreinte), nouvelle version depuis un publié avec cotation citante inchangée, date passée refusée, version à venir déjà au barème, même date, brouillon refusé.
 - Bout en bout : `bareme-ecran.e2e.test.ts` (champ liste, garantie à deux composantes, taux modifié, essais rejoués : l'écart « dde, attendu 12000, obtenu 14000 » s'affiche, correction, publication).
 - Navigateur (Chromium, pile de test, application compilée, base de développement jetable) : flèches, Début et Fin sur les onglets ; ajout d'un champ liste et de valeurs avec code proposé ; refus nommé en supprimant `occupation` ; enregistrement (journalisé) ; garantie et composante ajoutées ; aucun débordement de l'éditeur à 390 px.
 - Suite complète (conteneurs, projet `sim-tests`, jamais `sim-b1`) :
@@ -25,10 +25,12 @@ Précision : la copie a la **même empreinte** que le publié (l'empreinte est l
 | Suite | Résultat |
 |---|---|
 | Unitaires | 61 fichiers, 749 tests verts |
-| Intégration | 31 fichiers, 406 tests verts |
+| Intégration | 31 fichiers, 407 tests verts (dont le test d'empreinte, voir ci-dessous) |
 | Bout en bout | 8 fichiers, 16 tests verts |
 | lint, typecheck, build | sans erreur |
 | pytest (générateur) | non relancé : générateur non modifié |
+
+- Empreinte (ajouté avant fusion) : copie d'un publié, taux modifié, enregistré → empreinte du brouillon ≠ celle du publié et = SHA-256 du JSON canonique du contenu ; publié → empreinte publiée = SHA-256 du contenu final, publié d'origine inchangé. Elle est bien recalculée à chaque enregistrement : aucune correction.
 
 ## Écarts et limites
 - **Tolérance à l'enregistrement** (H158) : le schéma est exigé, les problèmes d'intégrité n'empêchent pas d'enregistrer (ils bloquent la publication). Sans cela, toute modification touchant une table ou un sous-jacent (lecture seule) aurait été impossible à enregistrer.

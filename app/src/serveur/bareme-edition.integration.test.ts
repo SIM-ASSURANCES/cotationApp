@@ -1,12 +1,15 @@
 // Session B4 (D58) : barème édité à l'écran. Même document que l'import (bareme_documents, BROUILLON), mêmes schéma et verifierBareme.
 // Un barème publié ne se modifie jamais : sa correction est une NOUVELLE version, créée par le service existant (H157, D49).
 // Données de test INVENTÉES (SECURPRO du fixture, taxes aux catégories propres à ce fichier : la base est partagée).
+import { createHash } from "node:crypto";
+
 import { beforeAll, describe, expect, it } from "vitest";
 
 import {
   baremeVide,
   champNeuf,
   garantieNeuve,
+  jsonCanonique,
   lireBareme,
   resumeBareme,
   schemaBareme,
@@ -417,5 +420,34 @@ describe("Corriger un barème publié : une nouvelle version, par le service exi
     const { versionId } = await nouvelleVersion();
     await enregistrerBrouillonBareme(technique, versionId, secuproDeTest(), null);
     await expect(creerVersionDepuisBareme(technique, versionId, dans(30), null)).rejects.toThrow(/Seul un barème publié/);
+  });
+});
+
+describe("Empreinte : recalculée à chaque enregistrement, égale au SHA-256 du contenu publié", () => {
+  it("copie d'un publié, taux modifié, enregistré : l'empreinte du brouillon diffère de celle du publié ; publiée : SHA-256 du contenu final", async () => {
+    const { versionId, empreinte: empreintePubliee } = await versionPubliee();
+    await basculerVersionAuBareme(technique, versionId, null);
+    await changerLaVersionPourTest(versionId, "date_effet = DATE '2020-01-01'");
+    const { versionId: copieId } = await creerVersionDepuisBareme(technique, versionId, dans(50), null);
+    expect((await lignes(copieId))[0].empreinte).toBe(empreintePubliee); // copie intacte : même contenu, même empreinte
+
+    // Un taux modifié sans effet sur les essais (la tempête n'est souscrite dans aucun essai).
+    const brouillon = schemaBareme.parse((await lignes(copieId))[0].contenu);
+    const modifie: Bareme = { ...brouillon, garanties: brouillon.garanties.map((g) => (g.code === "tempete" ? { ...g, composantes: g.composantes.map((c) => ({ ...c, taux: { unite: "PERMILLE" as const, fixe: "0.8" } })) } : g)) };
+    const enregistre = await enregistrerBrouillonBareme(technique, copieId, modifie, null, { toleranceIntegrite: true });
+    const [ligne] = await lignes(copieId);
+    expect(enregistre.empreinte).not.toBe(empreintePubliee);
+    expect(ligne.empreinte).toBe(enregistre.empreinte);
+    expect(ligne.empreinte).not.toBe(empreintePubliee);
+    expect(ligne.empreinte).toBe(createHash("sha256").update(jsonCanonique(ligne.contenu), "utf8").digest("hex"));
+
+    // Publication : l'empreinte publiée est le SHA-256 du contenu final (relu en base), et le publié d'origine n'a pas changé.
+    const publie = await publierBareme(technique, copieId, "Taux de la tempête corrigé", null);
+    const [final] = await lignes(copieId);
+    expect(final.statut).toBe("PUBLIE");
+    expect(publie.empreinte).toBe(final.empreinte);
+    expect(final.empreinte).toBe(createHash("sha256").update(jsonCanonique(final.contenu), "utf8").digest("hex"));
+    expect(final.empreinte).not.toBe(empreintePubliee);
+    expect((await lignes(versionId))[0].empreinte).toBe(empreintePubliee);
   });
 });

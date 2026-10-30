@@ -9,7 +9,7 @@ import { tableauComptabilite, type TableauComptabilite } from "./tableau-comptab
 import { tableauDirectionGenerale, type TableauDirectionGenerale } from "./tableau-dg";
 import { tableauProduction, type TableauProduction } from "./tableau-production";
 import { tableauTechnique, type TableauTechnique } from "./tableau-technique";
-import { exigerDroitTableauxDeBord, tableauDeBord, type TableauDeBord } from "./tableaux-de-bord";
+import { exigerDroitTableauxDeBord, exigerLectureTableau, tableauDeBord, type TableauDeBord } from "./tableaux-de-bord";
 import type { UtilisateurCourant } from "./types";
 
 /**
@@ -34,28 +34,34 @@ export async function tableauDeBordMemorise(acteur: UtilisateurCourant, periode?
   return generaux.obtenir(clePeriode(periode), Date.now(), () => tableauDeBord(acteur, periode));
 }
 
-/** Tableau du commercial : une entrée par commercial ET par période, jamais partagée entre deux personnes. */
-export function tableauCommercialMemorise(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauCommercial> {
+/** Tableau du commercial : le droit est vérifié avant la mémoire ; une entrée par commercial ET par période, jamais partagée entre deux personnes. */
+export async function tableauCommercialMemorise(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauCommercial> {
+  await exigerLectureTableau(acteur, "commercial");
   return commerciaux.obtenir(`${acteur.identifiant}|${clePeriode(periode)}`, Date.now(), () => tableauCommercial(acteur, periode));
 }
 
-export function tableauTechniqueMemorise(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauTechnique> {
+export async function tableauTechniqueMemorise(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauTechnique> {
+  await exigerLectureTableau(acteur, "technique");
   return techniques.obtenir(clePeriode(periode), Date.now(), () => tableauTechnique(acteur, periode));
 }
 
-export function tableauComptabiliteMemorise(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauComptabilite> {
+export async function tableauComptabiliteMemorise(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauComptabilite> {
+  await exigerLectureTableau(acteur, "comptabilite");
   return comptas.obtenir(clePeriode(periode), Date.now(), () => tableauComptabilite(acteur, periode));
 }
 
-export function tableauDGMemorise(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauDirectionGenerale> {
+export async function tableauDGMemorise(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauDirectionGenerale> {
+  await exigerLectureTableau(acteur, "direction");
   return dgs.obtenir(clePeriode(periode), Date.now(), () => tableauDirectionGenerale(acteur, periode));
 }
 
-export function tableauProductionMemorise(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauProduction> {
+export async function tableauProductionMemorise(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauProduction> {
+  await exigerLectureTableau(acteur, "production");
   return productions.obtenir(clePeriode(periode), Date.now(), () => tableauProduction(acteur, periode));
 }
 
-export function tableauAdminMemorise(acteur: UtilisateurCourant): Promise<TableauAdmin> {
+export async function tableauAdminMemorise(acteur: UtilisateurCourant): Promise<TableauAdmin> {
+  await exigerLectureTableau(acteur, "admin");
   return admins.obtenir("admin", Date.now(), () => tableauAdmin(acteur));
 }
 

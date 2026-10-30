@@ -6,6 +6,7 @@ import { problemesPeriode, tauxTransformation, type LigneTransformation, type Pe
 
 import { aujourdhui } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
+import { exigerLectureTableau } from "./tableaux-de-bord";
 import { ErreurMetier, type UtilisateurCourant } from "./types";
 
 const versDate = (iso: DateIso) => new Date(`${iso}T00:00:00.000Z`);
@@ -78,9 +79,10 @@ export type TableauTechnique = {
  * contrats dépassant le seuil à valider, modèles Word soumis, barèmes en brouillon).
  */
 export async function tableauTechnique(
-  _acteur: UtilisateurCourant,
+  acteur: UtilisateurCourant,
   periode?: Partial<Periode>,
 ): Promise<TableauTechnique> {
+  await exigerLectureTableau(acteur, "technique");
   const jour = aujourdhui();
   const p: Periode = { debut: periode?.debut || `${jour.slice(0, 4)}-01-01`, fin: periode?.fin || jour };
   const problemes = problemesPeriode(p, dateValide);

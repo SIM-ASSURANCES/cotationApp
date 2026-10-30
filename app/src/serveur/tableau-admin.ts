@@ -3,7 +3,8 @@ import "server-only";
 import { compterJournalDepuis, lireJournal } from "./audit";
 import { aujourdhui } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
-import { ErreurAcces, type UtilisateurCourant } from "./types";
+import { exigerLectureTableau } from "./tableaux-de-bord";
+import type { UtilisateurCourant } from "./types";
 
 export type UtilisateurRecentAdmin = {
   id: number;
@@ -47,6 +48,7 @@ export type TableauAdmin = {
  * intégrité du stockage persistant et dernières activités d'audit.
  */
 export async function tableauAdmin(acteur: UtilisateurCourant): Promise<TableauAdmin> {
+  await exigerLectureTableau(acteur, "admin");
   const jour = aujourdhui();
   const prisma = obtenirPrisma();
   const ilYA24h = new Date(Date.now() - 24 * 3600 * 1000);
@@ -95,8 +97,6 @@ export async function tableauAdmin(acteur: UtilisateurCourant): Promise<TableauA
     objet: l.objet,
     acteurIdentifiant: l.utilisateur ?? "système",
   }));
-
-  if (acteur.profil !== "ADMIN_SYSTEME") throw new ErreurAcces("Droit insuffisant : administration");
 
   return {
     aujourdhui: jour,

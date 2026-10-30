@@ -5,7 +5,7 @@ import { impayesParAnciennete, problemesPeriode, type Periode, type TrancheAncie
 
 import { aujourdhui } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
-import { montantsFacturation } from "./tableaux-de-bord";
+import { exigerLectureTableau, montantsFacturation } from "./tableaux-de-bord";
 import { ErreurMetier, type UtilisateurCourant } from "./types";
 
 const versDate = (iso: DateIso) => new Date(`${iso}T00:00:00.000Z`);
@@ -57,9 +57,10 @@ export type TableauComptabilite = {
  * impayés par ancienneté, et derniers paiements enregistrés.
  */
 export async function tableauComptabilite(
-  _acteur: UtilisateurCourant,
+  acteur: UtilisateurCourant,
   periode?: Partial<Periode>,
 ): Promise<TableauComptabilite> {
+  await exigerLectureTableau(acteur, "comptabilite");
   const jour = aujourdhui();
   const p: Periode = { debut: periode?.debut || `${jour.slice(0, 4)}-01-01`, fin: periode?.fin || jour };
   const problemes = problemesPeriode(p, dateValide);

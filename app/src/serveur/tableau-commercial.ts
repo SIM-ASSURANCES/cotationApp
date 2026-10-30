@@ -7,7 +7,7 @@ import { cotationsParStatut, impayesParAnciennete, pourcentage, problemesPeriode
 
 import { aujourdhui } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
-import { montantsFacturation } from "./tableaux-de-bord";
+import { exigerLectureTableau, montantsFacturation } from "./tableaux-de-bord";
 import { ErreurMetier, type UtilisateurCourant } from "./types";
 
 /**
@@ -32,6 +32,7 @@ export type TableauCommercial = {
 };
 
 export async function tableauCommercial(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauCommercial> {
+  await exigerLectureTableau(acteur, "commercial");
   const jour = aujourdhui();
   const p: Periode = { debut: periode?.debut || `${jour.slice(0, 4)}-01-01`, fin: periode?.fin || jour };
   const problemes = problemesPeriode(p, dateValide);

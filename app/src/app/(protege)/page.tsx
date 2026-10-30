@@ -8,7 +8,7 @@ import {
   tableauProductionMemorise,
   tableauTechniqueMemorise,
 } from "@/serveur/tableaux-memorises";
-import { ErreurMetier } from "@/serveur/types";
+import { ErreurAcces, ErreurMetier } from "@/serveur/types";
 
 import { TableauDeBordAdmin } from "./tableaux-de-bord/tableau-admin";
 import { TableauDeBordCommercial } from "./tableau-commercial";
@@ -39,7 +39,16 @@ export default async function PageTableauDeBord(props: PageProps<"/">) {
   const recherche = await props.searchParams;
   const texte = (v: string | string[] | undefined) => (typeof v === "string" ? normaliserDateSaisie(v) : undefined);
   const utilisateur = await exigerUtilisateur();
-  const periode = { debut: texte(recherche.debut), fin: texte(recherche.fin) };
+  // Le serveur refuse seul (matrice des droits) : un profil sans le droit de son tableau (droits personnalisés) voit la page de bienvenue.
+  try {
+    return await tableauDuProfil(utilisateur, { debut: texte(recherche.debut), fin: texte(recherche.fin) });
+  } catch (e) {
+    if (!(e instanceof ErreurAcces)) throw e;
+    return <Bienvenue nom={utilisateur.nom} profil={utilisateur.libelleProfil} />;
+  }
+}
+
+async function tableauDuProfil(utilisateur: Awaited<ReturnType<typeof exigerUtilisateur>>, periode: { debut?: string; fin?: string }) {
 
   // 1. Profil Commercial
   if (utilisateur.profil === "COMMERCIAL") {

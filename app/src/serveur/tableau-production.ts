@@ -6,6 +6,7 @@ import { parTypeEtMois, problemesPeriode, type Periode } from "@/domaine/tableau
 
 import { aujourdhui } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
+import { exigerLectureTableau } from "./tableaux-de-bord";
 import { ErreurMetier, type UtilisateurCourant } from "./types";
 
 const versDate = (iso: DateIso) => new Date(`${iso}T00:00:00.000Z`);
@@ -58,9 +59,10 @@ export type TableauProduction = {
  * suivi des tâches de police post-import, et lots d'adhérents.
  */
 export async function tableauProduction(
-  _acteur: UtilisateurCourant,
+  acteur: UtilisateurCourant,
   periode?: Partial<Periode>,
 ): Promise<TableauProduction> {
+  await exigerLectureTableau(acteur, "production");
   const jour = aujourdhui();
   const p: Periode = { debut: periode?.debut || `${jour.slice(0, 4)}-01-01`, fin: periode?.fin || jour };
   const problemes = problemesPeriode(p, dateValide);

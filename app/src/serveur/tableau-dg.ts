@@ -6,7 +6,7 @@ import { pourcentage, problemesPeriode, somme, type Periode } from "@/domaine/ta
 
 import { aujourdhui } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
-import { montantsFacturation } from "./tableaux-de-bord";
+import { exigerLectureTableau, montantsFacturation } from "./tableaux-de-bord";
 import { ErreurMetier, type UtilisateurCourant } from "./types";
 
 const versDate = (iso: DateIso) => new Date(`${iso}T00:00:00.000Z`);
@@ -77,9 +77,10 @@ export type TableauDirectionGenerale = {
  * et file des validations/approbations réservées à la Direction Générale.
  */
 export async function tableauDirectionGenerale(
-  _acteur: UtilisateurCourant,
+  acteur: UtilisateurCourant,
   periode?: Partial<Periode>,
 ): Promise<TableauDirectionGenerale> {
+  await exigerLectureTableau(acteur, "direction");
   const jour = aujourdhui();
   const p: Periode = { debut: periode?.debut || `${jour.slice(0, 4)}-01-01`, fin: periode?.fin || jour };
   const problemes = problemesPeriode(p, dateValide);

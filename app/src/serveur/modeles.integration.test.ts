@@ -309,7 +309,11 @@ describe("aperçu et listes longues (CDC §6.5, §6.6)", () => {
       garanties: [],
       references: { csModeleCode: null, csVisa: null },
     };
-    const bareme = lireBareme(documentSecurpro);
+    const brancheIncendie = CODE("INC");
+    const brancheIard = CODE("IARD");
+    // Le barème inventé, avec ses deux catégories de taxe renommées en branches propres à ce test.
+    const document = JSON.parse(JSON.stringify(documentSecurpro).replace(/"INCENDIE"/g, `"${brancheIncendie}"`).replace(/"IARD"/g, `"${brancheIard}"`)) as typeof documentSecurpro;
+    const bareme = lireBareme(document);
     let produitBareme: string;
     let versionBareme: number;
 
@@ -320,16 +324,16 @@ describe("aperçu et listes longues (CDC §6.5, §6.6)", () => {
     }
 
     beforeAll(async () => {
-      // Taxes que rejouent les jeux d'essai du barème inventé à la publication.
-      await assurerBranche("INCENDIE");
-      await assurerBranche("IARD");
-      await creerTaxe(technique, { branche: "INCENDIE", typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "12.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
-      await creerTaxe(technique, { branche: "IARD", typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "7.25", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
+      // Taxes que rejouent les jeux d'essai du barème à la publication : branches fiscales propres à ce test (la base est partagée entre fichiers).
+      await assurerBranche(brancheIncendie);
+      await assurerBranche(brancheIard);
+      await creerTaxe(technique, { branche: brancheIncendie, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "12.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
+      await creerTaxe(technique, { branche: brancheIard, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "7.25", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
       produitBareme = CODE("PRDB");
       await creerProduit(technique, { code: produitBareme, libelle: "Produit au barème (inventé)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: "SANTE" }, null);
       await creerVersion(technique, produitBareme, VERSION_BAREME, null);
       versionBareme = (await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produit: { code: produitBareme } } })).id;
-      await enregistrerBrouillonBareme(technique, versionBareme, documentSecurpro, null);
+      await enregistrerBrouillonBareme(technique, versionBareme, document, null);
     }, 60_000);
 
     it("barème en brouillon seulement : risque et risque_code portent TOUS les champs, attributs et valeurs intermédiaires du barème", async () => {
@@ -346,7 +350,7 @@ describe("aperçu et listes longues (CDC §6.5, §6.6)", () => {
     });
 
     it("barème publié : il l'emporte sur le brouillon", async () => {
-      const publie = structuredClone(documentSecurpro) as unknown as { champs: Record<string, unknown>[] };
+      const publie = structuredClone(document) as unknown as { champs: Record<string, unknown>[] };
       publie.champs.push({ code: "champ_du_publie", type: "TEXTE", obligatoire: false });
       await enregistrerBrouillonBareme(technique, versionBareme, publie, null);
       await publierBareme(dg, versionBareme, "Essai de l'aperçu (inventé)", null);

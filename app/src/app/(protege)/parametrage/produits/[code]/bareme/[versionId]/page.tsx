@@ -3,12 +3,12 @@ import { notFound } from "next/navigation";
 import { EditeurBareme } from "@/composants/bareme/EditeurBareme";
 import { Bandeau, EnTetePage, EtatVide, LienBouton } from "@/composants/ui";
 import { schemaBareme } from "@/domaine/bareme";
-import { formaterDate } from "@/domaine/calcul/dates";
+import { aujourdhui, formaterDate } from "@/domaine/calcul/dates";
 import { peutAgir } from "@/domaine/droits";
 import { lireBaremePourEdition } from "@/serveur/bareme-edition";
 import { exigerDroit } from "@/serveur/session";
 
-import { enregistrerLeBaremeEcran, rejouerLesEssaisEcran } from "../../actions";
+import { basculerLeBaremeEcran, controlerLaPublicationEcran, enregistrerLeBaremeEcran, publierLeBaremeEcran, rejouerLesEssaisEcran } from "../../actions";
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -52,9 +52,18 @@ export default async function PageEditionBareme(props: PageProps<"/parametrage/p
           lectureSeule={!donnees.brouillon || !donnees.preparable}
           codesFiges={donnees.codesFiges}
           categoriesTaxe={donnees.categoriesTaxe}
-          lienPublier={`${retour}#bareme-${id}`}
+          publication={{
+            brouillon: donnees.brouillon ? { empreinte: donnees.brouillon.empreinte } : null,
+            publie: donnees.publie ? { empreinte: donnees.publie.empreinte, publieLe: formaterDate(iso(donnees.publie.publieLe)), publiePar: donnees.publie.publiePar, motif: donnees.publie.motif } : null,
+            peutBasculer: donnees.publie !== null && donnees.version.modeTarification !== "BAREME" && donnees.version.dateEffet > aujourdhui(),
+            auBareme: donnees.version.modeTarification === "BAREME",
+            dateEffet: formaterDate(donnees.version.dateEffet),
+          }}
           enregistrer={enregistrerLeBaremeEcran.bind(null, code)}
           rejouer={rejouerLesEssaisEcran.bind(null, code)}
+          controler={controlerLaPublicationEcran.bind(null, code)}
+          publier={publierLeBaremeEcran.bind(null, code)}
+          basculer={basculerLeBaremeEcran.bind(null, code)}
         />
       )}
     </main>

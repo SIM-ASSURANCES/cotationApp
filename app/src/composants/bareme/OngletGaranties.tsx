@@ -289,7 +289,7 @@ function Composantes({ ctx, garantie, disabled, majGarantie }: { ctx: ContexteEd
             {"fixe" in c.taux ? (
               <Champ label="Valeur du taux" inputMode="decimal" autoComplete="off" disabled={disabled} value={c.taux.fixe} onChange={(e) => majComposante(c.code, (x) => ({ ...x, taux: { unite: x.taux.unite, fixe: decimalSaisi(e.target.value) } }))} />
             ) : (
-              <p className="self-end text-sm text-muted-foreground">Le taux vient d&apos;un sous-jacent (onglet en lecture, modifiable par le classeur jusqu&apos;à la session B5).</p>
+              <p className="self-end text-sm text-muted-foreground">Le taux vient d&apos;un sous-jacent E1 (onglet Sous-jacents).</p>
             )}
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

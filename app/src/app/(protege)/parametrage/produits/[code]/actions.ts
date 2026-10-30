@@ -1,10 +1,11 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import type { EtatFormulaire } from "@/composants/types";
-import type { Ecart } from "@/domaine/bareme";
-import { basculerVersionAuBareme, decrireEcart, enregistrerBrouillonBareme, publierBareme, rejouerLesEssaisBareme } from "@/serveur/bareme";
+import type { ControlesDePublication, Ecart } from "@/domaine/bareme";
+import { basculerVersionAuBareme, controlerAvantPublication, decrireEcart, enregistrerBrouillonBareme, publierBareme, rejouerLesEssaisBareme } from "@/serveur/bareme";
 import { creerBaremeVide, creerVersionDepuisBareme } from "@/serveur/bareme-edition";
 import { importerBaremeXlsx } from "@/serveur/bareme-excel";
 import { creerVersion, modifierBranchePrincipaleProduit } from "@/serveur/parametrage";
@@ -84,11 +85,13 @@ export async function creerUneVersionDepuisLeBareme(_etat: EtatFormulaire, donne
   redirect(cheminEditeur(r.valeur.codeProduit, r.valeur.versionId));
 }
 
+const ficheProduit = (codeProduit: string) => `/parametrage/produits/${codeProduit}`;
+
 /**
  * Enregistre le document de l'éditeur comme brouillon de la version : le schéma est exigé, les problèmes d'intégrité sont rendus en
- * avertissements (ils bloquent la publication, pas l'enregistrement d'un travail en cours, H158).
+ * avertissements (ils bloquent la publication, pas l'enregistrement d'un travail en cours, H158). Rend aussi l'empreinte du brouillon.
  */
-export async function enregistrerLeBaremeEcran(codeProduit: string, id: number, document: string): Promise<EtatFormulaire> {
+export async function enregistrerLeBaremeEcran(codeProduit: string, id: number, document: string): Promise<EtatFormulaire & { empreinte?: string }> {
   let contenu: unknown;
   try {
     contenu = JSON.parse(document);
@@ -96,26 +99,58 @@ export async function enregistrerLeBaremeEcran(codeProduit: string, id: number, 
     return { erreur: "Le document envoyé est illisible : rechargez la page." };
   }
   let nombre = 0;
-  return executerAction(
+  let empreinte: string | undefined;
+  const etat = await executerAction(
     async (acteur, ip) => {
-      const { problemes } = await enregistrerBrouillonBareme(acteur, id, contenu, ip, { toleranceIntegrite: true });
-      nombre = problemes.length;
-      return problemes.map((p) => `[${p.code}] ${p.message}`);
+      const r = await enregistrerBrouillonBareme(acteur, id, contenu, ip, { toleranceIntegrite: true });
+      nombre = r.problemes.length;
+      empreinte = r.empreinte;
+      return r.problemes.map((p) => `[${p.code}] ${p.message}`);
     },
     () => (nombre === 0 ? "Brouillon enregistré." : `Brouillon enregistré. ${nombre} problème(s) restent à corriger avant la publication :`),
-    `/parametrage/produits/${codeProduit}`,
+    ficheProduit(codeProduit),
   );
+  return etat.succes ? { ...etat, empreinte } : etat;
 }
 
-/** « Rejouer les essais » depuis l'éditeur : calcule le brouillon enregistré, ne modifie rien. */
-export async function rejouerLesEssaisEcran(codeProduit: string, id: number): Promise<EtatFormulaire> {
-  let ecarts: Ecart[] = [];
-  return executerAction(
+/** « Rejouer les essais » depuis l'éditeur : calcule le brouillon enregistré et rend les écarts ligne à ligne ; ne modifie rien. */
+export async function rejouerLesEssaisEcran(codeProduit: string, id: number): Promise<{ etat: EtatFormulaire; ecarts?: Ecart[] }> {
+  let ecarts: Ecart[] | undefined;
+  const etat = await executerAction(
     async (acteur) => {
       ecarts = await rejouerLesEssaisBareme(acteur, id);
       return ecarts.map(decrireEcart);
     },
-    () => (ecarts.length === 0 ? "Tous les jeux d'essai sont verts." : `${ecarts.length} écart(s) entre les jeux d'essai et le calcul du barème (la publication serait refusée) :`),
-    `/parametrage/produits/${codeProduit}`,
+    () => (ecarts && ecarts.length === 0 ? "Tous les jeux d'essai sont verts." : `${ecarts?.length ?? 0} écart(s) entre les jeux d'essai et le calcul du barème (la publication serait refusée) :`),
+    ficheProduit(codeProduit),
   );
+  return { etat, ...(etat.erreur ? {} : { ecarts }) };
+}
+
+/** Onglet Publier : rejoue tous les essais et contrôle les balises des modèles publiés, comme le ferait la publication ; ne modifie rien. */
+export async function controlerLaPublicationEcran(codeProduit: string, id: number): Promise<{ etat?: EtatFormulaire; controles?: ControlesDePublication }> {
+  void codeProduit;
+  const r = await avecMessage((acteur) => controlerAvantPublication(acteur, id));
+  return r.ok ? { controles: r.valeur } : { etat: r.etat };
+}
+
+/** Onglet Publier : publication du brouillon enregistré (motif obligatoire), par le service existant. */
+export async function publierLeBaremeEcran(codeProduit: string, id: number, motif: string): Promise<EtatFormulaire> {
+  let empreinte = "";
+  const etat = await executerAction(
+    async (acteur, ip) => {
+      empreinte = (await publierBareme(acteur, id, motif, ip)).empreinte;
+    },
+    () => `Barème publié (empreinte ${empreinte}) : il ne se modifie plus. Basculez maintenant la version au barème.`,
+    cheminEditeur(codeProduit, id),
+  );
+  if (etat.succes) revalidatePath(ficheProduit(codeProduit));
+  return etat;
+}
+
+/** Onglet Publier : bascule de la version au mode barème, par le service existant. */
+export async function basculerLeBaremeEcran(codeProduit: string, id: number): Promise<EtatFormulaire> {
+  const etat = await executerAction((acteur, ip) => basculerVersionAuBareme(acteur, id, ip), "Version basculée au barème.", cheminEditeur(codeProduit, id));
+  if (etat.succes) revalidatePath(ficheProduit(codeProduit));
+  return etat;
 }

@@ -6,14 +6,17 @@ import type { Prisma } from "@/generated/prisma/client";
 
 import { aujourdhui, ajouterJours, type DateIso } from "@/domaine/calcul/dates";
 import { estCompositionBareme } from "@/domaine/calcul/composition";
+import { versionEnVigueur, type StatutVersion, type VersionCycle } from "@/domaine/documents/modeles";
 import type { RegimeTaxe } from "@/domaine/calcul/taxes";
 import {
   VERSION_SCHEMA_BAREME,
+  balisesSansCle,
   calculerBareme,
   codesRisqueDuBareme,
   jsonCanonique,
   lireBareme,
   rejouerJeuxEssai,
+  renommagesInterdits,
   resumeBareme,
   risqueCodeDuBareme,
   risqueDuBareme,
@@ -21,6 +24,7 @@ import {
   schemaBareme,
   verifierBareme,
   type Bareme,
+  type ControlesDePublication,
   type Ecart,
   type ParametresBareme,
   type Probleme,
@@ -64,6 +68,14 @@ export class ErreurPublicationBareme extends ErreurMetier {
   override name = "ErreurPublicationBareme";
   constructor(readonly ecarts: Ecart[]) {
     super(`Publication refusée : ${ecarts.length} écart(s) entre les jeux d'essai et le calcul du barème.`, ecarts.map(decrireEcart));
+  }
+}
+
+/** Publication refusée parce qu'un modèle publié en vigueur cite une balise `risque.<code>` que le nouveau barème n'a plus (B5, ajout 9). */
+export class ErreurBalisesAbsentes extends ErreurMetier {
+  override name = "ErreurBalisesAbsentes";
+  constructor(readonly balises: string[]) {
+    super(`Publication refusée : ${balises.length} balise(s) de modèles publiés en vigueur n'ont plus de champ dans ce barème. Rétablissez le champ, ou faites publier un modèle corrigé.`, balises.map((b) => `Le ${b}`));
   }
 }
 
@@ -145,6 +157,46 @@ function resumeDuContenu(contenu: unknown): Partial<ReturnType<typeof resume>> {
 export const enJson = (b: Bareme) => JSON.parse(jsonCanonique(b)) as Prisma.InputJsonValue;
 
 /**
+ * Barème PUBLIÉ dont le brouillon d'une version est issu : celui de la version publiée la plus récente du même produit qui précède cette
+ * version (B5, ajout 10). `null` : le produit n'a pas de barème publié avant elle, rien n'est figé.
+ */
+async function baremeDOrigine(tx: Client, version: VersionChargee): Promise<Bareme | null> {
+  const ligne = await tx.baremeDocument.findFirst({
+    where: { statut: "PUBLIE", version: { produitId: version.produitId, dateEffet: { lt: version.dateEffet } } },
+    orderBy: { version: { dateEffet: "desc" } },
+  });
+  if (!ligne) return null;
+  const lu = schemaBareme.safeParse(ligne.contenu);
+  return lu.success ? lu.data : null;
+}
+
+/**
+ * Balises `risque.<code>` / `risque_code.<code>` citées par les modèles PUBLIÉS en vigueur du produit (CP, cotation, certificat) qui n'ont pas
+ * de clé dans ce barème (B5, ajout 9). « En vigueur » : à la date d'effet de la version du barème, ou aujourd'hui si elle est passée ; la
+ * liste des clés est celle de l'émission (`codesRisqueDuBareme`). Chaque entrée nomme le modèle, sa version et la balise.
+ */
+export async function balisesDesModelesSansCle(client: Pick<Client, "modeleVersion">, produitId: number, dateEffetVersion: DateIso, bareme: Bareme): Promise<string[]> {
+  const jour = dateEffetVersion > aujourdhui() ? dateEffetVersion : aujourdhui();
+  const versions = await client.modeleVersion.findMany({
+    where: { statut: "PUBLIE", modele: { produitId, type: { in: ["CP", "COTATION", "CERTIFICAT"] } } },
+    select: { id: true, numero: true, statut: true, dateEffet: true, auteurId: true, analyse: true, modeleId: true, modele: { select: { code: true, type: true } } },
+  });
+  type Ligne = (typeof versions)[number];
+  const parModele = new Map<number, Ligne[]>();
+  for (const v of versions) parModele.set(v.modeleId, [...(parModele.get(v.modeleId) ?? []), v]);
+  const publies: { description: string; chemins: string[] }[] = [];
+  for (const groupe of parModele.values()) {
+    const cycles = groupe.map((v): VersionCycle & { source: Ligne } => ({ id: v.id, numero: v.numero, statut: v.statut as StatutVersion, dateEffet: depuisDate(v.dateEffet), auteurId: v.auteurId, source: v }));
+    const enVigueur = versionEnVigueur(cycles, jour);
+    if (enVigueur) {
+      const v = enVigueur.source;
+      publies.push({ description: `modèle ${v.modele.type} ${v.modele.code} v${v.numero}`, chemins: ((v.analyse as { champs?: string[] }).champs ?? []) as string[] });
+    }
+  }
+  return balisesSansCle(publies, bareme);
+}
+
+/**
  * Enregistre le brouillon du barème d'une version (le crée, ou remplace le contenu du brouillon existant). Le document doit passer
  * le schéma et `verifierBareme` : sinon `ErreurBaremeInvalide`, sans rien écrire. Refusé si la version a déjà un barème publié.
  *
@@ -173,9 +225,16 @@ export async function enregistrerBrouillonBareme(
   const empreinte = empreinteBareme(bareme);
 
   return obtenirPrisma().$transaction(async (tx) => {
-    exigerPreparable(await verrouillerVersion(tx, versionId));
+    const version = await verrouillerVersion(tx, versionId);
+    exigerPreparable(version);
     if (await tx.baremeDocument.findFirst({ where: { versionId, statut: "PUBLIE" }, select: { id: true } })) {
       throw new ErreurMetier("Cette version a déjà un barème publié, qui ne se modifie plus : une correction est une nouvelle version du produit.");
+    }
+    // Codes figés côté serveur (B5, ajout 10) : un code du barème publié d'origine ne change pas (supprimer reste permis).
+    const origine = await baremeDOrigine(tx, version);
+    if (origine) {
+      const renommages = renommagesInterdits(origine, bareme);
+      if (renommages.length > 0) throw new ErreurMetier(`Enregistrement refusé : ${renommages.length} code(s) d'un barème publié ne peuvent pas changer.`, renommages);
     }
     const existant = await tx.baremeDocument.findFirst({ where: { versionId, statut: "BROUILLON" } });
     const ligne = existant
@@ -213,6 +272,22 @@ export async function rejouerLesEssaisBareme(acteur: UtilisateurCourant, version
 }
 
 /**
+ * Onglet « Publier » (B5) : rejoue TOUS les jeux d'essai du brouillon enregistré et contrôle les balises des modèles publiés en vigueur, avec
+ * les mêmes fonctions que la publication. Le barème est revalidé comme à la publication (un barème invalide lève `ErreurBaremeInvalide`).
+ */
+export async function controlerAvantPublication(acteur: UtilisateurCourant, versionId: number): Promise<ControlesDePublication> {
+  await exigerEcriture(acteur);
+  return obtenirPrisma().$transaction(async (tx) => {
+    const version = await verrouillerVersion(tx, versionId);
+    const ligne = await tx.baremeDocument.findFirst({ where: { versionId, statut: "BROUILLON" } });
+    if (!ligne) throw new ErreurMetier("Cette version n'a pas de brouillon de barème à contrôler : enregistrez d'abord le barème.");
+    const bareme = validerDocumentBareme(ligne.contenu, { publication: true });
+    const balises = await balisesDesModelesSansCle(tx, version.produitId, depuisDate(version.dateEffet), bareme);
+    return { nombreEssais: bareme.jeuxEssai.length, ecarts: rejouerJeuxEssai(bareme, await parametresDEssai(tx, version, bareme)), balises };
+  });
+}
+
+/**
  * Publie le brouillon de la version, dans une transaction : revalidation (au moins un jeu d'essai), jeux d'essai tous verts (sinon
  * `ErreurPublicationBareme` avec les écarts), motif obligatoire, empreinte recalculée, publieur et avant/après journalisés.
  * Le verrou de ligne sur la version fait attendre une seconde publication simultanée, qui ne trouve plus de brouillon.
@@ -233,7 +308,7 @@ export async function publierBareme(acteur: UtilisateurCourant, versionId: numbe
     }
     const acteurAudit = { id: acteur.id, identifiant: acteur.identifiant };
     // Un refus de contenu (barème invalide, essai en écart) est journalisé : la transaction est validée avec son journal, l'erreur est levée après.
-    const refuser = async (erreur: ErreurBaremeInvalide | ErreurPublicationBareme, raison: string) => {
+    const refuser = async (erreur: ErreurBaremeInvalide | ErreurPublicationBareme | ErreurBalisesAbsentes, raison: string) => {
       await journaliser(
         {
           acteur: acteurAudit,
@@ -255,6 +330,8 @@ export async function publierBareme(acteur: UtilisateurCourant, versionId: numbe
       if (!(e instanceof ErreurBaremeInvalide)) throw e;
       return refuser(e, "BAREME_INVALIDE");
     }
+    const balises = await balisesDesModelesSansCle(tx, version.produitId, depuisDate(version.dateEffet), bareme);
+    if (balises.length > 0) return refuser(new ErreurBalisesAbsentes(balises), "BALISES_ABSENTES");
     const ecarts = rejouerJeuxEssai(bareme, await parametresDEssai(tx, version, bareme));
     if (ecarts.length > 0) return refuser(new ErreurPublicationBareme(ecarts), "ESSAIS_EN_ECART");
 

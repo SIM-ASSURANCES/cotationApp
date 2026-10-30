@@ -9,3 +9,7 @@ export * from "./expression";
 export * from "./formulaire";
 export * from "./documents";
 export * from "./edition";
+export * from "./edition-tables";
+export * from "./edition-sousjacents";
+export * from "./edition-essais";
+export * from "./codes-figes";

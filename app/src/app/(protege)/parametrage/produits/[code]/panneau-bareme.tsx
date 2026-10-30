@@ -14,8 +14,7 @@ export const versionAvecBareme = (v: Pick<VersionProduit, "dateEffet" | "modeTar
 /**
  * Barème d'une version (B9, D50) : télécharger le modèle, importer un classeur (→ brouillon), rejouer les essais, publier (motif),
  * exporter le barème publié, puis basculer la version au barème. B4 (D58) : créer un barème vide et le modifier à l'écran ; la correction d'un
- * barème publié passe par une NOUVELLE version (date saisie) qui en reçoit la copie en brouillon (H157). Les tables, sous-jacents et jeux
- * d'essai s'éditeront avec B5.
+ * barème publié passe par une NOUVELLE version (date saisie) qui en reçoit la copie en brouillon (H157). B5 (D59) : tables, sous-jacents, jeux d'essai, aperçu et publication se font aussi à l'écran ; le classeur reste une autre voie vers le même document.
  */
 export async function PanneauBareme({ codeProduit, version, autreVersionAvecBareme }: { codeProduit: string; version: VersionProduit; autreVersionAvecBareme?: { id: number; dateEffet: string; publie: boolean } }) {
   const etat = await etatDuBareme(version.id);
@@ -40,7 +39,7 @@ export async function PanneauBareme({ codeProduit, version, autreVersionAvecBare
       </p>
       {!etat.publie && version.modeTarification !== "BAREME" ? (
         <p className="text-sm text-muted-foreground">
-          Parcours : créer la version à une date future, importer le classeur, publier le barème, puis basculer la version au barème.
+          Parcours : créer la version à une date future, importer un classeur ou saisir le barème à l&apos;écran, publier le barème, puis basculer la version au barème.
         </p>
       ) : null}
 
@@ -63,7 +62,7 @@ export async function PanneauBareme({ codeProduit, version, autreVersionAvecBare
       {!etat.brouillon && !etat.publie ? (
         <FormulaireAction action={creerUnBaremeVide} libelleBouton="Créer un barème vide">
           {caches}
-          <p className="mb-3 text-sm text-muted-foreground">Un brouillon neuf, sans classeur : vous le remplissez à l&apos;écran (champs, valeurs intermédiaires, garanties). Les tables, sous-jacents et jeux d&apos;essai viennent du classeur.</p>
+          <p className="mb-3 text-sm text-muted-foreground">Un brouillon neuf, sans classeur : vous le remplissez entièrement à l&apos;écran (champs, valeurs intermédiaires, garanties, tables, sous-jacents, jeux d&apos;essai), puis vous le publiez depuis l&apos;onglet Publier.</p>
         </FormulaireAction>
       ) : null}
 

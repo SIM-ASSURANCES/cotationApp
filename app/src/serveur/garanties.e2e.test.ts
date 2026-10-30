@@ -15,7 +15,7 @@ import { obtenirConfig } from "./config";
 import { accepter, composerLaPrime, creerBrouillon, lireCotation, soumettre } from "./cotations";
 import { emettreCotation, emettreCp } from "./documents";
 import { initialiserProfilsEtDroits } from "./droits";
-import { creerFactureAffaireNouvelle, emettreAvoir, emettreFacture } from "./factures";
+import { creerFactureAffaireNouvelle, emettreAvoir, emettreFacture, lireFacture } from "./factures";
 import { remplacerGenerateur } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
 import { aujourdhui, creerProduit, creerTaxe, creerVersion } from "./parametrage";
@@ -161,6 +161,11 @@ describe("produit par garanties : composition → cotation → police → CP →
     expect(police.ttcTotal.toFixed()).toBe("36424");
 
     const fid = await creerFactureAffaireNouvelle(technique, police.id, null, null);
+    // D60 : la facture reprend la composition figée de la cotation : « Émettre » proposé, « Composer » absent.
+    const ecran = (await lireFacture(technique, fid))!;
+    expect(ecran.actions.emettre).toBe(true);
+    expect(ecran.actions.composer).toBe(false);
+    expect(ecran.composition?.composePar).toBe(technique.identifiant);
     const f = await emettreFacture(technique, fid, null);
     if (f.statut !== "EMISE") throw new Error("attendu : émise");
     expect(f.productions[0].ok).toBe(true);

@@ -35,6 +35,7 @@ Rien à toucher hors du périmètre facture n'a été modifié ; les lignes « �
 
 ## Écarts et points ouverts
 
-- **Affaire nouvelle par garanties** : `emettre = false` à l'écran alors que le service l'émet (même famille de défaut, constaté par sonde) — non corrigé, comportement GARANTIES conservé comme demandé. **À décider.**
+- **Affaire nouvelle par garanties (H165, corrigée)** : aucune règle du CDC ni de `decisions.md` n'impose de la recomposer (H90/D38 : renouvellement et avenant seulement ; H88/T10 : elle vient de la police figée). La facture reprend la composition figée de la cotation, s'émet selon les règles ordinaires, ne se recompose pas. Tests : intégration par `lireFacture().actions` (bloc D59) et une ligne dans `garanties.e2e.test.ts`.
 - Textes d'aide de la page « Factures de la police » faux pour le barème (renouvellement, avenant) — sans effet, à reprendre avec B8.
+- README des tests (`app/README.md`) : le lancement d'un e2e seul exige la préparation de la base.
 - Les e2e partagent la base avec l'intégration : `signature_sim` posée par une PNG invalide (intégration) fait échouer la CP des e2e si la base n'est pas préparée avant (`npm run test:e2e` la prépare ; lancer un e2e seul demande `test:integration:preparer`).

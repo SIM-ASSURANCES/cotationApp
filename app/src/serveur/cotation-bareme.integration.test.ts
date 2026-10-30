@@ -34,7 +34,7 @@ import { emettreCotation, emettreCp, montantsDu } from "./documents";
 import { listerProduitsPortefeuille } from "./portefeuille";
 import { confirmerImport, controlerImport, lireLot, modeleImport } from "./imports";
 import { initialiserProfilsEtDroits } from "./droits";
-import { composerFacture, creerFactureAffaireNouvelle, creerFactureAvenant, creerFactureRenouvellement, emettreFacture, enregistrerPaiement, lireFacture, MESSAGE_FACTURE_AU_BAREME } from "./factures";
+import { composerFacture, creerFactureAffaireNouvelle, creerFactureAvenant, creerFactureRenouvellement, emettreFacture, enregistrerPaiement, lireFacture, MESSAGE_FACTURE_AFFAIRE_NOUVELLE, MESSAGE_FACTURE_AU_BAREME } from "./factures";
 import { remplacerGenerateur, type DemandePdf } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
 import { construireEntree, creerProduit, creerTaxe, creerVersion, exigerModeCoherent, exigerModeCoherentEnVigueur, resoudreContexte } from "./parametrage";
@@ -861,7 +861,7 @@ describe("D59 : la facture d'une police au barème est déjà composée (aucun a
     expect(await obtenirPrisma().facture.count({ where: { policeId: pid, type: { in: ["RENOUVELLEMENT", "AVENANT"] } } })).toBe(0);
   });
 
-  it("produit par garanties : la composition manuelle garde son comportement (composer accepté, composition lue, TTC recalculé)", async () => {
+  it("produit par garanties, affaire nouvelle (D60) : composition figée de la cotation reprise, émettable, jamais recomposable", async () => {
     const code = CODE("GARANTIES");
     await creerProduit(technique, { code, libelle: "Garanties composées (inventé)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: IARD }, null);
     await creerVersion(
@@ -884,6 +884,7 @@ describe("D59 : la facture d'une police au barème est déjà composée (aucun a
     );
     await publierModele("COTATION", code, analyse(CONTENU_COTATION));
     await publierModele("CP", code, analyse(CONTENU_CP));
+    await publierModele("FACTURE", code, analyse(CONTENU_FACTURE, { filtres: ["lettres"], textes: ["Rappel art. 13 du code CIMA : la prise d'effet du contrat est subordonnée au paiement de la prime."] }));
     const essai = (await lireBaremePublie(obtenirPrisma(), versionId)).bareme.jeuxEssai[0];
     const id = await creerBrouillon(commercial, { ...saisieAuBareme(essai.entrees, {}), codeProduit: code, baremeBrut: undefined }, null);
     await composerLaPrime(technique, id, ligneDeComposition(), "Composition de la Technique (inventée)", null);
@@ -894,11 +895,20 @@ describe("D59 : la facture d'une police au barème est déjà composée (aucun a
     const pid = (await obtenirPrisma().police.findUniqueOrThrow({ where: { numero: numeroPolice } })).id;
     const factureId = await creerFactureAffaireNouvelle(gestionnaire, pid, null, null);
 
-    const vue = (await lireFacture(technique, factureId))!;
-    expect(vue.actions.composer).toBe(true);
+    // D60 : la facture reprend la composition FIGÉE de la cotation (auteur, motif) ; émettable, jamais recomposable.
+    const vue = (await lireFacture(gestionnaire, factureId))!;
+    expect(vue.actions.emettre).toBe(true);
+    expect(vue.actions.composer).toBe(false);
+    expect((await lireFacture(technique, factureId))!.actions.composer).toBe(false);
     expect(vue.composition?.lignes).toHaveLength(1);
-    const { ttc } = await composerFacture(technique, factureId, [{ ...ligneDeComposition()[0], primeNette: "20000" }], "Recomposition de la Technique (inventée)", null);
-    expect(Number(ttc)).toBeGreaterThan(0);
-    expect((await lireFacture(technique, factureId))!.composition?.composePar).toBe(technique.identifiant);
+    expect(vue.composition?.composePar).toBe(technique.identifiant);
+    expect(vue.composition?.motif).toBe("Composition de la Technique (inventée)");
+    expect(vue.libelleStatut).toBe("Brouillon");
+    const avant = await obtenirPrisma().facture.findUniqueOrThrow({ where: { id: factureId } });
+    await expect(composerFacture(technique, factureId, [{ ...ligneDeComposition()[0], primeNette: "20000" }], "Recomposition refusée", null)).rejects.toThrow(MESSAGE_FACTURE_AFFAIRE_NOUVELLE);
+    expect((await obtenirPrisma().facture.findUniqueOrThrow({ where: { id: factureId } })).ttc.toFixed()).toBe(avant.ttc.toFixed());
+    const cotation = await lireCotation(technique, id);
+    expect((await emettreFacture(gestionnaire, factureId, null)).statut).toBe("EMISE");
+    expect((await lireFacture(gestionnaire, factureId))!.ttc).toBe(cotation!.resultat.totaux.arrondi.ttc.toFixed());
   });
 });

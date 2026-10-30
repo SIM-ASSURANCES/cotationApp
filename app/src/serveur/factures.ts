@@ -134,7 +134,7 @@ async function exigerLecture(acteur: UtilisateurCourant) {
 export const chargerPolice = async (client: Tx, policeId: number) =>
   avecRisqueDuDocument(
     client,
-    await client.police.findUnique({ where: { id: policeId }, include: { adherents: { orderBy: { numero: "asc" } }, cotation: { select: { produitId: true, versionDateEffet: true, regimeTaxe: true, intermediaires: true } } } }),
+    await client.police.findUnique({ where: { id: policeId }, include: { adherents: { orderBy: { numero: "asc" } }, cotation: { select: { produitId: true, versionDateEffet: true, regimeTaxe: true, intermediaires: true, compositionParId: true, compositionPar: true, compositionLe: true, compositionMotif: true } } } }),
   );
 type PoliceChargee = NonNullable<Awaited<ReturnType<typeof chargerPolice>>>;
 
@@ -304,11 +304,15 @@ export async function creerFactureAffaireNouvelle(acteur: UtilisateurCourant, po
       echeances: echeancesJson(police.echeancier),
       envoyeA: envoyeAControle(envoyeA, police.souscripteur as unknown as Souscripteur),
     });
+    // D60 : la facture d'affaire nouvelle reprend la composition FIGÉE de la cotation (auteur, date, motif) ; elle ne se recompose pas.
+    const figee = estCompositionManuelle(police.donneesCalcul)
+      ? { compositionParId: police.cotation.compositionParId, compositionPar: police.cotation.compositionPar, compositionLe: police.cotation.compositionLe, compositionMotif: police.cotation.compositionMotif }
+      : {};
     return creer(
       tx,
       acteur,
       police,
-      { type: "AFFAIRE_NOUVELLE", produitId: police.cotation.produitId, versionDateEffet: police.cotation.versionDateEffet, contenu, remplaceId: await factureRemplacee(tx, policeId, "AFFAIRE_NOUVELLE", {}) },
+      { type: "AFFAIRE_NOUVELLE", produitId: police.cotation.produitId, versionDateEffet: police.cotation.versionDateEffet, contenu, remplaceId: await factureRemplacee(tx, policeId, "AFFAIRE_NOUVELLE", {}), ...figee },
       adresseIp,
     );
   }, "La facture d'affaire nouvelle de cette police existe déjà.");
@@ -559,6 +563,10 @@ export async function abandonnerFacture(acteur: UtilisateurCourant, factureId: n
   });
 }
 
+/** Refus de recomposer une facture d'affaire nouvelle (D60) : sa prime est celle de la cotation et des conditions particulières. */
+export const MESSAGE_FACTURE_AFFAIRE_NOUVELLE =
+  "La prime d'une facture d'affaire nouvelle est celle de la cotation acceptée et des conditions particulières : elle ne se recompose pas ici.";
+
 /** Refus de composer la facture d'une police au barème (D59, comme le refus de la cotation, Q3) : aucune exception, aucun forçage ici. */
 export const MESSAGE_FACTURE_AU_BAREME =
   "La prime de cette facture est calculée par le barème publié : elle ne se compose pas. Une correction passe par une nouvelle version du barème.";
@@ -639,6 +647,7 @@ export async function composerFacture(
     if (f.statut !== "BROUILLON") throw new ErreurMetier("Seul un brouillon se compose.");
     const avant = contenuDe(f);
     if (estCompositionBareme(avant.entree)) throw new ErreurMetier(MESSAGE_FACTURE_AU_BAREME);
+    if (f.type === "AFFAIRE_NOUVELLE") throw new ErreurMetier(MESSAGE_FACTURE_AFFAIRE_NOUVELLE);
     if (!estComposition(avant.entree)) {
       throw new ErreurMetier("Ce produit se tarifie à la formule : la prime se calcule, elle ne se compose pas.");
     }
@@ -1522,10 +1531,12 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
         ) &&
         !(
           estComp &&
-          (f.compositionParId === null || (entreeDonnees as EntreeComposition).lignes.length === 0)
+          (f.type === "AFFAIRE_NOUVELLE"
+            ? (entreeDonnees as EntreeComposition).lignes.length === 0
+            : f.compositionParId === null || (entreeDonnees as EntreeComposition).lignes.length === 0)
         ),
       emettreSousSeuil: sousSeuil && f.statut === "BROUILLON",
-      composer: f.statut === "BROUILLON" && estComp && peutComposer,
+      composer: f.statut === "BROUILLON" && estComp && peutComposer && f.type !== "AFFAIRE_NOUVELLE",
       // H47 (09/10/2026) : une facture payée en partie s'annule aussi ; ses sommes sont reportées.
       avoir: f.type !== "AVOIR" && f.statut === "EMISE" && peutAgir(d.avoir),
       payer: f.type !== "AVOIR" && f.statut === "EMISE" && peutAgir(d.paiement) && base.etat !== null && montant(base.etat.restantDu).greaterThan(0),

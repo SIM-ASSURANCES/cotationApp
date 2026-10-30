@@ -8,8 +8,8 @@ import { cx } from "@/composants/ui/classes";
 import { formaterDate } from "@/domaine/calcul/dates";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
-import { historiqueSeuilListe, lireSeuilListe, listerModeles, type LigneModele } from "@/serveur/modeles";
-import { aujourdhui, listerBranchesPrincipales, listerProduits } from "@/serveur/parametrage";
+import { historiqueSeuilListe, lireSeuilListe, listerBranchesDesModeles, listerModeles, type LigneModele } from "@/serveur/modeles";
+import { aujourdhui, listerProduits } from "@/serveur/parametrage";
 import { exigerUtilisateur } from "@/serveur/session";
 
 import { creerUnModele, enregistrerLeSeuil } from "./actions";
@@ -48,9 +48,7 @@ const COLONNES: ColonneTableau<LigneModele>[] = [
       m.branchePrincipaleLibelle ? (
         <span className="text-xs font-semibold text-foreground">{m.branchePrincipaleLibelle}</span>
       ) : (
-        <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-          Transversal / Commun
-        </span>
+        <Pastille>Transversal / commun</Pastille>
       ),
   },
   { cle: "produit", entete: "Produit", rendu: (m) => m.produitCode ?? "commun" },
@@ -87,7 +85,7 @@ export default async function PageModeles(props: PageProps<"/modeles">) {
     lireSeuilListe(),
     historiqueSeuilListe(utilisateur),
     peutAgir(depot) ? listerProduits(utilisateur) : Promise.resolve([]),
-    listerBranchesPrincipales(utilisateur),
+    listerBranchesDesModeles(utilisateur),
   ]);
 
   // Filtrage des modèles selon la branche sélectionnée
@@ -116,10 +114,10 @@ export default async function PageModeles(props: PageProps<"/modeles">) {
           <Link
             href="/modeles"
             className={cx(
-              "rounded-lg px-3 py-1.5 transition-colors font-medium text-xs",
+              "inline-flex min-h-10 items-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors lg:min-h-0",
               !brancheChoisie
                 ? "bg-primary text-primary-foreground font-semibold"
-                : "bg-muted text-muted-foreground hover:text-foreground",
+                : "bg-muted text-neutral hover:text-foreground",
             )}
           >
             Tous les modèles ({modeles.length})
@@ -132,10 +130,10 @@ export default async function PageModeles(props: PageProps<"/modeles">) {
                 key={b.code}
                 href={`/modeles?branche=${b.code}`}
                 className={cx(
-                  "rounded-lg px-3 py-1.5 transition-colors font-medium text-xs",
+                  "inline-flex min-h-10 items-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors lg:min-h-0",
                   actif
                     ? "bg-primary text-primary-foreground font-semibold"
-                    : "bg-muted text-muted-foreground hover:text-foreground",
+                    : "bg-muted text-neutral hover:text-foreground",
                 )}
               >
                 {b.libelle} ({nb})
@@ -145,10 +143,10 @@ export default async function PageModeles(props: PageProps<"/modeles">) {
           <Link
             href="/modeles?branche=TRANSVERSAL"
             className={cx(
-              "rounded-lg px-3 py-1.5 transition-colors font-medium text-xs",
+              "inline-flex min-h-10 items-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors lg:min-h-0",
               brancheChoisie === "TRANSVERSAL"
                 ? "bg-primary text-primary-foreground font-semibold"
-                : "bg-muted text-muted-foreground hover:text-foreground",
+                : "bg-muted text-neutral hover:text-foreground",
             )}
           >
             Transversaux & Communs ({nbTransversaux})

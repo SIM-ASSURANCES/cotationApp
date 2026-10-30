@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { Bouton, Carte, Champ, ChampDate, EnTetePage, ListeDeroulante, PastilleStatut, Tableau, type ColonneTableau } from "@/composants/ui";
+import { Bouton, Carte, Champ, ChampDate, EnTetePage, ListeDeroulante, Pastille, PastilleStatut, Tableau, type ColonneTableau } from "@/composants/ui";
 import { cx } from "@/composants/ui/classes";
 import { formaterDate, normaliserDateSaisie } from "@/domaine/calcul/dates";
 import { DOCUMENTS, TYPES_DOCUMENT } from "@/domaine/documents/emission";
@@ -54,9 +54,9 @@ const COLONNES_CLIENTS: ColonneTableau<ClientAvecDocuments>[] = [
     cle: "documents",
     entete: "Documents émis",
     rendu: (c) => (
-      <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+      <Pastille ton="principal">
         {c.nombreDocuments} doc{c.nombreDocuments > 1 ? "s" : ""}
-      </span>
+      </Pastille>
     ),
   },
   {

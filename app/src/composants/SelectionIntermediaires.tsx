@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { Bandeau, Bouton, ChampFormulaire, classesControle, ListeDeroulante } from "@/composants/ui";
 import type { IntermediaireDocument } from "@/domaine/intermediaires";
-import { creerIntermediaireDepuisCotation } from "@/app/(protege)/cotations/actions";
+import type { ResultatCreationIntermediaire } from "@/app/(protege)/cotations/actions";
 
 const ROLES_SUGGERES = [
   "Courtier",
@@ -18,15 +18,18 @@ const ROLES_SUGGERES = [
 export type SelectionIntermediairesProps = {
   initialChoix: IntermediaireDocument[];
   valeursInitiales?: [string, string];
-  /** Droit de paramétrage des produits (H79) : sans lui, ni bouton ni panneau de création (la garde serveur refuserait). */
-  peutCreer?: boolean;
+  /**
+   * Création d'un intermédiaire, transmise par la page SEULEMENT si le profil a le droit de paramétrage des produits (H79) : sans elle,
+   * ni bouton ni panneau de création (la garde serveur refuserait de toute façon). Le composant n'importe aucune action.
+   */
+  creer?: (saisie: { code: string; nom: string; role: string }) => Promise<ResultatCreationIntermediaire>;
 };
 
 /**
  * Sélection de 0 à 2 intermédiaires pour une cotation (CDC §10.1).
  * Permet également la création inline d'un intermédiaire en base sans quitter le formulaire.
  */
-export function SelectionIntermediaires({ initialChoix, valeursInitiales, peutCreer = false }: SelectionIntermediairesProps) {
+export function SelectionIntermediaires({ initialChoix, valeursInitiales, creer }: SelectionIntermediairesProps) {
   const [choix, setChoix] = useState<IntermediaireDocument[]>(initialChoix);
   const [selection1, setSelection1] = useState(valeursInitiales?.[0] ?? "");
   const [selection2, setSelection2] = useState(valeursInitiales?.[1] ?? "");
@@ -45,6 +48,7 @@ export function SelectionIntermediaires({ initialChoix, valeursInitiales, peutCr
   ];
 
   const handleCreer = async () => {
+    if (!creer) return;
     setErreur(null);
     setSuccesMsg(null);
 
@@ -67,7 +71,7 @@ export function SelectionIntermediaires({ initialChoix, valeursInitiales, peutCr
 
     setEnCours(true);
     try {
-      const res = await creerIntermediaireDepuisCotation({ code: c, nom: n, role: r });
+      const res = await creer({ code: c, nom: n, role: r });
       if (!res.succes) {
         setErreur(res.erreur);
         return;
@@ -130,9 +134,9 @@ export function SelectionIntermediaires({ initialChoix, valeursInitiales, peutCr
 
       <div className="flex max-w-3xl items-center justify-between gap-4 pt-1">
         <p className="text-xs text-muted-foreground">
-          Associez jusqu&apos;à 2 intermédiaires.{peutCreer ? " L'intermédiaire manquant peut être créé directement en base ci-dessous." : ""}
+          Associez jusqu&apos;à 2 intermédiaires.{creer ? " L'intermédiaire manquant peut être créé directement en base ci-dessous." : ""}
         </p>
-        {peutCreer && !panneauOuvert ? (
+        {creer && !panneauOuvert ? (
           <Bouton
             type="button"
             variante="secondaire"
@@ -148,8 +152,8 @@ export function SelectionIntermediaires({ initialChoix, valeursInitiales, peutCr
         ) : null}
       </div>
 
-      {peutCreer && panneauOuvert ? (
-        <div className="max-w-3xl rounded-lg border border-border bg-card p-4 space-y-3 shadow-subtle">
+      {creer && panneauOuvert ? (
+        <div className="max-w-3xl rounded-lg border border-border bg-surface p-4 space-y-3 shadow-elevated">
           <div className="flex items-center justify-between border-b border-border pb-2">
             <div>
               <h4 className="text-sm font-semibold text-foreground">Ajouter un intermédiaire au référentiel</h4>

@@ -4,7 +4,6 @@ import { createHash } from "node:crypto";
 
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 
-import { libelleBranchePrincipale } from "@/domaine/calcul/parametrage";
 import type { DateIso } from "@/domaine/calcul/dates";
 import { avertissementsRisque, controlerDepot, type Constat } from "@/domaine/documents/controles";
 import { IMAGES, donneesExemple } from "@/domaine/documents/dictionnaire";
@@ -146,6 +145,14 @@ function precision(m: { type: string; niveauRelance: number | null; listeAnnexe:
   return null;
 }
 
+/** Libellés des branches principales, lus en base (une seule requête par appel) : l'écran n'en code aucune en dur. */
+export type BranchePourModeles = { code: string; libelle: string };
+
+export async function listerBranchesDesModeles(acteur: UtilisateurCourant): Promise<BranchePourModeles[]> {
+  await exiger(acteur, "lire");
+  return obtenirPrisma().branchePrincipale.findMany({ select: { code: true, libelle: true }, orderBy: { code: "asc" } });
+}
+
 function ligne(
   m: {
     id: number;
@@ -161,6 +168,7 @@ function ligne(
   },
   versions: VersionCycle[],
   jour: DateIso,
+  libellesBranches: Map<string, string>,
 ): LigneModele {
   const type = m.type as TypeModele;
   const enVigueur = versionEnVigueur(versions, jour);
@@ -175,11 +183,15 @@ function ligne(
     libelle: m.libelle,
     produitCode: m.produit?.code ?? null,
     branchePrincipale: brancheCode,
-    branchePrincipaleLibelle: libelleBranchePrincipale(brancheCode),
+    branchePrincipaleLibelle: brancheCode ? (libellesBranches.get(brancheCode) ?? brancheCode) : null,
     precision: precision(m),
     enVigueur: enVigueur ? resume(enVigueur, versions, jour) : null,
     derniere: derniere ? resume(derniere, versions, jour) : null,
   };
+}
+
+async function libellesDesBranches(): Promise<Map<string, string>> {
+  return new Map((await obtenirPrisma().branchePrincipale.findMany({ select: { code: true, libelle: true } })).map((b) => [b.code, b.libelle]));
 }
 
 export async function listerModeles(acteur: UtilisateurCourant): Promise<LigneModele[]> {
@@ -193,7 +205,8 @@ export async function listerModeles(acteur: UtilisateurCourant): Promise<LigneMo
     },
     orderBy: [{ type: "asc" }, { code: "asc" }],
   });
-  return modeles.map((m) => ligne(m, m.versions.map(cycle), jour));
+  const libelles = await libellesDesBranches();
+  return modeles.map((m) => ligne(m, m.versions.map(cycle), jour, libelles));
 }
 
 export async function lireModele(acteur: UtilisateurCourant, id: number): Promise<ModeleLu | null> {
@@ -211,7 +224,7 @@ export async function lireModele(acteur: UtilisateurCourant, id: number): Promis
   if (!m) return null;
   const cycles = m.versions.map(cycle);
   return {
-    ...ligne(m, cycles, jour),
+    ...ligne(m, cycles, jour, await libellesDesBranches()),
     droits: { deposer: droits.deposer, publier: droits.publier },
     versions: m.versions.map((v, i) => {
       const c = cycles[i];

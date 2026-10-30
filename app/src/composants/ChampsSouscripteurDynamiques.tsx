@@ -3,7 +3,7 @@
 import { useId, useState } from "react";
 
 import { Champ, ChampDate } from "@/composants/FormulaireAction";
-import { ChampFormulaire, classesControle, ListeDeroulante } from "@/composants/ui";
+import { ChampFormulaire, classesControle, ListeDeroulante, Pastille } from "@/composants/ui";
 import { aujourdhui, formaterDate } from "@/domaine/calcul/dates";
 import { GROUPES_SANGUINS, NOMBRE_MAX_ENFANTS, type Souscripteur } from "@/domaine/cotation/saisie";
 
@@ -69,7 +69,7 @@ export function ChampsSouscripteurDynamiques({
 
       {/* Si un client enregistré est sélectionné : carte récapitulative épurée */}
       {clientSelectionne ? (
-        <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+        <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
             <div>
               <div className="flex items-center gap-2">
@@ -78,9 +78,7 @@ export function ChampsSouscripteurDynamiques({
                     ? clientSelectionne.souscripteur.raison_sociale
                     : `${clientSelectionne.souscripteur.nom} ${clientSelectionne.souscripteur.prenoms}`}
                 </span>
-                <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-                  Client #{clientSelectionne.id} enregistré
-                </span>
+                <Pastille ton="principal">Client #{clientSelectionne.id} enregistré</Pastille>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {clientSelectionne.souscripteur.type === "MORALE" ? "Personne morale" : "Personne physique"} • Tél : {clientSelectionne.souscripteur.telephone || "—"} • E-mail : {clientSelectionne.souscripteur.email || "—"}
@@ -91,7 +89,7 @@ export function ChampsSouscripteurDynamiques({
               onClick={() => setDetailsOuverts((v) => !v)}
               className="text-xs text-primary font-medium hover:underline"
             >
-              {detailsOuverts ? "Masquer les détails du client ▲" : "Voir / adapter les détails ▼"}
+              {detailsOuverts ? "Masquer les détails du client ▲" : "Voir les détails ▼"}
             </button>
           </div>
 
@@ -173,6 +171,7 @@ export function ChampsSouscripteurDynamiques({
                 <Champ nom="souscripteur_lieu_naissance" libelle="Lieu de naissance" requis={false} valeur={source.lieu_naissance} autoComplete="off" />
                 <Champ nom="souscripteur_profession" libelle="Profession" requis={false} valeur={source.profession} autoComplete="off" />
                 <Champ nom="souscripteur_employeur" libelle="Employeur" requis={false} valeur={source.employeur} autoComplete="off" />
+                <Champ nom="souscripteur_activite" libelle="Activité" requis={false} valeur={source.activite} autoComplete="off" />
                 <Champ nom="souscripteur_situation_matrimoniale" libelle="Situation matrimoniale" requis={false} valeur={source.situation_matrimoniale} autoComplete="off" />
                 <Champ nom="souscripteur_nb_enfants" libelle={`Nombre d'enfants (0 à ${NOMBRE_MAX_ENFANTS})`} requis={false} valeur={source.nb_enfants == null ? "" : String(source.nb_enfants)} autoComplete="off" />
                 <div className="mb-4">
@@ -186,7 +185,6 @@ export function ChampsSouscripteurDynamiques({
               </div>
               {/* Champs cachés non concernés pour garantir la conformité */}
               <input type="hidden" name="souscripteur_raison_sociale" value="" />
-              <input type="hidden" name="souscripteur_activite" value="" />
             </div>
           ) : (
             /* SECTION B : PERSONNE MORALE */

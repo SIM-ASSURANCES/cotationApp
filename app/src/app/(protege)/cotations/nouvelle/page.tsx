@@ -5,7 +5,7 @@ import { compositionPossible, enVigueur } from "@/domaine/calcul/parametrage";
 import { peutAgir } from "@/domaine/droits";
 import { listerClients } from "@/serveur/clients";
 import { lireDescripteurBareme } from "@/serveur/cotations";
-import { listerIntermediaires } from "@/serveur/intermediaires";
+import { listerIntermediaires, peutCreerIntermediaire } from "@/serveur/intermediaires";
 import { aujourdhui, listerProduits, listerVersions } from "@/serveur/parametrage";
 import { exigerDroit } from "@/serveur/session";
 
@@ -53,7 +53,7 @@ export default async function PageNouvelleCotation(props: PageProps<"/cotations/
       </main>
     );
   }
-  const [clients, intermediaires] = await Promise.all([listerClients(utilisateur), listerIntermediaires(utilisateur, { actifsSeulement: true })]);
+  const [clients, intermediaires, creerIntermediaire] = await Promise.all([listerClients(utilisateur), listerIntermediaires(utilisateur, { actifsSeulement: true }), peutCreerIntermediaire(utilisateur)]);
   const bareme = version.modeTarification === "BAREME" ? await lireDescripteurBareme(utilisateur, code) : null;
 
   return (
@@ -70,6 +70,7 @@ export default async function PageNouvelleCotation(props: PageProps<"/cotations/
         formulesMax={version.cotation.formulesMax}
         intermediaires={intermediaires.map((i) => ({ code: i.code, nom: i.nom, role: i.role }))}
         parGaranties={compositionPossible(version.modeTarification)}
+        peutCreerIntermediaire={creerIntermediaire}
         bareme={bareme ? { descripteur: bareme.descripteur } : undefined}
       />
     </main>

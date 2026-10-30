@@ -2,12 +2,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
-import { Carte, EnTetePage, LienBouton, ListeDeroulante, Pastille, Tableau, type ColonneTableau } from "@/composants/ui";
+import { FormulaireCreationModele } from "@/composants/FormulaireCreationModele";
+import { Carte, EnTetePage, LienBouton, Pastille, Tableau, type ColonneTableau } from "@/composants/ui";
+import { cx } from "@/composants/ui/classes";
 import { formaterDate } from "@/domaine/calcul/dates";
-import { LISTES_ANNEXE, REGLES, TYPES_MODELE } from "@/domaine/documents/modeles";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
-import { historiqueSeuilListe, lireSeuilListe, listerModeles, type LigneModele } from "@/serveur/modeles";
+import { historiqueSeuilListe, lireSeuilListe, listerBranchesDesModeles, listerModeles, type LigneModele } from "@/serveur/modeles";
 import { aujourdhui, listerProduits } from "@/serveur/parametrage";
 import { exigerUtilisateur } from "@/serveur/session";
 
@@ -20,7 +21,7 @@ const COLONNES: ColonneTableau<LigneModele>[] = [
     entete: "Code",
     rendu: (m) => (
       <span className="inline-flex flex-wrap items-center gap-2">
-        <Link href={`/modeles/${m.id}`} className="font-medium text-primary underline">
+        <Link href={`/modeles/${m.id}`} className="font-semibold text-primary hover:underline">
           {m.code || "—"}
         </Link>
         {m.codeCgManquant ? (
@@ -34,12 +35,22 @@ const COLONNES: ColonneTableau<LigneModele>[] = [
     entete: "Type",
     rendu: (m) => (
       <>
-        {m.libelleType}
-        {m.precision ? <span className="block text-xs text-neutral">{m.precision}</span> : null}
+        <span className="font-medium text-foreground">{m.libelleType}</span>
+        {m.precision ? <span className="block text-xs text-muted-foreground">{m.precision}</span> : null}
       </>
     ),
   },
   { cle: "libelle", entete: "Libellé", rendu: (m) => m.libelle },
+  {
+    cle: "branche",
+    entete: "Branche",
+    rendu: (m) =>
+      m.branchePrincipaleLibelle ? (
+        <span className="text-xs font-semibold text-foreground">{m.branchePrincipaleLibelle}</span>
+      ) : (
+        <Pastille>Transversal / commun</Pastille>
+      ),
+  },
   { cle: "produit", entete: "Produit", rendu: (m) => m.produitCode ?? "commun" },
   { cle: "vigueur", entete: "En vigueur", rendu: (m) => (m.enVigueur ? `v${m.enVigueur.numero} depuis le ${formaterDate(m.enVigueur.dateEffet)}` : "aucune") },
   {
@@ -57,8 +68,11 @@ const COLONNES: ColonneTableau<LigneModele>[] = [
   },
 ];
 
-export default async function PageModeles() {
+export default async function PageModeles(props: PageProps<"/modeles">) {
   const utilisateur = await exigerUtilisateur();
+  const searchParams = await props.searchParams;
+  const brancheChoisie = typeof searchParams.branche === "string" ? searchParams.branche.trim() : "";
+
   const [depot, publication, parametrage] = await Promise.all([
     niveauDuProfil(utilisateur.profil, "DEPOSER_MODELE"),
     niveauDuProfil(utilisateur.profil, "PUBLIER_MODELE"),
@@ -66,12 +80,23 @@ export default async function PageModeles() {
   ]);
   if (!peutLire(depot) && !peutLire(publication)) redirect("/acces-refuse");
 
-  const [modeles, seuil, historique, produits] = await Promise.all([
+  const [modeles, seuil, historique, produits, branches] = await Promise.all([
     listerModeles(utilisateur),
     lireSeuilListe(),
     historiqueSeuilListe(utilisateur),
     peutAgir(depot) ? listerProduits(utilisateur) : Promise.resolve([]),
+    listerBranchesDesModeles(utilisateur),
   ]);
+
+  // Filtrage des modèles selon la branche sélectionnée
+  const modelesFiltres =
+    brancheChoisie === "TRANSVERSAL"
+      ? modeles.filter((m) => !m.branchePrincipale)
+      : brancheChoisie
+        ? modeles.filter((m) => m.branchePrincipale === brancheChoisie)
+        : modeles;
+
+  const nbTransversaux = modeles.filter((m) => !m.branchePrincipale).length;
 
   return (
     <main className="space-y-6">
@@ -83,47 +108,65 @@ export default async function PageModeles() {
         <LienBouton href="/modeles/aide">Aide à la rédaction des modèles : syntaxe, filtres et dictionnaire des champs</LienBouton>
       </p>
 
-      <Tableau colonnes={COLONNES} lignes={modeles} cleLigne={(m) => String(m.id)} messageVide="Aucun modèle." legende="Modèles Word" />
+      {/* Rangement par branches : Onglets / Filtres rapides */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3 text-sm">
+          <Link
+            href="/modeles"
+            className={cx(
+              "inline-flex min-h-10 items-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors lg:min-h-0",
+              !brancheChoisie
+                ? "bg-primary text-primary-foreground font-semibold"
+                : "bg-muted text-neutral hover:text-foreground",
+            )}
+          >
+            Tous les modèles ({modeles.length})
+          </Link>
+          {branches.map((b) => {
+            const nb = modeles.filter((m) => m.branchePrincipale === b.code).length;
+            const actif = brancheChoisie === b.code;
+            return (
+              <Link
+                key={b.code}
+                href={`/modeles?branche=${b.code}`}
+                className={cx(
+                  "inline-flex min-h-10 items-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors lg:min-h-0",
+                  actif
+                    ? "bg-primary text-primary-foreground font-semibold"
+                    : "bg-muted text-neutral hover:text-foreground",
+                )}
+              >
+                {b.libelle} ({nb})
+              </Link>
+            );
+          })}
+          <Link
+            href="/modeles?branche=TRANSVERSAL"
+            className={cx(
+              "inline-flex min-h-10 items-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors lg:min-h-0",
+              brancheChoisie === "TRANSVERSAL"
+                ? "bg-primary text-primary-foreground font-semibold"
+                : "bg-muted text-neutral hover:text-foreground",
+            )}
+          >
+            Transversaux & Communs ({nbTransversaux})
+          </Link>
+        </div>
+
+        <Tableau
+          colonnes={COLONNES}
+          lignes={modelesFiltres}
+          cleLigne={(m) => String(m.id)}
+          messageVide={brancheChoisie ? "Aucun modèle enregistré pour cette branche." : "Aucun modèle."}
+          legende="Modèles Word"
+        />
+      </div>
 
       <div className="grid items-start gap-6 lg:grid-cols-2">
+        {/* Formulaire intelligent de création de modèle */}
         {peutAgir(depot) ? (
           <Carte titre="Créer un modèle">
-            <FormulaireAction action={creerUnModele} libelleBouton="Créer, puis déposer le fichier">
-              <div className="mb-4">
-                <ListeDeroulante
-                  label="Type"
-                  name="type"
-                  required
-                  defaultValue=""
-                  invite="Choisir…"
-                  options={TYPES_MODELE.map((t) => ({ valeur: t, libelle: REGLES[t].libelle }))}
-                />
-              </div>
-              <Champ nom="code" libelle="Code (ex. CP_RELAXSANTE)" autoComplete="off" />
-              <Champ nom="libelle" libelle="Libellé (pour les CG : celui cité dans les CP, ex. SECUR DOMMAGE)" autoComplete="off" />
-              <div className="mb-4">
-                <ListeDeroulante
-                  label="Produit (obligatoire pour des CP ou une cotation ; aucun pour des CG ou CS)"
-                  name="produitCode"
-                  defaultValue=""
-                  options={[{ valeur: "", libelle: "Commun à tous les produits" }, ...produits.map((p) => ({ valeur: p.code, libelle: `${p.code} — ${p.libelle}` }))]}
-                />
-              </div>
-              <fieldset className="mb-4 rounded-lg border border-border p-3">
-                <legend className="px-1 text-sm font-medium text-foreground">Selon le type</legend>
-                <div className="mb-4">
-                  <ListeDeroulante
-                    label="Annexe : liste reprise en entier"
-                    name="listeAnnexe"
-                    defaultValue=""
-                    options={[{ valeur: "", libelle: "—" }, ...LISTES_ANNEXE.map((l) => ({ valeur: l, libelle: l }))]}
-                  />
-                </div>
-                <Champ nom="niveauRelance" libelle="Relance : niveau (1, 2, 3…)" requis={false} autoComplete="off" />
-                <Champ nom="blocNom" libelle={'Sous-modèle : nom du bloc, tel qu\'écrit dans bloc("garanties", …)'} requis={false} autoComplete="off" />
-                <Champ nom="blocCle" libelle="Sous-modèle : clé (ex. code de formule : SOLO, 80…)" requis={false} autoComplete="off" />
-              </fieldset>
-            </FormulaireAction>
+            <FormulaireCreationModele action={creerUnModele} produits={produits} branches={branches} />
           </Carte>
         ) : null}
 
@@ -132,7 +175,7 @@ export default async function PageModeles() {
           description={
             <>
               Au-delà de <strong>{seuil}</strong> lignes, une liste (assurés, bénéficiaires, formules, échéances) est remplacée dans le corps du document par
-              « Voir annexe – … » et rendue en entier par le modèle d'annexe, à la fin du PDF.
+              « Voir annexe – … » et rendue en entier par le modèle d&apos;annexe, à la fin du PDF.
             </>
           }
         >

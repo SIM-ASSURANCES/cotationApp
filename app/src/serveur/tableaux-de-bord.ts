@@ -2,7 +2,7 @@ import "server-only";
 
 import { dateValide, type DateIso } from "@/domaine/calcul/dates";
 import { estStatut, type StatutCotation } from "@/domaine/cotation/statuts";
-import { peutLire } from "@/domaine/droits";
+import { peutLire, type CodeAction } from "@/domaine/droits";
 import { echeancesDe, factureAppelable } from "@/domaine/facturation/echeances";
 import { etatPaiements, type ContenuFacture } from "@/domaine/facturation/factures";
 import {
@@ -104,6 +104,25 @@ export async function montantsFacturation(p: Periode, jour: DateIso, auteur?: st
 /** Droit « Consulter les tableaux de bord » (lecture) : à vérifier AVANT toute lecture, y compris dans la mémoire de tableaux-memorises.ts. */
 export async function exigerDroitTableauxDeBord(acteur: Pick<UtilisateurCourant, "profil">): Promise<void> {
   if (!peutLire(await niveauDuProfil(acteur.profil, "CONSULTER_TABLEAUX_DE_BORD"))) throw new ErreurAcces("Droit insuffisant : tableaux de bord.");
+}
+
+/**
+ * Droit de lecture de chacun des tableaux de bord par profil (D4 : la garde est ici, dans serveur/, par la matrice des droits ;
+ * ni le nom du profil ni la page ne décident). Un profil dont la matrice ne lui donne pas ces droits est refusé, même s'il appelle la fonction directement.
+ */
+export const DROITS_TABLEAUX = {
+  commercial: { actions: ["CREER_COTATION"], libelle: "tableau de bord du commercial" },
+  technique: { actions: ["CONSULTER_TABLEAUX_DE_BORD"], libelle: "tableau de bord Technique" },
+  comptabilite: { actions: ["CONSULTER_TABLEAUX_DE_BORD"], libelle: "tableau de bord Comptabilité" },
+  direction: { actions: ["CONSULTER_TABLEAUX_DE_BORD"], libelle: "tableau de bord Direction Générale" },
+  production: { actions: ["EMETTRE_CONTRAT"], libelle: "tableau de bord Production" },
+  admin: { actions: ["GERER_UTILISATEURS", "CONSULTER_AUDIT"], libelle: "tableau de bord Admin Système" },
+} as const satisfies Record<string, { actions: readonly CodeAction[]; libelle: string }>;
+
+export async function exigerLectureTableau(acteur: Pick<UtilisateurCourant, "profil">, tableau: keyof typeof DROITS_TABLEAUX): Promise<void> {
+  const { actions, libelle } = DROITS_TABLEAUX[tableau];
+  const niveaux = await Promise.all(actions.map((a) => niveauDuProfil(acteur.profil, a)));
+  if (!niveaux.every((n) => peutLire(n))) throw new ErreurAcces(`Droit insuffisant : ${libelle}.`);
 }
 
 export async function tableauDeBord(acteur: UtilisateurCourant, periode?: Partial<Periode>): Promise<TableauDeBord> {

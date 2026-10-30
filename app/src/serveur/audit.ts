@@ -124,6 +124,11 @@ export async function lireJournalPourExport(options: { action?: string; limite: 
   return { lignes, tronque: (await obtenirPrisma().journalAudit.count({ where: filtre() })) > 0 };
 }
 
+/** Nombre d'entrées du journal créées depuis une date donnée. */
+export async function compterJournalDepuis(depuis: Date): Promise<number> {
+  return obtenirPrisma().journalAudit.count({ where: { horodatage: { gte: depuis } } });
+}
+
 /** Une action a-t-elle déjà été journalisée pour cet objet ? (tâche quotidienne rejouée : une seule trace par jour) */
 export async function dejaJournalise(action: ActionAudit, objetType: string, objetId: string): Promise<boolean> {
   return (await obtenirPrisma().journalAudit.count({ where: { action, objetType, objetId } })) > 0;

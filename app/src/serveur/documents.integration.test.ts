@@ -11,8 +11,9 @@ import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 
 import { assurerBranche, rattacherCgDeTest, viderCgDeTest } from "./branches-test";
 import { lireJournal } from "./audit";
+import { creerClient, obtenirClient } from "./clients";
 import { creerBrouillon, accepter, lireCotation, modifierBrouillon, soumettre, type SaisieCotation } from "./cotations";
-import { annulerParAvoir, documentsDe, emettreCotation, emettreCp, rechercherDocuments, reediter, telechargerDocument, verifierJeton, zipDocuments } from "./documents";
+import { annulerParAvoir, documentsDe, documentsDuClient, emettreCotation, emettreCp, listerClientsAvecDocuments, rechercherDocuments, reediter, telechargerDocument, verifierJeton, zipDocuments } from "./documents";
 import { initialiserProfilsEtDroits } from "./droits";
 import { creerIntermediaire, modifierIntermediaire } from "./intermediaires";
 import { remplacerGenerateur, type DemandePdf } from "./generateur";
@@ -34,6 +35,7 @@ const texte = (t: string) => new TextEncoder().encode(t);
 let technique: UtilisateurCourant;
 let dg: UtilisateurCourant;
 let commercial: UtilisateurCourant;
+let comptabilite: UtilisateurCourant;
 
 // ---------------------------------------------------------------- Doubles : générateur et stockage
 
@@ -168,7 +170,7 @@ beforeAll(async () => {
     await creerUtilisateur(a, { identifiant, nom: profil, profil, motDePasse: MDP }, null);
     return compte(identifiant);
   };
-  [technique, dg, commercial] = [await nouveau("TECHNIQUE"), await nouveau("DIRECTION_GENERALE"), await nouveau("COMMERCIAL")];
+  [technique, dg, commercial, comptabilite] = [await nouveau("TECHNIQUE"), await nouveau("DIRECTION_GENERALE"), await nouveau("COMMERCIAL"), await nouveau("COMPTABILITE")];
   // Les CP utilisent {{ signature_sim }} (CDC §10.1) : la signature scannée de SIM doit être paramétrée (image inventée).
   await assurerSignature(technique);
   await obtenirPrisma().parametre.upsert({
@@ -410,6 +412,41 @@ describe("documents émis : ajout seul, recherche, intégrité", () => {
     const ligne = await prisma.documentEmis.findUniqueOrThrow({ where: { id: doc.id } });
     fichiers.set(ligne.chemin, texte("fichier altéré"));
     await expect(telechargerDocument(commercial, doc.id, null)).rejects.toThrow(/ne correspond plus à son empreinte/);
+  });
+});
+
+// ---------------------------------------------------------------- Fiche client, rangement par client, ZIP
+
+describe("fiche client et rangement par client : mêmes droits que les clients et les documents", () => {
+  it("la fiche, ses documents et le décompte suivent les droits ; la Comptabilité (documents de facture lisibles, aucun droit client) est refusée ; le ZIP reste par type", async () => {
+    const p = await produit();
+    await publier("COTATION", p, "modele", SOCLE("doc.numero"));
+    const nom = unique("FICHE");
+    const souscripteur = { ...saisieT1(p).souscripteur, nom };
+    const clientId = await creerClient(commercial, souscripteur, null);
+    const id = await creerBrouillon(commercial, { ...saisieT1(p), clientId, souscripteur }, null);
+    expect((await soumettre(commercial, id, null)).statut).toBe("EMISE");
+    const doc = await emettreCotation(commercial, id, null);
+
+    // Fiche : le Commercial (CREER_COTATION) la lit, avec la cotation du client et son document.
+    const fiche = await obtenirClient(commercial, clientId);
+    expect(fiche?.cotations.map((c) => c.id)).toEqual([id]);
+    expect((await documentsDuClient(commercial, clientId)).map((d) => d.id)).toEqual([doc.id]);
+    // La Direction générale lit aussi les clients (lecture) ; la Comptabilité n'a aucun droit sur les clients.
+    expect((await obtenirClient(dg, clientId))?.id).toBe(clientId);
+    await expect(obtenirClient(comptabilite, clientId)).rejects.toBeInstanceOf(ErreurAcces);
+    await expect(documentsDuClient(comptabilite, clientId)).rejects.toBeInstanceOf(ErreurAcces);
+    expect(await obtenirClient(commercial, 2_000_000_000)).toBeNull();
+
+    // Rangement par client : même droit que la liste des clients, le décompte ne porte que sur les types lisibles.
+    const ligne = (await listerClientsAvecDocuments(commercial, nom)).find((c) => c.id === clientId);
+    expect(ligne).toMatchObject({ nombreDocuments: 1, nombrePolices: 0 });
+    expect((await listerClientsAvecDocuments(dg, nom)).find((c) => c.id === clientId)?.nombreDocuments).toBe(1);
+    await expect(listerClientsAvecDocuments(comptabilite, nom)).rejects.toBeInstanceOf(ErreurAcces);
+
+    // ZIP : le droit de lecture de chaque type de document est exigé, la fiche n'y change rien.
+    await expect(zipDocuments(comptabilite, [doc.id], null)).rejects.toBeInstanceOf(ErreurAcces);
+    expect((await zipDocuments(commercial, [doc.id], null)).contenu.length).toBeGreaterThan(0);
   });
 });
 

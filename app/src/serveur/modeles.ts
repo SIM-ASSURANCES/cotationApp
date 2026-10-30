@@ -85,6 +85,8 @@ export type LigneModele = {
   codeCgManquant: boolean;
   libelle: string;
   produitCode: string | null;
+  branchePrincipale?: string | null;
+  branchePrincipaleLibelle?: string | null;
   precision: string | null;
   enVigueur: ResumeVersion | null;
   derniere: ResumeVersion | null;
@@ -143,14 +145,35 @@ function precision(m: { type: string; niveauRelance: number | null; listeAnnexe:
   return null;
 }
 
+/** Libellés des branches principales, lus en base (une seule requête par appel) : l'écran n'en code aucune en dur. */
+export type BranchePourModeles = { code: string; libelle: string };
+
+export async function listerBranchesDesModeles(acteur: UtilisateurCourant): Promise<BranchePourModeles[]> {
+  await exiger(acteur, "lire");
+  return obtenirPrisma().branchePrincipale.findMany({ select: { code: true, libelle: true }, orderBy: { code: "asc" } });
+}
+
 function ligne(
-  m: { id: number; type: string; code: string; libelle: string; niveauRelance: number | null; listeAnnexe: string | null; blocNom: string | null; blocCle: string | null; produit: { code: string } | null },
+  m: {
+    id: number;
+    type: string;
+    code: string;
+    libelle: string;
+    niveauRelance: number | null;
+    listeAnnexe: string | null;
+    blocNom: string | null;
+    blocCle: string | null;
+    produit: { code: string; branchePrincipale?: string | null } | null;
+    brancheCg?: { branchePrincipale: string }[];
+  },
   versions: VersionCycle[],
   jour: DateIso,
+  libellesBranches: Map<string, string>,
 ): LigneModele {
   const type = m.type as TypeModele;
   const enVigueur = versionEnVigueur(versions, jour);
   const derniere = versions.reduce<VersionCycle | null>((max, v) => (!max || v.numero > max.numero ? v : max), null);
+  const brancheCode = m.produit?.branchePrincipale ?? m.brancheCg?.[0]?.branchePrincipale ?? null;
   return {
     id: m.id,
     type,
@@ -159,20 +182,31 @@ function ligne(
     codeCgManquant: codeCgManquant(m),
     libelle: m.libelle,
     produitCode: m.produit?.code ?? null,
+    branchePrincipale: brancheCode,
+    branchePrincipaleLibelle: brancheCode ? (libellesBranches.get(brancheCode) ?? brancheCode) : null,
     precision: precision(m),
     enVigueur: enVigueur ? resume(enVigueur, versions, jour) : null,
     derniere: derniere ? resume(derniere, versions, jour) : null,
   };
 }
 
+async function libellesDesBranches(): Promise<Map<string, string>> {
+  return new Map((await obtenirPrisma().branchePrincipale.findMany({ select: { code: true, libelle: true } })).map((b) => [b.code, b.libelle]));
+}
+
 export async function listerModeles(acteur: UtilisateurCourant): Promise<LigneModele[]> {
   await exiger(acteur, "lire");
   const jour = aujourdhui();
   const modeles = await obtenirPrisma().modele.findMany({
-    include: { produit: { select: { code: true } }, versions: { select: champsVersion } },
+    include: {
+      produit: { select: { code: true, branchePrincipale: true } },
+      versions: { select: champsVersion },
+      brancheCg: { select: { branchePrincipale: true } },
+    },
     orderBy: [{ type: "asc" }, { code: "asc" }],
   });
-  return modeles.map((m) => ligne(m, m.versions.map(cycle), jour));
+  const libelles = await libellesDesBranches();
+  return modeles.map((m) => ligne(m, m.versions.map(cycle), jour, libelles));
 }
 
 export async function lireModele(acteur: UtilisateurCourant, id: number): Promise<ModeleLu | null> {
@@ -181,7 +215,8 @@ export async function lireModele(acteur: UtilisateurCourant, id: number): Promis
   const m = await obtenirPrisma().modele.findUnique({
     where: { id },
     include: {
-      produit: { select: { code: true } },
+      produit: { select: { code: true, branchePrincipale: true } },
+      brancheCg: { select: { branchePrincipale: true } },
       // Jamais le fichier ni le PDF : une liste de versions ne charge pas des mégaoctets.
       versions: { omit: { fichier: true, pdf: true }, orderBy: { numero: "desc" } },
     },
@@ -189,7 +224,7 @@ export async function lireModele(acteur: UtilisateurCourant, id: number): Promis
   if (!m) return null;
   const cycles = m.versions.map(cycle);
   return {
-    ...ligne(m, cycles, jour),
+    ...ligne(m, cycles, jour, await libellesDesBranches()),
     droits: { deposer: droits.deposer, publier: droits.publier },
     versions: m.versions.map((v, i) => {
       const c = cycles[i];

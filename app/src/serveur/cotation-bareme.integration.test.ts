@@ -34,7 +34,7 @@ import { emettreCotation, emettreCp, montantsDu } from "./documents";
 import { listerProduitsPortefeuille } from "./portefeuille";
 import { confirmerImport, controlerImport, lireLot, modeleImport } from "./imports";
 import { initialiserProfilsEtDroits } from "./droits";
-import { creerFactureAffaireNouvelle, creerFactureRenouvellement, emettreFacture, enregistrerPaiement, lireFacture } from "./factures";
+import { composerFacture, creerFactureAffaireNouvelle, creerFactureAvenant, creerFactureRenouvellement, emettreFacture, enregistrerPaiement, lireFacture, MESSAGE_FACTURE_AU_BAREME } from "./factures";
 import { remplacerGenerateur, type DemandePdf } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
 import { construireEntree, creerProduit, creerTaxe, creerVersion, exigerModeCoherent, exigerModeCoherentEnVigueur, resoudreContexte } from "./parametrage";
@@ -790,5 +790,115 @@ describe("B6b : portefeuille", () => {
     expect(p.modeTarification).toBe("BAREME");
     expect(LIBELLE_MODE_COURT[p.modeTarification]).toBe("Au barème");
     expect(LIBELLE_MODE_COURT).toEqual({ FORMULE: "Par formule", GARANTIES: "Par garanties", BAREME: "Au barème" });
+  });
+});
+
+describe("D59 : la facture d'une police au barème est déjà composée (aucun auteur humain), les drapeaux d'écran le disent", () => {
+  let seq = 0;
+  const numero = (racine: "SB" | "TST") => `${racine}-2026-${String((Date.now() + ++seq) % 1_000_000).padStart(6, "0")}-${racine === "TST" ? "G" : "I"}00000`;
+  const ligneDeComposition = () => [{ libelle: "Incendie", branche: IARD, primeNette: "10000", accessoires: "2500" }];
+
+  /** Cotation au barème acceptée, conditions particulières émises : la police est prête à être facturée. */
+  async function policeAuBareme(typeContrat: "INDIVIDUEL" | "GROUPE") {
+    const essai = (await lireBaremePublie(obtenirPrisma(), versionId)).bareme.jeuxEssai[0];
+    const assures = typeContrat === "GROUPE" ? [1, 2].map((ordre) => ({ ordre, nom_prenoms: `Existant ${ordre} Inventé`, date_naissance: `1980-01-0${ordre}`, sexe: "M" as const, lien: "Salarié", formule: "" })) : [];
+    const id = await creerBrouillon(commercial, saisieAuBareme(essai.entrees, { typeContrat, assures }), null);
+    await soumettre(commercial, id, null);
+    await emettreCotation(commercial, id, null);
+    const { numeroPolice } = await accepter(commercial, id, [], numero(typeContrat === "GROUPE" ? "TST" : "SB"), null);
+    await emettreCp(technique, id, null);
+    return { cotationId: id, policeId: (await obtenirPrisma().police.findUniqueOrThrow({ where: { numero: numeroPolice } })).id };
+  }
+
+  it("affaire nouvelle : « Émettre » proposé, « Composer » absent, libellé ordinaire ; composerFacture refusé ; l'émission garde le TTC de la cotation", async () => {
+    const { cotationId, policeId: pid } = await policeAuBareme("INDIVIDUEL");
+    const ttcCotation = (await lireCotation(technique, cotationId))!.resultat.totaux.arrondi.ttc.toFixed();
+    const factureId = await creerFactureAffaireNouvelle(gestionnaire, pid, null, null);
+
+    const vue = (await lireFacture(gestionnaire, factureId))!;
+    expect(vue.statut).toBe("BROUILLON");
+    expect(vue.libelleStatut).toBe("Brouillon");
+    expect(vue.actions.emettre).toBe(true);
+    expect(vue.actions.composer).toBe(false);
+    expect(vue.composition).toBeNull();
+    // La Technique a le droit de composer ailleurs, pas ici.
+    expect((await lireFacture(technique, factureId))!.actions.composer).toBe(false);
+
+    // Q3 : aucune composition manuelle sur une facture au barème, et rien n'est modifié.
+    const avant = await obtenirPrisma().facture.findUniqueOrThrow({ where: { id: factureId } });
+    await expect(composerFacture(technique, factureId, ligneDeComposition(), "Tentative de contournement du barème", null)).rejects.toThrow(MESSAGE_FACTURE_AU_BAREME);
+    const apres = await obtenirPrisma().facture.findUniqueOrThrow({ where: { id: factureId } });
+    expect(apres.ttc.toFixed()).toBe(avant.ttc.toFixed());
+    expect(apres.compositionParId).toBeNull();
+    expect(JSON.stringify(apres.contenu)).toBe(JSON.stringify(avant.contenu));
+
+    expect((await emettreFacture(gestionnaire, factureId, null)).statut).toBe("EMISE");
+    const emise = (await lireFacture(gestionnaire, factureId))!;
+    expect(emise.ttc).toBe(ttcCotation);
+    expect(emise.actions.emettre).toBe(false);
+    expect(emise.actions.composer).toBe(false);
+  });
+
+  it("un profil sans le droit d'émettre ne voit pas « Émettre » (règle ordinaire inchangée)", async () => {
+    const { policeId: pid } = await policeAuBareme("INDIVIDUEL");
+    const factureId = await creerFactureAffaireNouvelle(gestionnaire, pid, null, null);
+    const vue = await lireFacture(commercial, factureId).catch((e) => e);
+    if (vue instanceof Error) expect(vue).toBeInstanceOf(ErreurAcces);
+    else expect(vue!.actions.emettre).toBe(false);
+  });
+
+  it("renouvellement et avenant d'une police au barème : refus H143 conservés jusqu'à B8", async () => {
+    const { policeId: pid } = await policeAuBareme("GROUPE");
+    const factureId = await creerFactureAffaireNouvelle(gestionnaire, pid, null, null);
+    expect((await emettreFacture(gestionnaire, factureId, null)).statut).toBe("EMISE");
+    await expect(creerFactureRenouvellement(gestionnaire, pid, { lignes: null, nombreTranches: null, envoyeA: null }, null)).rejects.toThrow(MESSAGE_TARIFICATION_AU_BAREME);
+
+    // Une incorporation d'adhérent, puis son avenant.
+    const lot = await controlerImport(technique, pid, aujourdhui(), { nom: "adherents.csv", contenu: texte("nom_prenoms;date_naissance\nNouveau 1 Inventé;02/03/1990") }, null);
+    await confirmerImport(technique, lot, null);
+    const incorporation = (await lireAdherents(technique, pid))!.versions.find((v) => v.motif === "INCORPORATION")!.numero;
+    await expect(creerFactureAvenant(gestionnaire, pid, incorporation, null, null)).rejects.toThrow(MESSAGE_TARIFICATION_AU_BAREME);
+    expect(await obtenirPrisma().facture.count({ where: { policeId: pid, type: { in: ["RENOUVELLEMENT", "AVENANT"] } } })).toBe(0);
+  });
+
+  it("produit par garanties : la composition manuelle garde son comportement (composer accepté, composition lue, TTC recalculé)", async () => {
+    const code = CODE("GARANTIES");
+    await creerProduit(technique, { code, libelle: "Garanties composées (inventé)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: IARD }, null);
+    await creerVersion(
+      technique,
+      code,
+      {
+        dateEffet: "2020-01-01",
+        modeTarification: "GARANTIES",
+        arrondi: { precision: 1, sens: "PROCHE", niveau: "LIGNE", composanteAbsorbante: "NETTE" },
+        prorata: { actif: false, primeMinimale: null },
+        fractionnement: { tranchesMax: 4, repartitionPourcent: null, decalagesMois: null, frais: "0" },
+        cotation: { validiteMois: 3, formulesMax: 3 },
+        seuilValidationTtc: null,
+        formules: [],
+        garantiesSaisieLibre: true,
+        garanties: [],
+        references: { csModeleCode: null, csVisa: null },
+      } satisfies VersionSaisie,
+      null,
+    );
+    await publierModele("COTATION", code, analyse(CONTENU_COTATION));
+    await publierModele("CP", code, analyse(CONTENU_CP));
+    const essai = (await lireBaremePublie(obtenirPrisma(), versionId)).bareme.jeuxEssai[0];
+    const id = await creerBrouillon(commercial, { ...saisieAuBareme(essai.entrees, {}), codeProduit: code, baremeBrut: undefined }, null);
+    await composerLaPrime(technique, id, ligneDeComposition(), "Composition de la Technique (inventée)", null);
+    await soumettre(commercial, id, null);
+    await emettreCotation(commercial, id, null);
+    const { numeroPolice } = await accepter(commercial, id, [], numero("SB"), null);
+    await emettreCp(technique, id, null);
+    const pid = (await obtenirPrisma().police.findUniqueOrThrow({ where: { numero: numeroPolice } })).id;
+    const factureId = await creerFactureAffaireNouvelle(gestionnaire, pid, null, null);
+
+    const vue = (await lireFacture(technique, factureId))!;
+    expect(vue.actions.composer).toBe(true);
+    expect(vue.composition?.lignes).toHaveLength(1);
+    const { ttc } = await composerFacture(technique, factureId, [{ ...ligneDeComposition()[0], primeNette: "20000" }], "Recomposition de la Technique (inventée)", null);
+    expect(Number(ttc)).toBeGreaterThan(0);
+    expect((await lireFacture(technique, factureId))!.composition?.composePar).toBe(technique.identifiant);
   });
 });

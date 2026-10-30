@@ -969,3 +969,19 @@ Cinq commits (947002f, b064503, d81b2b0, 9e752ca, a16310b) avaient été faits h
   - **H160** (**Codes figés**) : sont figés les codes de **champs** et de **valeurs intermédiaires** d'un barème publié du produit. Les codes de garanties et de composantes ne sont pas figés (aucune balise ne les cite) mais un changement est refusé tant que quelque chose les lit.
   - **H161** (**Champ obligatoire ajouté**) : un champ ajouté est obligatoire par défaut ; les jeux d'essai existants ne le renseignent pas et échouent (« Le champ … est obligatoire »). Tant que les essais ne s'éditent pas à l'écran (B5), la Technique rend le champ facultatif ou l'ajoute aux essais par le classeur ; l'onglet des essais le dit.
   - **H162** (**Rejouer les essais**) : l'éditeur rejoue les essais du **brouillon enregistré** (le bouton est désactivé tant qu'il y a des modifications non enregistrées) ; rien n'est écrit.
+
+## D59 — Correctif : la facture d'une police au barème est déjà composée (30/10/2026)
+
+- **Date** : 30/10/2026. Branche `fix-facture-bareme` (depuis `main`, B4 fusionné). Défaut constaté en recette : la facture d'affaire nouvelle d'une police au barème était traitée comme une composition manuelle non faite (`estComposition` ne distingue pas l'origine BAREME).
+- **Constat** : `lireFacture` rendait `actions.emettre = false` (exigence d'un auteur de composition) et `actions.composer = true` ; `composerFacture` acceptait une composition manuelle sur une facture au barème, ce qui contournait Q3 (refus sans exception) et le futur forçage B7. Le service `emettreFacture` n'était pas touché pour l'affaire nouvelle : seul l'écran bloquait.
+- **Décisions** :
+  1. Nouveau prédicat `estCompositionManuelle` (`domaine/calcul/composition.ts`) : composition qui n'est pas d'origine BAREME. Seule celle-là attend un auteur humain.
+  2. Facture au barème : `emettre` suit les règles ordinaires (droit, seuil, séparation des tâches) ; `composer = false` ; `composition = null` ; libellé de statut ordinaire. Le contrôle d'`emettreFacture` (« doit être composée par la Technique ») ne vise que la composition manuelle.
+  3. `composerFacture` refuse une facture au barème (`MESSAGE_FACTURE_AU_BAREME`) avant tout autre contrôle de nature, même esprit que le refus C8 de la cotation. Rien n'est écrit.
+  4. Avenant et renouvellement d'une police au barème : inchangés, toujours refusés (H143) jusqu'à B8 ; test ajouté.
+- **Hypothèses nouvelles** (à faire confirmer) :
+  - **H163** (**Un seul site pour « composition manuelle »**) : dans le périmètre facture, les sites qui signifient « la Technique doit composer » (drapeaux d'écran, libellé de statut, garde d'émission) utilisent `estCompositionManuelle`. Les sites qui reprennent la structure de lignes (renouvellement et avenant de la période précédente, `composerFacture` côté lignes) gardent `estComposition` : ils sont atteints seulement après le refus H143.
+  - **H164** (**Texte du refus**) : « La prime de cette facture est calculée par le barème publié : elle ne se compose pas. Une correction passe par une nouvelle version du barème. »
+- **Points ouverts** :
+  - **Facture d'affaire nouvelle d'un produit par garanties** : `actions.emettre` est `false` à l'écran (composition manuelle sans auteur de composition sur la facture, car la composition vient de la cotation), alors que le service l'émet. Même famille de défaut, **non corrigé** (consigne : comportement GARANTIES inchangé) ; à décider.
+  - Page « Factures de la police » : les textes d'aide du renouvellement et de l'avenant (`police.composee`) décrivent la composition par la Technique pour une police au barème ; ils sont faux mais sans effet (l'action est refusée, H143). À reprendre avec B8.

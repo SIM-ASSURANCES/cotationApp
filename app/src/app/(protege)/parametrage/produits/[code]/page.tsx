@@ -51,7 +51,7 @@ function formaterGarantieSaisie(g: NonNullable<VersionProduit["garanties"]>[numb
   return g.branche ? `${g.libelle} ; ${g.branche}` : g.libelle;
 }
 
-function Resume({ v, codeProduit, peutEcrire }: { v: VersionProduit; codeProduit: string; peutEcrire: boolean }) {
+function Resume({ v, codeProduit, peutEcrire, autreVersionAvecBareme }: { v: VersionProduit; codeProduit: string; peutEcrire: boolean; autreVersionAvecBareme?: { id: number; dateEffet: string; publie: boolean } }) {
   return (
     <Carte>
       <h3 className="mb-2 text-base font-bold text-foreground">Version en vigueur depuis le {formaterDate(v.dateEffet)}</h3>
@@ -67,7 +67,7 @@ function Resume({ v, codeProduit, peutEcrire }: { v: VersionProduit; codeProduit
       {afficheTableauFormules(v) ? (
         <Tableau colonnes={COLONNES_FORMULES} lignes={v.formules} cleLigne={(f) => f.code} messageVide="Aucune formule." legende={`Formules de la version du ${formaterDate(v.dateEffet)}`} />
       ) : null}
-      {peutEcrire && versionAvecBareme(v) ? <PanneauBareme codeProduit={codeProduit} version={v} /> : null}
+      {peutEcrire && versionAvecBareme(v) ? <PanneauBareme codeProduit={codeProduit} version={v} autreVersionAvecBareme={autreVersionAvecBareme} /> : null}
     </Carte>
   );
 }
@@ -89,6 +89,11 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
   const futures = versions.filter((v) => v.modeTarification === "GARANTIES" && v.dateEffet > aujourdhui());
   const publiees = new Set((await Promise.all(futures.map(async (v) => ((await etatDuBareme(v.id)).publie ? v.id : null)))).filter((id): id is number => id !== null));
   const alertesBareme = versionsProvisoiresSansBareme(versions, publiees, aujourdhui());
+  // Une version À VENIR qui a déjà un barème (brouillon ou publié) : la correction d'un publié s'y ouvre au lieu de créer une autre version (H157).
+  const etats = new Map(await Promise.all(versions.map(async (v) => [v.id, await etatDuBareme(v.id)] as const)));
+  const avenirAvecBareme = versions
+    .filter((v) => v.dateEffet > aujourdhui() && (etats.get(v.id)?.brouillon || etats.get(v.id)?.publie))
+    .map((v) => ({ id: v.id, dateEffet: v.dateEffet, publie: Boolean(etats.get(v.id)?.publie) }));
 
   return (
     <main className="space-y-6">
@@ -259,7 +264,7 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
         {versions.length === 0 ? (
           <EtatVide message="Aucune version : ce produit ne peut pas encore être calculé." />
         ) : (
-          versions.map((v) => <Resume key={v.id} v={v} codeProduit={produit.code} peutEcrire={peutAgir(niveau)} />)
+          versions.map((v) => <Resume key={v.id} v={v} codeProduit={produit.code} peutEcrire={peutAgir(niveau)} autreVersionAvecBareme={avenirAvecBareme.find((x) => x.id !== v.id)} />)
         )}
       </section>
     </main>

@@ -14,6 +14,7 @@ import {
   jsonCanonique,
   lireBareme,
   rejouerJeuxEssai,
+  resumeBareme,
   risqueCodeDuBareme,
   risqueDuBareme,
   risqueExempleDuBareme,
@@ -40,7 +41,7 @@ import { ErreurMetier, type UtilisateurCourant } from "./types";
  * Droit : celui du paramétrage des produits (Q8, défaut).
  */
 
-type Client = Prisma.TransactionClient;
+export type Client = Prisma.TransactionClient;
 
 export const MESSAGE_BAREME_NON_PUBLIE = "Ce produit se tarife au barème, mais aucun barème n'est publié pour cette version : la Technique doit le publier avant tout calcul";
 const LONGUEUR_MAX_MOTIF = 500;
@@ -80,7 +81,7 @@ export function validerDocumentBareme(document: unknown, options: { publication?
   return lu.data;
 }
 
-async function verrouillerVersion(tx: Client, versionId: number) {
+export async function verrouillerVersion(tx: Client, versionId: number) {
   // Verrou de ligne sur la version : deux enregistrements ou deux publications simultanés d'une même version s'enchaînent.
   await tx.$queryRaw`SELECT id FROM produit_versions WHERE id = ${versionId} FOR NO KEY UPDATE`;
   const v = await tx.produitVersion.findUnique({ where: { id: versionId }, include: { formules: true } });
@@ -90,13 +91,13 @@ async function verrouillerVersion(tx: Client, versionId: number) {
 
 type VersionChargee = Awaited<ReturnType<typeof verrouillerVersion>>;
 
-const depuisDate = (d: Date): DateIso => d.toISOString().slice(0, 10);
+export const depuisDate = (d: Date): DateIso => d.toISOString().slice(0, 10);
 
 /**
  * Un barème se prépare avant la mise en vigueur de sa version (créée dans un autre mode, à une date future), puis la version
  * bascule au barème ; une version déjà au barème (B3) reste préparable. Une version en vigueur dans un autre mode, jamais.
  */
-function exigerPreparable(v: VersionChargee): void {
+export function exigerPreparable(v: VersionChargee): void {
   if (v.modeTarification !== "BAREME" && depuisDate(v.dateEffet) <= aujourdhui()) {
     throw new ErreurMetier("Cette version est déjà en vigueur dans un autre mode : elle ne peut plus recevoir de barème. Créez une nouvelle version, à une date d'effet postérieure à aujourd'hui.");
   }
@@ -134,16 +135,41 @@ export async function parametresDeCalcul(
   return { arrondi: version.arrondi, prorata: { actif: version.prorata.actif }, dateEffet, dateEcheance, taxes };
 }
 
-const resume = (b: Bareme) => ({ garanties: b.garanties.length, champs: b.champs.length, jeuxEssai: b.jeuxEssai.length });
-const enJson = (b: Bareme) => JSON.parse(jsonCanonique(b)) as Prisma.InputJsonValue;
+/** Résumé d'un barème pour le journal (avant / après) : de quoi lire ce qui a changé sans recopier le document. */
+export const resume = resumeBareme;
+/** Résumé d'un contenu déjà stocké (journal, « avant ») ; vide si le contenu n'est pas lisible. */
+function resumeDuContenu(contenu: unknown): Partial<ReturnType<typeof resume>> {
+  const lu = schemaBareme.safeParse(contenu);
+  return lu.success ? resume(lu.data) : {};
+}
+export const enJson = (b: Bareme) => JSON.parse(jsonCanonique(b)) as Prisma.InputJsonValue;
 
 /**
  * Enregistre le brouillon du barème d'une version (le crée, ou remplace le contenu du brouillon existant). Le document doit passer
  * le schéma et `verifierBareme` : sinon `ErreurBaremeInvalide`, sans rien écrire. Refusé si la version a déjà un barème publié.
+ *
+ * `options.toleranceIntegrite` (écran d'édition, B4, H158) : le schéma reste exigé, mais les problèmes d'intégrité de `verifierBareme`
+ * (table incomplète, taux sans sous-jacent…) n'empêchent pas d'enregistrer un travail en cours ; ils sont rendus dans `problemes` et
+ * continuent d'interdire la PUBLICATION (qui revalide tout). L'import garde l'exigence entière.
  */
-export async function enregistrerBrouillonBareme(acteur: UtilisateurCourant, versionId: number, document: unknown, adresseIp: string | null): Promise<{ id: number; empreinte: string }> {
+export async function enregistrerBrouillonBareme(
+  acteur: UtilisateurCourant,
+  versionId: number,
+  document: unknown,
+  adresseIp: string | null,
+  options: { toleranceIntegrite?: boolean } = {},
+): Promise<{ id: number; empreinte: string; problemes: Probleme[] }> {
   await exigerEcriture(acteur);
-  const bareme = validerDocumentBareme(document);
+  let bareme: Bareme;
+  let problemes: Probleme[] = [];
+  if (options.toleranceIntegrite) {
+    const lu = schemaBareme.safeParse(document);
+    if (!lu.success) {
+      throw new ErreurBaremeInvalide(lu.error.issues.map((i) => ({ code: "SCHEMA", message: `${i.path.length > 0 ? i.path.join(".") : "(document)"} : ${i.message}` })));
+    }
+    bareme = lu.data;
+    problemes = verifierBareme(bareme);
+  } else bareme = validerDocumentBareme(document);
   const empreinte = empreinteBareme(bareme);
 
   return obtenirPrisma().$transaction(async (tx) => {
@@ -161,13 +187,13 @@ export async function enregistrerBrouillonBareme(acteur: UtilisateurCourant, ver
         action: "PARAMETRE_MODIFIE",
         objetType: "bareme_document",
         objetId: ligne.id,
-        avant: existant ? { statut: "BROUILLON", empreinte: existant.empreinte } : undefined,
-        apres: { versionId, statut: "BROUILLON", empreinte, ...resume(bareme) },
+        avant: existant ? { statut: "BROUILLON", empreinte: existant.empreinte, ...resumeDuContenu(existant.contenu) } : undefined,
+        apres: { versionId, statut: "BROUILLON", empreinte, ...resume(bareme), ...(problemes.length > 0 ? { problemes: problemes.length } : {}) },
         adresseIp,
       },
       tx,
     );
-    return { id: ligne.id, empreinte };
+    return { id: ligne.id, empreinte, problemes };
   });
 }
 

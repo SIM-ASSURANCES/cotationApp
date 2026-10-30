@@ -2,7 +2,7 @@ import { useId, type Ref, type SelectHTMLAttributes } from "react";
 
 import { ChampFormulaire, classesControle } from "./ChampFormulaire";
 
-export type OptionListe = { valeur: string; libelle: string };
+export type OptionListe = { valeur: string; libelle: string; /** Option visible mais non choisissable (le libellé dit pourquoi). */ desactive?: boolean };
 
 /**
  * Liste déroulante, avec étiquette, message d'erreur ou d'aide (mêmes attributs que <select>). `invite` est une première
@@ -41,7 +41,7 @@ export function ListeDeroulante({
           </option>
         ) : null}
         {options.map((option) => (
-          <option key={option.valeur} value={option.valeur}>
+          <option key={option.valeur} value={option.valeur} disabled={option.desactive}>
             {option.libelle}
           </option>
         ))}

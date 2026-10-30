@@ -5,7 +5,7 @@ import { avertissementsRisque } from "../documents/controles";
 import { champsRisqueFacultatifs } from "../documents/dictionnaire";
 import type { Analyse } from "../documents/analyse";
 import { estConnu } from "../documents/dictionnaire";
-import { codesRisqueDuBareme, risqueCodeDuBareme, risqueDuBareme } from "./documents";
+import { codesRisqueDuBareme, risqueCodeDuBareme, risqueDuBareme, risqueExempleDuBareme } from "./documents";
 import { lireBareme, type Saisie } from "./schema";
 import { documentSecurpro } from "./securpro-fixture";
 
@@ -172,5 +172,53 @@ describe("avertissementsRisque : contrôle des modèles à l'enregistrement", ()
     expect(a[0].message).toContain("risque.typo_commerce");
     expect(a[0].message).toContain("type_commerce");
     expect(avertissementsRisque(analyse(["risque.loyer_mensuel", "prime.ttc"]), codes)).toEqual([]);
+  });
+});
+
+describe("risqueExempleDuBareme : risque et risque_code fictifs pour l'aperçu d'un modèle (H154)", () => {
+  const jour = "2026-10-30";
+
+  it("les mêmes clés que l'émission, aucune vide, y compris les champs conditionnels, les attributs et les valeurs intermédiaires", () => {
+    const { risque, risqueCode } = risqueExempleDuBareme(bareme, jour);
+    expect(Object.keys(risque).sort()).toEqual(codesRisqueDuBareme(bareme).sort());
+    expect(Object.keys(risqueCode).sort()).toEqual(codesRisqueDuBareme(bareme).sort());
+    for (const [code, valeur] of Object.entries({ ...risque, ...risqueCode })) expect(valeur, code).not.toBe("");
+    expect(risque).toMatchObject({ type_commerce: "Bureau", type_commerce_classe: "1", gardien: "Oui" });
+    expect(risqueCode).toMatchObject({ type_commerce: "BUREAU", type_commerce_classe: "1", gardien: "OUI" });
+    expect(risque.loyer_mensuel).not.toBe(""); // champ conditionnel : rempli
+    expect(risque.valeur_batiment).not.toBe("");
+    expect(risque.capitaux_totaux).toMatch(/^\d+(\.\d+)?$/);
+  });
+
+  it("valeur intermédiaire : le calcul du moteur sur la saisie fictive (celui de l'émission), pas une valeur de remplissage", () => {
+    const { risque } = risqueExempleDuBareme(bareme, jour);
+    const contenu = ["stocks", "materiel", "mobilier", "amenagement", "informatique"].reduce((somme, c) => somme + Number(risque[c]), 0);
+    expect(Number(risque.contenu)).toBe(contenu);
+    expect(Number(risque.capitaux_totaux)).toBe(Number(risque.capital_immo) + contenu);
+  });
+
+  it("chaque type : liste → première valeur, montant et nombre dans les bornes, oui / non → oui, date → le jour, texte → EXEMPLE, choix multiples → première valeur", () => {
+    const variante = structuredClone(documentSecurpro) as unknown as { champs: Record<string, unknown>[] };
+    variante.champs.push(
+      { code: "enseigne", type: "TEXTE", obligatoire: false },
+      { code: "ouverture", type: "DATE", obligatoire: false },
+      { code: "employes", type: "NOMBRE", obligatoire: false, min: "5", max: "50" },
+      { code: "plafond", type: "MONTANT", obligatoire: false, max: "300" },
+      { code: "plancher", type: "MONTANT", obligatoire: false, min: "2000000" },
+      { code: "options", type: "CHOIX_MULTIPLES", obligatoire: false, valeurs: [{ v: "ALARME", l: "Alarme" }, "COFFRE"] },
+      { code: "note_interne", type: "TEXTE", obligatoire: false, surDocuments: false },
+    );
+    const { risque, risqueCode } = risqueExempleDuBareme(lireBareme(variante), jour);
+    expect(risque).toMatchObject({ enseigne: "EXEMPLE", ouverture: jour, employes: "5", plafond: "300", plancher: "2000000", options: "Alarme", note_interne: "" });
+    expect(risqueCode).toMatchObject({ options: "ALARME", camera: "OUI", type_commerce: "BUREAU" });
+  });
+
+  it("un intermédiaire que la saisie fictive ne permet pas de calculer prend une valeur d'exemple, sans lever d'erreur", () => {
+    const variante = structuredClone(documentSecurpro) as unknown as { champs: Record<string, unknown>[]; intermediaires: Record<string, unknown>[] };
+    variante.champs = variante.champs.map((c) => (c.code === "stocks" ? { ...c, type: "LISTE", valeurs: [], numerique: false } : c));
+    expect(() => risqueExempleDuBareme(lireBareme(variante), jour)).not.toThrow();
+    const { risque } = risqueExempleDuBareme(lireBareme(variante), jour);
+    expect(risque.contenu).not.toBe("");
+    expect(risque.capitaux_totaux).not.toBe("");
   });
 });

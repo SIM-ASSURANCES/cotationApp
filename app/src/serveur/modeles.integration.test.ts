@@ -4,10 +4,14 @@ import { createHash } from "node:crypto";
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
+import { codesRisqueDuBareme, lireBareme } from "@/domaine/bareme";
+import type { VersionSaisie } from "@/domaine/calcul/parametrage";
+import { documentSecurpro } from "@/domaine/bareme/securpro-fixture";
 import type { Analyse } from "@/domaine/documents/analyse";
 
 import { assurerBranche } from "./branches-test";
 import { lireJournal } from "./audit";
+import { enregistrerBrouillonBareme, publierBareme } from "./bareme";
 import { initialiserProfilsEtDroits } from "./droits";
 import { remplacerGenerateur, type DemandePdf } from "./generateur";
 import {
@@ -25,7 +29,7 @@ import {
   soumettreVersion,
   type DepotVersion,
 } from "./modeles";
-import { aujourdhui, creerProduit } from "./parametrage";
+import { aujourdhui, creerProduit, creerTaxe, creerVersion } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
@@ -289,6 +293,77 @@ describe("aperçu et listes longues (CDC §6.5, §6.6)", () => {
     expect(new TextDecoder().decode(demande.annexes?.beneficiaires)).toContain("annexe");
     expect(new TextDecoder().decode(demande.sousModeles?.garanties?.SOLO)).toContain("garanties");
     expect(Object.keys(demande.images ?? {}).sort()).toEqual(["cachet_sim", "qr_code", "signature_sim"]);
+  });
+
+  describe("produit au barème : risque et risque_code de l'aperçu (H154)", () => {
+    const VERSION_BAREME: VersionSaisie = {
+      dateEffet: DANS_UN_MOIS,
+      modeTarification: "GARANTIES",
+      arrondi: { precision: 1, sens: "PROCHE", niveau: "LIGNE", composanteAbsorbante: "NETTE" },
+      prorata: { actif: false, primeMinimale: null },
+      fractionnement: { tranchesMax: 4, repartitionPourcent: null, decalagesMois: null, frais: "0" },
+      cotation: { validiteMois: 3, formulesMax: 3 },
+      seuilValidationTtc: null,
+      formules: [],
+      garantiesSaisieLibre: true,
+      garanties: [],
+      references: { csModeleCode: null, csVisa: null },
+    };
+    const bareme = lireBareme(documentSecurpro);
+    let produitBareme: string;
+    let versionBareme: number;
+
+    async function modeleDe(codeProduit: string): Promise<number> {
+      const id = await creerModele(technique, { type: "CP", code: CODE("CP"), libelle: "CP au barème", produitCode: codeProduit, niveauRelance: null, listeAnnexe: null, blocNom: null, blocCle: null }, null);
+      await deposerVersion(technique, id, depot(), null);
+      return versionId(id, 1);
+    }
+
+    beforeAll(async () => {
+      // Taxes que rejouent les jeux d'essai du barème inventé à la publication.
+      await assurerBranche("INCENDIE");
+      await assurerBranche("IARD");
+      await creerTaxe(technique, { branche: "INCENDIE", typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "12.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
+      await creerTaxe(technique, { branche: "IARD", typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: "7.25", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
+      produitBareme = CODE("PRDB");
+      await creerProduit(technique, { code: produitBareme, libelle: "Produit au barème (inventé)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: "SANTE" }, null);
+      await creerVersion(technique, produitBareme, VERSION_BAREME, null);
+      versionBareme = (await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produit: { code: produitBareme } } })).id;
+      await enregistrerBrouillonBareme(technique, versionBareme, documentSecurpro, null);
+    }, 60_000);
+
+    it("barème en brouillon seulement : risque et risque_code portent TOUS les champs, attributs et valeurs intermédiaires du barème", async () => {
+      demandesPdf.length = 0;
+      await apercuVersion(technique, await modeleDe(produitBareme), { nombreAssures: 2 }, null);
+      const donnees = demandesPdf[0].donnees as { risque: Record<string, string>; risque_code: Record<string, string> };
+      const codes = codesRisqueDuBareme(bareme).sort();
+      expect(Object.keys(donnees.risque).sort()).toEqual(codes);
+      expect(Object.keys(donnees.risque_code).sort()).toEqual(codes);
+      expect(donnees.risque).toMatchObject({ type_commerce: "Bureau", type_commerce_classe: "1" }); // libellé et attribut
+      expect(donnees.risque_code).toMatchObject({ type_commerce: "BUREAU", type_commerce_classe: "1" }); // code
+      expect(Number(donnees.risque.capitaux_totaux)).toBeGreaterThan(0); // intermédiaire calculé
+      expect(donnees.risque).not.toHaveProperty("marque"); // plus les trois clés fixes de l'ancien aperçu
+    });
+
+    it("barème publié : il l'emporte sur le brouillon", async () => {
+      const publie = structuredClone(documentSecurpro) as unknown as { champs: Record<string, unknown>[] };
+      publie.champs.push({ code: "champ_du_publie", type: "TEXTE", obligatoire: false });
+      await enregistrerBrouillonBareme(technique, versionBareme, publie, null);
+      await publierBareme(dg, versionBareme, "Essai de l'aperçu (inventé)", null);
+      demandesPdf.length = 0;
+      await apercuVersion(technique, await modeleDe(produitBareme), { nombreAssures: 2 }, null);
+      const donnees = demandesPdf[0].donnees as { risque: Record<string, string>; risque_code: Record<string, string> };
+      expect(donnees.risque.champ_du_publie).toBe("EXEMPLE");
+      expect(donnees.risque_code.champ_du_publie).toBe("EXEMPLE");
+    }, 30_000);
+
+    it("produit sans barème : l'aperçu garde les trois clés fixes d'avant", async () => {
+      demandesPdf.length = 0;
+      await apercuVersion(technique, await modeleDe(produit), { nombreAssures: 2 }, null);
+      const donnees = demandesPdf[0].donnees as { risque: Record<string, string>; risque_code: Record<string, string> };
+      expect(donnees.risque).toEqual({ statut: "Propriétaire", marque: "MARQUE EXEMPLE", nb_pieces: "4" });
+      expect(donnees.risque_code).toEqual({ statut: "PROPRIETAIRE", marque: "MARQUE EXEMPLE", nb_pieces: "4" });
+    });
   });
 
   it("seuil des listes longues : 10 par défaut, historisé, jamais rétroactif", async () => {

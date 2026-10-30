@@ -18,7 +18,7 @@ import { PanneauBareme, versionAvecBareme } from "./panneau-bareme";
 
 const LIBELLE_SENS = { PROCHE: "Au plus proche", SUPERIEUR: "Au supérieur", INFERIEUR: "À l'inférieur" } as const;
 const LIBELLE_NIVEAU = { LIGNE: "Chaque ligne", TOTAL: "Total seulement" } as const;
-const LIBELLE_MODE = { FORMULE: "Par formule (calcul automatique)", GARANTIES: "Par garanties (prime composée par la Technique, calcul automatique refusé)", BAREME: "Au barème (prime tirée du barème publié de la version)" } as const;
+const LIBELLE_MODE = { FORMULE: "Par formule (calcul automatique)", GARANTIES: "Par garanties (en extinction - composition manuelle transitoire)", BAREME: "Au barème (prime tirée du barème publié de la version)" } as const;
 /** Intertitre d'un bloc à l'intérieur d'une carte de formulaire. */
 const SOUS_TITRE = "mb-1 text-base font-bold text-foreground";
 const CASE = "size-4 accent-primary";
@@ -55,6 +55,11 @@ function Resume({ v, codeProduit, peutEcrire }: { v: VersionProduit; codeProduit
   return (
     <Carte>
       <h3 className="mb-2 text-base font-bold text-foreground">Version en vigueur depuis le {formaterDate(v.dateEffet)}</h3>
+      {v.modeTarification === "GARANTIES" ? (
+        <Bandeau ton="avertissement" className="mb-3">
+          Mode de tarification « Par garanties » en cours d&apos;extinction : ce mode transitoire (composition manuelle) est conservé pour l&apos;existant mais doit évoluer vers le mode « Au barème » ou « Par formule ».
+        </Bandeau>
+      ) : null}
       <p className="mb-3 text-sm text-muted-foreground">
         Tarification : {LIBELLE_MODE[v.modeTarification] ?? v.modeTarification}
         {v.garanties && v.garanties.length > 0 ? ` — garanties : ${v.garanties.map(formaterGarantieResume).join(", ")}${v.garantiesSaisieLibre === false ? " ; saisie libre interdite" : ""}` : ""} ·{" "}

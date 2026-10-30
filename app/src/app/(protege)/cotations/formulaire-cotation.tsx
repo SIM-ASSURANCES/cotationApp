@@ -1,7 +1,7 @@
 import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
-import { Bandeau, Carte, Champ as ChampSaisie, ListeDeroulante } from "@/composants/ui";
-import { ComplementsSouscripteur } from "@/composants/ComplementsSouscripteur";
-import { LignesAssures, LignesBeneficiaires, LignesContactsUrgence, LignesRisque } from "@/composants/LignesDynamiques";
+import { Bandeau, Carte, Champ as ChampSaisie } from "@/composants/ui";
+import { ChampsSouscripteurDynamiques } from "@/composants/ChampsSouscripteurDynamiques";
+import { SectionsAnnexesCotation } from "@/composants/SectionsAnnexesCotation";
 import { SelectionIntermediaires } from "@/composants/SelectionIntermediaires";
 import { aujourdhui } from "@/domaine/calcul/dates";
 import { montant } from "@/domaine/calcul/montant";
@@ -56,37 +56,11 @@ export function FormulaireCotation({
       {base ? <input type="hidden" name="id" value={base.id} /> : null}
 
       <Carte titre="Souscripteur">
-        <div className="mb-4 max-w-md">
-          <ListeDeroulante
-            label="Client enregistré (laisser vide pour un prospect saisi ci-dessous)"
-            name="clientId"
-            defaultValue={base?.clientId ?? ""}
-            options={[
-              { valeur: "", libelle: "— Prospect (saisie libre) —" },
-              ...clients.map((c) => ({ valeur: String(c.id), libelle: c.souscripteur.type === "MORALE" ? c.souscripteur.raison_sociale : `${c.souscripteur.nom} ${c.souscripteur.prenoms}` })),
-            ]}
-          />
-        </div>
-        <div className="mb-4 grid max-w-4xl gap-x-6 sm:grid-cols-2">
-          <div className="mb-4">
-            <ListeDeroulante
-              label="Type"
-              name="souscripteur_type"
-              defaultValue={s?.type ?? "PHYSIQUE"}
-              options={[
-                { valeur: "PHYSIQUE", libelle: "Personne physique" },
-                { valeur: "MORALE", libelle: "Personne morale" },
-              ]}
-            />
-          </div>
-          <Champ nom="souscripteur_nom" libelle="Nom (personne physique)" requis={false} valeur={s?.nom} autoComplete="off" />
-          <Champ nom="souscripteur_prenoms" libelle="Prénoms" requis={false} valeur={s?.prenoms} autoComplete="off" />
-          <Champ nom="souscripteur_raison_sociale" libelle="Raison sociale (personne morale)" requis={false} valeur={s?.raison_sociale} autoComplete="off" />
-          <Champ nom="souscripteur_telephone" libelle="Téléphone" requis={false} valeur={s?.telephone} autoComplete="off" />
-          <Champ nom="souscripteur_email" libelle="E-mail" requis={false} valeur={s?.email} autoComplete="off" />
-          <Champ nom="souscripteur_adresse" libelle="Adresse" requis={false} valeur={s?.adresse} autoComplete="off" />
-        </div>
-        <ComplementsSouscripteur valeurs={s} />
+        <ChampsSouscripteurDynamiques
+          clients={clients}
+          initialClientId={base?.clientId ? String(base.clientId) : ""}
+          valeurs={s}
+        />
       </Carte>
 
       <Carte titre="Contrat">
@@ -112,6 +86,9 @@ export function FormulaireCotation({
         <ChampsBareme descripteur={bareme.descripteur} initiale={bareme.saisie} />
       ) : parGaranties ? (
         <Carte titre="Prime" className="max-w-3xl">
+          <Bandeau ton="info" className="mb-3">
+            Mode transitoire « Par garanties » en cours d&apos;extinction : la prime est composée manuellement par la Technique. Ce mode est conservé pour l&apos;existant avant migration complète vers le mode « Au barème ».
+          </Bandeau>
           <p className="text-sm">
             Ce produit se tarife par garanties : la prime n&apos;est pas calculée automatiquement. Créez le brouillon (souscripteur, assurés, dates) ; la
             Technique <strong>composera</strong> ensuite la prime, garantie par garantie, depuis la fiche de la cotation. Tant que la prime n&apos;est pas
@@ -184,25 +161,31 @@ export function FormulaireCotation({
         </Carte>
       )}
 
-      <Carte titre="Assurés (facultatif)">
-        <LignesAssures
-          // Par garanties (6.2b) : pas de formule d'assuré (la composition ne distingue pas de formules) ; la colonne n'est pas proposée.
-          formules={parGaranties || bareme ? [] : formules}
-          initiales={(base?.assures ?? []).map((a) => ({ nom: a.nom_prenoms, naissance: a.date_naissance, sexe: a.sexe, lien: a.lien, identification: a.num_identification ?? "", formule: a.formule }))}
-        />
-      </Carte>
-
-      <Carte titre="Bénéficiaires (SECURVIE, RELAXACCIDENT)" description="Facultatif à ce stade : ils peuvent aussi être saisis à l'acceptation. Dès qu'il y en a, la somme des quotes-parts doit faire 100 %.">
-        <LignesBeneficiaires initiales={(base?.beneficiaires ?? []).map((b) => ({ nom: b.nom_prenoms, lien: b.lien, contact: b.contact, quote: b.quote_part }))} />
-      </Carte>
-
-      <Carte titre="Contacts d'urgence (RELAXVOYAGE)">
-        <LignesContactsUrgence initiales={(base?.contactsUrgence ?? []).map((c) => ({ nom: c.nom_prenoms, contact: c.contact }))} />
-      </Carte>
-
-      <Carte titre="Risque (champs propres au produit)">
-        <LignesRisque initiales={Object.entries(base?.risque ?? {}).map(([cle, valeur]) => ({ cle, valeur }))} />
-      </Carte>
+      <SectionsAnnexesCotation
+        formules={formules}
+        parGaranties={parGaranties}
+        estBareme={Boolean(bareme)}
+        codeProduit={produit.code}
+        initialAssures={(base?.assures ?? []).map((a) => ({
+          nom: a.nom_prenoms,
+          naissance: a.date_naissance,
+          sexe: a.sexe,
+          lien: a.lien,
+          identification: a.num_identification ?? "",
+          formule: a.formule,
+        }))}
+        initialBeneficiaires={(base?.beneficiaires ?? []).map((b) => ({
+          nom: b.nom_prenoms,
+          lien: b.lien,
+          contact: b.contact,
+          quote: b.quote_part,
+        }))}
+        initialContactsUrgence={(base?.contactsUrgence ?? []).map((c) => ({
+          nom: c.nom_prenoms,
+          contact: c.contact,
+        }))}
+        initialRisque={Object.entries(base?.risque ?? {}).map(([cle, valeur]) => ({ cle, valeur }))}
+      />
     </FormulaireAction>
   );
 }

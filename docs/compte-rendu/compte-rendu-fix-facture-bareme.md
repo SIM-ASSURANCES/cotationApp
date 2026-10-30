@@ -31,7 +31,7 @@ Rien à toucher hors du périmètre facture n'a été modifié ; les lignes « �
 
 - Intégration (`cotation-bareme.integration.test.ts`, bloc D60, 4 tests), par `lireFacture().actions` : barème → `emettre` vrai (Gestionnaire), `composer` faux (Gestionnaire et Technique), libellé « Brouillon », `composerFacture` refusé sans rien écrire, émission au TTC de la cotation ; profil sans droit : pas d'« Émettre » ; renouvellement et avenant refusés (H143) ; produit par garanties : `composer` vrai, composition lue, recomposition acceptée.
 - E2E (`facture-bareme.e2e.test.ts`) : cotation au barème → acceptation → CP → facture ; « Émettre » visible (drapeau), émission réelle (vrai générateur), TTC = cotation = jeu d'essai = PDF.
-- Suite complète dans le conteneur : typecheck et lint propres ; unitaires 61 fichiers / 749 tests verts ; e2e 9 fichiers verts ; intégration 30 fichiers verts sur 31 en passage complet, le 31e (`cotation-bareme`, bloc D60 compris) a échoué sur le délai de 10 s de son `beforeAll` (machine chargée par d autres piles) et passe seul (26 tests verts).
+- Suite complète mesurée le 30/10/2026 dans ma pile seule (aucune autre pile active), commit `b86edda` : typecheck, lint et build verts ; unitaires 61 fichiers verts (23 s) ; intégration 31 fichiers verts (375 s) ; e2e 9 fichiers verts (449 s). Aucun fichier en échec, aucune relance nécessaire. Les nombres de tests n'ont pas été relevés.
 
 ## Écarts et points ouverts
 

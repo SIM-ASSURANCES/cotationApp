@@ -12,7 +12,7 @@ Remplace `MODIFICATIONS_UI.md` (fichier hors dépôt, qui contenait des erreurs 
 | 4 | Mode « Par garanties » : mention « en extinction », bandeau de la fiche produit et bandeau du formulaire retirés ; libellés de 333b544. | `parametrage/produits/[code]/page.tsx`, `formulaire-cotation.tsx` |
 | 5 | `listerClientsAvecDocuments` : lecture de « Créer une cotation » exigée en plus des types lisibles ; deux requêtes pour tous les clients. `documentsDuClient` : même droit que la fiche client. | `serveur/documents.ts` |
 
-Droits des tableaux (hypothèse **H151**, à confirmer) : commercial = lecture de `CREER_COTATION` ; Technique, Comptabilité, Direction générale = `CONSULTER_TABLEAUX_DE_BORD` ; Production = lecture de `EMETTRE_CONTRAT` ; Admin système = lecture de `GERER_UTILISATEURS` et de `CONSULTER_AUDIT`. Exiger `CONSULTER_TABLEAUX_DE_BORD` pour les six aurait privé de leur tableau le Commercial, la Production et l'Admin système (la matrice par défaut ne le leur donne pas).
+Droits des tableaux (hypothèse **H151**, **validée par Thierry le 30/10/2026** : association conservée, matrice par défaut inchangée) : commercial = lecture de `CREER_COTATION` ; Technique, Comptabilité, Direction générale = `CONSULTER_TABLEAUX_DE_BORD` ; Production = lecture de `EMETTRE_CONTRAT` ; Admin système = lecture de `GERER_UTILISATEURS` et de `CONSULTER_AUDIT`. Exiger `CONSULTER_TABLEAUX_DE_BORD` pour les six aurait privé de leur tableau le Commercial, la Production et l'Admin système (la matrice par défaut ne le leur donne pas).
 
 ## Ce qui est conservé (D56), tel que le code le fait
 
@@ -34,7 +34,7 @@ Droits des tableaux (hypothèse **H151**, à confirmer) : commercial = lecture d
 
 ## Tests ajoutés
 
-- Intégration : `documents.integration.test.ts` (le Commercial est REFUSÉ pour créer un intermédiaire ; fiche client, documents du client, décompte par client et ZIP selon les droits, Comptabilité refusée) ; `cotations.integration.test.ts` (`client_id` d'une cotation EMISE puis ACCEPTEE refusé par la base, aucun client créé à l'acceptation) ; `tableaux-profils.integration.test.ts` (les six tableaux, fonctions directes et mémorisées, profil sans droit refusé ; droit retiré en base ; le tableau du commercial ne montre que ses cotations).
+- Intégration : `documents.integration.test.ts` (le Commercial est REFUSÉ pour créer un intermédiaire ; fiche client, documents du client, décompte par client et ZIP selon les droits, Comptabilité refusée) ; `cotations.integration.test.ts` (`client_id` d'une cotation EMISE puis ACCEPTEE refusé par la base, aucun client créé à l'acceptation) ; `tableaux-profils.integration.test.ts` (les six tableaux, fonctions directes et mémorisées, profil sans droit refusé ; pour chaque tableau et chaque droit associé : retiré dans la matrice → refusé, remis → visible ; le tableau du commercial ne montre que ses cotations).
 - Unitaire : `composants/formulaires-conserves.test.tsx` (noms de champs inchangés, champs masqués, bouton d'intermédiaire selon le droit, types de modèle, volets).
 - Bout en bout : `cotations/cotation-souscripteur.e2e.test.ts` (cotation d'une personne morale puis d'une personne physique, saisies par le formulaire, jusqu'à l'émission du PDF et la page de vérification).
 
@@ -43,7 +43,7 @@ Droits des tableaux (hypothèse **H151**, à confirmer) : commercial = lecture d
 | Suite | Résultat |
 |---|---|
 | Unitaires (`npm test`) | 59 fichiers, 691 tests, tous verts |
-| Intégration (`npm run test:integration`) | 30 fichiers, 383 tests, tous verts |
+| Intégration (`npm run test:integration`) | 30 fichiers, 388 tests, tous verts |
 | Bout en bout (`npm run test:e2e`) | 7 fichiers, 15 tests, tous verts |
 | `pytest` (générateur) | 234 réussis, 7 ignorés |
 | `npm run lint` | sans erreur |
@@ -58,6 +58,6 @@ Le fichier affirmait (faux ou périmé) : une cotation sur une version `GARANTIE
 
 ## Hypothèses et points ouverts
 
-- **H151** droits des tableaux, **H152** branche d'un modèle, **H153** champs masqués du souscripteur (voir D56).
+- **H151** droits des tableaux (validée), **H152** branche d'un modèle, **H153** champs masqués du souscripteur (voir D56).
 - **Ouvert, pour la Technique** : « Le Commercial peut-il créer un intermédiaire ? » (défaut : non, H79).
 - **Ouvert, pour le responsable** : la conversion prospect → client, avec sa règle de doublons et le rangement des documents déjà émis sous `PROSP-`.

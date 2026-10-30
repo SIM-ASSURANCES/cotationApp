@@ -15,6 +15,7 @@ import { tableauComptabilite } from "./tableau-comptabilite";
 import { tableauDirectionGenerale } from "./tableau-dg";
 import { tableauProduction } from "./tableau-production";
 import { tableauTechnique } from "./tableau-technique";
+import { DROITS_TABLEAUX } from "./tableaux-de-bord";
 import {
   tableauAdminMemorise,
   tableauCommercialMemorise,
@@ -95,18 +96,19 @@ beforeAll(async () => {
 
 const TABLEAUX: {
   nom: string;
+  cle: keyof typeof DROITS_TABLEAUX;
   direct: (a: UtilisateurCourant) => Promise<unknown>;
   memorise: (a: UtilisateurCourant) => Promise<unknown>;
   autorise: Profil;
   /** Un profil dont la matrice ne donne pas le droit de ce tableau. */
   refuse: Profil;
 }[] = [
-  { nom: "commercial", direct: (a) => tableauCommercial(a), memorise: (a) => tableauCommercialMemorise(a), autorise: "COMMERCIAL", refuse: "COMPTABILITE" },
-  { nom: "technique", direct: (a) => tableauTechnique(a), memorise: (a) => tableauTechniqueMemorise(a), autorise: "TECHNIQUE", refuse: "COMMERCIAL" },
-  { nom: "comptabilité", direct: (a) => tableauComptabilite(a), memorise: (a) => tableauComptabiliteMemorise(a), autorise: "COMPTABILITE", refuse: "COMMERCIAL" },
-  { nom: "direction générale", direct: (a) => tableauDirectionGenerale(a), memorise: (a) => tableauDGMemorise(a), autorise: "DIRECTION_GENERALE", refuse: "COMMERCIAL" },
-  { nom: "production", direct: (a) => tableauProduction(a), memorise: (a) => tableauProductionMemorise(a), autorise: "GESTIONNAIRE_PRODUCTION", refuse: "COMMERCIAL" },
-  { nom: "admin système", direct: (a) => tableauAdmin(a), memorise: (a) => tableauAdminMemorise(a), autorise: "ADMIN_SYSTEME", refuse: "COMMERCIAL" },
+  { nom: "commercial", cle: "commercial", direct: (a) => tableauCommercial(a), memorise: (a) => tableauCommercialMemorise(a), autorise: "COMMERCIAL", refuse: "COMPTABILITE" },
+  { nom: "technique", cle: "technique", direct: (a) => tableauTechnique(a), memorise: (a) => tableauTechniqueMemorise(a), autorise: "TECHNIQUE", refuse: "COMMERCIAL" },
+  { nom: "comptabilité", cle: "comptabilite", direct: (a) => tableauComptabilite(a), memorise: (a) => tableauComptabiliteMemorise(a), autorise: "COMPTABILITE", refuse: "COMMERCIAL" },
+  { nom: "direction générale", cle: "direction", direct: (a) => tableauDirectionGenerale(a), memorise: (a) => tableauDGMemorise(a), autorise: "DIRECTION_GENERALE", refuse: "COMMERCIAL" },
+  { nom: "production", cle: "production", direct: (a) => tableauProduction(a), memorise: (a) => tableauProductionMemorise(a), autorise: "GESTIONNAIRE_PRODUCTION", refuse: "COMMERCIAL" },
+  { nom: "admin système", cle: "admin", direct: (a) => tableauAdmin(a), memorise: (a) => tableauAdminMemorise(a), autorise: "ADMIN_SYSTEME", refuse: "COMMERCIAL" },
 ];
 
 describe("tableaux de bord par profil : le serveur refuse seul (D4)", () => {
@@ -121,21 +123,30 @@ describe("tableaux de bord par profil : le serveur refuse seul (D4)", () => {
     });
   }
 
-  it("le droit vient de la matrice, pas du nom du profil : le droit retiré à la Technique la fait refuser", async () => {
-    const prisma = obtenirPrisma();
-    const profil = await prisma.profil.findUniqueOrThrow({ where: { code: "TECHNIQUE" } });
-    const cle = { profilId_action: { profilId: profil.id, action: "CONSULTER_TABLEAUX_DE_BORD" } };
-    const avant = await prisma.profilDroit.findUnique({ where: cle });
-    try {
-      await prisma.profilDroit.upsert({ where: cle, update: { niveau: "AUCUN" }, create: { profilId: profil.id, action: "CONSULTER_TABLEAUX_DE_BORD", niveau: "AUCUN" } });
-      viderMemoireTableaux();
-      await expect(tableauTechnique(comptes.TECHNIQUE)).rejects.toBeInstanceOf(ErreurAcces);
-      await expect(tableauTechniqueMemorise(comptes.TECHNIQUE)).rejects.toBeInstanceOf(ErreurAcces);
-    } finally {
-      await prisma.profilDroit.update({ where: cle, data: { niveau: avant?.niveau ?? "LECTURE" } });
-      viderMemoireTableaux();
-    }
-  });
+  for (const t of TABLEAUX) {
+    it(`${t.nom} : retirer un droit associé dans la matrice fait refuser le profil, le remettre le fait voir`, async () => {
+      const prisma = obtenirPrisma();
+      const acteur = comptes[t.autorise];
+      const profil = await prisma.profil.findUniqueOrThrow({ where: { code: acteur.profil } });
+      for (const action of DROITS_TABLEAUX[t.cle].actions) {
+        const cle = { profilId_action: { profilId: profil.id, action } };
+        const avant = await prisma.profilDroit.findUnique({ where: cle });
+        try {
+          viderMemoireTableaux();
+          await expect(t.direct(acteur)).resolves.toBeDefined();
+          await prisma.profilDroit.upsert({ where: cle, update: { niveau: "AUCUN" }, create: { profilId: profil.id, action, niveau: "AUCUN" } });
+          await expect(t.direct(acteur)).rejects.toBeInstanceOf(ErreurAcces);
+          await expect(t.memorise(acteur)).rejects.toBeInstanceOf(ErreurAcces);
+        } finally {
+          if (avant) await prisma.profilDroit.update({ where: cle, data: { niveau: avant.niveau } });
+          else await prisma.profilDroit.delete({ where: cle }).catch(() => undefined);
+          viderMemoireTableaux();
+        }
+        await expect(t.direct(acteur)).resolves.toBeDefined();
+        await expect(t.memorise(acteur)).resolves.toBeDefined();
+      }
+    });
+  }
 
   it("le tableau du commercial ne montre que ses propres cotations", async () => {
     viderMemoireTableaux();

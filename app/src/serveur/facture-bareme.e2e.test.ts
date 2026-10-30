@@ -1,4 +1,4 @@
-// Session fix-facture-bareme (D59), bout en bout (npm run test:e2e) : vraie base de test, VRAI générateur, VRAI stockage.
+// Session fix-facture-bareme (D60), bout en bout (npm run test:e2e) : vraie base de test, VRAI générateur, VRAI stockage.
 // Cotation au barème (SECURPRO inventé) → acceptation → CP → facture d'affaire nouvelle : le bouton « Émettre » est proposé (drapeau d'écran),
 // aucune composition n'est demandée, la facture s'émet et son TTC est celui de la cotation, du jeu d'essai du barème et du PDF.
 // Modèles Word de test : generateur/tests/fixtures/ (données inventées).
@@ -40,7 +40,7 @@ const MDP = "phrase-de-passe-inventee-2026";
 const unique = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`;
 const CODE = (p: string) => unique(p).toUpperCase().replace(/-/g, "_");
 const sans = { niveauRelance: null, listeAnnexe: null, blocNom: null, blocCle: null };
-const VISA_CG = "VISA-INVENTE-D59";
+const VISA_CG = "VISA-INVENTE-D60";
 
 let technique: UtilisateurCourant;
 let dg: UtilisateurCourant;
@@ -62,7 +62,7 @@ const AVEC_PDFTOTEXT = spawnSync("pdftotext", ["-v"]).error === undefined;
 
 async function publier(type: "CG" | "CP" | "COTATION" | "FACTURE", produitCode: string | null, nom: string, surcharge: Record<string, unknown> = {}): Promise<string> {
   const id = await creerModele(technique, { type, code: CODE(type), libelle: type === "CG" ? "SECURPRO – Conditions générales (test)" : `${type} (bout en bout)`, produitCode, ...sans }, null);
-  await deposerVersion(technique, id, { fichier: fixture(nom), nomFichier: nom, commentaire: "Test de bout en bout D59", dateEffet: aujourdhui(), visa: null, dateDocument: null, ...surcharge }, null);
+  await deposerVersion(technique, id, { fichier: fixture(nom), nomFichier: nom, commentaire: "Test de bout en bout D60", dateEffet: aujourdhui(), visa: null, dateDocument: null, ...surcharge }, null);
   const v = await obtenirPrisma().modeleVersion.findFirstOrThrow({ where: { modeleId: id }, orderBy: { numero: "desc" } });
   await soumettreVersion(technique, v.id, null);
   await publierVersion(dg, v.id, aujourdhui(), null);
@@ -133,8 +133,8 @@ beforeAll(async () => {
   const carte: Record<string, string> = { IARD: iard, INCENDIE: incendie };
   d.produit.taxe = carte[d.produit.taxe];
   for (const g of d.garanties) if (g.taxe) g.taxe = carte[g.taxe];
-  await importerBaremeXlsx(technique, versionId, "securpro.xlsx", await construireClasseur(lireBareme(d), { titre: "SECURPRO inventé (test D59)" }), null);
-  await publierBareme(technique, versionId, "Barème SECURPRO inventé (test D59)", null);
+  await importerBaremeXlsx(technique, versionId, "securpro.xlsx", await construireClasseur(lireBareme(d), { titre: "SECURPRO inventé (test D60)" }), null);
+  await publierBareme(technique, versionId, "Barème SECURPRO inventé (test D60)", null);
   await basculerVersionAuBareme(technique, versionId, null);
   await changerLaVersionPourTest(versionId, "date_effet = DATE '2020-01-01'");
 

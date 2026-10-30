@@ -78,7 +78,7 @@ export const estComposition = (donnees: unknown): donnees is EntreeComposition =
 export const estCompositionBareme = (donnees: unknown): donnees is EntreeComposition & { origine: "BAREME"; bareme: BaremeFige } =>
   estComposition(donnees) && donnees.origine === "BAREME" && donnees.bareme !== undefined;
 
-/** Composition manuelle de la Technique (mode GARANTIES) : ni formule, ni barème. Seule celle-là attend un auteur humain (D59). */
+/** Composition manuelle de la Technique (mode GARANTIES) : ni formule, ni barème. Seule celle-là attend un auteur humain (D60). */
 export const estCompositionManuelle = (donnees: unknown): donnees is EntreeComposition => estComposition(donnees) && !estCompositionBareme(donnees);
 
 /** Les trois natures d'un calcul figé, et le mode de tarification de version qui les accepte (D31, D32, D48). */

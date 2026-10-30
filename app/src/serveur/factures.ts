@@ -567,7 +567,7 @@ export async function abandonnerFacture(acteur: UtilisateurCourant, factureId: n
 export const MESSAGE_FACTURE_AFFAIRE_NOUVELLE =
   "La prime d'une facture d'affaire nouvelle est celle de la cotation acceptée et des conditions particulières : elle ne se recompose pas ici.";
 
-/** Refus de composer la facture d'une police au barème (D59, comme le refus de la cotation, Q3) : aucune exception, aucun forçage ici. */
+/** Refus de composer la facture d'une police au barème (D60, comme le refus de la cotation, Q3) : aucune exception, aucun forçage ici. */
 export const MESSAGE_FACTURE_AU_BAREME =
   "La prime de cette facture est calculée par le barème publié : elle ne se compose pas. Une correction passe par une nouvelle version du barème.";
 
@@ -1455,7 +1455,7 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
   const sousSeuil = ouverte && validationContratRequise(d.facture, f.ttc.toFixed(), seuil);
   const contenu = contenuDe(f);
   const entreeDonnees = contenu.entree as DonneesCalcul;
-  // D59 : seule la composition manuelle attend la Technique ; une composition du barème est calculée, donc déjà « composée ».
+  // D60 : seule la composition manuelle attend la Technique ; une composition du barème est calculée, donc déjà « composée ».
   const estComp = estCompositionManuelle(entreeDonnees);
   const niveauComposer = await niveauDuProfil(acteur.profil, "COMPOSER_PRIME");
   const peutComposer = peutAgir(niveauComposer);

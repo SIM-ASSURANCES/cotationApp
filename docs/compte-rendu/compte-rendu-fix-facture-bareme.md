@@ -1,6 +1,6 @@
-# Compte rendu — fix-facture-bareme (D59, H163-H164)
+# Compte rendu — fix-facture-bareme (D60, H170-H171)
 
-Branche `fix-facture-bareme`, depuis `main` (B4 fusionné), **commit local, non fusionnée, non poussée**. Worktree `sim-documents-fixfacture`. Décision : [decisions.md](../decisions.md) D59.
+Branche `fix-facture-bareme`, depuis `main` (B4 fusionné), **commit local, non fusionnée, non poussée**. Worktree `sim-documents-fixfacture`. Décision : [decisions.md](../decisions.md) D60.
 
 ## Défaut et correction
 
@@ -29,13 +29,13 @@ Rien à toucher hors du périmètre facture n'a été modifié ; les lignes « �
 
 ## Tests
 
-- Intégration (`cotation-bareme.integration.test.ts`, bloc D59, 4 tests), par `lireFacture().actions` : barème → `emettre` vrai (Gestionnaire), `composer` faux (Gestionnaire et Technique), libellé « Brouillon », `composerFacture` refusé sans rien écrire, émission au TTC de la cotation ; profil sans droit : pas d'« Émettre » ; renouvellement et avenant refusés (H143) ; produit par garanties : `composer` vrai, composition lue, recomposition acceptée.
+- Intégration (`cotation-bareme.integration.test.ts`, bloc D60, 4 tests), par `lireFacture().actions` : barème → `emettre` vrai (Gestionnaire), `composer` faux (Gestionnaire et Technique), libellé « Brouillon », `composerFacture` refusé sans rien écrire, émission au TTC de la cotation ; profil sans droit : pas d'« Émettre » ; renouvellement et avenant refusés (H143) ; produit par garanties : `composer` vrai, composition lue, recomposition acceptée.
 - E2E (`facture-bareme.e2e.test.ts`) : cotation au barème → acceptation → CP → facture ; « Émettre » visible (drapeau), émission réelle (vrai générateur), TTC = cotation = jeu d'essai = PDF.
-- Suite complète dans le conteneur : typecheck et lint propres ; unitaires 61 fichiers / 749 tests verts ; e2e 9 fichiers verts ; intégration 30 fichiers verts sur 31 en passage complet, le 31e (`cotation-bareme`, bloc D59 compris) a échoué sur le délai de 10 s de son `beforeAll` (machine chargée par d autres piles) et passe seul (26 tests verts).
+- Suite complète dans le conteneur : typecheck et lint propres ; unitaires 61 fichiers / 749 tests verts ; e2e 9 fichiers verts ; intégration 30 fichiers verts sur 31 en passage complet, le 31e (`cotation-bareme`, bloc D60 compris) a échoué sur le délai de 10 s de son `beforeAll` (machine chargée par d autres piles) et passe seul (26 tests verts).
 
 ## Écarts et points ouverts
 
-- **Affaire nouvelle par garanties (H165, corrigée)** : aucune règle du CDC ni de `decisions.md` n'impose de la recomposer (H90/D38 : renouvellement et avenant seulement ; H88/T10 : elle vient de la police figée). La facture reprend la composition figée de la cotation, s'émet selon les règles ordinaires, ne se recompose pas. Tests : intégration par `lireFacture().actions` (bloc D59) et une ligne dans `garanties.e2e.test.ts`.
+- **Affaire nouvelle par garanties (H172, corrigée)** : aucune règle du CDC ni de `decisions.md` n'impose de la recomposer (H90/D38 : renouvellement et avenant seulement ; H88/T10 : elle vient de la police figée). La facture reprend la composition figée de la cotation, s'émet selon les règles ordinaires, ne se recompose pas. Tests : intégration par `lireFacture().actions` (bloc D60) et une ligne dans `garanties.e2e.test.ts`.
 - Textes d'aide de la page « Factures de la police » faux pour le barème (renouvellement, avenant) — sans effet, à reprendre avec B8.
 - README des tests (`app/README.md`) : le lancement d'un e2e seul exige la préparation de la base.
 - Les e2e partagent la base avec l'intégration : `signature_sim` posée par une PNG invalide (intégration) fait échouer la CP des e2e si la base n'est pas préparée avant (`npm run test:e2e` la prépare ; lancer un e2e seul demande `test:integration:preparer`).

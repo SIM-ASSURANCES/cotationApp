@@ -793,7 +793,7 @@ describe("B6b : portefeuille", () => {
   });
 });
 
-describe("D59 : la facture d'une police au barème est déjà composée (aucun auteur humain), les drapeaux d'écran le disent", () => {
+describe("D60 : la facture d'une police au barème est déjà composée (aucun auteur humain), les drapeaux d'écran le disent", () => {
   let seq = 0;
   const numero = (racine: "SB" | "TST") => `${racine}-2026-${String((Date.now() + ++seq) % 1_000_000).padStart(6, "0")}-${racine === "TST" ? "G" : "I"}00000`;
   const ligneDeComposition = () => [{ libelle: "Incendie", branche: IARD, primeNette: "10000", accessoires: "2500" }];

@@ -572,7 +572,8 @@ describe("B6b, D52 : import en masse sur une police au barème (plafond = effect
     d.produit.taxe = carte[d.produit.taxe];
     for (const g of d.garanties) if (g.taxe) g.taxe = carte[g.taxe];
     d.produit.accessoires = { mode: "PAR_TETE", montant: "1000" };
-    d.jeuxEssai = d.jeuxEssai.slice(0, 1).map((j) => ({ ...j, entrees: { ...j.entrees, effectif: EFFECTIF }, attendu: { ttc: "155641" } })); // B5 (H164) : un essai doit attendre quelque chose ; TTC de ce cas par tête (effectif 5), fixé une fois pour cette fixture
+    d.jeuxEssai = d.jeuxEssai.slice(0, 1).map((j) => ({ ...j, entrees: { ...j.entrees, effectif: EFFECTIF }, attendu: { ttc: "155641" } }));
+    // B5 (H164) : un essai doit attendre quelque chose. 155641 = TTC par tête (effectif 5) : valeur relevée au moteur, ne prouve pas le tarif ; ce test vérifie l'import.
     return lireBareme(d);
   }
 

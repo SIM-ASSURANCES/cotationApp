@@ -25,7 +25,7 @@ Précision : la copie a la **même empreinte** que le publié (l'empreinte est l
 | Suite | Résultat |
 |---|---|
 | Unitaires | 61 fichiers, 749 tests verts |
-| Intégration | 31 fichiers, 407 tests verts (dont le test d'empreinte, voir ci-dessous) |
+| Intégration | 31 fichiers, 407 tests verts (mesuré le 30/10, y compris le test d'empreinte ; pile `sim-tests` seule, `sim-apercu` inactive) |
 | Bout en bout | 8 fichiers, 16 tests verts |
 | lint, typecheck, build | sans erreur |
 | pytest (générateur) | non relancé : générateur non modifié |

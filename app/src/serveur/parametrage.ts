@@ -532,82 +532,90 @@ export async function creerVersion(acteur: UtilisateurCourant, codeProduit: stri
     throw new ErreurMetier("Une version ne se crée pas directement au barème : créez-la dans un autre mode à une date d'effet future, importez et publiez son barème, puis basculez-la au barème.");
   }
 
-  await obtenirPrisma().$transaction(async (tx) => {
-    const produit = await tx.produit.findUnique({ where: { code: codeProduit } });
-    if (!produit) {
-      throw new ErreurMetier("Produit introuvable.");
-    }
-    if (await tx.produitVersion.findUnique({ where: { produitId_dateEffet: { produitId: produit.id, dateEffet: versDate(saisie.dateEffet) } } })) {
-      throw new ErreurMetier("Une version existe déjà à cette date d'effet : une version en vigueur ne se modifie pas, ajoutez-en une avec une autre date.");
-    }
-    const cree = await tx.produitVersion.create({
-      data: {
-        produitId: produit.id,
-        dateEffet: versDate(saisie.dateEffet),
-        arrondiPrecision: saisie.arrondi.precision,
-        arrondiSens: saisie.arrondi.sens,
-        arrondiNiveau: saisie.arrondi.niveau,
-        arrondiComposante: saisie.arrondi.composanteAbsorbante,
-        prorataActif: saisie.prorata.actif,
-        primeMinimale: canoniqueOuNull(saisie.prorata.primeMinimale),
-        fractionnementTranchesMax: saisie.fractionnement.tranchesMax,
-        fractionnementRepartition: saisie.fractionnement.repartitionPourcent?.map(canonique) ?? undefined,
-        fractionnementDecalagesMois: saisie.fractionnement.decalagesMois ?? undefined,
-        fraisFractionnement: canonique(saisie.fractionnement.frais),
-        validiteMois: saisie.cotation.validiteMois,
-        formulesMax: saisie.cotation.formulesMax,
-        seuilValidationTtc: canoniqueOuNull(saisie.seuilValidationTtc),
-        modeTarification: saisie.modeTarification ?? "FORMULE",
-        garanties: (saisie.garanties ?? []).map((g) => {
-          const mg =
-            g.montantGaranti !== undefined && g.montantGaranti !== null && g.montantGaranti.trim() !== ""
-              ? canonique(g.montantGaranti)
-              : g.montantGaranti === null
-                ? null
-                : undefined;
-          const acc =
-            g.accessoires !== undefined && g.accessoires !== null && g.accessoires.trim() !== ""
-              ? canonique(g.accessoires)
-              : g.accessoires === null
-                ? null
-                : undefined;
-          return {
-            libelle: g.libelle.trim(),
-            branche: g.branche,
-            ...(mg !== undefined ? { montantGaranti: mg } : {}),
-            ...(acc !== undefined ? { accessoires: acc } : {}),
-          };
-        }) as unknown as Prisma.InputJsonValue,
-        garantiesSaisieLibre: saisie.garantiesSaisieLibre ?? true,
-        csModeleCode: saisie.references?.csModeleCode ?? null,
-        csVisa: saisie.references?.csVisa?.trim() ?? null,
-        creePar: acteur.identifiant,
-        formules: {
-          create: saisie.formules.map((f) => ({
-            code: f.code,
-            libelle: f.libelle.trim(),
-            tauxCouverture: canoniqueOuNull(f.tauxCouverture),
-            primeUnitaire: canonique(f.primeUnitaire),
-            accessoireMode: f.accessoireMode,
-            accessoireValeur: canonique(f.accessoireValeur),
-            ageMin: f.ageMin ?? null,
-            ageMax: f.ageMax ?? null,
-          })),
-        },
+  await obtenirPrisma().$transaction((tx) => creerVersionDansTransaction(tx, acteur, codeProduit, saisie, adresseIp));
+}
+
+/**
+ * Corps de `creerVersion`, dans la transaction de l'appelant : mêmes contrôles de date, même création, même journal. Rend l'identifiant de la
+ * version créée. Les droits et la validation de la saisie (`problemesVersion`) restent à l'appelant (voir `creerVersion`). Sert aussi à créer,
+ * dans UNE transaction, la version qui reçoit la copie d'un barème publié (B4, H157) : aucune logique de version n'est réécrite.
+ */
+export async function creerVersionDansTransaction(tx: Prisma.TransactionClient, acteur: UtilisateurCourant, codeProduit: string, saisie: VersionSaisie, adresseIp: string | null): Promise<number> {
+  const produit = await tx.produit.findUnique({ where: { code: codeProduit } });
+  if (!produit) {
+    throw new ErreurMetier("Produit introuvable.");
+  }
+  if (await tx.produitVersion.findUnique({ where: { produitId_dateEffet: { produitId: produit.id, dateEffet: versDate(saisie.dateEffet) } } })) {
+    throw new ErreurMetier("Une version existe déjà à cette date d'effet : une version en vigueur ne se modifie pas, ajoutez-en une avec une autre date.");
+  }
+  const cree = await tx.produitVersion.create({
+    data: {
+      produitId: produit.id,
+      dateEffet: versDate(saisie.dateEffet),
+      arrondiPrecision: saisie.arrondi.precision,
+      arrondiSens: saisie.arrondi.sens,
+      arrondiNiveau: saisie.arrondi.niveau,
+      arrondiComposante: saisie.arrondi.composanteAbsorbante,
+      prorataActif: saisie.prorata.actif,
+      primeMinimale: canoniqueOuNull(saisie.prorata.primeMinimale),
+      fractionnementTranchesMax: saisie.fractionnement.tranchesMax,
+      fractionnementRepartition: saisie.fractionnement.repartitionPourcent?.map(canonique) ?? undefined,
+      fractionnementDecalagesMois: saisie.fractionnement.decalagesMois ?? undefined,
+      fraisFractionnement: canonique(saisie.fractionnement.frais),
+      validiteMois: saisie.cotation.validiteMois,
+      formulesMax: saisie.cotation.formulesMax,
+      seuilValidationTtc: canoniqueOuNull(saisie.seuilValidationTtc),
+      modeTarification: saisie.modeTarification ?? "FORMULE",
+      garanties: (saisie.garanties ?? []).map((g) => {
+        const mg =
+          g.montantGaranti !== undefined && g.montantGaranti !== null && g.montantGaranti.trim() !== ""
+            ? canonique(g.montantGaranti)
+            : g.montantGaranti === null
+              ? null
+              : undefined;
+        const acc =
+          g.accessoires !== undefined && g.accessoires !== null && g.accessoires.trim() !== ""
+            ? canonique(g.accessoires)
+            : g.accessoires === null
+              ? null
+              : undefined;
+        return {
+          libelle: g.libelle.trim(),
+          branche: g.branche,
+          ...(mg !== undefined ? { montantGaranti: mg } : {}),
+          ...(acc !== undefined ? { accessoires: acc } : {}),
+        };
+      }) as unknown as Prisma.InputJsonValue,
+      garantiesSaisieLibre: saisie.garantiesSaisieLibre ?? true,
+      csModeleCode: saisie.references?.csModeleCode ?? null,
+      csVisa: saisie.references?.csVisa?.trim() ?? null,
+      creePar: acteur.identifiant,
+      formules: {
+        create: saisie.formules.map((f) => ({
+          code: f.code,
+          libelle: f.libelle.trim(),
+          tauxCouverture: canoniqueOuNull(f.tauxCouverture),
+          primeUnitaire: canonique(f.primeUnitaire),
+          accessoireMode: f.accessoireMode,
+          accessoireValeur: canonique(f.accessoireValeur),
+          ageMin: f.ageMin ?? null,
+          ageMax: f.ageMax ?? null,
+        })),
       },
-    });
-    await journaliser(
-      {
-        acteur: { id: acteur.id, identifiant: acteur.identifiant },
-        action: "PARAMETRE_MODIFIE",
-        objetType: "produit_version",
-        objetId: cree.id,
-        apres: { produit: codeProduit, dateEffet: saisie.dateEffet, modeTarification: saisie.modeTarification ?? "FORMULE", garanties: (saisie.garanties ?? []).length, formules: saisie.formules.map((f) => f.code) },
-        adresseIp,
-      },
-      tx,
-    );
+    },
   });
+  await journaliser(
+    {
+      acteur: { id: acteur.id, identifiant: acteur.identifiant },
+      action: "PARAMETRE_MODIFIE",
+      objetType: "produit_version",
+      objetId: cree.id,
+      apres: { produit: codeProduit, dateEffet: saisie.dateEffet, modeTarification: saisie.modeTarification ?? "FORMULE", garanties: (saisie.garanties ?? []).length, formules: saisie.formules.map((f) => f.code) },
+      adresseIp,
+    },
+    tx,
+  );
+  return cree.id;
 }
 
 // ---------------------------------------------------------------- Calcul

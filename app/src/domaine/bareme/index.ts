@@ -8,3 +8,4 @@ export * from "./tranches";
 export * from "./expression";
 export * from "./formulaire";
 export * from "./documents";
+export * from "./edition";

@@ -3,23 +3,29 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 
 import type { EtatFormulaire } from "@/composants/types";
-import { Bandeau, Bouton, LienBouton } from "@/composants/ui";
-import { schemaBareme, verifierBareme, type Bareme, type Probleme, type Resultat } from "@/domaine/bareme";
+import { Bandeau, Bouton } from "@/composants/ui";
+import { schemaBareme, verifierBareme, type Bareme, type Ecart, type Probleme, type Resultat } from "@/domaine/bareme";
 
-import type { ContexteEdition } from "./commun";
+import type { ContexteEdition, EtatPublication, RetourControles, RetourEnregistrement, RetourRejeu } from "./commun";
+import { OngletApercu } from "./OngletApercu";
 import { OngletChamps } from "./OngletChamps";
+import { OngletEssais } from "./OngletEssais";
 import { OngletGaranties } from "./OngletGaranties";
 import { OngletIntermediaires } from "./OngletIntermediaires";
-import { OngletEssais, OngletSousJacents, OngletTables } from "./OngletsLecture";
+import { OngletPublier } from "./OngletPublier";
+import { OngletSousJacents } from "./OngletSousJacents";
+import { OngletTables } from "./OngletTables";
 import { PanneauControles } from "./PanneauControles";
 
 const ONGLETS = [
-  { id: "champs", libelle: "Champs", lecture: false },
-  { id: "intermediaires", libelle: "Intermédiaires", lecture: false },
-  { id: "garanties", libelle: "Garanties", lecture: false },
-  { id: "sous-jacents", libelle: "Sous-jacents", lecture: true },
-  { id: "tables", libelle: "Tables", lecture: true },
-  { id: "essais", libelle: "Jeux d'essai", lecture: true },
+  { id: "champs", libelle: "Champs" },
+  { id: "intermediaires", libelle: "Intermédiaires" },
+  { id: "garanties", libelle: "Garanties" },
+  { id: "tables", libelle: "Tables" },
+  { id: "sous-jacents", libelle: "Sous-jacents" },
+  { id: "essais", libelle: "Jeux d'essai" },
+  { id: "apercu", libelle: "Aperçu Commercial" },
+  { id: "publier", libelle: "Publier" },
 ] as const;
 type IdOnglet = (typeof ONGLETS)[number]["id"];
 
@@ -34,9 +40,12 @@ export function EditeurBareme({
   lectureSeule,
   codesFiges,
   categoriesTaxe,
-  lienPublier,
+  publication,
   enregistrer,
   rejouer,
+  controler,
+  publier,
+  basculer,
 }: {
   versionId: number;
   initial: Bareme;
@@ -44,9 +53,13 @@ export function EditeurBareme({
   lectureSeule: boolean;
   codesFiges: string[];
   categoriesTaxe: string[];
-  lienPublier: string;
-  enregistrer: (versionId: number, document: string) => Promise<EtatFormulaire>;
-  rejouer: (versionId: number) => Promise<EtatFormulaire>;
+  /** État de publication de la version (empreintes, bascule possible), lu par le serveur à l'ouverture de la page. */
+  publication: EtatPublication;
+  enregistrer: (versionId: number, document: string) => Promise<RetourEnregistrement>;
+  rejouer: (versionId: number) => Promise<RetourRejeu>;
+  controler: (versionId: number) => Promise<RetourControles>;
+  publier: (versionId: number, motif: string) => Promise<EtatFormulaire>;
+  basculer: (versionId: number) => Promise<EtatFormulaire>;
 }) {
   const [doc, setDoc] = useState<Bareme>(initial);
   const [enregistre, setEnregistre] = useState(() => JSON.stringify(initial));
@@ -54,6 +67,9 @@ export function EditeurBareme({
   const [refus, setRefus] = useState<string[]>([]);
   const [retour, setRetour] = useState<{ etat: EtatFormulaire; origine: "enregistrement" | "essais" } | null>(null);
   const [enCours, setEnCours] = useState<"enregistrement" | "essais" | null>(null);
+  // Empreinte du brouillon enregistré (rendue par le serveur à chaque enregistrement) et dernier rejeu des essais, valable pour CET état enregistré.
+  const [empreinte, setEmpreinte] = useState<string | null>(publication.brouillon?.empreinte ?? null);
+  const [rejeu, setRejeu] = useState<{ pour: string; ecarts: Ecart[] } | null>(null);
   const boutons = useRef<Record<string, HTMLButtonElement | null>>({});
 
   const courant = useMemo(() => JSON.stringify(doc), [doc]);
@@ -99,7 +115,10 @@ export function EditeurBareme({
     try {
       const etat = await enregistrer(versionId, envoye);
       setRetour({ etat, origine: "enregistrement" });
-      if (etat.succes) setEnregistre(envoye);
+      if (etat.succes) {
+        setEnregistre(envoye);
+        if (etat.empreinte) setEmpreinte(etat.empreinte);
+      }
     } finally {
       setEnCours(null);
     }
@@ -108,7 +127,9 @@ export function EditeurBareme({
     setEnCours("essais");
     setRetour(null);
     try {
-      setRetour({ etat: await rejouer(versionId), origine: "essais" });
+      const r = await rejouer(versionId);
+      setRetour({ etat: r.etat, origine: "essais" });
+      if (r.ecarts) setRejeu({ pour: enregistre, ecarts: r.ecarts });
     } finally {
       setEnCours(null);
     }
@@ -159,9 +180,6 @@ export function EditeurBareme({
             <Bouton variante="secondaire" onClick={lancerEssais} disabled={modifie || enCours !== null} attente={enCours === "essais"} title={modifie ? "Enregistrez d'abord : les essais se rejouent sur le brouillon enregistré" : undefined}>
               {enCours === "essais" ? "Calcul des essais…" : "Rejouer les essais"}
             </Bouton>
-            <LienBouton href={lienPublier} variante="secondaire">
-              Publier (fiche du produit)
-            </LienBouton>
             <p className="text-sm text-neutral sm:ml-auto" role="status">
               {modifie ? "Modifications non enregistrées." : "Tout est enregistré."}
             </p>
@@ -204,7 +222,6 @@ export function EditeurBareme({
               className={`min-h-10 whitespace-nowrap rounded-t-lg border-b-2 px-4 py-2 text-sm font-semibold transition-colors duration-150 ease-out-strong sm:min-h-0 ${onglet === o.id ? "border-primary text-primary" : "border-transparent text-neutral hover:text-foreground"}`}
             >
               {o.libelle}
-              {o.lecture ? <span className="ml-1 text-xs font-normal">(lecture)</span> : null}
             </button>
           ))}
         </div>
@@ -215,9 +232,24 @@ export function EditeurBareme({
           {o.id === "champs" ? <OngletChamps ctx={ctx} disabled={lectureSeule} /> : null}
           {o.id === "intermediaires" ? <OngletIntermediaires ctx={ctx} disabled={lectureSeule} /> : null}
           {o.id === "garanties" ? <OngletGaranties ctx={ctx} disabled={lectureSeule} /> : null}
-          {o.id === "sous-jacents" ? <OngletSousJacents doc={doc} /> : null}
-          {o.id === "tables" ? <OngletTables doc={doc} /> : null}
-          {o.id === "essais" ? <OngletEssais doc={doc} /> : null}
+          {o.id === "tables" ? <OngletTables ctx={ctx} disabled={lectureSeule} /> : null}
+          {o.id === "sous-jacents" ? <OngletSousJacents ctx={ctx} disabled={lectureSeule} /> : null}
+          {o.id === "essais" ? (
+            <OngletEssais ctx={ctx} disabled={lectureSeule} ecarts={rejeu !== null && rejeu.pour === enregistre && !modifie ? rejeu.ecarts : null} peutRejouer={!modifie && enCours === null && !lectureSeule} enCours={enCours === "essais"} onRejouer={lancerEssais} />
+          ) : null}
+          {o.id === "apercu" ? <OngletApercu doc={doc} /> : null}
+          {o.id === "publier" ? (
+            <OngletPublier
+              versionId={versionId}
+              publication={{ ...publication, brouillon: empreinte ? { empreinte } : publication.brouillon }}
+              modifie={modifie}
+              problemes={problemes}
+              structure={structure}
+              controler={controler}
+              publier={publier}
+              basculer={basculer}
+            />
+          ) : null}
         </div>
       ))}
     </div>

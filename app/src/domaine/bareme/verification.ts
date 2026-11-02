@@ -177,6 +177,15 @@ export function verifierBareme(b: Bareme, options: { publication?: boolean } = {
     if (n !== 1) ajoute("TAUX_SANS_SOURCE", `La composante « ${cible} » attend son taux d'un sous-jacent E1 : ${n === 0 ? "aucun ne la vise" : `${n} la visent`}.`);
   }
 
+  // Jeux d'essai : un nom par essai, et un résultat attendu qui vérifie quelque chose (un essai sans attendu serait toujours vert).
+  doublons("Jeu d'essai", b.jeuxEssai.map((e) => e.nom));
+  for (const e of b.jeuxEssai) {
+    const aUnMontant = (e.attendu.lignes ?? []).some((l) => l.nette !== undefined || l.acc !== undefined || l.taxe !== undefined || l.ttc !== undefined);
+    if (e.attendu.refus === undefined && e.attendu.ttc === undefined && !aUnMontant) {
+      ajoute("ESSAI_SANS_ATTENDU", `Jeu d'essai « ${e.nom} » : aucun résultat attendu (ni montant, ni TTC, ni refus) ; il ne vérifierait rien.`);
+    }
+  }
+
   if (options.publication && b.jeuxEssai.length === 0) ajoute("AUCUN_ESSAI", "Aucun jeu d'essai : un barème ne se publie qu'avec au moins un jeu d'essai qui passe.");
   return p;
 }

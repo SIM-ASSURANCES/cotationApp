@@ -2,8 +2,9 @@
 
 import { useState, type ReactNode } from "react";
 
+import type { EtatFormulaire } from "@/composants/types";
 import { Bouton, Champ } from "@/composants/ui";
-import type { Bareme, Resultat } from "@/domaine/bareme";
+import type { Bareme, ControlesDePublication, Ecart, Resultat } from "@/domaine/bareme";
 
 /** Ce que reçoit chaque onglet : le document, comment le modifier, et ce qui est figé par une publication. */
 export type ContexteEdition = {
@@ -49,7 +50,7 @@ export function CaseACocher({ libelle, coche, onChange, disabled }: { libelle: s
  * que quelque chose le lit. `valider` rend vrai si le changement est accepté ; sinon le texte revient à la valeur enregistrée.
  * À utiliser avec `key={valeur}` : le champ repart de la nouvelle valeur après un changement accepté.
  */
-export function ChampCode({ label, valeur, valider, disabled, aide }: { label: string; valeur: string; valider: (nouveau: string) => boolean; disabled?: boolean; aide?: string }) {
+export function ChampCode({ label, valeur, valider, disabled, aide, inputMode }: { label: string; valeur: string; valider: (nouveau: string) => boolean; disabled?: boolean; aide?: string; inputMode?: "decimal" | "text" }) {
   const [texte, setTexte] = useState(valeur);
   const finir = () => {
     if (texte !== valeur && !valider(texte)) setTexte(valeur);
@@ -62,6 +63,7 @@ export function ChampCode({ label, valeur, valider, disabled, aide }: { label: s
       aide={aide}
       autoComplete="off"
       spellCheck={false}
+      inputMode={inputMode}
       onChange={(e) => setTexte(e.target.value)}
       onBlur={finir}
       onKeyDown={(e) => {
@@ -138,3 +140,20 @@ export function useOuverts() {
       }),
   };
 }
+
+/** Retour de « Rejouer les essais » : le message (réussite ou refus) et, quand le calcul a eu lieu, les écarts ligne à ligne. */
+export type RetourRejeu = { etat: EtatFormulaire; ecarts?: Ecart[] };
+/** Retour de « Rejouer et contrôler » de l'onglet Publier. */
+export type RetourControles = { etat?: EtatFormulaire; controles?: ControlesDePublication };
+/** Retour de l'enregistrement : le message, et l'empreinte du brouillon enregistré. */
+export type RetourEnregistrement = EtatFormulaire & { empreinte?: string };
+
+/** État de publication de la version, tel que le serveur le lit à l'ouverture de la page. */
+export type EtatPublication = {
+  brouillon: { empreinte: string } | null;
+  publie: { empreinte: string; publieLe: string; publiePar: string; motif: string } | null;
+  /** La version peut basculer au mode barème : barème publié, version pas encore en vigueur, pas déjà au barème. */
+  peutBasculer: boolean;
+  auBareme: boolean;
+  dateEffet: string;
+};

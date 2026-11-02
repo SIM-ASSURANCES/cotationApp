@@ -216,9 +216,9 @@ const decrit = {
   garantieCondition: (g: string) => `la garantie « ${g} » (condition « selon une condition »)`,
   intermediaire: (i: string) => `la valeur intermédiaire « ${i} »`,
   composante: (g: string, c: string) => `la composante « ${g}.${c} » (assiette)`,
-  table: (t: string) => `la table « ${t} » (clé de lecture, modifiable par le classeur jusqu'à la session B5)`,
-  sousJacent: (s: string) => `le sous-jacent « ${s} » (modifiable par le classeur jusqu'à la session B5)`,
-  essai: (n: string) => `le jeu d'essai « ${n} » (modifiable par le classeur jusqu'à la session B5)`,
+  table: (t: string) => `la table « ${t} » (clé de lecture)`,
+  sousJacent: (s: string) => `le sous-jacent « ${s} »`,
+  essai: (n: string) => `le jeu d'essai « ${n} »`,
 };
 
 type Si = ConditionAffichage | undefined;
@@ -272,7 +272,12 @@ export function lecteursDeSouscription(b: Bareme, ref: string): string[] {
       if (!Array.isArray(s.quand) && litSouscription(s.quand as Si, ref)) l.push(decrit.sousJacent(s.code));
     } else if (s.cibles.some((c) => c === ref || (!ref.includes(".") && c.startsWith(`${ref}.`)))) l.push(decrit.sousJacent(s.code));
   }
-  for (const e of b.jeuxEssai) if (e.entrees.souscrit.some((s) => s === ref || (!ref.includes(".") && s.startsWith(`${ref}.`)))) l.push(decrit.essai(e.nom));
+  for (const e of b.jeuxEssai) {
+    const souscrit = e.entrees.souscrit.some((s) => s === ref || (!ref.includes(".") && s.startsWith(`${ref}.`)));
+    // Une ligne attendue porte le code d'une garantie : la supprimer ou la renommer ferait échouer l'essai.
+    const attendue = !ref.includes(".") && (e.attendu.lignes ?? []).some((x) => x.g === ref);
+    if (souscrit || attendue) l.push(decrit.essai(e.nom));
+  }
   return l;
 }
 

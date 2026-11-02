@@ -5,6 +5,9 @@ import type { Bareme } from "./schema";
 /** Un écart entre ce qu'un jeu d'essai attend et ce que le barème calcule. */
 export type Ecart = { essai: string; ligne?: string; champ: string; attendu: string; obtenu: string };
 
+/** Ce que la publication contrôlerait aujourd'hui, sans rien écrire : écarts des jeux d'essai et balises de modèles publiés sans clé dans le barème. */
+export type ControlesDePublication = { nombreEssais: number; ecarts: Ecart[]; balises: string[] };
+
 /**
  * Rejoue les jeux d'essai d'un barème : calcul, puis `composer()` (taxe, arrondi du produit, TTC), puis comparaison ligne à ligne.
  * La publication d'un barème est refusée si cette liste n'est pas vide (décision 9).

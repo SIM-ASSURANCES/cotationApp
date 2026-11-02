@@ -101,7 +101,7 @@ Dans la CP générale, une boucle sur les garanties insère le sous-modèle de c
 ```
 
 - `bloc(…)` reste **seul dans son paragraphe**, dans le corps du document.
-- Le sous-modèle est un modèle de type **Sous-modèle**, de **nom de bloc** `garanties` et de **clé** le **code de la garantie** (`vol`) ; un sous-modèle du **produit** l'emporte sur un sous-modèle **commun** de même clé. On dépose et on publie une version, comme tout modèle ; l'aperçu PDF utilise la **dernière version déposée**, l'émission la version **publiée en vigueur**.
+- Le sous-modèle est un modèle de type **Sous-modèle**, de **nom de bloc** `garanties` et de **clé** le **code de la garantie** (`vol`) ; un sous-modèle du **produit** l'emporte sur un sous-modèle **commun** de même clé. On dépose et on publie une version, comme tout modèle ; l'aperçu PDF retient, comme pour tout aperçu, la version publiée en vigueur de chaque sous-modèle et, à défaut, la plus récente déposée ; l'émission exige la version **publiée en vigueur**.
 - **Ce que voit le sous-modèle** :
   1. **toutes les données du document**, comme la CP : `souscripteur.*`, `police.*`, `produit.*`, `prime.*`, `risque.*`, `risque_code.*`, `societe.*`, `doc.*`, `garanties_souscrites` (entière)… ;
   2. **`garantie`**, la **ligne courante** de la garantie, avec les mêmes champs que `garanties_souscrites[]` : `garantie.code`, `garantie.libelle`, `garantie.branche`, `garantie.montant_garanti`, `garantie.prime_nette`, `garantie.accessoires`, `garantie.taux_taxe`, `garantie.taxe`, `garantie.ttc`, et `garantie.composantes` (`{%p for c in garantie.composantes %}` puis `c.code`, `c.libelle`, `c.montant_garanti`, `c.prime_nette`).

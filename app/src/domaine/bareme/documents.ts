@@ -1,6 +1,7 @@
 import { montant } from "../calcul/montant";
 import { Contexte, codeValeur, texteDeValeur } from "./contexte";
 import { ErreurBareme } from "./erreurs";
+import { libelleDeComposante } from "./garantie";
 import { Evaluateur } from "./operandes";
 import type { Bareme, Champ, Saisie, ValeurSaisie } from "./schema";
 
@@ -165,4 +166,24 @@ export function risqueExempleDuBareme(bareme: Bareme, jour: string): { risque: R
     }
   }
   return { risque, risqueCode };
+}
+
+/**
+ * `garanties_souscrites` FICTIVES d'un produit au barème, pour l'aperçu d'un modèle (D61) : une ligne par garantie du barème, avec son vrai code (clé de son
+ * sous-modèle `bloc("garanties", g.code)`) et son vrai nom, toutes tenues pour souscrites (H155), et une composante par composante du barème. Les montants sont
+ * des valeurs d'exemple, pas des tarifs (H156). Ne lève jamais d'erreur.
+ */
+export function garantiesExempleDuBareme(bareme: Bareme): Record<string, unknown>[] {
+  return bareme.garanties.map((g) => ({
+    code: g.code,
+    libelle: g.nom,
+    branche: g.taxe ?? bareme.produit.taxe,
+    montant_garanti: MONTANT_EXEMPLE,
+    composantes: g.composantes.map((c) => ({ code: c.code, libelle: libelleDeComposante(c.code), montant_garanti: MONTANT_EXEMPLE, prime_nette: "10000" })),
+    prime_nette: "10000",
+    accessoires: "2500",
+    taux_taxe: "12.5",
+    taxe: "1563",
+    ttc: "14063",
+  }));
 }

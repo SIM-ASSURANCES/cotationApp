@@ -301,7 +301,12 @@ describe("données d'une cotation T1 (dictionnaire, montants du moteur)", () => 
     expect([...CHAMPS_FACULTATIFS].sort()).toEqual([
       "doc.empreinte",
       "formules[].taux_couverture",
+      "garantie.code",
+      "garantie.composantes",
+      "garantie.montant_garanti",
       "garanties_souscrites",
+      "garanties_souscrites[].code",
+      "garanties_souscrites[].composantes",
       "garanties_souscrites[].montant_garanti",
       "intermediaires",
       "police.nantissement",

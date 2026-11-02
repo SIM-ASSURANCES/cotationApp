@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ChampNumeroPolice } from "@/composants/ChampNumeroPolice";
+import { composantesAMontrer, libelleSousLigne, montantSousLigne } from "@/composants/bareme/sousLignes";
 import { ComplementsSouscripteur } from "@/composants/ComplementsSouscripteur";
 import { FormulaireAction } from "@/composants/FormulaireAction";
 import { LignesBeneficiaires, LignesContactsUrgence } from "@/composants/LignesDynamiques";
@@ -71,7 +72,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
   const titre = c.numero ?? `Brouillon n° ${c.id}`;
 
   // Le Tableau n'a pas de pied : le total général est une dernière ligne repérée par `total` (rendue en gras).
-  type LignePrime = { cle: string; total: boolean; libelle: string; branche: string; montantGaranti: string; effectif: string; nette: string; accessoires: string; taux: string; taxe: string; ttc: string; ttcParUnite: string };
+  type LignePrime = { cle: string; total: boolean; sous?: boolean; libelle: string; branche: string; montantGaranti: string; effectif: string; nette: string; accessoires: string; taux: string; taxe: string; ttc: string; ttcParUnite: string };
   const gras = (total: boolean, contenu: string) => (total ? <strong>{contenu}</strong> : contenu);
   const totalGeneral: LignePrime = {
     cle: "TOTAL", total: true, libelle: "Total général", branche: "", montantGaranti: "", effectif: "", taux: "", ttcParUnite: "",
@@ -79,13 +80,20 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
   };
   const lignesGaranties: LignePrime[] = composition
     ? [
-        ...x.lignes.map((l, i) => ({
-          cle: l.code, total: false, libelle: composition.lignes[i].libelle, branche: composition.lignes[i].branche,
-          montantGaranti: composition.lignes[i].montantGaranti != null ? f(montant(composition.lignes[i].montantGaranti!)) : "—",
-          effectif: "",
-          nette: f(l.arrondi.nette), accessoires: f(l.arrondi.accessoires), taux: `${montant(composition.lignes[i].tauxPourcent).toString().replace(".", ",")} %`,
-          taxe: f(l.arrondi.taxe), ttc: f(l.arrondi.ttc), ttcParUnite: "",
-        })),
+        ...x.lignes.flatMap((l, i): LignePrime[] => [
+          {
+            cle: l.code, total: false, libelle: composition.lignes[i].libelle, branche: composition.lignes[i].branche,
+            montantGaranti: composition.lignes[i].montantGaranti != null ? f(montant(composition.lignes[i].montantGaranti!)) : "—",
+            effectif: "",
+            nette: f(l.arrondi.nette), accessoires: f(l.arrondi.accessoires), taux: `${montant(composition.lignes[i].tauxPourcent).toString().replace(".", ",")} %`,
+            taxe: f(l.arrondi.taxe), ttc: f(l.arrondi.ttc), ttcParUnite: "",
+          },
+          // H173 : sous la ligne d'une garantie à plusieurs composantes, une sous-ligne par composante (sans accessoires ni taxe : ils restent sur la ligne).
+          ...composantesAMontrer(composition.lignes[i].composantes).map((comp): LignePrime => ({
+            cle: `${l.code}-${comp.code}`, total: false, sous: true, libelle: comp.libelle, branche: "", montantGaranti: f(montant(comp.montantGaranti)), effectif: "",
+            nette: f(montant(comp.primeNette)), accessoires: "", taux: "", taxe: "", ttc: "", ttcParUnite: "",
+          })),
+        ]),
         totalGeneral,
       ]
     : [];
@@ -269,10 +277,10 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
               lignes={lignesGaranties}
               cleLigne={(l) => l.cle}
               colonnes={[
-                { cle: "garantie", entete: "Garantie", className: "font-medium", rendu: (l) => gras(l.total, l.libelle) },
+                { cle: "garantie", entete: "Garantie", className: "font-medium", rendu: (l) => (l.sous ? libelleSousLigne(l.libelle) : gras(l.total, l.libelle)) },
                 { cle: "branche", entete: "Catégorie de taxe", rendu: (l) => l.branche },
-                { cle: "montantGaranti", entete: "Montant garanti", alignement: "droite", rendu: (l) => l.montantGaranti },
-                { cle: "nette", entete: "Prime nette (HT)", alignement: "droite", rendu: (l) => gras(l.total, l.nette) },
+                { cle: "montantGaranti", entete: "Montant garanti", alignement: "droite", rendu: (l) => (l.sous ? montantSousLigne(l.montantGaranti) : l.montantGaranti) },
+                { cle: "nette", entete: "Prime nette (HT)", alignement: "droite", rendu: (l) => (l.sous ? montantSousLigne(l.nette) : gras(l.total, l.nette)) },
                 { cle: "accessoires", entete: "Accessoires", alignement: "droite", rendu: (l) => gras(l.total, l.accessoires) },
                 { cle: "taux", entete: "Taux", alignement: "droite", rendu: (l) => l.taux },
                 { cle: "taxe", entete: "Taxe", alignement: "droite", rendu: (l) => gras(l.total, l.taxe) },

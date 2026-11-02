@@ -154,7 +154,7 @@ export function problemesSaisieModele(s: SaisieModele): string[] {
   }
   if (s.type === "SOUS_MODELE") {
     if (!s.blocNom || !/^[a-z][a-z0-9_]{1,40}$/.test(s.blocNom)) p.push('Sous-modèle : nom du bloc en minuscules (ex. « garanties »), tel qu\'écrit dans bloc("garanties", …).');
-    if (!s.blocCle || !/^[A-Za-z0-9_.-]{1,60}$/.test(s.blocCle)) p.push("Sous-modèle : clé obligatoire (ex. le code de la formule : SOLO, 80…).");
+    if (!s.blocCle || !/^[A-Za-z0-9_.-]{1,60}$/.test(s.blocCle)) p.push("Sous-modèle : clé obligatoire (le code de la formule : SOLO, 80… ; ou le code de la garantie d'un produit au barème : vol).");
   } else if (s.blocNom !== null || s.blocCle !== null) {
     p.push("Le nom et la clé de bloc ne concernent que les sous-modèles.");
   }

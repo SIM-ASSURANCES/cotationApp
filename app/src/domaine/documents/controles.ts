@@ -44,7 +44,7 @@ const MARQUEURS: { motif: RegExp; libelle: string }[] = [
   { motif: /_{3,}/, libelle: "suite de « ___ »" },
 ];
 
-export function controlerDepot(type: TypeModele, analyse: Analyse): ResultatControle {
+export function controlerDepot(type: TypeModele, analyse: Analyse, options: { blocNom?: string | null } = {}): ResultatControle {
   const rejets: Constat[] = [];
   const avertissements: Constat[] = [];
   const regle = REGLES[type];
@@ -67,6 +67,17 @@ export function controlerDepot(type: TypeModele, analyse: Analyse): ResultatCont
           reference.emplacement,
         ),
       );
+    }
+  }
+
+  // `garantie.*` (D61) : la ligne courante d'une garantie, vue du seul sous-modèle bloc("garanties", g.code). Ailleurs la donnée est absente à la génération :
+  // mieux vaut refuser au dépôt. `blocNom` inconnu (vérification hors dépôt) : tout sous-modèle est accepté.
+  const garantieVisible = type === "SOUS_MODELE" && (options.blocNom === undefined || options.blocNom === "garanties");
+  if (!garantieVisible) {
+    for (const reference of analyse.references) {
+      if (reference.chemin === "garantie" || reference.chemin.startsWith("garantie.")) {
+        rejets.push(constat(`Balise « ${reference.chemin} » dans ${reference.balise} : « garantie » n'existe que dans un sous-modèle de nom « garanties », inséré par bloc("garanties", g.code) ; ailleurs, parcourez garanties_souscrites (par exemple {%p for g in garanties_souscrites %}).`, reference.emplacement));
+      }
     }
   }
 
@@ -126,6 +137,37 @@ export function controlerDepot(type: TypeModele, analyse: Analyse): ResultatCont
   }
 
   return { rejets, avertissements };
+}
+
+/** Clé de `bloc("garanties", g.code)` dans une boucle sur `garanties_souscrites` : le code de la garantie courante (D61). */
+export const CLE_BLOC_DE_GARANTIE = "garanties_souscrites[].code";
+
+/**
+ * Sous-modèles de garanties d'un produit au barème (D61), en avertissement (le barème et les modèles ont chacun leur date d'effet et leur publication).
+ *  - Un modèle (CP, cotation…) qui appelle `bloc("garanties", g.code)` : chaque garantie du barème publié qui n'a pas de sous-modèle PUBLIÉ est nommée, avec la clé attendue.
+ *  - Un sous-modèle de nom « garanties » dont la clé n'est pas le code d'une garantie du barème : signalé (faute de frappe, garantie renommée).
+ * `codes` : codes des garanties des barèmes publiés du produit (vide : sans barème, aucun contrôle) ; `publiees` : clés des sous-modèles « garanties » publiés
+ * pour le produit (les siens, puis les communs).
+ */
+export function avertissementsDeGaranties(
+  type: TypeModele,
+  analyse: Analyse,
+  codes: ReadonlySet<string>,
+  publiees: ReadonlySet<string>,
+  sousModele: { blocNom: string | null; blocCle: string | null } | null = null,
+): Constat[] {
+  if (codes.size === 0) return [];
+  const liste = [...codes].sort().join(", ");
+  if (type === "SOUS_MODELE") {
+    if (sousModele?.blocNom !== "garanties" || !sousModele.blocCle || codes.has(sousModele.blocCle)) return [];
+    return [constat(`Sous-modèle « garanties » de clé « ${sousModele.blocCle} » : ce n'est le code d'aucune garantie du barème publié de ce produit (garanties : ${liste}). Il ne sera inséré que pour une garantie de ce code.`, null)];
+  }
+  const appel = analyse.blocs.find((b) => b.nom === "garanties" && b.cle === CLE_BLOC_DE_GARANTIE);
+  if (!appel) return [];
+  return [...codes]
+    .sort()
+    .filter((code) => !publiees.has(code))
+    .map((code) => constat(`Le modèle appelle bloc("garanties", g.code) : la garantie « ${code} » du barème publié n'a pas de sous-modèle publié (nom du bloc : garanties, clé : ${code}). Tant qu'il n'est pas déposé et publié, les conditions particulières d'une cotation qui la souscrit ne s'émettent pas.`, appel.emplacement));
 }
 
 /**

@@ -13,3 +13,4 @@ export * from "./edition-tables";
 export * from "./edition-sousjacents";
 export * from "./edition-essais";
 export * from "./codes-figes";
+export * from "./detail-figee";

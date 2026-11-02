@@ -68,6 +68,19 @@ export default async function PageAide() {
             de la formule.
           </li>
           <li>
+            Une CP par garantie (produit au barème) :{" "}
+            <code className={code}>{'{%p for g in garanties_souscrites %}'}</code> puis{" "}
+            <code className={code}>{'{{ bloc("garanties", g.code) }}'}</code> (seul dans son paragraphe) puis{" "}
+            <code className={code}>{"{%p endfor %}"}</code> insère, pour chaque garantie souscrite et dans l&apos;ordre, le sous-modèle publié de nom
+            « garanties » et de clé le <strong>code de la garantie</strong> (celui du produit avant le commun). Le sous-modèle voit toutes les données du
+            document <strong>et</strong> <code className={code}>garantie</code>, la ligne courante de la garantie (
+            <code className={code}>garantie.libelle</code>, <code className={code}>garantie.montant_garanti</code>,{" "}
+            <code className={code}>garantie.prime_nette</code>, <code className={code}>garantie.composantes</code>…, mêmes champs que{" "}
+            <code className={code}>garanties_souscrites[]</code>) ; <code className={code}>garantie</code> n&apos;existe que dans ce sous-modèle. Une
+            garantie souscrite sans sous-modèle publié refuse l&apos;émission des conditions particulières, avant tout numéro, en nommant la garantie et la
+            clé attendue.
+          </li>
+          <li>
             Aucun calcul dans un modèle (pas de <code className={code}>+ - * /</code>) : tous les montants viennent du moteur de calcul, déjà
             arrondis. Pas de <code className={code}>default</code> : une donnée absente arrête la génération avec son nom, plutôt qu'un blanc.
             Une valeur vide passée dans un filtre s'écrit vide si le champ est facultatif ; sinon la génération s'arrête en nommant le champ.

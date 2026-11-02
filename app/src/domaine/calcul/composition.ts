@@ -25,8 +25,19 @@ import { ErreurCalcul, ZERO, arrondir, montant, DecimalMontant } from "./montant
  * Pas de prorata automatique : les montants saisis sont ceux de la période du contrat (réponse de la Technique sur H2).
  */
 
+/**
+ * Composante souscrite d'une garantie au barème, telle qu'elle est figée avec la ligne (H173) : son code, son libellé, son assiette (montant garanti
+ * de la composante) et sa prime nette (après la réduction et le prorata de la garantie, arrondie comme la ligne). Information d'affichage : les montants
+ * de la ligne (prime nette, accessoires, taxe, TTC) restent ceux de la garantie, rien n'est recalculé à partir des composantes.
+ */
+export type ComposanteFigee = { code: string; libelle: string; montantGaranti: string; primeNette: string };
+
 /** Ce que la Technique saisit pour une garantie, une surprime ou une majoration (une ligne de prime comme une autre). */
 export type LigneDePrime = {
+  /** Code de la garantie dans le barème (`vol`) : présent sur les lignes calculées par un barème, absent d'une composition manuelle. */
+  code?: string;
+  /** Composantes souscrites de la garantie (barème seulement) ; absentes d'une cotation antérieure à leur conservation (reconstituées à la lecture, sans rien écrire). */
+  composantes?: ComposanteFigee[];
   /** « Incendie », « Vol », « Surprime »… */
   libelle: string;
   /** Code de la branche fiscale de la ligne (INCENDIE, IARD, IA, DECES, SANTE…) : elle choisit le taux de taxe. */

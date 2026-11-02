@@ -1,10 +1,10 @@
 import { joursCouverts, type AssietteTaxe, type RegleArrondi } from "../calcul/calcul";
 import { VERSION_COMPOSITION, composer, type EntreeComposition, type LigneDePrime } from "../calcul/composition";
 import type { DateIso } from "../calcul/dates";
-import { DecimalMontant, type Montant } from "../calcul/montant";
+import { DecimalMontant, arrondir, type Montant } from "../calcul/montant";
 import { Contexte } from "./contexte";
 import { ErreurBareme, type Refus } from "./erreurs";
-import { calculerGarantie, type DetailGarantie } from "./garantie";
+import { calculerGarantie, libelleDeComposante, type DetailGarantie } from "./garantie";
 import { Evaluateur } from "./operandes";
 import type { Bareme, Saisie, SousJacent } from "./schema";
 
@@ -85,11 +85,18 @@ export function calculerBareme(bareme: Bareme, saisie: Saisie, parametres: Param
   const lignes: LigneDePrime[] = detail.map((d) => {
     const g = bareme.garanties.find((x) => x.code === d.code)!;
     return {
+      code: d.code,
       libelle: d.nom,
       branche: g.taxe ?? bareme.produit.taxe,
       montantGaranti: d.montantGaranti.toFixed(),
       primeNette: d.primeNette.toFixed(),
       accessoires: d.accessoires.toFixed(),
+      composantes: d.composantes.map((c) => ({
+        code: c.code,
+        libelle: libelleDeComposante(c.code),
+        montantGaranti: c.assiette.toFixed(),
+        primeNette: arrondir(c.primeNette, parametres.arrondi.precision, parametres.arrondi.sens).toFixed(),
+      })),
     };
   });
   const coefProrata = parametres.prorata.actif ? new DecimalMontant(Math.min(jours, 365)).div(365) : new DecimalMontant(1);

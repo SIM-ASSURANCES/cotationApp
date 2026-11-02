@@ -10,9 +10,12 @@ import { versionEnVigueur, type StatutVersion, type VersionCycle } from "@/domai
 import type { RegimeTaxe } from "@/domaine/calcul/taxes";
 import {
   VERSION_SCHEMA_BAREME,
+  aDejaLeDetail,
   balisesSansCle,
   calculerBareme,
   codesRisqueDuBareme,
+  garantiesExempleDuBareme,
+  compositionAvecDetail,
   jsonCanonique,
   lireBareme,
   rejouerJeuxEssai,
@@ -473,6 +476,18 @@ export async function risqueExempleDuProduit(client: Pick<Client, "baremeDocumen
 export type RisqueDuDocument = { risque: Record<string, string>; risqueCode: Record<string, string> };
 
 /**
+ * Barème figé avec un calcul d'origine BAREME, relu par sa version ET son empreinte (celle du barème publié au moment du calcul) et contrôlé (schéma,
+ * empreinte recalculée) : `null` si le calcul n'est pas d'origine BAREME, ou si le barème est introuvable, d'un autre schéma ou altéré.
+ */
+async function baremeFigeDuCalcul(client: Pick<Client, "baremeDocument">, donneesCalcul: unknown): Promise<Bareme | null> {
+  if (!estCompositionBareme(donneesCalcul)) return null;
+  const { versionId, empreinte } = donneesCalcul.bareme;
+  const ligne = await client.baremeDocument.findFirst({ where: { versionId, empreinte } });
+  if (!ligne || ligne.schemaVersion !== VERSION_SCHEMA_BAREME || empreinteBareme(ligne.contenu) !== empreinte) return null;
+  return lireBareme(ligne.contenu);
+}
+
+/**
  * `risque` et `risque_code` d'un document d'une cotation ou d'une police au barème (D55). Pour un calcul figé d'origine BAREME, les deux sont
  * recalculés depuis la SAISIE et le BARÈME FIGÉS de la cotation (barème lu par sa version ET son empreinte) : une cotation enregistrée avant
  * D55 stockait des CODES dans `risque.<champ>`, elle rend désormais des libellés comme les autres. Calcul pur : ni prime, ni ligne, ni
@@ -482,16 +497,48 @@ export type RisqueDuDocument = { risque: Record<string, string>; risqueCode: Rec
 export async function risqueDuDocument(client: Pick<Client, "baremeDocument">, risque: unknown, donneesCalcul: unknown): Promise<RisqueDuDocument> {
   const enregistre = (risque ?? {}) as Record<string, string>;
   if (!estCompositionBareme(donneesCalcul)) return { risque: enregistre, risqueCode: {} };
-  const { versionId, empreinte, saisie } = donneesCalcul.bareme;
-  const ligne = await client.baremeDocument.findFirst({ where: { versionId, empreinte } });
-  if (!ligne || ligne.schemaVersion !== VERSION_SCHEMA_BAREME || empreinteBareme(ligne.contenu) !== empreinte) return { risque: enregistre, risqueCode: {} };
-  const bareme = lireBareme(ligne.contenu);
+  const bareme = await baremeFigeDuCalcul(client, donneesCalcul);
+  if (!bareme) return { risque: enregistre, risqueCode: {} };
+  const { saisie } = donneesCalcul.bareme;
   return { risque: { ...enregistre, ...risqueDuBareme(bareme, saisie) }, risqueCode: risqueCodeDuBareme(bareme, saisie) };
 }
 
-/** Une cotation ou une police chargée, avec `risque` (libellés) et `risqueCode` (codes) complétés pour le document ; `null` reste `null`. */
-export async function avecRisqueDuDocument<T extends { risque: unknown; donneesCalcul: unknown }>(client: Pick<Client, "baremeDocument">, ligne: T | null): Promise<(Omit<T, "risque"> & RisqueDuDocument) | null> {
+/**
+ * Calcul figé d'une cotation, d'une police ou d'une facture avec le détail de ses lignes (H173) : `code` de chaque garantie et `composantes`
+ * souscrites. Un calcul fait depuis leur conservation les porte déjà ; un calcul antérieur les voit RECONSTITUER par le recalcul du barème figé sur la
+ * saisie figée (même méthode que D54 / D55), à condition que le recalcul retombe sur les lignes figées. Calcul pur, rien n'est écrit ; impossible, le
+ * calcul est rendu tel quel (les lignes s'affichent sans détail).
+ */
+export async function calculAvecDetail<T>(client: Pick<Client, "baremeDocument" | "produitVersion">, donneesCalcul: T): Promise<T> {
+  if (!estCompositionBareme(donneesCalcul) || aDejaLeDetail(donneesCalcul.lignes)) return donneesCalcul;
+  const bareme = await baremeFigeDuCalcul(client, donneesCalcul);
+  if (!bareme) return donneesCalcul;
+  const version = await client.produitVersion.findUnique({ where: { id: donneesCalcul.bareme.versionId }, select: { prorataActif: true } });
+  if (!version) return donneesCalcul;
+  return compositionAvecDetail(donneesCalcul, bareme, { actif: version.prorataActif });
+}
+
+/**
+ * Une cotation ou une police chargée, avec `risque` (libellés) et `risqueCode` (codes) complétés pour le document, et le détail des garanties dans
+ * `donneesCalcul` (en mémoire seulement) ; `null` reste `null`.
+ */
+export async function avecRisqueDuDocument<T extends { risque: unknown; donneesCalcul: unknown }>(
+  client: Pick<Client, "baremeDocument" | "produitVersion">,
+  ligne: T | null,
+): Promise<(Omit<T, "risque"> & RisqueDuDocument) | null> {
   if (!ligne) return null;
   const { risque, risqueCode } = await risqueDuDocument(client, ligne.risque, ligne.donneesCalcul);
-  return { ...ligne, risque, risqueCode };
+  return { ...ligne, risque, risqueCode, donneesCalcul: await calculAvecDetail(client, ligne.donneesCalcul) };
+}
+
+/** Codes des garanties de tous les barèmes publiés d'un produit (D61) : clés attendues de ses sous-modèles `bloc("garanties", g.code)` ; vide sans barème publié. */
+export async function codesGarantiesDuProduit(client: Pick<Client, "baremeDocument">, produitId: number): Promise<Set<string>> {
+  const lignes = await client.baremeDocument.findMany({ where: { statut: "PUBLIE", version: { produitId } }, select: { contenu: true } });
+  return new Set(lignes.flatMap((l) => lireBareme(l.contenu).garanties.map((g) => g.code)));
+}
+
+/** `garanties_souscrites` fictives du barème d'un produit pour l'aperçu d'un modèle (D61) ; `null` si le produit n'a pas de barème. */
+export async function garantiesExempleDuProduit(client: Pick<Client, "baremeDocument">, produitId: number, jour: DateIso): Promise<Record<string, unknown>[] | null> {
+  const bareme = await baremePourApercu(client, produitId, jour);
+  return bareme ? garantiesExempleDuBareme(bareme) : null;
 }

@@ -222,6 +222,26 @@ FIXTURES: dict[str, bytes] = {
         *(c.replace("taxe ({{ prime.taux_taxe | pct }}) ", "taxe ") for c in CLAUSES_FINALES_CP),
         police="Calibri",
     ),
+    # Une CP par garantie (D61) : la CP générale insère, pour chaque garantie souscrite, le sous-modèle publié de la garantie (nom « garanties »,
+    # clé = code de la garantie) à cet endroit, dans l'ordre des garanties.
+    "cp_garanties_par_garantie_test.docx": document(
+        *IDENTIFICATION_CP,
+        "Détail des garanties souscrites :",
+        "{%p for g in garanties_souscrites %}",
+        '{{ bloc("garanties", g.code) }}',
+        "{%p endfor %}",
+        *(c.replace("taxe ({{ prime.taux_taxe | pct }}) ", "taxe ") for c in CLAUSES_FINALES_CP),
+        police="Calibri",
+    ),
+    # Sous-modèle INVENTÉ d'une garantie : « garantie » est la ligne courante, le reste des données du document reste visible (souscripteur, police).
+    "garantie_sous_modele_test.docx": document(
+        "GARANTIE {{ garantie.libelle }} (code {{ garantie.code }}) – police {{ police.numero }} – {{ souscripteur.raison_sociale }}",
+        "Montant garanti : {{ garantie.montant_garanti | montant }} F CFA ; prime nette : {{ garantie.prime_nette | montant }} F CFA ; TTC : {{ garantie.ttc | montant }} F CFA",
+        "{%p for c in garantie.composantes %}",
+        "Composante {{ c.libelle }} : garanti {{ c.montant_garanti | montant }} F CFA ; prime nette {{ c.prime_nette | montant }} F CFA",
+        "{%p endfor %}",
+        police="Calibri",
+    ),
     "cotation_garanties_test.docx": document(
         "COTATION n° {{ doc.numero }} ({{ doc.version }}) – {{ produit.libelle }}",
         "Souscripteur : {% if souscripteur.type == 'MORALE' %}{{ souscripteur.raison_sociale }}{% else %}{{ souscripteur.nom }} {{ souscripteur.prenoms }}{% endif %}",

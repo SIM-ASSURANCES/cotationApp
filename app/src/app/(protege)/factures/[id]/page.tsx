@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { AvertissementsReports } from "@/composants/AvertissementsReports";
 import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
+import { composantesAMontrer, libelleSousLigne, montantSousLigne } from "@/composants/bareme/sousLignes";
 import { LignesComposition } from "@/composants/LignesComposition";
 import { Bandeau, Carte, Champ as ChampSaisie, EnTetePage, ListeDefinitions, ListeDeroulante, PastilleStatut, Tableau, type ColonneTableau, type ElementDefinition } from "@/composants/ui";
 import { formaterDate } from "@/domaine/calcul/dates";
@@ -20,7 +21,7 @@ const f = (m: string) => formaterMontant(montant(m));
 
 /** Ligne des tableaux de montants : les lignes de détail, puis une ligne « Total » (en gras, sans zébrure propre). */
 type LigneMontant = { cle: string; total: boolean };
-type LigneGarantie = LigneMontant & { libelle: string; branche: string; montantGaranti: string; nette: string; accessoires: string; taux: string; taxe: string; ttc: string };
+type LigneGarantie = LigneMontant & { sous?: boolean; libelle: string; branche: string; montantGaranti: string; nette: string; accessoires: string; taux: string; taxe: string; ttc: string };
 type LigneFormule = LigneMontant & { libelle: string; effectif: number | null; nette: string; accessoires: string; taxe: string; ttc: string };
 
 /** Contenu d'une cellule de tableau de montants : en gras sur la ligne « Total ». */
@@ -72,28 +73,44 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
   ];
 
   const modeGaranties = Boolean(c.garanties && c.garanties.length > 0);
-  const lignesGaranties: LigneGarantie[] = (c.garanties ?? []).map((g, i) => ({
-    cle: `g${i}`,
-    total: false,
-    libelle: g.libelle,
-    branche: g.branche,
-    montantGaranti: g.montantGaranti != null ? f(g.montantGaranti) : "—",
-    nette: g.nette,
-    accessoires: g.accessoires,
-    taux: `${montant(g.tauxTaxe).toString().replace(".", ",")} %`,
-    taxe: g.taxe,
-    ttc: g.ttc,
-  }));
+  const lignesGaranties: LigneGarantie[] = (c.garanties ?? []).flatMap((g, i): LigneGarantie[] => [
+    {
+      cle: `g${i}`,
+      total: false,
+      libelle: g.libelle,
+      branche: g.branche,
+      montantGaranti: g.montantGaranti != null ? f(g.montantGaranti) : "—",
+      nette: g.nette,
+      accessoires: g.accessoires,
+      taux: `${montant(g.tauxTaxe).toString().replace(".", ",")} %`,
+      taxe: g.taxe,
+      ttc: g.ttc,
+    },
+    // H173 : sous la ligne d'une garantie à plusieurs composantes, une sous-ligne par composante (sans accessoires ni taxe : ils restent sur la ligne).
+    ...composantesAMontrer(g.composantes).map((comp): LigneGarantie => ({
+      cle: `g${i}-${comp.code}`,
+      total: false,
+      sous: true,
+      libelle: comp.libelle,
+      branche: "",
+      montantGaranti: f(comp.montantGaranti),
+      nette: comp.primeNette,
+      accessoires: "",
+      taux: "",
+      taxe: "",
+      ttc: "",
+    })),
+  ]);
   if (modeGaranties) lignesGaranties.push({ cle: "total", total: true, libelle: "Total", branche: "", montantGaranti: "", nette: c.totaux.nette, accessoires: c.totaux.accessoires, taux: "", taxe: c.totaux.taxe, ttc: c.totaux.ttc });
   const colonnesGaranties: ColonneTableau<LigneGarantie>[] = [
-    { cle: "garantie", entete: "Garantie", rendu: (l) => cellule(l, l.libelle) },
+    { cle: "garantie", entete: "Garantie", rendu: (l) => (l.sous ? libelleSousLigne(l.libelle) : cellule(l, l.libelle)) },
     { cle: "branche", entete: "Catégorie de taxe", rendu: (l) => cellule(l, l.branche) },
-    { cle: "montantGaranti", entete: "Montant garanti", alignement: "droite", rendu: (l) => cellule(l, l.montantGaranti) },
-    { cle: "nette", entete: "Prime nette (HT)", alignement: "droite", rendu: (l) => cellule(l, f(l.nette)) },
-    { cle: "accessoires", entete: "Accessoires", alignement: "droite", rendu: (l) => cellule(l, f(l.accessoires)) },
+    { cle: "montantGaranti", entete: "Montant garanti", alignement: "droite", rendu: (l) => (l.sous ? montantSousLigne(l.montantGaranti) : cellule(l, l.montantGaranti)) },
+    { cle: "nette", entete: "Prime nette (HT)", alignement: "droite", rendu: (l) => (l.sous ? montantSousLigne(f(l.nette)) : cellule(l, f(l.nette))) },
+    { cle: "accessoires", entete: "Accessoires", alignement: "droite", rendu: (l) => (l.sous ? null : cellule(l, f(l.accessoires))) },
     { cle: "taux", entete: "Taux", alignement: "droite", rendu: (l) => cellule(l, l.taux) },
-    { cle: "taxe", entete: "Taxe", alignement: "droite", rendu: (l) => cellule(l, f(l.taxe)) },
-    { cle: "ttc", entete: "TTC", alignement: "droite", rendu: (l) => cellule(l, f(l.ttc)) },
+    { cle: "taxe", entete: "Taxe", alignement: "droite", rendu: (l) => (l.sous ? null : cellule(l, f(l.taxe))) },
+    { cle: "ttc", entete: "TTC", alignement: "droite", rendu: (l) => (l.sous ? null : cellule(l, f(l.ttc))) },
   ];
 
   const lignesFormules: LigneFormule[] = [

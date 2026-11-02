@@ -154,6 +154,14 @@ async function publierSousModele(cle: string, contenu = `sous-modèle inventé $
   return { id, ...r };
 }
 
+/** Publie, pour le produit, le sous-modèle de chaque garantie du barème qui n'en a pas encore (idempotent : les tests se suivent sur le même produit). */
+async function assurerSousModeles(): Promise<void> {
+  for (const code of GARANTIES) {
+    const existant = await obtenirPrisma().modele.findFirst({ where: { type: "SOUS_MODELE", blocNom: "garanties", blocCle: code, produit: { code: codeSecurpro } } });
+    if (!existant) await publierSousModele(code);
+  }
+}
+
 const souscripteur: Souscripteur = {
   type: "MORALE",
   nom: "",
@@ -370,25 +378,6 @@ describe("A. Composantes figées avec la cotation au barème", () => {
     expect(c.composition!.lignes.every((l) => l.composantes === undefined)).toBe(true);
     expect(c.composition!.lignes).toHaveLength(6);
   });
-
-  it("facture à l'écran : les composantes de la facture d'une cotation neuve sont figées, celles d'une facture antérieure sont reconstituées", async () => {
-    const { cotationId, police } = await nouvellePolice(await entrees(false));
-    const factureId = await creerFactureAffaireNouvelle(gestionnaire, police.id, null, null);
-    const f = (await lireFacture(gestionnaire, factureId))!;
-    expect(f.contenu.garanties![1].composantes!.map((c) => c.code)).toEqual(["contenu", "caisse"]);
-    expect(f.ttc).toBe("139420");
-
-    // Facture antérieure : ni code ni composantes dans son contenu, ni dans sa composition figée.
-    await contournerLesDeclencheurs(
-      `UPDATE factures SET contenu = jsonb_set(jsonb_set(contenu, '{garanties}', (SELECT jsonb_agg(g - 'code' - 'composantes') FROM jsonb_array_elements(contenu->'garanties') g)), '{entree,lignes}', (SELECT jsonb_agg(l - 'code' - 'composantes') FROM jsonb_array_elements(contenu->'entree'->'lignes') l)) WHERE id = ${factureId}`,
-    );
-    const brut = (await obtenirPrisma().facture.findUniqueOrThrow({ where: { id: factureId } })).contenu as unknown as { garanties: { composantes?: unknown }[] };
-    expect(brut.garanties.every((g) => g.composantes === undefined)).toBe(true);
-    const relue = (await lireFacture(gestionnaire, factureId))!;
-    expect(relue.contenu.garanties![1].composantes).toEqual(f.contenu.garanties![1].composantes);
-    expect(relue.contenu.garanties![0].code).toBe("incendie");
-    void cotationId;
-  });
 });
 
 describe("B. Une CP par garantie, incluse dans la CP générale", () => {
@@ -471,7 +460,8 @@ describe("B. Une CP par garantie, incluse dans la CP générale", () => {
   });
 
   it("le sous-modèle du produit l'emporte sur le sous-modèle commun de même clé", async () => {
-    await publierSousModele("vol", "sous-modèle COMMUN inventé vol", null);
+    // Idempotent : la base de test peut servir à plusieurs lancements du fichier.
+    if (!(await obtenirPrisma().modele.findFirst({ where: { type: "SOUS_MODELE", blocNom: "garanties", blocCle: "vol", produitId: null } }))) await publierSousModele("vol", "sous-modèle COMMUN inventé vol", null);
     const { cotationId } = await nouvellePolice(await entrees(false));
     await emettreCp(technique, cotationId, null);
     expect(new TextDecoder().decode(derniereDemande("CP").sousModeles!.garanties.vol)).toBe("sous-modèle inventé vol");
@@ -480,12 +470,9 @@ describe("B. Une CP par garantie, incluse dans la CP générale", () => {
 
 describe("B. Contrôles au dépôt et aperçu", () => {
   it("dépôt d'une CP dont toutes les garanties du barème ont un sous-modèle publié : aucun avertissement de garantie", async () => {
-    for (const code of GARANTIES) {
-      const publie = await obtenirPrisma().modele.findFirst({ where: { type: "SOUS_MODELE", blocNom: "garanties", blocCle: code, produit: { code: codeSecurpro } } });
-      if (!publie) await publierSousModele(code);
-    }
+    await assurerSousModeles();
     prochaineAnalyse = analyse(CONTENU_CP, { blocs: BLOC_DE_GARANTIE });
-    const r = await deposerVersion(technique, modeleCpId, { fichier: texte("cp2"), nomFichier: "cp2.docx", commentaire: "", dateEffet: ajouterJours(aujourdhui(), 2), visa: null, dateDocument: null }, null);
+    const r = await deposerVersion(technique, modeleCpId, { fichier: texte("cp2"), nomFichier: "cp2.docx", commentaire: "Version inventée", dateEffet: ajouterJours(aujourdhui(), 2), visa: null, dateDocument: null }, null);
     expect(r.avertissements.filter((a) => a.message.includes("sous-modèle publié"))).toEqual([]);
   });
 
@@ -517,7 +504,7 @@ describe("B. Contrôles au dépôt et aperçu", () => {
 
     const cp = await creerModele(technique, { type: "CP", code: CODE("CP_BIS"), libelle: "CP bis", produitCode: code, ...sans }, null);
     prochaineAnalyse = analyse(CONTENU_CP, { blocs: BLOC_DE_GARANTIE });
-    const depot = await deposerVersion(technique, cp, { fichier: texte("cp"), nomFichier: "cp.docx", commentaire: "", dateEffet: aujourdhui(), visa: null, dateDocument: null }, null);
+    const depot = await deposerVersion(technique, cp, { fichier: texte("cp"), nomFichier: "cp.docx", commentaire: "Version inventée", dateEffet: aujourdhui(), visa: null, dateDocument: null }, null);
     const manquantes = depot.avertissements.filter((a) => a.message.includes("n'a pas de sous-modèle publié"));
     // Aucun sous-modèle propre à ce produit : toutes les garanties sont nommées, sauf celles qu'un sous-modèle COMMUN publié couvrirait (« vol », plus haut).
     const noms = manquantes.map((a) => /garantie « (\w+) »/.exec(a.message)![1]);
@@ -527,16 +514,18 @@ describe("B. Contrôles au dépôt et aperçu", () => {
     // Un sous-modèle dont la clé n'est pas une garantie du barème : avertissement.
     const inconnu = await creerModele(technique, { type: "SOUS_MODELE", code: CODE("SM_X"), libelle: "Garantie fantôme", produitCode: code, niveauRelance: null, listeAnnexe: null, blocNom: "garanties", blocCle: "fantome" }, null);
     prochaineAnalyse = analyse(["garantie.libelle"]);
-    const d2 = await deposerVersion(technique, inconnu, { fichier: texte("x"), nomFichier: "x.docx", commentaire: "", dateEffet: aujourdhui(), visa: null, dateDocument: null }, null);
+    const d2 = await deposerVersion(technique, inconnu, { fichier: texte("x"), nomFichier: "x.docx", commentaire: "Version inventée", dateEffet: aujourdhui(), visa: null, dateDocument: null }, null);
     expect(d2.avertissements.map((a) => a.message).join(" ")).toContain("« fantome » : ce n'est le code d'aucune garantie du barème");
   });
 
   it("garantie.* est refusé dans une CP au dépôt, accepté dans un sous-modèle « garanties »", async () => {
     prochaineAnalyse = analyse([...CONTENU_CP, "garantie.libelle"], { blocs: BLOC_DE_GARANTIE });
-    await expect(deposerVersion(technique, modeleCpId, { fichier: texte("cp3"), nomFichier: "cp3.docx", commentaire: "", dateEffet: aujourdhui(), visa: null, dateDocument: null }, null)).rejects.toThrow(/garantie\.libelle/);
+    const refus = (await deposerVersion(technique, modeleCpId, { fichier: texte("cp3"), nomFichier: "cp3.docx", commentaire: "Version inventée", dateEffet: aujourdhui(), visa: null, dateDocument: null }, null).catch((x) => x)) as ErreurMetier;
+    expect(refus).toBeInstanceOf(ErreurMetier);
+    expect((refus.details ?? []).join(" ")).toContain("garantie.libelle");
   });
 
-  it("aperçu de la CP : une ligne par garantie du barème (vrais codes), les sous-modèles étant ceux de la dernière version déposée", async () => {
+  it("aperçu de la CP : une ligne par garantie du barème (vrais codes), les sous-modèles retenus comme pour tout aperçu", async () => {
     const v = await obtenirPrisma().modeleVersion.findFirstOrThrow({ where: { modeleId: modeleCpId }, orderBy: { numero: "asc" } });
     await apercuVersion(technique, v.id, { nombreAssures: 2 }, null);
     const demande = demandes[demandes.length - 1];
@@ -544,7 +533,31 @@ describe("B. Contrôles au dépôt et aperçu", () => {
     expect(lignes.map((l) => l.code)).toEqual(GARANTIES);
     expect(lignes[1].composantes.map((c) => c.code)).toEqual(["contenu", "caisse"]);
     expect(Object.keys(demande.sousModeles!.garanties)).toEqual(expect.arrayContaining(GARANTIES));
-    // La dernière version déposée du sous-modèle « vol » (v2, publiée à une date à venir) sert à l'aperçu.
-    expect(new TextDecoder().decode(demande.sousModeles!.garanties.vol)).toBe("sous-modèle inventé vol v2");
+    // Comme aujourd'hui : la version en vigueur de chaque sous-modèle (v1 du « vol » ; la v2 n'entre en vigueur que demain), à défaut la plus récente déposée.
+    expect(new TextDecoder().decode(demande.sousModeles!.garanties.vol)).toBe("sous-modèle inventé vol");
+  });
+});
+
+describe("A. Facture à l'écran (après la publication des sous-modèles : la facture suit les CP, H48)", () => {
+  it("facture à l'écran : les composantes de la facture d'une cotation neuve sont figées, celles d'une facture antérieure sont reconstituées", async () => {
+    const { cotationId, police } = await nouvellePolice(await entrees(false));
+    // La facture d'affaire nouvelle suit les CP (H48) : leurs sous-modèles sont publiés d'abord.
+    await assurerSousModeles();
+    await emettreCp(technique, cotationId, null);
+    const factureId = await creerFactureAffaireNouvelle(gestionnaire, police.id, null, null);
+    const f = (await lireFacture(gestionnaire, factureId))!;
+    expect(f.contenu.garanties![1].composantes!.map((c) => c.code)).toEqual(["contenu", "caisse"]);
+    expect(f.ttc).toBe("139420");
+
+    // Facture antérieure : ni code ni composantes dans son contenu, ni dans sa composition figée.
+    await contournerLesDeclencheurs(
+      `UPDATE factures SET contenu = jsonb_set(jsonb_set(contenu, '{garanties}', (SELECT jsonb_agg(g - 'code' - 'composantes') FROM jsonb_array_elements(contenu->'garanties') g)), '{entree,lignes}', (SELECT jsonb_agg(l - 'code' - 'composantes') FROM jsonb_array_elements(contenu->'entree'->'lignes') l)) WHERE id = ${factureId}`,
+    );
+    const brut = (await obtenirPrisma().facture.findUniqueOrThrow({ where: { id: factureId } })).contenu as unknown as { garanties: { composantes?: unknown }[] };
+    expect(brut.garanties.every((g) => g.composantes === undefined)).toBe(true);
+    const relue = (await lireFacture(gestionnaire, factureId))!;
+    expect(relue.contenu.garanties![1].composantes).toEqual(f.contenu.garanties![1].composantes);
+    expect(relue.contenu.garanties![0].code).toBe("incendie");
+    void cotationId;
   });
 });

@@ -532,7 +532,7 @@ export async function emettreCotation(acteur: UtilisateurCourant, cotationId: nu
   const contexte = await contexteProduit(c.produitId, c.versionDateEffet);
   const modele = await modeleEnVigueur("COTATION", c.produitId, c.produit.code, date, c.donneesCalcul as unknown as DonneesCalcul);
   const associes = await modelesAssocies(c.produitId, date, false);
-  exigerSousModelesDesGaranties("cotation", modele.blocs, montantsDu(c.donneesCalcul as unknown as DonneesCalcul, contexte).garanties, associes.sousModeles);
+  if ((modele.blocs ?? []).some((b) => b.nom === "garanties")) exigerSousModelesDesGaranties("cotation", modele.blocs, montantsDu(c.donneesCalcul as unknown as DonneesCalcul, contexte).garanties, associes.sousModeles);
   const commun = await sourceCommune(contexte, date);
   const citees = await citationsCotation(contexte, date);
   const numero = c.numero;

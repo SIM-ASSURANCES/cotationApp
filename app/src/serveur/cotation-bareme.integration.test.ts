@@ -371,6 +371,25 @@ describe("Session B6a : cotation SECURPRO au barème (inventé), de bout en bout
     expect(await obtenirPrisma().cotation.count()).toBe(avant);
   });
 
+  it("calcul automatique (D62) : le serveur reste la seule source ; la réponse au Commercial ne porte que les lignes, aucun taux ni table du barème ; appels répétés identiques", async () => {
+    const essai = (await lireBaremePublie(obtenirPrisma(), versionId)).bareme.jeuxEssai[0];
+    const base = demandeCalcul(essai.entrees);
+    const avant = await obtenirPrisma().cotation.count();
+    const r = await calculerCotationBareme(commercial, base);
+    // Forme stricte de la réponse : empreinte, lignes, totaux ; chaque ligne n'a que des libellés et des montants arrondis.
+    expect(Object.keys(r).sort()).toEqual(["empreinte", "lignes", "totaux"]);
+    for (const l of r.lignes) expect(Object.keys(l).sort()).toEqual(["accessoires", "branche", "libelle", "montantGaranti", "nette", "taxe", "ttc"]);
+    expect(Object.keys(r.totaux).sort()).toEqual(["accessoires", "nette", "taxe", "ttc"]);
+    const json = JSON.stringify(r);
+    for (const secret of ["taux_incendie", "secu_incendie", "coef_vol", "limites", "0.864", "1.24416", "PCT_PLAFOND", "capitaux_totaux", "assiette", "tables", "sousJacents"]) expect(json, secret).not.toContain(secret);
+    // Le calcul se déclenche à chaque modification : chaque appel est indépendant, sans état gardé ni écriture.
+    const modifie = { ...base, baremeBrut: { ...base.baremeBrut, champs: { ...base.baremeBrut.champs, stocks: ["6000000"] } } };
+    const autre = await calculerCotationBareme(commercial, modifie);
+    expect(autre.totaux.ttc).not.toBe(r.totaux.ttc);
+    expect(await calculerCotationBareme(commercial, base)).toEqual(r);
+    expect(await obtenirPrisma().cotation.count()).toBe(avant);
+  });
+
   it("refus E4 : le message de la Technique, rien n'est créé ; aucun secours par composition manuelle (Q3, réponse A)", async () => {
     const essais = (await lireBaremePublie(obtenirPrisma(), versionId)).bareme.jeuxEssai;
     const refuse = essais[2];

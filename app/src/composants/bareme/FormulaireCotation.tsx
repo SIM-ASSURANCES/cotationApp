@@ -1,10 +1,10 @@
 "use client";
 
-import { useRef, useState, type ChangeEvent, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 
 import { ChampDate } from "@/composants/FormulaireAction";
 import { Carte, Champ, ListeDeroulante } from "@/composants/ui";
-import { champActif, etatDepuisSaisie, garantieSouscrite, type DescripteurChamp, type DescripteurSaisie, type EtatSaisie } from "@/domaine/bareme/formulaire";
+import { ancrageDesChamps, champActif, etatDepuisSaisie, garantieSouscrite, type DescripteurChamp, type DescripteurSaisie, type EtatSaisie } from "@/domaine/bareme/formulaire";
 import type { ConditionAffichage, Saisie } from "@/domaine/bareme/schema";
 
 const SANS_BLOC = "__sans_bloc__";
@@ -40,6 +40,9 @@ export function FormulaireCotation({
 }) {
   const [saisie, setSaisie] = useState<EtatSaisie>(() => etatDepuisSaisie(initiale));
   const racine = useRef<HTMLDivElement>(null);
+  const idBase = useId();
+  // Les champs qui dépendent d'une garantie s'affichent sous sa case ; les autres restent dans leur bloc.
+  const { parCase, dansBloc } = useMemo(() => ancrageDesChamps(descripteur), [descripteur]);
 
   // Un changement d'un champ relit les champs du barème visibles ; ceux qui sont masqués gardent leur valeur.
   const aChange = (e: ChangeEvent<HTMLElement>) => {
@@ -56,20 +59,39 @@ export function FormulaireCotation({
     onChangeSaisie?.({ etat, effectif: lire("effectif")[0] ?? "" });
   };
 
-  const blocs = [...descripteur.blocs.map((b) => ({ code: b.code, libelle: b.libelle })), ...(descripteur.champs.some((c) => !c.bloc) ? [{ code: SANS_BLOC, libelle: "Risque" }] : [])];
+  const blocs = [...descripteur.blocs.map((b) => ({ code: b.code, libelle: b.libelle })), ...(dansBloc.some((c) => !c.bloc) ? [{ code: SANS_BLOC, libelle: "Risque" }] : [])];
+
+  /** Les champs d'une liste qui s'affichent (condition vraie), dans la grille des champs du barème. */
+  const rendreChamps = (champs: DescripteurChamp[]) =>
+    champs.map((c) => <ChampDuBareme key={c.code} champ={c} valeurs={saisie.champs[c.code] ?? []} condition={montrerConditions && c.si ? decrireCondition(descripteur, c.si) : undefined} />);
+  const actifs = (champs: DescripteurChamp[] | undefined) => (champs ?? []).filter((c) => champActif(descripteur, saisie, c.code));
+  const idPanneau = (cle: string) => `${idBase}-champs-${cle.replace(".", "-")}`;
+  /** Les champs d'une case, juste sous elle : même ligne visuelle, retrait et filet à gauche. Absents (non montés, donc non envoyés) quand la case est décochée. */
+  const panneau = (cle: string, titre: string, ouvert: boolean) => (
+    <div id={idPanneau(cle)} role="group" aria-label={`Champs de ${titre}`} hidden={!ouvert} className="mt-1 mb-2 ml-2 min-w-0 border-l-2 border-border pl-3 sm:ml-6 sm:pl-4">
+      {ouvert ? <div className="grid max-w-3xl gap-x-6 gap-y-1 sm:grid-cols-2 [&>*]:min-w-0">{rendreChamps(actifs(parCase.get(cle)))}</div> : null}
+    </div>
+  );
+  /** Une case de souscription avec, dessous, ses champs propres. */
+  const caseAvecChamps = (cle: string, libelle: string, titre: string) => {
+    const cochee = saisie.souscrit.includes(cle);
+    const aDesChamps = parCase.has(cle);
+    return (
+      <div key={cle}>
+        <Case nom="souscrit" valeur={cle} cochee={cochee} libelle={libelle} {...(aDesChamps ? { ouvert: cochee, controle: idPanneau(cle) } : {})} />
+        {aDesChamps ? panneau(cle, titre, cochee && actifs(parCase.get(cle)).length > 0) : null}
+      </div>
+    );
+  };
 
   return (
-    <div ref={racine} className="space-y-6" onChange={aChange}>
+    <div ref={racine} data-formulaire-bareme className="space-y-6" onChange={aChange}>
       {blocs.map((bloc) => {
-        const champs = descripteur.champs.filter((c) => (c.bloc ?? SANS_BLOC) === bloc.code && champActif(descripteur, saisie, c.code));
+        const champs = dansBloc.filter((c) => (c.bloc ?? SANS_BLOC) === bloc.code && champActif(descripteur, saisie, c.code));
         if (champs.length === 0) return null;
         return (
           <Carte key={bloc.code} titre={bloc.libelle}>
-            <div className="grid max-w-4xl gap-x-6 gap-y-1 sm:grid-cols-2">
-              {champs.map((c) => (
-                <ChampDuBareme key={c.code} champ={c} valeurs={saisie.champs[c.code] ?? []} condition={montrerConditions && c.si ? decrireCondition(descripteur, c.si) : undefined} />
-              ))}
-            </div>
+            <div className="grid max-w-4xl gap-x-6 gap-y-1 sm:grid-cols-2">{rendreChamps(champs)}</div>
           </Carte>
         );
       })}
@@ -79,6 +101,10 @@ export function FormulaireCotation({
           {descripteur.garanties.map((g) => {
             const optionnelles = g.composantes.filter((c) => c.optionnelle);
             const souscrite = garantieSouscrite(descripteur, saisie, g.code);
+            // Champs d'une clé qui n'a pas de case (garantie obligatoire ou « selon une condition », garantie à composantes optionnelles
+            // dont la condition vise la garantie entière) : sous le titre de la garantie, une fois souscrite.
+            const clesAvecCase = new Set(g.souscription === "OPTIONNELLE" && optionnelles.length === 0 ? [g.code] : optionnelles.map((c) => `${g.code}.${c.code}`));
+            const sansCase = actifs([g.code, ...g.composantes.map((c) => `${g.code}.${c.code}`)].filter((k) => !clesAvecCase.has(k)).flatMap((k) => parCase.get(k) ?? []));
             return (
               <div key={g.code}>
                 <p className="font-medium">
@@ -89,19 +115,10 @@ export function FormulaireCotation({
                 </p>
                 {g.definition ? <p className="text-sm text-muted-foreground">{g.definition}</p> : null}
                 {montrerConditions && g.si ? <p className="text-sm text-muted-foreground">Incluse si {decrireCondition(descripteur, g.si)}.</p> : null}
-                {g.souscription === "OPTIONNELLE" && optionnelles.length === 0 ? (
-                  <Case nom="souscrit" valeur={g.code} cochee={saisie.souscrit.includes(g.code)} libelle={`Souscrire ${g.nom}`} />
-                ) : (
-                  optionnelles.map((c) => (
-                    <Case
-                      key={c.code}
-                      nom="souscrit"
-                      valeur={`${g.code}.${c.code}`}
-                      cochee={saisie.souscrit.includes(`${g.code}.${c.code}`)}
-                      libelle={g.composantes.length > 1 ? `${g.nom} : ${c.code}` : `Souscrire ${g.nom}`}
-                    />
-                  ))
-                )}
+                {g.souscription === "OPTIONNELLE" && optionnelles.length === 0
+                  ? caseAvecChamps(g.code, `Souscrire ${g.nom}`, g.nom)
+                  : optionnelles.map((c) => caseAvecChamps(`${g.code}.${c.code}`, g.composantes.length > 1 ? `${g.nom} : ${c.code}` : `Souscrire ${g.nom}`, g.composantes.length > 1 ? `${g.nom} : ${c.code}` : g.nom))}
+                {sansCase.length > 0 ? <div className="mt-1 grid max-w-3xl gap-x-6 gap-y-1 sm:grid-cols-2 [&>*]:min-w-0">{rendreChamps(sansCase)}</div> : null}
               </div>
             );
           })}
@@ -134,10 +151,11 @@ export function decrireCondition(d: DescripteurSaisie, si: ConditionAffichage): 
   return `« ${champ?.libelle ?? si.champ} » ${"egal" in si ? "vaut" : "ne vaut pas"} « ${libelle} »`;
 }
 
-function Case({ nom, valeur, cochee, libelle }: { nom: string; valeur: string; cochee: boolean; libelle: string }) {
+/** `ouvert` et `controle` : la case a des champs propres sous elle (aria-expanded, aria-controls). */
+function Case({ nom, valeur, cochee, libelle, ouvert, controle }: { nom: string; valeur: string; cochee: boolean; libelle: string; ouvert?: boolean; controle?: string }) {
   return (
     <label className="flex min-h-10 items-center gap-2 text-sm font-medium lg:min-h-0">
-      <input type="checkbox" name={nom} value={valeur} defaultChecked={cochee} className="size-4 accent-primary" /> {libelle}
+      <input type="checkbox" name={nom} value={valeur} defaultChecked={cochee} className="size-4 accent-primary" {...(controle ? { "aria-expanded": ouvert === true, "aria-controls": controle } : {})} /> {libelle}
     </label>
   );
 }

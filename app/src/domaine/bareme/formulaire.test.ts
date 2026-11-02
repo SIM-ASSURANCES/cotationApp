@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { versionsProvisoiresSansBareme } from "../calcul/parametrage";
 import { Contexte } from "./contexte";
-import { champActif, composanteSouscrite, descripteurSaisie, etatDepuisSaisie, garantieSouscrite, saisieDepuisFormulaire, type EtatSaisie } from "./formulaire";
+import { ancrageDesChamps, champActif, champsManquants, composanteSouscrite, descripteurSaisie, etatDepuisSaisie, garantieSouscrite, saisieDepuisFormulaire, type EtatSaisie } from "./formulaire";
 import { baremeSecurpro } from "./securpro-fixture";
 
 const b = baremeSecurpro();
@@ -106,5 +106,75 @@ describe("alerte H140 : version future sans barème publié", () => {
   });
   it("une version qui prend effet aujourd'hui n'est plus « future »", () => {
     expect(versionsProvisoiresSansBareme([{ id: 1, dateEffet: "2026-11-01", modeTarification: "GARANTIES" }], new Set(), "2026-11-01")).toEqual([]);
+  });
+});
+
+describe("ergonomie du formulaire (D62) : ancrage des champs sous leur case", () => {
+  const { parCase, dansBloc } = ancrageDesChamps(d);
+
+  it("un champ conditionné par une garantie ou une composante se range sous la case de celle-ci", () => {
+    expect(parCase.get("vol.caisse")?.map((c) => c.code)).toEqual(["vol_caisse_montant"]);
+    expect(parCase.get("dde")?.map((c) => c.code)).toEqual(["dde_montant"]);
+    expect(parCase.get("vol.contenu")).toBeUndefined();
+  });
+
+  it("les autres champs (occupation, loyer…) restent dans leur bloc, et rien n'est perdu ni compté deux fois", () => {
+    expect(dansBloc.map((c) => c.code)).toContain("loyer_mensuel");
+    expect(dansBloc.map((c) => c.code)).not.toContain("dde_montant");
+    const tous = [...dansBloc, ...[...parCase.values()].flat()].map((c) => c.code).sort();
+    expect(tous).toEqual(d.champs.map((c) => c.code).sort());
+  });
+
+  it("un champ qui dépend d'un champ de garantie le suit ; une condition sur une garantie inconnue le laisse dans son bloc", () => {
+    const champs = [
+      ...d.champs,
+      { code: "precision", libelle: "Précision", type: "TEXTE" as const, obligatoire: false, si: { champ: "dde_montant", different: "0" } },
+      { code: "orphelin", libelle: "Orphelin", type: "TEXTE" as const, obligatoire: false, si: { souscrit: "fantome" } },
+    ];
+    const a = ancrageDesChamps({ ...d, champs });
+    expect(a.parCase.get("dde")?.map((c) => c.code)).toEqual(["dde_montant", "precision"]);
+    expect(a.dansBloc.map((c) => c.code)).toContain("orphelin");
+  });
+
+  it("l'ancrage ne change pas les conditions : le champ n'est actif que si la case est cochée", () => {
+    for (const c of parCase.get("dde") ?? []) {
+      expect(champActif(d, { champs: {}, souscrit: [] }, c.code)).toBe(false);
+      expect(champActif(d, { champs: {}, souscrit: ["dde"] }, c.code)).toBe(true);
+    }
+  });
+});
+
+describe("ergonomie du formulaire (D62) : champs obligatoires visibles manquants (déclenchent le calcul automatique ou « Complétez »)", () => {
+  const vide: EtatSaisie = { champs: {}, souscrit: [] };
+
+  it("liste les libellés des obligatoires visibles non remplis, dans l'ordre du barème", () => {
+    const manque = champsManquants(d, vide, "");
+    expect(manque.length).toBeGreaterThan(0);
+    expect(manque).toContain(d.champs.find((c) => c.code === "type_commerce")!.libelle);
+  });
+
+  it("un champ masqué par sa condition n'est jamais demandé (le loyer d'un propriétaire, le montant d'une garantie décochée)", () => {
+    const libelle = (code: string) => d.champs.find((c) => c.code === code)!.libelle;
+    const manque = champsManquants(d, { champs: { occupation: ["PROPRIETAIRE"] }, souscrit: [] }, "");
+    expect(manque).not.toContain(libelle("loyer_mensuel"));
+    expect(manque).not.toContain(libelle("dde_montant"));
+    expect(manque).toContain(libelle("valeur_batiment"));
+    // La garantie cochée rend son montant obligatoire.
+    expect(champsManquants(d, { champs: {}, souscrit: ["dde"] }, "")).toContain(libelle("dde_montant"));
+  });
+
+  it("une saisie complète ne manque de rien ; un espace seul ne compte pas pour rempli", () => {
+    const complet: EtatSaisie = { champs: {}, souscrit: [] };
+    for (const c of d.champs) complet.champs[c.code] = [c.valeurs?.[0]?.v ?? "1"];
+    complet.champs.occupation = ["LOCATAIRE"];
+    expect(champsManquants(d, complet, "")).toEqual([]);
+    expect(champsManquants(d, { ...complet, champs: { ...complet.champs, stocks: ["  "] } }, "")).toContain(d.champs.find((c) => c.code === "stocks")!.libelle);
+  });
+
+  it("l'effectif est demandé quand le barème tarife par tête", () => {
+    const parTete = { ...d, effectif: true };
+    expect(champsManquants(parTete, vide, "")).toContain("Nombre d'assurés");
+    expect(champsManquants(parTete, vide, "12")).not.toContain("Nombre d'assurés");
+    expect(champsManquants(d, vide, "")).not.toContain("Nombre d'assurés");
   });
 });

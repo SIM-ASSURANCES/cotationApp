@@ -6,7 +6,21 @@ import type { Bareme, Composante, Garantie, SousJacent } from "./schema";
 import { chercher } from "./tables";
 import { montantDeTranche } from "./tranches";
 
-export type DetailComposante = { code: string; assiette: Montant; tauxApplique: Montant; prime: Montant };
+export type DetailComposante = {
+  code: string;
+  assiette: Montant;
+  tauxApplique: Montant;
+  /** Prime exacte de la composante, avant la réduction commerciale et le prorata de la garantie. */
+  prime: Montant;
+  /** La même prime après la réduction et le prorata de la garantie (exacte, non arrondie) : ce qui s'affiche sous la ligne de la garantie. */
+  primeNette: Montant;
+};
+
+/** Libellé affiché d'une composante : son code lisible (« caisse » → « Caisse »), le barème ne portant pas de libellé de composante (H173). */
+export const libelleDeComposante = (code: string): string => {
+  const texte = code.replace(/_/g, " ").trim();
+  return texte.charAt(0).toUpperCase() + texte.slice(1);
+};
 
 export type DetailGarantie = {
   code: string;
@@ -65,7 +79,7 @@ export function calculerComposante(b: Bareme, g: Garantie, c: Composante, ctx: C
 
   if (c.parTete) prime = prime.mul(ctx.saisie.effectif ?? 1);
   if (prime.lte(0)) throw new ErreurBareme("PRIME_NULLE", `${nom} : la prime calculée est nulle, ce qui n'est jamais accepté en silence.`, undefined, g.code);
-  return { code: c.code, assiette, tauxApplique: taux, prime };
+  return { code: c.code, assiette, tauxApplique: taux, prime, primeNette: prime };
 }
 
 export type ReglesProduit = { prorata: { actif: boolean }; jours: number };
@@ -81,15 +95,21 @@ export function calculerGarantie(b: Bareme, g: Garantie, ctx: Contexte, ev: Eval
   const composantes = souscrites.map((c) => calculerComposante(b, g, c, ctx, ev));
   const primeComposantes = composantes.reduce<Montant>((s, c) => s.plus(c.prime), ZERO);
 
-  let prime = primeComposantes;
-  let reductionPourcent = ZERO;
+  // Réduction commerciale puis prorata : les mêmes opérations, dans le même ordre, pour la garantie et pour chacune de ses composantes.
+  const reductions: Montant[] = [];
   for (const s of ciblant(b, "E2", g).filter((x) => x.reduction && x.cibles.includes(g.code))) {
     const pct = valeurTable(b, s.table, ctx);
     if (pct.gte(100)) throw new ErreurBareme("REDUCTION_TOTALE", `${g.nom} : une réduction de ${pct.toString()} % annulerait la prime.`, undefined, g.code);
-    prime = prime.mul(new DecimalMontant(100).minus(pct)).div(100);
-    reductionPourcent = reductionPourcent.plus(pct);
+    reductions.push(pct);
   }
-  if (regles.prorata.actif) prime = prime.mul(Math.min(regles.jours, 365)).div(365);
+  const apresReductionEtProrata = (valeur: Montant): Montant => {
+    let v = valeur;
+    for (const pct of reductions) v = v.mul(new DecimalMontant(100).minus(pct)).div(100);
+    if (regles.prorata.actif) v = v.mul(Math.min(regles.jours, 365)).div(365);
+    return v;
+  };
+  const prime = apresReductionEtProrata(primeComposantes);
+  const reductionPourcent = reductions.reduce<Montant>((s, pct) => s.plus(pct), ZERO);
 
   const acc = g.accessoires ?? b.produit.accessoires;
   let accessoires = ZERO;
@@ -109,7 +129,7 @@ export function calculerGarantie(b: Bareme, g: Garantie, ctx: Contexte, ev: Eval
   return {
     code: g.code,
     nom: g.nom,
-    composantes,
+    composantes: composantes.map((c) => ({ ...c, primeNette: apresReductionEtProrata(c.prime) })),
     primeComposantes,
     reductionPourcent,
     primeNette: prime,

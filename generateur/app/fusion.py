@@ -330,6 +330,17 @@ class Resultat:
     annexes: list[Annexe] = field(default_factory=list)
 
 
+def _donnees_du_bloc(donnees: dict[str, Any], nom: str, cle: str) -> dict[str, Any]:
+    """Données vues par un sous-modèle : celles du document, entières, et — pour un bloc « garanties » dont la clé est le code d'une
+    garantie souscrite (`bloc("garanties", g.code)` dans une boucle sur `garanties_souscrites`) — « garantie », la ligne COURANTE de cette
+    garantie (mêmes champs que `garanties_souscrites[]`, dont ses composantes). Aucune autre donnée n'est ajoutée ni retirée."""
+    if nom == "garanties":
+        for ligne in donnees.get("garanties_souscrites") or []:
+            if isinstance(ligne, dict) and ligne.get("code") == cle:
+                return {**donnees, "garantie": ligne}
+    return donnees
+
+
 def _rendre(
     modele: bytes,
     donnees: dict[str, Any],
@@ -361,8 +372,8 @@ def _rendre(
                     # Relevé avec les données manquantes : un seul refus liste tout ce qui est à corriger.
                     releve.noter(f"sous-modèle « {nom} » introuvable pour « {cle_texte} »")
                     return ""
-                # Le sous-modèle est fusionné avec les mêmes données (sans bloc() à son tour).
-                rendu = _rendre(sous_modele, donnees, images, releve=releve, facultatifs=facultatifs)
+                # Le sous-modèle est fusionné avec les mêmes données (sans bloc() à son tour), plus « garantie » pour un bloc de garantie.
+                rendu = _rendre(sous_modele, _donnees_du_bloc(donnees, nom, cle_texte), images, releve=releve, facultatifs=facultatifs)
                 rendus[(nom, cle_texte)] = gabarit.new_subdoc(io.BytesIO(rendu))
             return rendus[(nom, cle_texte)]
 

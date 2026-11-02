@@ -1,3 +1,4 @@
+import type { ComposanteFigee } from "../calcul/composition";
 import type { DateIso } from "../calcul/dates";
 import { montant } from "../calcul/montant";
 import type { Assure, Beneficiaire, ContactUrgence, Risque, Souscripteur } from "../cotation/saisie";
@@ -41,8 +42,12 @@ export type FormuleSource = {
  * Technique, avec SON taux de taxe (résolu à la composition, figé) et ses montants arrondis par le module.
  */
 export type GarantieSource = {
+  /** Code de la garantie dans le barème (`vol`) : clé de son sous-modèle `bloc("garanties", g.code)` ; absent d'une composition manuelle. */
+  code?: string;
   libelle: string;
   branche: string;
+  /** Composantes souscrites de la garantie (barème seulement, H173) : information, les montants de la ligne sont ceux de la garantie. */
+  composantes?: ComposanteFigee[];
   /** Montant garanti (capital ou 1er risque, en FCFA, ≥ 0, D37) : facultatif (null ou absent pour une garantie sans capital). */
   montantGaranti?: string | null;
   nette: string;
@@ -234,9 +239,11 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
     garanties_souscrites: certificat
       ? NON_FOURNI
       : (s.garanties ?? []).map((g) => ({
+          code: g.code ?? null,
           libelle: g.libelle,
           branche: g.branche,
           montant_garanti: g.montantGaranti ?? null,
+          composantes: (g.composantes ?? []).map((c) => ({ code: c.code, libelle: c.libelle, montant_garanti: c.montantGaranti, prime_nette: c.primeNette })),
           prime_nette: g.nette,
           accessoires: g.accessoires,
           taux_taxe: g.tauxTaxe,

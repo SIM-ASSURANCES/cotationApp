@@ -36,7 +36,7 @@ import { obtenirConfig } from "./config";
 import { cgDeLaBranche } from "./cg-branches";
 import { niveauDuProfil } from "./droits";
 import { generateur, type ImagePng } from "./generateur";
-import { exigerDetailDesGaranties, fichiersAssocies, lireSeuilListe, modelesAssocies, versionPublieeEnVigueur, type VersionsAssociees } from "./modeles";
+import { exigerDetailDesGaranties, exigerSousModelesDesGaranties, fichiersAssocies, lireSeuilListe, modelesAssocies, versionPublieeEnVigueur, type VersionsAssociees } from "./modeles";
 import { aujourdhui, exigerBareme, exigerCalculAutomatique, exigerComposition, MESSAGE_NON_COMPOSEE } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { lireImageSociete, lireParametresSociete } from "./societe";
@@ -141,8 +141,10 @@ export function montantsDu(donnees: DonneesCalcul, contexte: ContexteProduit) {
       const baseLigne = ligne.assiette === "NETTE_ACCESSOIRES" ? l.arrondi.nette.plus(l.arrondi.accessoires) : l.arrondi.nette;
       base = base.plus(baseLigne);
       return {
+        ...(ligne.code !== undefined ? { code: ligne.code } : {}),
         libelle: ligne.libelle,
         branche: ligne.branche,
+        ...(ligne.composantes !== undefined ? { composantes: ligne.composantes } : {}),
         ...(ligne.montantGaranti !== undefined ? { montantGaranti: ligne.montantGaranti } : {}),
         nette: t(l.arrondi.nette),
         accessoires: t(l.arrondi.accessoires),
@@ -205,7 +207,7 @@ type Production = {
   dateEmission: DateIso;
   dateValidite: DateIso | null;
   parametresDate: DateIso;
-  modele: { versionId: number; fichier: Uint8Array; champs: string[] };
+  modele: { versionId: number; fichier: Uint8Array; champs: string[]; blocs?: { nom: string; cle: string | null }[] };
   associes: { annexes: Record<string, Uint8Array>; sousModeles: Record<string, Record<string, Uint8Array>>; ids: VersionsAssociees };
   pieces: { cs: { versionId: number; pdf: Uint8Array } | null; cg: { versionId: number; pdf: Uint8Array } | null };
   /** Données complètes (réédition), ou à construire avec le jeton et le numéro de version. */
@@ -386,9 +388,10 @@ async function modeleEnVigueur(type: "COTATION" | "CP" | "CERTIFICAT", produitId
   }
   const v = await obtenirPrisma().modeleVersion.findUniqueOrThrow({ where: { id: retenu.version.id }, select: { id: true, fichier: true, analyse: true } });
   const champs = ((v.analyse as { champs?: string[] }).champs ?? []) as string[];
+  const blocs = ((v.analyse as { blocs?: { nom: string; cle: string | null }[] }).blocs ?? []) as { nom: string; cle: string | null }[];
   // Produit par garanties (6.2b) : cotation et CP détaillent les garanties ; le certificat d'adhésion n'a pas de prime (H36).
   if (type !== "CERTIFICAT" && donnees !== null) exigerDetailDesGaranties(type === "CP" ? "conditions particulières" : "cotation", champs, estComposition(donnees) && donnees.lignes.length > 0);
-  return { versionId: v.id, fichier: v.fichier, champs };
+  return { versionId: v.id, fichier: v.fichier, champs, blocs };
 }
 
 type CgFigee = { versionId: number; pdf: Uint8Array; code: string; libelle: string; visa: string | null; date: DateIso | null };
@@ -529,6 +532,7 @@ export async function emettreCotation(acteur: UtilisateurCourant, cotationId: nu
   const contexte = await contexteProduit(c.produitId, c.versionDateEffet);
   const modele = await modeleEnVigueur("COTATION", c.produitId, c.produit.code, date, c.donneesCalcul as unknown as DonneesCalcul);
   const associes = await modelesAssocies(c.produitId, date, false);
+  if ((modele.blocs ?? []).some((b) => b.nom === "garanties")) exigerSousModelesDesGaranties("cotation", modele.blocs, montantsDu(c.donneesCalcul as unknown as DonneesCalcul, contexte).garanties, associes.sousModeles);
   const commun = await sourceCommune(contexte, date);
   const citees = await citationsCotation(contexte, date);
   const numero = c.numero;
@@ -619,6 +623,8 @@ async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<
   const commun = await sourceCommune(contexte, date);
   const pieces = await piecesContractuelles(contexte, date, true, await cgFigeeDeLaPolice(police.id));
   const m = montantsDu(police.donneesCalcul as unknown as DonneesCalcul, contexte);
+  // Une CP par garantie (D61) : un sous-modèle publié par garantie souscrite, sinon refus nommé, avant toute production.
+  exigerSousModelesDesGaranties("conditions particulières", modele.blocs, m.garanties, associes.sousModeles);
   const groupe = estContratDeGroupe(police.typeContrat);
   const source = (version: number, url: string): SourceDocument => ({
     type: "CP",

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { creerCalculDiffere, DELAI_CALCUL_MS } from "@/composants/bareme/calculDiffere";
 import { FormulaireCotation, type ChangementSaisie } from "@/composants/bareme/FormulaireCotation";
+import { composantesAMontrer, libelleSousLigne, montantSousLigne } from "@/composants/bareme/sousLignes";
 import { Bandeau, Bouton, Carte, Tableau } from "@/composants/ui";
 import { champsManquants, etatDepuisSaisie, type DescripteurSaisie } from "@/domaine/bareme/formulaire";
 import type { Saisie } from "@/domaine/bareme/schema";
@@ -130,15 +131,22 @@ export function ChampsBareme({ descripteur, initiale }: { descripteur: Descripte
               <div aria-live="polite" aria-busy={attente} className={attente ? "opacity-60" : undefined}>
                 <Tableau
                   legende="Primes calculées au barème"
-                  lignes={[...etat.resultat.lignes.map((l, i) => ({ cle: String(i), ...l })), { cle: "TOTAL", libelle: "Total", branche: "", montantGaranti: null, ...etat.resultat.totaux }]}
+                  lignes={[
+                    ...etat.resultat.lignes.flatMap((l, i) => [
+                      { sous: false, cle: String(i), ...l },
+                      // H173 : sous la ligne d'une garantie à plusieurs composantes, une sous-ligne par composante (sans accessoires ni taxe).
+                      ...composantesAMontrer(l.composantes).map((c) => ({ sous: true, cle: `${i}-${c.code}`, libelle: c.libelle, branche: "", montantGaranti: c.montantGaranti, nette: c.primeNette, accessoires: "", taxe: "", ttc: "" })),
+                    ]),
+                    { sous: false, cle: "TOTAL", libelle: "Total", branche: "", montantGaranti: null, ...etat.resultat.totaux },
+                  ]}
                   cleLigne={(l) => l.cle}
                   colonnes={[
-                    { cle: "libelle", entete: "Garantie", className: "font-medium", rendu: (l) => l.libelle },
-                    { cle: "garanti", entete: "Montant garanti", alignement: "droite", rendu: (l) => (l.montantGaranti ? f(l.montantGaranti) : "—") },
-                    { cle: "nette", entete: "Prime nette", alignement: "droite", rendu: (l) => f(l.nette) },
-                    { cle: "accessoires", entete: "Accessoires", alignement: "droite", rendu: (l) => f(l.accessoires) },
-                    { cle: "taxe", entete: "Taxe", alignement: "droite", rendu: (l) => f(l.taxe) },
-                    { cle: "ttc", entete: "TTC", alignement: "droite", className: "font-semibold", rendu: (l) => f(l.ttc) },
+                    { cle: "libelle", entete: "Garantie", className: "font-medium", rendu: (l) => (l.sous ? libelleSousLigne(l.libelle) : l.libelle) },
+                    { cle: "garanti", entete: "Montant garanti", alignement: "droite", rendu: (l) => (l.montantGaranti ? (l.sous ? montantSousLigne(f(l.montantGaranti)) : f(l.montantGaranti)) : "—") },
+                    { cle: "nette", entete: "Prime nette", alignement: "droite", rendu: (l) => (l.sous ? montantSousLigne(f(l.nette)) : f(l.nette)) },
+                    { cle: "accessoires", entete: "Accessoires", alignement: "droite", rendu: (l) => (l.sous ? null : f(l.accessoires)) },
+                    { cle: "taxe", entete: "Taxe", alignement: "droite", rendu: (l) => (l.sous ? null : f(l.taxe)) },
+                    { cle: "ttc", entete: "TTC", alignement: "droite", className: "font-semibold", rendu: (l) => (l.sous ? null : f(l.ttc)) },
                   ]}
                 />
                 <p className="mt-2 text-sm text-neutral">Barème publié (empreinte {etat.resultat.empreinte.slice(0, 16)}…). Ces montants sont recalculés à l&apos;enregistrement.</p>

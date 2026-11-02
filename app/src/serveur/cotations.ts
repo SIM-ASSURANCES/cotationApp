@@ -12,6 +12,7 @@ import {
   estNonComposee,
   VERSION_COMPOSITION,
   type BaremeFige,
+  type ComposanteFigee,
   type EntreeComposition,
   problemesLignesDePrime,
   recalculer,
@@ -64,7 +65,7 @@ import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
 import type { IntermediaireDocument } from "@/domaine/intermediaires";
 
 import { journaliser, type ActeurAudit } from "./audit";
-import { lireBaremePublie, parametresDeCalcul } from "./bareme";
+import { calculAvecDetail, lireBaremePublie, parametresDeCalcul } from "./bareme";
 import { versSouscripteur } from "./clients";
 import { niveauDuProfil } from "./droits";
 import { allouerNumero } from "./numerotation";
@@ -397,7 +398,7 @@ async function calculerAuBareme(tx: Tx, saisie: SaisieCotation, dateDocument: Da
 /** Résultat du bouton « Calculer » : lignes de composition arrondies et totaux, rien n'est enregistré. */
 export type ResultatCalculBareme = {
   empreinte: string;
-  lignes: { libelle: string; branche: string; montantGaranti: string | null; nette: string; accessoires: string; taxe: string; ttc: string }[];
+  lignes: { libelle: string; branche: string; montantGaranti: string | null; nette: string; accessoires: string; taxe: string; ttc: string; composantes: ComposanteFigee[] }[];
   totaux: { nette: string; accessoires: string; taxe: string; ttc: string };
 };
 
@@ -431,6 +432,7 @@ export async function calculerCotationBareme(
         libelle: entree.lignes[i].libelle,
         branche: entree.lignes[i].branche,
         montantGaranti: entree.lignes[i].montantGaranti ?? null,
+        composantes: entree.lignes[i].composantes ?? [],
         nette: t(l.arrondi.nette),
         accessoires: t(l.arrondi.accessoires),
         taxe: t(l.arrondi.taxe),
@@ -1230,7 +1232,7 @@ export async function lireCotation(acteur: UtilisateurCourant, id: number): Prom
     raisonsValidation: c.raisonsValidation as unknown as RaisonValidation[],
     resultat: recalculer(c.donneesCalcul as unknown as DonneesCalcul),
     modeTarification: version.modeTarification,
-    composition: lireComposition(c),
+    composition: lireComposition({ ...c, donneesCalcul: await calculAvecDetail(obtenirPrisma(), c.donneesCalcul) }),
     garantiesDuProduit: (version.garanties as GarantieParametree[] | null) ?? [],
     garantiesSaisieLibre: version.garantiesSaisieLibre,
     brouillonAFormulesSousGaranties: versionEnVigueur !== null && (compositionPossible(versionEnVigueur.version.modeTarification) || versionEnVigueur.version.modeTarification === "BAREME"),

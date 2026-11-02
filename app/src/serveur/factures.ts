@@ -51,7 +51,7 @@ import {
   type TypeFacture,
 } from "@/domaine/facturation/factures";
 
-import { avecRisqueDuDocument } from "./bareme";
+import { avecRisqueDuDocument, calculAvecDetail } from "./bareme";
 import { journaliser, type ActeurAudit } from "./audit";
 import { contexteProduit, montantsDu } from "./documents";
 import { avanceDisponible, encaissementsDe, inclusionImputations, reportsEnAttente, versEncaissements, type ReportEnAttente } from "./encaissements";
@@ -1433,6 +1433,18 @@ export async function listerFactures(acteur: UtilisateurCourant, filtres: Filtre
   return lignes.map(sansEtat);
 }
 
+/**
+ * Contenu d'une facture avec le détail des composantes de ses garanties : celui qui est figé, sinon celui du recalcul du barème figé avec la facture
+ * (H173, rien n'est écrit). Une facture sans garanties, ou hors barème, est rendue telle quelle.
+ */
+async function contenuAvecDetail(client: Parameters<typeof calculAvecDetail>[0], contenu: ContenuFacture): Promise<ContenuFacture> {
+  const garanties = contenu.garanties;
+  if (!garanties || garanties.every((g) => g.composantes !== undefined)) return contenu;
+  const entree = await calculAvecDetail(client, contenu.entree as DonneesCalcul);
+  if (!estComposition(entree) || entree.lignes.length !== garanties.length) return contenu;
+  return { ...contenu, garanties: garanties.map((g, i) => ({ ...g, code: g.code ?? entree.lignes[i].code, composantes: g.composantes ?? entree.lignes[i].composantes })) };
+}
+
 export async function lireFacture(acteur: UtilisateurCourant, id: number): Promise<FactureLue | null> {
   const d = await exigerLecture(acteur);
   const prisma = obtenirPrisma();
@@ -1453,8 +1465,9 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
   const reports = await prisma.mouvementAvance.findMany({ where: { type: "REPORT", factureAnnuleeId: f.id }, include: { paiement: { select: { numeroRecu: true } } }, orderBy: { id: "asc" } });
   const ouverte = f.statut === "BROUILLON" || f.statut === "A_VALIDER";
   const sousSeuil = ouverte && validationContratRequise(d.facture, f.ttc.toFixed(), seuil);
-  const contenu = contenuDe(f);
-  const entreeDonnees = contenu.entree as DonneesCalcul;
+  const entreeDonnees = contenuDe(f).entree as DonneesCalcul;
+  // H173 : une facture au barème créée avant la conservation des composantes les retrouve par le recalcul du barème figé (rien n'est écrit).
+  const contenu = await contenuAvecDetail(prisma, contenuDe(f));
   // D60 : seule la composition manuelle attend la Technique ; une composition du barème est calculée, donc déjà « composée ».
   const estComp = estCompositionManuelle(entreeDonnees);
   const niveauComposer = await niveauDuProfil(acteur.profil, "COMPOSER_PRIME");

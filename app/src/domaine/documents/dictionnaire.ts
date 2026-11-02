@@ -55,7 +55,7 @@ const c = (chemin: string, type: TypeChamp, description: string, exemple: Champ[
 /** Marque un champ facultatif (D19). */
 const FACULTATIF = true as const;
 
-export const CHAMPS: readonly Champ[] = [
+const CHAMPS_DE_BASE: readonly Champ[] = [
   // ---------------------------------------------------------------- 6.3.1
   c("societe.raison_sociale", "texte", "Raison sociale de la compagnie", "SIM Assurances Côte d'Ivoire", S1),
   c("societe.forme", "texte", "Forme juridique", "SA", S1),
@@ -169,6 +169,12 @@ export const CHAMPS: readonly Champ[] = [
   c("garanties_souscrites[].libelle", "texte", "Libellé de la garantie, de la surprime ou de la majoration (extension D32)", "Incendie", S3),
   c("garanties_souscrites[].branche", "texte", "Branche fiscale de la ligne : INCENDIE, IARD, IA, DECES… (extension D32)", "INCENDIE", S3),
   c("garanties_souscrites[].montant_garanti", "montant", "Montant garanti de la garantie : capital ou 1er risque en FCFA ; vide pour une garantie sans capital (extension D37)", "10000000", S3, FACULTATIF),
+  c("garanties_souscrites[].code", "texte", "Code de la garantie dans le barème (vol, incendie…) : clé de son sous-modèle bloc(\"garanties\", g.code) ; vide pour une composition manuelle (extension D61)", "incendie", S3, FACULTATIF),
+  c("garanties_souscrites[].composantes", "liste", "Composantes souscrites de la garantie au barème (Vol : contenu, caisse), même s'il n'y en a qu'une ; liste vide hors barème. Les montants de la garantie sont ceux de sa ligne, pas la somme de ces lignes (extension D61)", undefined, S3, FACULTATIF),
+  c("garanties_souscrites[].composantes[].code", "texte", "Code de la composante (extension D61)", "contenu", S3),
+  c("garanties_souscrites[].composantes[].libelle", "texte", "Libellé de la composante : son code mis en forme, le barème n'ayant pas de libellé de composante (extension D61, H173)", "Contenu", S3),
+  c("garanties_souscrites[].composantes[].montant_garanti", "montant", "Montant garanti de la composante : son assiette, en FCFA (extension D61)", "5000000", S3),
+  c("garanties_souscrites[].composantes[].prime_nette", "montant", "Prime nette de la composante, après la réduction et le prorata de la garantie, arrondie comme la ligne (extension D61, H173)", "5000", S3),
   c("garanties_souscrites[].prime_nette", "montant", "Prime nette de la garantie (extension D32)", "10000", S3),
   c("garanties_souscrites[].accessoires", "montant", "Accessoires de la garantie (extension D32)", "2500", S3),
   c("garanties_souscrites[].taux_taxe", "pourcentage", "Taux de taxe de la garantie, selon sa branche (extension D32)", "12.5", S3),
@@ -228,6 +234,20 @@ export const CHAMPS: readonly Champ[] = [
   c("doc.auteur_nom", "texte", "Nom de l'auteur de la cotation (extension D20)", "AUTEUR Inventé", S4),
   c("doc.facture_origine", "texte", "Facture d'origine : facture annulée (avoir), facture réglée (reçu)", "FAC-2026-09-0003", S4),
 ];
+
+/**
+ * `garantie.*` (extension D61) : la ligne COURANTE d'une garantie souscrite, vue par un SOUS-MODÈLE bloc("garanties", g.code). C'est la copie exacte des champs de
+ * `garanties_souscrites[]` (mêmes noms, mêmes types, mêmes champs facultatifs) : une seule définition, deux chemins. `garantie` n'existe que dans ce sous-modèle
+ * (le dépôt le refuse ailleurs) ; le sous-modèle voit aussi, comme tout modèle, les données du document.
+ */
+const PREFIXE_GARANTIES = "garanties_souscrites[].";
+const CHAMPS_GARANTIE: readonly Champ[] = CHAMPS_DE_BASE.filter((champ) => champ.chemin.startsWith(PREFIXE_GARANTIES)).map((champ) => ({
+  ...champ,
+  chemin: `garantie.${champ.chemin.slice(PREFIXE_GARANTIES.length)}`,
+  description: `${champ.description} (ligne courante, dans un sous-modèle de garantie)`,
+}));
+
+export const CHAMPS: readonly Champ[] = [...CHAMPS_DE_BASE, ...CHAMPS_GARANTIE];
 
 const PAR_CHEMIN = new Map(CHAMPS.map((champ) => [champ.chemin, champ]));
 /** Objets implicites (« souscripteur », « police.nantissement »…), utilisables dans un {% if %}. */
@@ -325,8 +345,14 @@ function placer(cible: Donnees, chemin: string[], valeur: unknown): void {
 function element(liste: string, rang: number): Donnees {
   const item: Donnees = {};
   for (const champ of CHAMPS) {
-    if (!champ.chemin.startsWith(`${liste}[].`) || champ.exemple === undefined) continue;
+    if (!champ.chemin.startsWith(`${liste}[].`)) continue;
     const nom = champ.chemin.slice(liste.length + 3);
+    // Liste imbriquée (garanties_souscrites[].composantes) : deux éléments d'exemple, qui reprennent les champs de l'imbriquée ; ses sous-champs sont traités par l'appel récursif.
+    if (champ.type === "liste" && !nom.includes("[]") && !nom.includes(".")) {
+      item[nom] = Array.from({ length: 2 }, (_, i) => element(champ.chemin, i + 1));
+      continue;
+    }
+    if (champ.exemple === undefined || nom.includes("[]")) continue;
     let valeur = champ.exemple;
     if (nom === "ordre" || nom === "numero") valeur = typeof valeur === "number" ? rang : `${String(valeur).replace(/\d+$/, "")}${String(rang).padStart(4, "0")}`;
     if (nom === "nom_prenoms" && typeof valeur === "string") valeur = `${valeur} ${rang}`;
@@ -347,7 +373,7 @@ export function donneesExemple(options: { nombreAssures?: number } = {}): Donnee
   }
   const tailles: Record<string, number> = { assures: options.nombreAssures ?? 2 };
   for (const champ of CHAMPS) {
-    if (champ.type !== "liste") continue;
+    if (champ.type !== "liste" || champ.chemin.includes("[]")) continue;
     const nombre = tailles[champ.chemin] ?? 2;
     placer(donnees, champ.chemin.split("."), Array.from({ length: nombre }, (_, i) => element(champ.chemin, i + 1)));
   }

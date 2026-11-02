@@ -186,6 +186,16 @@ Il affiche `[travailleur] démarré : 0 lot(s) d'import, 0 lot(s) d'avis et de r
 
   Avec Windows PowerShell 5.1, `pip freeze > requirements.txt` écrirait le fichier en UTF-16, illisible pour Git : d'où `Out-File -Encoding ascii`.
 
+### 8.1 Tests dans des conteneurs
+
+Les tests de bout en bout (`npm run test:e2e`) lisent le texte des PDF émis avec **`pdftotext`** (paquet `poppler-utils`) et exigent **Redis** (`REDIS_URL`, file de tâches). Sans `pdftotext`, ils **échouent** avec un message qui le dit (ils ne s'arrêtent plus en silence avant leurs contrôles de texte). Pour un runner de tests Docker, l'image est décrite par [app/Dockerfile.tests](../app/Dockerfile.tests) (l'étape « dépendances » de `app/Dockerfile` plus `poppler-utils` ; jamais déployée, `docker-compose.yml` ne la cite pas) :
+
+```bash
+docker build -f app/Dockerfile.tests -t sim-tests-tests app
+```
+
+Montez ensuite le dépôt sur `/work` (répertoire de travail `/work/app`), un volume nommé sur `/work/app/node_modules` (rempli une fois par `cp -a /app/node_modules/. <volume>/` depuis l'image), et lancez à côté PostgreSQL (base de test en `_test`, `TEST_DATABASE_URL`), Redis (`REDIS_URL`) et le générateur (`GENERATEUR_URL`, `GENERATEUR_SECRET`). Une seule pile de test à la fois sur un même poste.
+
 ## 9. Avec Docker (déploiement)
 
 Le déploiement sur le VPS utilise Docker Compose : voir [deploiement.md](deploiement.md). Docker n'est pas nécessaire pour développer.

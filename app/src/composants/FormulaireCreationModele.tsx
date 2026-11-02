@@ -131,7 +131,7 @@ export function FormulaireCreationModele({ action, produits, branches }: { actio
       {typeChoisi === "SOUS_MODELE" ? (
         <>
           <Champ nom="blocNom" libelle={'Sous-modèle : nom du bloc, tel qu\'écrit dans bloc("garanties", …)'} autoComplete="off" />
-          <Champ nom="blocCle" libelle="Sous-modèle : clé (ex. code de formule : SOLO, 80…)" autoComplete="off" />
+          <Champ nom="blocCle" libelle="Sous-modèle : clé (code de la formule : SOLO, 80… ; ou code de la garantie : vol)" autoComplete="off" />
         </>
       ) : null}
     </FormulaireAction>

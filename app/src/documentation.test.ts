@@ -101,3 +101,15 @@ describe("documentation : liens et commandes", () => {
     expect(cites.filter((c) => !services.includes(c))).toEqual([]);
   });
 });
+
+describe("app/Dockerfile.tests : image du runner de tests", () => {
+  it("installe openssl ET poppler-utils (pdftotext des e2e), et n'est ni dans docker-compose.yml ni dans les images de production", () => {
+    const tests = lire("app/Dockerfile.tests").replace(/\r\n/g, "\n");
+    expect(tests).toMatch(/apt-get install -y --no-install-recommends openssl poppler-utils/);
+    expect(tests).toMatch(/^RUN .*npm ci/m);
+    expect(lire("docker-compose.yml")).not.toContain("Dockerfile.tests");
+    // Les images de production n'embarquent pas poppler-utils.
+    expect(lire("app/Dockerfile")).not.toContain("poppler");
+    expect(lire("generateur/Dockerfile")).not.toContain("Dockerfile.tests");
+  });
+});

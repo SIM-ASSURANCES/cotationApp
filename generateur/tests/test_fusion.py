@@ -181,6 +181,51 @@ def test_bloc_insere_le_sous_modele_de_la_formule() -> None:
     assert lignes[-1] == "Après"
 
 
+def test_bloc_de_garantie_voit_la_ligne_courante_et_les_donnees_du_document() -> None:
+    # bloc("garanties", g.code) : le sous-modèle voit « garantie » (la ligne courante) ET les données du document (D61).
+    def sous_modele(code: str) -> bytes:
+        return document(
+            f"[{code}] {{{{ garantie.libelle }}}} / {{{{ garantie.code }}}} / {{{{ risque.metier }}}} / {{{{ souscripteur.nom }}}}",
+            "{%p for c in garantie.composantes %}",
+            "composante {{ c.libelle }} {{ c.prime_nette }}",
+            "{%p endfor %}",
+        )
+
+    donnees = {
+        "souscripteur": {"nom": "KOUADIO"},
+        "risque": {"metier": "BOUTIQUE"},
+        "garanties_souscrites": [
+            {"code": "incendie", "libelle": "Incendie", "composantes": [{"code": "base", "libelle": "Base", "prime_nette": "100"}]},
+            {"code": "vol", "libelle": "Vol", "composantes": [{"code": "contenu", "libelle": "Contenu", "prime_nette": "200"}, {"code": "caisse", "libelle": "Caisse", "prime_nette": "50"}]},
+        ],
+    }
+    texte = corps(
+        document("Avant", "{%p for g in garanties_souscrites %}", '{{ bloc("garanties", g.code) }}', "{%p endfor %}", "Après"),
+        donnees,
+        sous_modeles={"garanties": {"incendie": sous_modele("INC"), "vol": sous_modele("VOL")}},
+    )
+    lignes = texte.splitlines()
+    assert lignes[0] == "Avant" and lignes[-1] == "Après"
+    # Dans l'ordre des garanties, chacun avec SA ligne.
+    assert lignes.index("[INC] Incendie / incendie / BOUTIQUE / KOUADIO") < lignes.index("[VOL] Vol / vol / BOUTIQUE / KOUADIO")
+    assert "composante Base 100" in lignes
+    assert lignes.index("composante Contenu 200") < lignes.index("composante Caisse 50")
+
+
+def test_garantie_n_existe_pas_hors_d_un_bloc_de_garantie() -> None:
+    with pytest.raises(ErreurFusion, match="garantie"):
+        corps(document("{{ garantie.libelle }}"), {"garanties_souscrites": [{"code": "vol", "libelle": "Vol"}]})
+
+
+def test_bloc_de_garantie_sans_sous_modele_nomme_la_cle() -> None:
+    with pytest.raises(ErreurFusion, match="sous-modèle « garanties » introuvable pour « vol »"):
+        corps(
+            document("{%p for g in garanties_souscrites %}", '{{ bloc("garanties", g.code) }}', "{%p endfor %}"),
+            {"garanties_souscrites": [{"code": "vol", "libelle": "Vol"}]},
+            sous_modeles={"garanties": {"incendie": document("x")}},
+        )
+
+
 def test_bloc_introuvable() -> None:
     with pytest.raises(ErreurFusion, match="sous-modèle « garanties » introuvable pour « FAMILLE »"):
         corps(document('{{ bloc("garanties", formule.code) }}'), {"formule": {"code": "FAMILLE"}}, sous_modeles={"garanties": {}})

@@ -63,7 +63,50 @@ Les anomalies viennent de l'[annexe A du CDC](cdc.md#annexe-a--anomalies-des-mod
 | A15 | Facture 004-0926 | `{{ souscripteur.adresse }}` ; bloc `{%p if envoye_a %}` … `{{ envoye_a.nom }}`, `{{ envoye_a.adresse }}` … `{%p endif %}` (masqué s'il est identique à « Facturé à ») ; `{{ prime.taux_taxe \| pct }}` et `{{ prime.taxe \| montant }}`. Le taux de 1,90 % et la date d'émission relèvent du moteur et de l'application, pas du modèle. |
 | A16 | Factures | `{{ societe.rccm }}`, `{{ societe.ncc }}`, `{%p for r in societe.rib %}`, `{%p for m in societe.mobile_money %}`, `{{ prime.ttc \| lettres }}`. La numérotation continue est faite par l'application. |
 | A17 | Offre BENI | Texte : inverser les deux listes de pièces (décès, IPT). |
-| (6.2b) | Produit tarifé par garanties (SECURPRO, SECURHOME…) | **Une ligne par garantie souscrite**, avec son taux : `{%tr for g in garanties_souscrites %}` puis `{{ g.libelle }}`, `{{ g.branche }}`, `{{ g.prime_nette \| montant }}`, `{{ g.accessoires \| montant }}`, `{{ g.taux_taxe \| pct }}`, `{{ g.taxe \| montant }}`, `{{ g.ttc \| montant }}` ; `formules` est **vide** pour ces produits. `prime.nette`, `prime.accessoires`, `prime.taxe` et `prime.ttc` restent les totaux ; `prime.taux_taxe` n'est rempli que si un seul taux s'applique (vide sinon). Attention : `bloc("garanties", …)` est un **sous-modèle**, pas cette liste. Pour ces produits, `assures[].formule` est **vide** et `assures[].prime` **n'a pas de valeur** (pas de prime par assuré) : ne pas poser de filtre sur `assures[].prime` (`\| montant`), la génération s'arrêterait en nommant le champ. **Modèles exigés** : la cotation, les CP et la facture d'un produit par garanties doivent citer au moins un champ `garanties_souscrites[]` (sinon l'émission est refusée avant tout numéro pour la facture) ; le modèle de facture cite `prime.taux_taxe` **ou** `garanties_souscrites[].taux_taxe` (le taux global est vide dès qu'il y a plusieurs taux). |
+| (6.2b) | Produit tarifé par garanties (SECURPRO, SECURHOME…) | **Une ligne par garantie souscrite**, avec son taux : `{%tr for g in garanties_souscrites %}` puis `{{ g.libelle }}`, `{{ g.branche }}`, `{{ g.prime_nette \| montant }}`, `{{ g.accessoires \| montant }}`, `{{ g.taux_taxe \| pct }}`, `{{ g.taxe \| montant }}`, `{{ g.ttc \| montant }}` ; `formules` est **vide** pour ces produits. `prime.nette`, `prime.accessoires`, `prime.taxe` et `prime.ttc` restent les totaux ; `prime.taux_taxe` n'est rempli que si un seul taux s'applique (vide sinon). Attention : `bloc("garanties", …)` est un **sous-modèle**, pas cette liste. Pour un produit au barème, voir aussi [composantes et une CP par garantie](#produit-au-barème--composantes-et-une-cp-par-garantie-d61). Pour ces produits, `assures[].formule` est **vide** et `assures[].prime` **n'a pas de valeur** (pas de prime par assuré) : ne pas poser de filtre sur `assures[].prime` (`\| montant`), la génération s'arrêterait en nommant le champ. **Modèles exigés** : la cotation, les CP et la facture d'un produit par garanties doivent citer au moins un champ `garanties_souscrites[]` (sinon l'émission est refusée avant tout numéro pour la facture) ; le modèle de facture cite `prime.taux_taxe` **ou** `garanties_souscrites[].taux_taxe` (le taux global est vide dès qu'il y a plusieurs taux). |
 | A18 | Offre BENI | Texte : « Invalidité » au lieu d'« Indemnité permanente totale ». |
 | A19 | Offre BENI | Texte : harmoniser le réseau et le barème de la chambre (décision de la Technique). |
 | A20 | Offre BENI | À recréer en Word balisé, type `COTATION` (modèle de cotation santé). |
+
+## Produit au barème : composantes et une CP par garantie (D61)
+
+Pour un produit tarifé au **barème**, chaque garantie souscrite expose son **code** et le détail de ses **composantes** ; la CP générale peut insérer, pour chaque garantie, un **sous-modèle** qui lui est propre. Les noms sont ceux du dictionnaire (rien d'inventé) ; les exemples ci-dessous sont inventés.
+
+### Code et composantes de chaque garantie
+
+| Balise | Contenu |
+|---|---|
+| `garanties_souscrites[].code` | Code de la garantie dans le barème (`vol`, `incendie`…). **Facultatif** : vide pour une composition manuelle (produit « Par garanties »). C'est la clé du sous-modèle de la garantie. |
+| `garanties_souscrites[].composantes` | Liste des composantes **souscrites** de la garantie, même s'il n'y en a qu'une ; liste vide hors barème. **Facultative.** |
+| `garanties_souscrites[].composantes[].code` | Code de la composante (`contenu`, `caisse`). |
+| `garanties_souscrites[].composantes[].libelle` | Son libellé : le code mis en forme (« Contenu », « Caisse »), le barème n'ayant pas de libellé de composante (H173). |
+| `garanties_souscrites[].composantes[].montant_garanti` | Son assiette (montant garanti de la composante), en FCFA. |
+| `garanties_souscrites[].composantes[].prime_nette` | Sa prime nette, après la réduction et le prorata de la garantie, arrondie comme la ligne. |
+
+**Les montants de la garantie ne sont jamais la somme de ses composantes à refaire** : `garanties_souscrites[].prime_nette`, `accessoires`, `taxe` et `ttc` sont ceux de la ligne (accessoires et taxe se calculent une fois par garantie, A6 inchangée). Les composantes sont une information : à une unité d'arrondi près, leurs primes nettes se somment à celle de la ligne. Exemple, sous la ligne d'une garantie :
+
+```
+{%tr for g in garanties_souscrites %}   … ligne de la garantie …   {%tr endfor %}
+{%p for c in g.composantes %}  {{ c.libelle }} : {{ c.montant_garanti | montant }} / {{ c.prime_nette | montant }}  {%p endfor %}
+```
+
+### Une CP par garantie : `bloc("garanties", g.code)`
+
+Dans la CP générale, une boucle sur les garanties insère le sous-modèle de chacune, **dans l'ordre des garanties** :
+
+```
+{%p for g in garanties_souscrites %}
+{{ bloc("garanties", g.code) }}
+{%p endfor %}
+```
+
+- `bloc(…)` reste **seul dans son paragraphe**, dans le corps du document.
+- Le sous-modèle est un modèle de type **Sous-modèle**, de **nom de bloc** `garanties` et de **clé** le **code de la garantie** (`vol`) ; un sous-modèle du **produit** l'emporte sur un sous-modèle **commun** de même clé. On dépose et on publie une version, comme tout modèle ; l'aperçu PDF retient, comme pour tout aperçu, la version publiée en vigueur de chaque sous-modèle et, à défaut, la plus récente déposée ; l'émission exige la version **publiée en vigueur**.
+- **Ce que voit le sous-modèle** :
+  1. **toutes les données du document**, comme la CP : `souscripteur.*`, `police.*`, `produit.*`, `prime.*`, `risque.*`, `risque_code.*`, `societe.*`, `doc.*`, `garanties_souscrites` (entière)… ;
+  2. **`garantie`**, la **ligne courante** de la garantie, avec les mêmes champs que `garanties_souscrites[]` : `garantie.code`, `garantie.libelle`, `garantie.branche`, `garantie.montant_garanti`, `garantie.prime_nette`, `garantie.accessoires`, `garantie.taux_taxe`, `garantie.taxe`, `garantie.ttc`, et `garantie.composantes` (`{%p for c in garantie.composantes %}` puis `c.code`, `c.libelle`, `c.montant_garanti`, `c.prime_nette`).
+  Aucune autre donnée n'est ajoutée ni retirée. Un sous-modèle **ne peut pas appeler `bloc()` à son tour**. `garantie` n'existe que dans un sous-modèle de nom `garanties` : le dépôt refuse `garantie.*` dans une CP ou dans un autre sous-modèle.
+- **Émission** : si une garantie souscrite n'a **pas de sous-modèle publié**, l'émission est **refusée avant tout numéro**, en nommant la garantie et la clé attendue (« la garantie « Vol » (sous-modèle « garanties », clé « vol ») »). Une garantie sans code (composition manuelle, ou cotation antérieure que le barème ne permet pas de reconstituer) est refusée de même.
+- **Dépôt de la CP** : si elle appelle `bloc("garanties", g.code)`, chaque garantie du barème publié du produit qui n'a pas de sous-modèle publié est signalée **en avertissement** (le dépôt est accepté : les modèles et le barème ont chacun leur date d'effet). Même avertissement pour un sous-modèle `garanties` dont la clé n'est le code d'aucune garantie du barème.
+- **Réédition** : les versions des sous-modèles utilisées sont **conservées avec le document émis** ; la réédition retrouve les mêmes, même si une nouvelle version a été publiée depuis (T10).
+- **Ancien usage inchangé** : `bloc("garanties", f.code)` dans `{%p for f in formules %}` (une description des garanties par **formule**, A10) fonctionne comme avant ; seul le bloc dont la clé est `g.code` dans une boucle sur `garanties_souscrites` reçoit `garantie`.

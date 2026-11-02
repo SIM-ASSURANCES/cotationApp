@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 
 import type { DateIso } from "@/domaine/calcul/dates";
-import { avertissementsRisque, controlerDepot, type Constat } from "@/domaine/documents/controles";
+import { avertissementsDeGaranties, avertissementsRisque, CLE_BLOC_DE_GARANTIE, controlerDepot, type Constat } from "@/domaine/documents/controles";
 import { IMAGES, donneesExemple } from "@/domaine/documents/dictionnaire";
 import {
   CLE_SEUIL_LISTE,
@@ -33,7 +33,7 @@ import {
 import { peutAgir, peutLire } from "@/domaine/droits";
 
 import { journaliser, type ActeurAudit } from "./audit";
-import { codesRisqueDuProduit, risqueExempleDuProduit } from "./bareme";
+import { codesGarantiesDuProduit, codesRisqueDuProduit, garantiesExempleDuProduit, risqueExempleDuProduit } from "./bareme";
 import { niveauDuProfil } from "./droits";
 import { generateur, type ImagePng } from "./generateur";
 import { aujourdhui } from "./parametrage";
@@ -324,11 +324,14 @@ export async function deposerVersion(acteur: UtilisateurCourant, modeleId: numbe
 
   const empreinte = sha256(depot.fichier);
   const analyse = await generateur().analyser(depot.fichier);
-  const { rejets, avertissements } = controlerDepot(type, analyse);
+  const { rejets, avertissements } = controlerDepot(type, analyse, { blocNom: modele.blocNom });
   // Produit au barème (B6b, D52) : une balise risque.<code> qui n'est pas un champ de son barème publié est signalée.
   if (modele.produitId !== null) {
     const codes = await codesRisqueDuProduit(prisma, modele.produitId);
     if (codes.size > 0) avertissements.push(...avertissementsRisque(analyse, codes));
+    // Une CP par garantie (D61) : les garanties du barème qui n'ont pas de sous-modèle publié, ou un sous-modèle dont la clé n'est pas une garantie du barème.
+    const garanties = await codesGarantiesDuProduit(prisma, modele.produitId);
+    if (garanties.size > 0) avertissements.push(...avertissementsDeGaranties(type, analyse, garanties, await clesDeSousModelesPublies(prisma, modele.produitId, "garanties"), modele));
   }
   const details = (c: Constat) => (c.emplacement ? `${c.message} — ${c.emplacement}` : c.message);
 
@@ -566,6 +569,38 @@ export async function modelesAssocies(produitId: number | null, jour: DateIso, a
   return { annexes, sousModeles, ids };
 }
 
+/** Clés des sous-modèles de bloc `nom` qui ont une version PUBLIÉE, pour un produit : les siens et les communs (D61, avertissement du dépôt). */
+export async function clesDeSousModelesPublies(client: Pick<PrismaClient, "modele">, produitId: number, nom: string): Promise<Set<string>> {
+  const modeles = await client.modele.findMany({
+    where: { type: "SOUS_MODELE", blocNom: nom, OR: [{ produitId: null }, { produitId }], versions: { some: { statut: "PUBLIE" } } },
+    select: { blocCle: true },
+  });
+  return new Set(modeles.flatMap((m) => (m.blocCle ? [m.blocCle] : [])));
+}
+
+/**
+ * Une CP par garantie (D61) : un modèle qui appelle `bloc("garanties", g.code)` insère, pour chaque garantie souscrite, le sous-modèle PUBLIÉ de ce code. Une
+ * garantie sans sous-modèle publié (ou sans code : composition manuelle, cotation antérieure irreconstituable) REFUSE l'émission, AVANT tout numéro, en
+ * nommant la garantie et la clé attendue (même esprit que `exigerDetailDesGaranties`). `sousModeles` : ceux retenus à la date d'émission (publiés en vigueur).
+ */
+export function exigerSousModelesDesGaranties(
+  libelleDocument: string,
+  blocsDuModele: { nom: string; cle: string | null }[],
+  garanties: { code?: string; libelle: string }[],
+  sousModeles: Record<string, Record<string, Uint8Array>>,
+): void {
+  if (!blocsDuModele.some((b) => b.nom === "garanties" && b.cle === CLE_BLOC_DE_GARANTIE)) return;
+  const manques = garanties.flatMap((g) => {
+    if (!g.code) return [`la garantie « ${g.libelle} » n'a pas de code (sa prime n'est pas calculée par un barème) : aucune clé de sous-modèle`];
+    return sousModeles["garanties"]?.[g.code] ? [] : [`la garantie « ${g.libelle} » (sous-modèle « garanties », clé « ${g.code} »)`];
+  });
+  if (manques.length > 0) {
+    throw new ErreurMetier(
+      `Le modèle de ${libelleDocument} retenu insère un sous-modèle par garantie (bloc("garanties", g.code)), mais il manque : ${manques.join(" ; ")}. Déposez et faites publier le sous-modèle de chaque garantie (nom du bloc : garanties, clé : le code de la garantie). Aucun numéro n'a été consommé.`,
+    );
+  }
+}
+
 /** Fichiers des versions associées conservées avec un document émis : la réédition retrouve les mêmes (T10). */
 export async function fichiersAssocies(ids: VersionsAssociees) {
   const tous = [...Object.values(ids.annexes), ...Object.values(ids.sousModeles).flatMap((parCle) => Object.values(parCle))];
@@ -649,6 +684,10 @@ export async function apercuVersion(acteur: UtilisateurCourant, versionId: numbe
     // Produit au barème (H154) : risque et risque_code reprennent TOUS les champs du barème ; sans barème, l'aperçu est inchangé.
     const exemple = v.modele.produitId !== null ? await risqueExempleDuProduit(prisma, v.modele.produitId, jour) : null;
     if (exemple) Object.assign(donnees, { risque: exemple.risque, risque_code: exemple.risqueCode });
+    // Une CP par garantie (D61) : l'aperçu d'un produit au barème porte une ligne par garantie du barème (vrais codes), pour que bloc("garanties", g.code) trouve
+    // le sous-modèle de chacune (dernière version déposée).
+    const garanties = v.modele.produitId !== null ? await garantiesExempleDuProduit(prisma, v.modele.produitId, jour) : null;
+    if (garanties) donnees.garanties_souscrites = garanties;
     const { annexes, sousModeles } = await modelesAssocies(v.modele.produitId, jour);
     const images: Record<string, ImagePng> = Object.fromEntries(IMAGES.map((nom) => [nom, { png: IMAGE_APERCU, largeurMm: LARGEUR_IMAGE_MM[nom] ?? 30 }]));
     contenu = await generateur().genererPdf({ modele: v.fichier, donnees, seuilListe, annexes, sousModeles, images });

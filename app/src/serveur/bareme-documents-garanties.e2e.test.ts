@@ -2,7 +2,6 @@
 // Cotation SECURPRO inventé au barème (sept garanties souscrites) → police → CP émise : la CP générale insère, pour chaque garantie, le sous-modèle publié de
 // cette garantie (bloc « garanties », clé = code), dans l'ordre ; le PDF est lisible et porte les composantes du Vol. Modèles Word inventés :
 // generateur/tests/fixtures/ (cp_garanties_par_garantie_test.docx, garantie_sous_modele_test.docx).
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -27,6 +26,7 @@ import { initialiserProfilsEtDroits } from "./droits";
 import { remplacerGenerateur } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
 import { creerProduit, creerTaxe, creerVersion } from "./parametrage";
+import { exigerPdftotext, texteCompactDuPdf } from "./pdf-test";
 import { obtenirPrisma } from "./prisma";
 import { assurerSignature, assurerSocieteDeTest, PNG_REEL_1PX } from "./societe-test";
 import { remplacerStockage, stockage } from "./stockage";
@@ -55,11 +55,6 @@ async function compte(identifiant: string): Promise<UtilisateurCourant> {
   return versUtilisateurCourant(await obtenirPrisma().utilisateur.findUniqueOrThrow({ where: { identifiant }, include: { profil: true } }));
 }
 
-function texteDuPdf(pdf: Uint8Array): string | null {
-  const r = spawnSync("pdftotext", ["-", "-"], { input: Buffer.from(pdf), maxBuffer: 20_000_000 });
-  return r.status === 0 ? r.stdout.toString("utf8").replace(/[  ]/g, " ").replace(/\s+/g, " ") : null;
-}
-const AVEC_PDFTOTEXT = spawnSync("pdftotext", ["-v"]).error === undefined;
 
 async function publierFichier(type: "CG" | "CP" | "COTATION" | "SOUS_MODELE", produitCode: string | null, nom: string, surcharge: Record<string, unknown> = {}, bloc: { blocNom: string; blocCle: string } | null = null) {
   const id = await creerModele(
@@ -93,6 +88,7 @@ let compteur = 0;
 const numeroPolice = () => `GE-2026-${String(Date.now() % 1_000_000).padStart(6, "0")}-I${String(++compteur).padStart(5, "0")}`;
 
 beforeAll(async () => {
+  exigerPdftotext(); // ces tests lisent le texte des PDF : sans pdftotext ils échouent ici, avec un message clair
   remplacerGenerateur(null);
   remplacerStockage(null);
   const sante = await fetch(new URL("/sante", obtenirConfig().GENERATEUR_URL)).catch(() => null);
@@ -206,8 +202,7 @@ describe("CP par garantie : cotation au barème → CP émise avec un bloc par g
     const versions = (ligne.versionsAssociees as { sousModeles: { garanties: Record<string, number> } }).sousModeles.garanties;
     expect(Object.keys(versions).sort()).toEqual([...GARANTIES].sort());
 
-    if (!AVEC_PDFTOTEXT) return;
-    const texte = texteDuPdf(pdf)!;
+    const texte = texteCompactDuPdf(pdf);
     expect(texte).toContain("CONDITIONS PARTICULIÈRES");
     // Un bloc par garantie, dans l'ordre des garanties, chacun avec SA ligne et les données du document.
     const positions = NOMS.map((nom, i) => texte.indexOf(`GARANTIE ${nom} (code ${GARANTIES[i]})`));
@@ -228,7 +223,7 @@ describe("CP par garantie : cotation au barème → CP émise avec un bloc par g
     expect(v2.version).toBe(2);
     const ligne2 = await obtenirPrisma().documentEmis.findUniqueOrThrow({ where: { id: v2.id } });
     expect((ligne2.versionsAssociees as { sousModeles: { garanties: Record<string, number> } }).sousModeles.garanties).toEqual(versions);
-    const texte2 = texteDuPdf(await stockage().lire(ligne2.chemin))!;
+    const texte2 = texteCompactDuPdf(await stockage().lire(ligne2.chemin));
     expect(texte2.replace(/v\d+/g, "v").replace(/\S*verif\S*/g, "")).toContain("GARANTIE Vol (code vol)");
     expect(texte2.indexOf("GARANTIE Tempête (code tempete)")).toBeGreaterThan(texte2.indexOf("GARANTIE Bris de glaces (code bdg)"));
   }, 240_000);

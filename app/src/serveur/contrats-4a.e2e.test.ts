@@ -3,7 +3,6 @@
 //  - T6 : VOL (branche IARD), cases à cocher, date d'émission dynamique. Test du DOCUMENT SEUL, avec des montants
 //    de fixture : l'application ne calcule pas une cotation IARD (produit par garanties : la prime se compose, 6.2b ; un produit à la formule sur une branche à taux mixte reste refusé).
 // Modèles Word de test : generateur/tests/fixtures/ (données inventées).
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -24,6 +23,7 @@ import { initialiserProfilsEtDroits } from "./droits";
 import { generateur, remplacerGenerateur } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
 import { creerProduit, creerTaxe, creerVersion, initialiserBranches, initialiserTaxes, type TaxeDemarrage } from "./parametrage";
+import { exigerPdftotext, texteDuPdf } from "./pdf-test";
 import { obtenirPrisma } from "./prisma";
 import { lireImageSociete, lireParametresSociete } from "./societe";
 import { assurerSignature, assurerSocieteDeTest, PNG_REEL_1PX } from "./societe-test";
@@ -49,12 +49,6 @@ async function compte(identifiant: string): Promise<UtilisateurCourant> {
   return versUtilisateurCourant(await obtenirPrisma().utilisateur.findUniqueOrThrow({ where: { identifiant }, include: { profil: true } }));
 }
 
-/** Texte d'un PDF par pdftotext, ou null si l'outil n'est pas installé (les contrôles de texte sont alors ignorés). */
-function texteDuPdf(pdf: Uint8Array): string | null {
-  const r = spawnSync("pdftotext", ["-", "-"], { input: Buffer.from(pdf), maxBuffer: 20_000_000 });
-  return r.status === 0 ? r.stdout.toString("utf8").replace(/[  ]/g, " ") : null;
-}
-const AVEC_PDFTOTEXT = spawnSync("pdftotext", ["-v"]).error === undefined;
 const pages = (pdf: Uint8Array) => (Buffer.from(pdf).toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
 
 async function publier(modeleId: number, nom: string, surcharge: Record<string, unknown> = {}): Promise<number> {
@@ -76,6 +70,7 @@ const version = (): VersionSaisie => ({
 });
 
 beforeAll(async () => {
+  exigerPdftotext(); // ces tests lisent le texte des PDF : sans pdftotext ils échouent ici, avec un message clair
   remplacerGenerateur(null);
   remplacerStockage(null);
   const sante = await fetch(new URL("/sante", obtenirConfig().GENERATEUR_URL)).catch(() => null);
@@ -162,11 +157,9 @@ describe("T5 : SECURVIE, trois bénéficiaires, branche DECES (taxe 0 %)", () =>
     expect(pages(pdf)).toBeGreaterThanOrEqual(2);
     expect(ligne.numero).toBe(numeroPolice);
 
-    if (!AVEC_PDFTOTEXT) return; // outil absent : contrôles de texte ignorés (le rendu est vérifié par pytest et à l'œil, docs/recette.md)
     const texte = texteDuPdf(pdf);
-    expect(texte, "pdftotext est installé mais n'a pas lu le PDF").not.toBeNull();
     for (const attendu of ["KOUADIO Paul", "KOUADIO Marie", "KOUADIO Jean", "50 %", "30 %", "20 %", "Personne à prévenir : YAO Eric", "Décès toutes causes", "Frais funéraires", "taxe (0 %) 0", "TOTAL TTC 105 000 F CFA", `visa ${VISA_CG}`, "reclamations@exemple.ci"]) {
-      expect(texte as string, attendu).toContain(attendu);
+      expect(texte, attendu).toContain(attendu);
     }
     expect(texte as string).toContain(`Visa : ${VISA_CG} du 19/06/2025`); // CG jointes : même visa que celui cité par le CP
   }, 240_000);
@@ -268,10 +261,8 @@ describe("T6 : VOL (IARD), cases à cocher et date d'émission dynamique — doc
     expect(Buffer.from(premier).subarray(0, 5).toString()).toBe("%PDF-");
     expect(pages(premier)).toBe(1);
 
-    if (!AVEC_PDFTOTEXT) return;
     const texte = texteDuPdf(premier);
     const autre = texteDuPdf(second);
-    if (texte === null || autre === null) throw new Error("pdftotext est installé mais n'a pas lu le PDF");
     const ligne = (debut: string) => texte.split("\n").find((l) => l.startsWith(debut)) ?? "";
     // Une seule case cochée par ligne : capital vol caisse 100 000, gardiennage de nuit, locataire.
     expect(ligne("Vol caisse").match(/☒/g)).toHaveLength(1);

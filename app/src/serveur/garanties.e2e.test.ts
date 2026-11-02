@@ -2,7 +2,6 @@
 // Produit tarifé par garanties : cotation créée par le Commercial, prime composée par la Technique, émise, acceptée, CP, facture :
 // les montants sont identiques partout (cotation, police, CP, facture) et les PDF portent UNE LIGNE PAR GARANTIE avec son taux de taxe.
 // Modèles Word de test : generateur/tests/fixtures/ (données inventées). Chiffres inventés des instructions de la phase 6.2.
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -19,6 +18,7 @@ import { creerFactureAffaireNouvelle, emettreAvoir, emettreFacture, lireFacture 
 import { remplacerGenerateur } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
 import { aujourdhui, creerProduit, creerTaxe, creerVersion } from "./parametrage";
+import { exigerPdftotext, texteCompactDuPdf } from "./pdf-test";
 import { obtenirPrisma } from "./prisma";
 import { assurerSignature, assurerSocieteDeTest, PNG_REEL_1PX } from "./societe-test";
 import { remplacerStockage, stockage } from "./stockage";
@@ -47,12 +47,6 @@ async function compte(identifiant: string): Promise<UtilisateurCourant> {
   return versUtilisateurCourant(await obtenirPrisma().utilisateur.findUniqueOrThrow({ where: { identifiant }, include: { profil: true } }));
 }
 
-function texteDuPdf(pdf: Uint8Array): string | null {
-  const r = spawnSync("pdftotext", ["-", "-"], { input: Buffer.from(pdf), maxBuffer: 20_000_000 });
-  // Les cellules étroites d'un tableau passent à la ligne dans le texte extrait : on compare sur un texte aux espaces et retours à la ligne unifiés.
-  return r.status === 0 ? r.stdout.toString("utf8").replace(/[  ]/g, " ").replace(/\s+/g, " ") : null;
-}
-const AVEC_PDFTOTEXT = spawnSync("pdftotext", ["-v"]).error === undefined;
 
 async function publier(type: "CG" | "CP" | "COTATION" | "FACTURE" | "AVOIR", produitCode: string | null, nom: string, surcharge: Record<string, unknown> = {}): Promise<string> {
   const id = await creerModele(technique, { type, code: CODE(type), libelle: type === "CG" ? "SECURPRO – Conditions générales (test)" : `${type} (bout en bout)`, produitCode, ...sans }, null);
@@ -69,6 +63,7 @@ async function pdfDe(numero: string, version: number): Promise<Uint8Array> {
 }
 
 beforeAll(async () => {
+  exigerPdftotext(); // ces tests lisent le texte des PDF : sans pdftotext ils échouent ici, avec un message clair
   remplacerGenerateur(null);
   remplacerStockage(null);
   const sante = await fetch(new URL("/sante", obtenirConfig().GENERATEUR_URL)).catch(() => null);
@@ -171,10 +166,9 @@ describe("produit par garanties : composition → cotation → police → CP →
     expect(f.productions[0].ok).toBe(true);
 
     for (const pdf of [await pdfDe(cotation.numero, 1), await pdfDe(cp.numero, 1), await pdfDe(f.numero, 1)]) expect(Buffer.from(pdf.subarray(0, 5)).toString()).toBe("%PDF-");
-    if (!AVEC_PDFTOTEXT) return;
 
     // Cotation, CP et facture : une ligne par garantie, son libellé, son taux (12,5 % pour l'incendie, 7,25 % pour les autres), sa taxe et son TTC.
-    for (const texte of [texteDuPdf(await pdfDe(cotation.numero, 1))!, texteDuPdf(await pdfDe(cp.numero, 1))!, texteDuPdf(await pdfDe(f.numero, 1))!]) {
+    for (const texte of [texteCompactDuPdf(await pdfDe(cotation.numero, 1)), texteCompactDuPdf(await pdfDe(cp.numero, 1)), texteCompactDuPdf(await pdfDe(f.numero, 1))]) {
       expect(texte).toContain("Incendie");
       expect(texte).toContain("Vol");
       expect(texte).toContain("Dégât");
@@ -187,7 +181,7 @@ describe("produit par garanties : composition → cotation → police → CP →
       expect(texte).toContain("9 116");
       expect(texte).toContain("36 424");
     }
-    const t = texteDuPdf(await pdfDe(f.numero, 1))!;
+    const t = texteCompactDuPdf(await pdfDe(f.numero, 1));
     expect(t).toContain("Total HT : 25 850");
     expect(t).toContain("taxe : 3 074");
     expect(t).toContain("Total TTC : 36 424 F CFA, soit trente-six mille quatre cent vingt-quatre francs CFA");
@@ -199,7 +193,7 @@ describe("produit par garanties : composition → cotation → police → CP →
     // L'avoir reprend la facture en négatif.
     const avoir = await emettreAvoir(technique, fid, "Erreur de facturation (avoir de test)", null);
     expect(avoir.productions[0].ok).toBe(true);
-    const ta = texteDuPdf(await pdfDe(avoir.numero, 1))!;
+    const ta = texteCompactDuPdf(await pdfDe(avoir.numero, 1));
     expect(ta).toContain("-36 424");
   });
 });

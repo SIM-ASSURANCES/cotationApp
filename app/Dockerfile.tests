@@ -1,0 +1,20 @@
+# syntax=docker/dockerfile:1
+# Image du RUNNER DE TESTS (npm test, npm run test:integration, npm run test:e2e, lint, typecheck, build). Elle n'est JAMAIS déployée :
+# docker-compose.yml ne la cite pas, et app/Dockerfile (les images de production) n'est pas touché.
+#
+# Elle ajoute à l'étape « dépendances » de app/Dockerfile ce que les tests de bout en bout exigent : poppler-utils (pdftotext), avec lequel
+# ils lisent le texte des PDF émis. Sans lui, ces tests échouent avec un message clair (app/src/serveur/pdf-test.ts).
+#
+# Construction (contexte : le dossier app/) :
+#   docker build -f app/Dockerfile.tests -t sim-tests-tests app
+# Utilisation : monter le dépôt sur /work (working_dir /work/app), un volume nommé sur /work/app/node_modules (rempli une fois par
+# `cp -a /app/node_modules/. <volume>/`), PostgreSQL, Redis et le générateur à côté ; voir docs/installation.md (« Tests dans des conteneurs »).
+FROM node:24-bookworm-slim
+RUN apt-get update  && apt-get install -y --no-install-recommends openssl poppler-utils  && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY package.json package-lock.json prisma7.config.ts ./
+COPY prisma ./prisma
+# Réseau de poste parfois lent ou instable (ECONNRESET en plein téléchargement) : le cache de téléchargement de BuildKit conserve les archives déjà reçues d'un
+# essai à l'autre, même après un échec, et npm fait quelques tentatives de plus que par défaut.
+RUN --mount=type=cache,target=/root/.npm npm ci --fetch-retries=6 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
+CMD ["sleep", "infinity"]

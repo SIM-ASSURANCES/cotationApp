@@ -2,7 +2,6 @@
 // Vraie base de test, VRAI générateur (LibreOffice, QR code, stockage en ajout seul), vrai Redis, vrai travailleur BullMQ
 // démarré dans le processus du test. Le fichier de 500 lignes est GÉNÉRÉ ici, avec des noms inventés ; 12 lignes ont
 // chacune une erreur d'un type différent. Attendu : 488 certificats, un rapport de 12 lignes, moins de 15 minutes.
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { cpus } from "node:os";
 import { join } from "node:path";
@@ -23,6 +22,7 @@ import { remplacerGenerateur } from "./generateur";
 import { confirmerImport, controlerImport, lireLot, rapportErreurs, zipDuLot } from "./imports";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
 import { aujourdhui, creerProduit, creerTaxe, creerVersion } from "./parametrage";
+import { exigerPdftotext, texteDuPdf } from "./pdf-test";
 import { obtenirPrisma } from "./prisma";
 import { assurerSignature, assurerSocieteDeTest, PNG_REEL_1PX } from "./societe-test";
 import { remplacerStockage, stockage } from "./stockage";
@@ -55,10 +55,6 @@ async function compte(identifiant: string): Promise<UtilisateurCourant> {
   return versUtilisateurCourant(await obtenirPrisma().utilisateur.findUniqueOrThrow({ where: { identifiant }, include: { profil: true } }));
 }
 
-function texteDuPdf(pdf: Uint8Array): string | null {
-  const r = spawnSync("pdftotext", ["-", "-"], { input: Buffer.from(pdf), maxBuffer: 20_000_000 });
-  return r.status === 0 ? r.stdout.toString("utf8").replace(/[  ]/g, " ") : null;
-}
 
 async function publier(type: "CG" | "CERTIFICAT", code: string | null, nom: string, surcharge: Record<string, unknown> = {}): Promise<string> {
   const id = await creerModele(technique, { type, code: CODE(type), libelle: `${type} (T8)`, produitCode: code, ...sans }, null);
@@ -124,6 +120,7 @@ async function xlsx(lignes: Ligne[]): Promise<Uint8Array> {
 const entreesZip = (zip: Uint8Array) => Buffer.from(zip).toString("latin1").split("PK\u0001\u0002").length - 1;
 
 beforeAll(async () => {
+  exigerPdftotext(); // ces tests lisent le texte des PDF : sans pdftotext ils échouent ici, avec un message clair
   remplacerGenerateur(null);
   remplacerStockage(null);
   const sante = await fetch(new URL("/sante", obtenirConfig().GENERATEUR_URL)).catch(() => null);
@@ -252,12 +249,10 @@ describe("T8 : import de 500 adhérents, 12 erreurs de types différents", () =>
       expect(new Set(docs.map((d) => d.empreinte)).size).toBe(488);
       const exemple = docs.find((d) => d.adherentOrdre === 3)!;
       const texte = texteDuPdf(await stockage().lire(exemple.chemin));
-      if (texte !== null) {
-        expect(texte).toContain(`CERTIFICAT D'ADHÉSION n° ${exemple.numero}`);
-        expect(texte).toContain(`Police mère n° ${numeroPolice}`);
-        expect(texte).toContain(`Adhérent n° 3 : ${personne(0)}`);
-        expect(texte).toMatch(/Vérification :\s+https:\/\/documents\.exemple\.ci\/verif\//);
-      }
+      expect(texte).toContain(`CERTIFICAT D'ADHÉSION n° ${exemple.numero}`);
+      expect(texte).toContain(`Police mère n° ${numeroPolice}`);
+      expect(texte).toContain(`Adhérent n° 3 : ${personne(0)}`);
+      expect(texte).toMatch(/Vérification :\s+https:\/\/documents\.exemple\.ci\/verif\//);
 
       // Archive ZIP : 488 PDF ; récapitulatif au journal.
       const zip = await zipDuLot(technique, lotId, null);

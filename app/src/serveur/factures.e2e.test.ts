@@ -3,7 +3,6 @@
 //  - T3 : facture individuelle YAO (163 jours), paiement de 41 000 F : reçu REC et facture v2 avec le restant dû.
 //  - T4 : avoir AV, page de vérification « Annulée – avoir AV-… ».
 // Modèles Word de test : generateur/tests/fixtures/ (données inventées).
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -23,6 +22,7 @@ import { creerFactureAffaireNouvelle, emettreAvoir, emettreFacture, enregistrerP
 import { remplacerGenerateur } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
 import { aujourdhui, creerProduit, creerTaxe, creerVersion } from "./parametrage";
+import { exigerPdftotext, texteDuPdf } from "./pdf-test";
 import { obtenirPrisma } from "./prisma";
 import { assurerSignature, assurerSocieteDeTest, PNG_REEL_1PX } from "./societe-test";
 import { remplacerStockage, stockage } from "./stockage";
@@ -52,11 +52,6 @@ async function compte(identifiant: string): Promise<UtilisateurCourant> {
   return versUtilisateurCourant(await obtenirPrisma().utilisateur.findUniqueOrThrow({ where: { identifiant }, include: { profil: true } }));
 }
 
-function texteDuPdf(pdf: Uint8Array): string | null {
-  const r = spawnSync("pdftotext", ["-", "-"], { input: Buffer.from(pdf), maxBuffer: 20_000_000 });
-  return r.status === 0 ? r.stdout.toString("utf8").replace(/[  ]/g, " ") : null;
-}
-const AVEC_PDFTOTEXT = spawnSync("pdftotext", ["-v"]).error === undefined;
 
 async function publier(type: "CG" | "CP" | "FACTURE" | "AVOIR" | "RECU" | "ANNEXE", produitCode: string | null, nom: string, surcharge: Record<string, unknown> = {}): Promise<string> {
   const id = await creerModele(
@@ -117,6 +112,7 @@ async function pdfDe(numero: string, version: number): Promise<{ pdf: Uint8Array
 const assure = (i: number, formule: string): Assure => ({ ordre: i, nom_prenoms: `Assuré ${i} Inventé`, date_naissance: "1990-01-01", sexe: i % 2 ? "F" : "M", lien: "Salarié", formule });
 
 beforeAll(async () => {
+  exigerPdftotext(); // ces tests lisent le texte des PDF : sans pdftotext ils échouent ici, avec un message clair
   await fixerSeuilGlobalDeTest("20000000"); // T1 / T2 dépassent le seuil unique de 10 M (étape 3) : le test valide la production du PDF, pas la validation
   remplacerGenerateur(null);
   remplacerStockage(null);
@@ -184,8 +180,7 @@ describe("T2 : facture de groupe CGE-SN, vrai PDF", () => {
     expect(r.productions[0].ok).toBe(true);
     const { pdf } = await pdfDe(r.numero, 1);
     expect(Buffer.from(pdf.subarray(0, 5)).toString()).toBe("%PDF-");
-    if (!AVEC_PDFTOTEXT) return;
-    const t = texteDuPdf(pdf)!;
+    const t = texteDuPdf(pdf);
     expect(t).toContain(`FACTURE n° ${r.numero} (v1)`);
     expect(t).toContain("Total HT : 11 420 690");
     expect(t).toContain("171 310");
@@ -218,12 +213,12 @@ describe("T3 et T4 : paiement, reçu, facture v2, puis avoir", () => {
     expect(pay.productions.every((p) => p.ok)).toBe(true);
     const recu = await pdfDe(pay.numeroRecu, 1);
     const v2 = await pdfDe(f.numero, 2);
-    if (AVEC_PDFTOTEXT) {
-      const tr = texteDuPdf(recu.pdf)!;
+    {
+      const tr = texteDuPdf(recu.pdf);
       expect(tr).toContain(`REÇU n° ${pay.numeroRecu} – facture ${f.numero}`);
       expect(tr).toContain("41 000 F CFA, soit quarante et un mille francs CFA");
       expect(tr).toContain("restant dû : 81 442 F CFA");
-      const tf = texteDuPdf(v2.pdf)!;
+      const tf = texteDuPdf(v2.pdf);
       expect(tf).toContain(`FACTURE n° ${f.numero} (v2)`);
       expect(tf).toContain("Taxe");
       expect(tf).toContain("Restant dû : 81 442 F CFA");
@@ -237,8 +232,8 @@ describe("T3 et T4 : paiement, reçu, facture v2, puis avoir", () => {
     expect(av.productions[0].ok).toBe(true);
     const { jeton } = await pdfDe(a.numero, 1);
     expect((await verifierJeton(jeton))!.statut.libelle).toBe(`Annulée – avoir ${av.numero}`);
-    if (AVEC_PDFTOTEXT) {
-      const ta = texteDuPdf((await pdfDe(av.numero, 1)).pdf)!;
+    {
+      const ta = texteDuPdf((await pdfDe(av.numero, 1)).pdf);
       expect(ta).toContain(`AVOIR n° ${av.numero} – annule la facture ${a.numero}`);
       expect(ta).toContain("TTC -122 442 F CFA");
     }

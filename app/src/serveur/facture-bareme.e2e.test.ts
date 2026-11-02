@@ -2,7 +2,6 @@
 // Cotation au barème (SECURPRO inventé) → acceptation → CP → facture d'affaire nouvelle : le bouton « Émettre » est proposé (drapeau d'écran),
 // aucune composition n'est demandée, la facture s'émet et son TTC est celui de la cotation, du jeu d'essai du barème et du PDF.
 // Modèles Word de test : generateur/tests/fixtures/ (données inventées).
-import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -28,6 +27,7 @@ import { composerFacture, creerFactureAffaireNouvelle, emettreFacture, lireFactu
 import { remplacerGenerateur } from "./generateur";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
 import { aujourdhui, creerProduit, creerTaxe, creerVersion } from "./parametrage";
+import { espacesOrdinaires, exigerPdftotext, texteCompactDuPdf } from "./pdf-test";
 import { obtenirPrisma } from "./prisma";
 import { assurerSignature, assurerSocieteDeTest, PNG_REEL_1PX } from "./societe-test";
 import { remplacerStockage, stockage } from "./stockage";
@@ -54,11 +54,6 @@ async function compte(identifiant: string): Promise<UtilisateurCourant> {
   return versUtilisateurCourant(await obtenirPrisma().utilisateur.findUniqueOrThrow({ where: { identifiant }, include: { profil: true } }));
 }
 
-function texteDuPdf(pdf: Uint8Array): string | null {
-  const r = spawnSync("pdftotext", ["-", "-"], { input: Buffer.from(pdf), maxBuffer: 20_000_000 });
-  return r.status === 0 ? r.stdout.toString("utf8").replace(/[  ]/g, " ").replace(/\s+/g, " ") : null;
-}
-const AVEC_PDFTOTEXT = spawnSync("pdftotext", ["-v"]).error === undefined;
 
 async function publier(type: "CG" | "CP" | "COTATION" | "FACTURE", produitCode: string | null, nom: string, surcharge: Record<string, unknown> = {}): Promise<string> {
   const id = await creerModele(technique, { type, code: CODE(type), libelle: type === "CG" ? "SECURPRO – Conditions générales (test)" : `${type} (bout en bout)`, produitCode, ...sans }, null);
@@ -83,6 +78,7 @@ async function changerLaVersionPourTest(id: number, affectation: string): Promis
 }
 
 beforeAll(async () => {
+  exigerPdftotext(); // ces tests lisent le texte des PDF : sans pdftotext ils échouent ici, avec un message clair
   remplacerGenerateur(null);
   remplacerStockage(null);
   const sante = await fetch(new URL("/sante", obtenirConfig().GENERATEUR_URL)).catch(() => null);
@@ -201,8 +197,7 @@ describe("police au barème : cotation → acceptation → facture, « Émettre 
 
     const pdf = await pdfDe(f.numero, 1);
     expect(Buffer.from(pdf.subarray(0, 5)).toString()).toBe("%PDF-");
-    if (!AVEC_PDFTOTEXT) return;
-    const montant = Number(ttcCotation).toLocaleString("fr-FR").replace(/[  ]/g, " ");
-    expect(texteDuPdf(pdf)!).toContain(montant);
+    const montant = espacesOrdinaires(Number(ttcCotation).toLocaleString("fr-FR"));
+    expect(texteCompactDuPdf(pdf)).toContain(montant);
   });
 });

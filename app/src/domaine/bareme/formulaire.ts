@@ -114,6 +114,43 @@ export function champActif(d: DescripteurSaisie, e: EtatSaisie, code: string, pr
   return c.si ? conditionVraie(d, e, c.si) : true;
 }
 
+/** Clés des cases de souscription que l'écran peut porter : `vol` (la garantie) et `vol.caisse` (une composante). */
+const clesDeCases = (d: DescripteurSaisie): Set<string> => new Set(d.garanties.flatMap((g) => [g.code, ...g.composantes.map((c) => `${g.code}.${c.code}`)]));
+
+/**
+ * Où un champ s'affiche (ergonomie du formulaire de cotation, D62). Un champ dont la condition est « la garantie (ou la composante)
+ * est souscrite » s'affiche SOUS la case de cette garantie ; un champ qui dépend d'un tel champ le suit. Les autres restent dans
+ * leur bloc. Le descripteur ne change pas : seul l'endroit où l'écran pose le champ change, la condition d'affichage reste celle du moteur.
+ */
+export function ancrageDesChamps(d: DescripteurSaisie): { parCase: Map<string, DescripteurChamp[]>; dansBloc: DescripteurChamp[] } {
+  const valides = clesDeCases(d);
+  const cleDe = (c: DescripteurChamp, profondeur = 0): string | null => {
+    if (!c.si || profondeur > 20) return null;
+    if ("souscrit" in c.si) return valides.has(c.si.souscrit) ? c.si.souscrit : null;
+    const codeParent = c.si.champ;
+    const parent = d.champs.find((x) => x.code === codeParent);
+    return parent ? cleDe(parent, profondeur + 1) : null;
+  };
+  const parCase = new Map<string, DescripteurChamp[]>();
+  const dansBloc: DescripteurChamp[] = [];
+  for (const c of d.champs) {
+    const cle = cleDe(c);
+    if (cle === null) dansBloc.push(c);
+    else parCase.set(cle, [...(parCase.get(cle) ?? []), c]);
+  }
+  return { parCase, dansBloc };
+}
+
+/**
+ * Libellés des champs obligatoires VISIBLES (condition d'affichage vraie) qui ne sont pas remplis, plus l'effectif s'il est demandé.
+ * Le calcul automatique ne part que si cette liste est vide ; sinon l'écran dit « Complétez : … » sans rien envoyer au serveur.
+ */
+export function champsManquants(d: DescripteurSaisie, e: EtatSaisie, effectif: string): string[] {
+  const manquants = d.champs.filter((c) => c.obligatoire && champActif(d, e, c.code) && !(e.champs[c.code] ?? []).some((v) => v.trim() !== "")).map((c) => c.libelle);
+  if (d.effectif && effectif.trim() === "") manquants.push("Nombre d'assurés");
+  return manquants;
+}
+
 /**
  * Saisie du moteur depuis les champs bruts d'un formulaire (noms `bareme_<code>`, cases `souscrit`, `effectif`). Un champ vide est
  * omis (le moteur dit s'il était obligatoire) ; un oui/non devient un booléen, un choix multiple une liste, une date est normalisée.

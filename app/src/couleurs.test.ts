@@ -67,7 +67,7 @@ describe("aucune couleur en dur dans le code (design system, refonte visuelle)",
       .filter((f) => !AUTORISES.includes(relative(RACINE_SRC, f).replaceAll("\\", "/")))
       .flatMap((f) => constatsDeCouleur(readFileSync(f, "utf8")).map(([ligne, extrait, message]) => `${relative(RACINE_SRC, f)}:${ligne} « ${extrait} » : ${message}`));
     expect(fautes).toEqual([]);
-  });
+  }, 30_000); // parcourt tout src/ : 3 s seul, plus de 5 s quand les 69 fichiers tournent ensemble
 
   it("la détection voit bien les écritures interdites (le test n'est pas aveugle)", () => {
     const interdits = [

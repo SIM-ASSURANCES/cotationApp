@@ -1,10 +1,11 @@
 "use client";
 
-import { startTransition, useActionState, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { FormulaireCotation } from "@/composants/bareme/FormulaireCotation";
+import { creerCalculDiffere, DELAI_CALCUL_MS } from "@/composants/bareme/calculDiffere";
+import { FormulaireCotation, type ChangementSaisie } from "@/composants/bareme/FormulaireCotation";
 import { Bandeau, Bouton, Carte, Tableau } from "@/composants/ui";
-import type { DescripteurSaisie } from "@/domaine/bareme/formulaire";
+import { champsManquants, etatDepuisSaisie, type DescripteurSaisie } from "@/domaine/bareme/formulaire";
 import type { Saisie } from "@/domaine/bareme/schema";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 
@@ -12,58 +13,124 @@ import { calculerLaPrimeBareme, type EtatCalculBareme } from "./actions";
 
 const f = (texte: string) => formaterMontant(montant(texte));
 
+/** Champs du formulaire parent dont le calcul a besoin (le serveur refuse sans eux) : libellés des manquants. */
+function manquantsDuFormulaire(formulaire: HTMLFormElement): string[] {
+  const donnees = new FormData(formulaire);
+  const rempli = (nom: string) => String(donnees.get(nom) ?? "").trim() !== "";
+  const manquants: string[] = [];
+  if (!rempli("typeContrat") && !rempli("regimeTaxe")) manquants.push("Type de contrat");
+  if (!rempli("dateEffet")) manquants.push("Date d'effet");
+  return manquants;
+}
+
 /**
  * Écran de cotation généré depuis le barème publié (B6a, D51) : un bloc par rubrique du barème, les champs avec leur condition
- * d'affichage, les cases de souscription par garantie et par composante. Le bouton « Calculer » appelle le serveur (même calcul
- * que l'enregistrement) ; toute modification d'un champ efface le résultat affiché. Rien ici ne connaît un taux : le descripteur
- * ne porte que ce que le Commercial voit.
+ * d'affichage, les cases de souscription par garantie et par composante. Le calcul est AUTOMATIQUE (D62) : après chaque modification,
+ * une fois la frappe terminée (≈ 600 ms), le serveur calcule si les champs obligatoires visibles sont remplis ; sinon l'écran dit
+ * « Complétez : … » sans rien envoyer. Le bouton « Calculer » reste (secours, et touche Entrée). Rien ici ne connaît un taux ni ne calcule
+ * un montant : le serveur est la seule source (D4) et l'enregistrement recalcule toujours. Le descripteur ne porte que ce que le Commercial voit.
  */
 export function ChampsBareme({ descripteur, initiale }: { descripteur: DescripteurSaisie; initiale?: Saisie }) {
-  const [etat, calculer, enCours] = useActionState<EtatCalculBareme, FormData>(calculerLaPrimeBareme, {});
-  // Le résultat est celui d'un état précis du formulaire : une modification le périme (l'objet d'état reçu n'est plus affiché).
-  const [perime, setPerime] = useState<EtatCalculBareme | null>(null);
-  const resultat = etat === perime ? {} : etat;
+  const [etat, setEtat] = useState<EtatCalculBareme>({});
+  const [manquants, setManquants] = useState<string[]>([]);
+  const [attente, setAttente] = useState(false);
+  const [panne, setPanne] = useState(false);
+  // Le formulaire parent (celui du champ caché ci-dessous), connu après le premier rendu.
+  const [formulaire, setFormulaire] = useState<HTMLFormElement | null>(null);
+  // Dernier état connu des champs du barème (le formulaire le signale à chaque changement) ; celui de départ vient de la saisie enregistrée.
+  const dernier = useRef<ChangementSaisie>({ etat: etatDepuisSaisie(initiale), effectif: initiale?.effectif !== undefined ? String(initiale.effectif) : "" });
+  const descripteurCourant = useRef(descripteur);
+  useEffect(() => {
+    descripteurCourant.current = descripteur;
+  }, [descripteur]);
 
-  // « Calculer » ne soumet PAS le formulaire : React 19 le remettrait à zéro à la fin de l'action (les champs saisis seraient perdus).
-  // Le bouton lit les valeurs (FormData) et lance le calcul dans une transition ; aucun champ n'est touché.
-  const lancerLeCalcul = (e: MouseEvent<HTMLButtonElement>) => {
-    const formulaire = e.currentTarget.form;
+  // Le calcul lit le formulaire AU DÉPART de la requête (saisie du moment) ; le formulaire parent n'est jamais soumis ni remis à zéro.
+  const calcul = useMemo(
+    () =>
+      creerCalculDiffere<EtatCalculBareme>({
+        delaiMs: DELAI_CALCUL_MS,
+        executer: async () => (formulaire ? calculerLaPrimeBareme({}, new FormData(formulaire)) : {}),
+        surResultat: (r) => {
+          setPanne(false);
+          setEtat(r);
+        },
+        surErreur: () => setPanne(true),
+        surAttente: setAttente,
+      }),
+    [formulaire],
+  );
+  useEffect(() => () => calcul.annuler(), [calcul]);
+
+  // Une modification : incomplet → message neutre et rien ne part ; complet → calcul différé.
+  const evaluer = useCallback(() => {
     if (!formulaire) return;
-    const donnees = new FormData(formulaire);
-    startTransition(() => calculer(donnees));
-  };
+    const manque = [...manquantsDuFormulaire(formulaire), ...champsManquants(descripteurCourant.current, dernier.current.etat, dernier.current.effectif)];
+    setManquants(manque);
+    if (manque.length > 0) {
+      calcul.annuler();
+      setEtat({});
+      setPanne(false);
+    } else calcul.planifier();
+  }, [formulaire, calcul]);
+
+  // Les champs hors du barème (type de contrat, dates…) changent aussi le calcul : on écoute le formulaire, sauf les champs du barème
+  // (leur changement arrive par `onChangeSaisie`, avec l'état à jour).
+  useEffect(() => {
+    if (!formulaire) return;
+    const ecouteur = (e: Event) => {
+      if (e.target instanceof Element && e.target.closest("[data-formulaire-bareme]")) return;
+      evaluer();
+    };
+    formulaire.addEventListener("input", ecouteur);
+    formulaire.addEventListener("change", ecouteur);
+    return () => {
+      formulaire.removeEventListener("input", ecouteur);
+      formulaire.removeEventListener("change", ecouteur);
+    };
+  }, [formulaire, evaluer]);
 
   return (
     <>
-      <input type="hidden" name="baremeProduit" value="1" />
+      <input ref={(el) => setFormulaire(el?.form ?? null)} type="hidden" name="baremeProduit" value="1" />
       <FormulaireCotation
         descripteur={descripteur}
         initiale={initiale}
-        onChangeSaisie={() => setPerime(etat)}
+        onChangeSaisie={(changement) => {
+          dernier.current = changement;
+          evaluer();
+        }}
         apres={
           <Carte titre="Prime">
             <div className="mb-3 flex flex-wrap items-center gap-3">
-              <Bouton type="button" data-calculer onClick={lancerLeCalcul} variante="secondaire" attente={enCours} disabled={enCours}>
-                {enCours ? "Calcul en cours…" : "Calculer"}
+              <Bouton type="button" data-calculer onClick={() => calcul.maintenant()} variante="secondaire">
+                Calculer
               </Bouton>
-              <span className="text-sm text-neutral">Le calcul vérifie la saisie ; l&apos;enregistrement du brouillon recalcule toujours depuis le barème publié.</span>
+              <span role="status" className="min-h-5 text-sm text-neutral">
+                {attente && manquants.length === 0 ? "Calcul en cours…" : ""}
+              </span>
             </div>
-            {resultat.erreur ? (
-              <Bandeau ton="danger" role="alert" titre={resultat.erreur}>
-                {resultat.details?.length ? (
+            <p className="mb-3 text-sm text-neutral">Le calcul se fait tout seul quand la saisie est complète ; l&apos;enregistrement du brouillon recalcule toujours depuis le barème publié.</p>
+            {panne ? (
+              <Bandeau ton="danger" role="alert">
+                Le calcul n&apos;a pas abouti. Réessayez avec « Calculer ».
+              </Bandeau>
+            ) : etat.erreur ? (
+              <Bandeau ton="danger" role="alert" titre={etat.erreur}>
+                {etat.details?.length ? (
                   <ul className="mt-1 list-disc space-y-1 pl-5">
-                    {resultat.details.map((d, i) => (
+                    {etat.details.map((d, i) => (
                       <li key={i}>{d}</li>
                     ))}
                   </ul>
                 ) : null}
               </Bandeau>
             ) : null}
-            {resultat.resultat ? (
-              <div aria-live="polite">
+            {manquants.length > 0 && !etat.resultat ? <p className="text-sm text-neutral">Complétez : {manquants.join(", ")}.</p> : null}
+            {etat.resultat ? (
+              <div aria-live="polite" aria-busy={attente} className={attente ? "opacity-60" : undefined}>
                 <Tableau
                   legende="Primes calculées au barème"
-                  lignes={[...resultat.resultat.lignes.map((l, i) => ({ cle: String(i), ...l })), { cle: "TOTAL", libelle: "Total", branche: "", montantGaranti: null, ...resultat.resultat.totaux }]}
+                  lignes={[...etat.resultat.lignes.map((l, i) => ({ cle: String(i), ...l })), { cle: "TOTAL", libelle: "Total", branche: "", montantGaranti: null, ...etat.resultat.totaux }]}
                   cleLigne={(l) => l.cle}
                   colonnes={[
                     { cle: "libelle", entete: "Garantie", className: "font-medium", rendu: (l) => l.libelle },
@@ -74,10 +141,8 @@ export function ChampsBareme({ descripteur, initiale }: { descripteur: Descripte
                     { cle: "ttc", entete: "TTC", alignement: "droite", className: "font-semibold", rendu: (l) => f(l.ttc) },
                   ]}
                 />
-                <p className="mt-2 text-sm text-neutral">Barème publié (empreinte {resultat.resultat.empreinte.slice(0, 16)}…). Ces montants sont recalculés à l&apos;enregistrement.</p>
+                <p className="mt-2 text-sm text-neutral">Barème publié (empreinte {etat.resultat.empreinte.slice(0, 16)}…). Ces montants sont recalculés à l&apos;enregistrement.</p>
               </div>
-            ) : perime !== null && etat === perime ? (
-              <p className="text-sm text-neutral">La saisie a changé : calculez de nouveau.</p>
             ) : null}
           </Carte>
         }

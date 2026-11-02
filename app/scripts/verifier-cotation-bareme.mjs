@@ -8,7 +8,7 @@
 // Variables facultatives : PLAYWRIGHT_MODULE (chemin du module playwright), NAVIGATEUR (canal : « msedge », « chrome »).
 //
 // Pour 1440 px puis 390 px : remplir tout le formulaire (jeu d'essai 1 du SECURPRO inventé), cocher les garanties, Calculer → chaque
-// champ garde sa valeur et le TTC est 139 420 ; changer un champ → résultat effacé, champs conservés ; refus E4 (calcul puis
+// champ garde sa valeur et le TTC est 139 420 ; changer un champ → le total se met à jour SEUL (calcul automatique, D62), champs conservés ; refus E4 (calcul puis
 // enregistrement) → champs conservés ; champ obligatoire manquant → refus, champs conservés ; enregistrement réussi → fiche de la cotation.
 import { createRequire } from "node:module";
 
@@ -109,6 +109,26 @@ async function calculer(page) {
   await page.locator('[aria-live="polite"] table, [role="alert"]:not(:empty)').first().waitFor({ timeout: 20000 });
 }
 
+/** Attend, sans cliquer, que le tableau des primes affiche un texte (le calcul automatique est différé d'environ 600 ms). */
+async function attendreTable(page, regex, delai = 20000) {
+  const debut = Date.now();
+  while (Date.now() - debut < delai) {
+    if ((await page.locator("table", { hasText: "Prime nette" }).count()) > 0 && regex.test(normaliser(await texteTable(page)))) return true;
+    await page.waitForTimeout(150);
+  }
+  return false;
+}
+
+/** Attend, sans cliquer, que le tableau des primes n'affiche PLUS un texte. */
+async function attendreChangement(page, regex, delai = 20000) {
+  const debut = Date.now();
+  while (Date.now() - debut < delai) {
+    if ((await page.locator("table", { hasText: "Prime nette" }).count()) > 0 && !regex.test(normaliser(await texteTable(page)))) return true;
+    await page.waitForTimeout(150);
+  }
+  return false;
+}
+
 async function cliquerEnregistrer(page) {
   await page.getByRole("button", { name: /Créer le brouillon|Enregistrer le brouillon/ }).click();
 }
@@ -124,6 +144,7 @@ for (const taille of TAILLES) {
 
   // 1. Tout remplir puis Calculer : aucune valeur ne change, le TTC est 139 420.
   await remplir(page);
+  verifier(libelle("calcul automatique : le total 139 420 apparaît sans clic"), await attendreTable(page, /Total[\s\S]*139 420/));
   const avantCalcul = await instantane(page);
   await calculer(page);
   const tableau = normaliser(await texteTable(page));
@@ -132,29 +153,28 @@ for (const taille of TAILLES) {
   verifier(libelle(`Calculer : les ${Object.keys(avantCalcul).length} champs gardent leur valeur`), differences(avantCalcul, apresCalcul).length === 0, differences(avantCalcul, apresCalcul).join(" ; "));
   verifier(libelle("Calculer : l'adresse de la page ne change pas"), new URL(page.url()).pathname === "/cotations/nouvelle", page.url());
 
-  // 2. Changer un champ : le résultat est effacé, la saisie reste.
+  // 2. Changer un champ : le total se met à jour SANS clic (calcul automatique), la saisie reste.
   await champ(page, "stocks").fill("6000000");
-  await page.getByText("La saisie a changé : calculez de nouveau.").waitFor({ timeout: 10000 }).catch(() => {});
-  verifier(libelle("changement d'un champ : résultat effacé et invitation à recalculer"), (await page.locator("table", { hasText: "Prime nette" }).count()) === 0 && (await page.getByText("La saisie a changé : calculez de nouveau.").count()) === 1);
+  verifier(libelle("changement d'un champ : le total change tout seul"), await attendreChangement(page, /139 420/));
   const apresChangement = await instantane(page);
   const attendu = { ...avantCalcul, "bareme_stocks#0": "6000000" };
   verifier(libelle("changement d'un champ : seul ce champ a changé"), differences(attendu, apresChangement).length === 0, differences(attendu, apresChangement).join(" ; "));
   await champ(page, "stocks").fill("6866500");
+  verifier(libelle("retour à la valeur : TTC 139 420 sans clic"), await attendreTable(page, /139 420/));
   await calculer(page);
-  verifier(libelle("recalcul après retour à la valeur : TTC 139 420"), /139 420/.test(normaliser(await texteTable(page))));
+  verifier(libelle("« Calculer » (secours) : TTC 139 420"), /139 420/.test(normaliser(await texteTable(page))));
 
   // 2 bis. Touche Entrée (B6b) : dans un champ du barème, puis dans un champ du souscripteur, elle lance « Calculer » et jamais l'enregistrement.
   await champ(page, "stocks").fill("6000000");
   await champ(page, "stocks").press("Enter");
-  await page.locator('[aria-live="polite"] table').first().waitFor({ timeout: 20000 }).catch(() => {});
+  await attendreChangement(page, /139 420/);
   verifier(libelle("Entrée dans un champ du barème : le calcul est lancé (résultat affiché)"), (await page.locator("table", { hasText: "Prime nette" }).count()) === 1);
   verifier(libelle("Entrée dans un champ du barème : aucun enregistrement (même page)"), new URL(page.url()).pathname === "/cotations/nouvelle", page.url());
   const apresEntree = await instantane(page);
   verifier(libelle("Entrée dans un champ du barème : champs conservés"), differences({ ...avantCalcul, "bareme_stocks#0": "6000000" }, apresEntree).length === 0, differences({ ...avantCalcul, "bareme_stocks#0": "6000000" }, apresEntree).join(" ; "));
   await champ(page, "stocks").fill("6866500");
   await page.locator('input[name="souscripteur_nom"]').press("Enter");
-  await page.locator('[aria-live="polite"] table').first().waitFor({ timeout: 20000 }).catch(() => {});
-  verifier(libelle("Entrée dans un champ du souscripteur : calcul lancé, TTC 139 420"), /139 420/.test(normaliser(await texteTable(page))));
+  verifier(libelle("Entrée dans un champ du souscripteur : calcul lancé, TTC 139 420"), await attendreTable(page, /139 420/));
   await page.waitForTimeout(1500);
   verifier(libelle("Entrée dans un champ du souscripteur : aucun enregistrement (même page, pas d'erreur de formulaire)"), new URL(page.url()).pathname === "/cotations/nouvelle" && (await page.locator("form > [role=alert]").count()) === 0, page.url());
   verifier(libelle("Entrée : champs conservés"), differences(await instantane(page), { ...avantCalcul }).length === 0, differences(await instantane(page), { ...avantCalcul }).join(" ; "));
@@ -162,6 +182,7 @@ for (const taille of TAILLES) {
   // 3. Refus E4 au calcul (en marché, capitaux au-dessus de la limite) : message de la Technique, champs conservés.
   await champ(page, "situation").selectOption("MARCHE");
   const avantE4 = await instantane(page);
+  await page.locator('[role="alert"]', { hasText: MESSAGE_E4 }).first().waitFor({ timeout: 20000 }).catch(() => {}); // le refus arrive seul
   await calculer(page);
   verifier(libelle("refus E4 au calcul : message du barème affiché"), (await page.locator('[role="alert"]', { hasText: MESSAGE_E4 }).count()) >= 1);
   verifier(libelle("refus E4 au calcul : champs conservés"), differences(avantE4, await instantane(page)).length === 0, differences(avantE4, await instantane(page)).join(" ; "));

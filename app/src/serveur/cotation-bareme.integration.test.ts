@@ -378,7 +378,8 @@ describe("Session B6a : cotation SECURPRO au barème (inventé), de bout en bout
     const r = await calculerCotationBareme(commercial, base);
     // Forme stricte de la réponse : empreinte, lignes, totaux ; chaque ligne n'a que des libellés et des montants arrondis.
     expect(Object.keys(r).sort()).toEqual(["empreinte", "lignes", "totaux"]);
-    for (const l of r.lignes) expect(Object.keys(l).sort()).toEqual(["accessoires", "branche", "libelle", "montantGaranti", "nette", "taxe", "ttc"]);
+    // D61 : les composantes (code, libellé, montant garanti, prime nette) s'ajoutent à la ligne, comme le montant garanti de la ligne ; toujours ni taux, ni table, ni règle du barème.
+    for (const l of r.lignes) expect(Object.keys(l).sort()).toEqual(["accessoires", "branche", "composantes", "libelle", "montantGaranti", "nette", "taxe", "ttc"]);
     expect(Object.keys(r.totaux).sort()).toEqual(["accessoires", "nette", "taxe", "ttc"]);
     const json = JSON.stringify(r);
     for (const secret of ["taux_incendie", "secu_incendie", "coef_vol", "limites", "0.864", "1.24416", "PCT_PLAFOND", "capitaux_totaux", "assiette", "tables", "sousJacents"]) expect(json, secret).not.toContain(secret);

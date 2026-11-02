@@ -18,5 +18,7 @@ export default defineConfig({
     setupFiles: ["./vitest.integration.setup.ts"],
     fileParallelism: false, // une seule base partagée
     testTimeout: 30_000,
+    // Le beforeAll de plusieurs fichiers crée des comptes (mots de passe hachés), des données de référence et publie un barème : plus de 10 s (H184).
+    hookTimeout: 60_000,
   },
 });

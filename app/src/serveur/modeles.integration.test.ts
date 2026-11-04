@@ -23,6 +23,8 @@ import {
   fichierVersion,
   lireModele,
   lireSeuilListe,
+  listerModelesAPublier,
+  listerProduitsDesModeles,
   pdfPublie,
   publierVersion,
   renvoyerVersion,
@@ -378,5 +380,38 @@ describe("aperçu et listes longues (CDC §6.5, §6.6)", () => {
     await enregistrerSeuilListe(technique, 15, DEMAIN, null);
     expect(await lireSeuilListe(DEMAIN)).toBe(15);
     expect(await lireSeuilListe(aujourdhui())).not.toBe(15);
+  });
+});
+
+// ---------------------------------------------------------------- Vue « À valider / À publier » (D63)
+
+describe("vue « À valider / À publier »", () => {
+  it("refusée sans le droit de publication : Technique et Commercial reçoivent un refus, jamais une liste vide", async () => {
+    await expect(listerModelesAPublier(technique)).rejects.toThrow(ErreurAcces);
+    await expect(listerModelesAPublier(commercial)).rejects.toThrow(ErreurAcces);
+  });
+
+  it("la Direction Générale voit les versions soumises (pas les brouillons), et plus rien une fois publiées", async () => {
+    const soumis = await cp();
+    await deposerVersion(technique, soumis, depot(), null);
+    await soumettreVersion(technique, await versionId(soumis, 1), null);
+    const brouillon = await cp();
+    await deposerVersion(technique, brouillon, depot(), null);
+
+    const avant = await listerModelesAPublier(dg);
+    const ids = avant.map((m) => m.id);
+    expect(ids).toContain(soumis);
+    expect(ids).not.toContain(brouillon);
+    const ligne = avant.find((m) => m.id === soumis)!;
+    expect(ligne).toMatchObject({ produitCode: produit, version: { numero: 1, auteur: technique.identifiant } });
+
+    await publierVersion(dg, await versionId(soumis, 1), aujourdhui(), null);
+    expect((await listerModelesAPublier(dg)).map((m) => m.id)).not.toContain(soumis);
+  });
+
+  it("produits pour le rangement : réservé à ceux qui lisent les modèles", async () => {
+    expect((await listerProduitsDesModeles(technique)).map((p) => p.code)).toContain(produit);
+    expect((await listerProduitsDesModeles(dg)).map((p) => p.code)).toContain(produit);
+    await expect(listerProduitsDesModeles(commercial)).rejects.toThrow(ErreurAcces);
   });
 });

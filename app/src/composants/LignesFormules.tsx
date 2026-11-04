@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Bouton, Champ, ListeDeroulante } from "@/composants/ui";
+import { Bouton, Champ, ChampMontant, ListeDeroulante } from "@/composants/ui";
 import { MODES_ACCESSOIRE } from "@/domaine/calcul/calcul";
 
 export type LigneFormule = {
@@ -75,7 +75,7 @@ export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
                   <Champ name="formule_taux" value={l.tauxCouverture} onChange={(e) => modifier(i, "tauxCouverture", e.target.value)} aria-label="Taux de couverture" />
                 </td>
                 <td className={CELLULE}>
-                  <Champ name="formule_prime" value={l.primeUnitaire} onChange={(e) => modifier(i, "primeUnitaire", e.target.value)} aria-label="Prime unitaire" inputMode="decimal" required={commencee(l)} />
+                  <ChampMontant name="formule_prime" value={l.primeUnitaire} onChange={(v) => modifier(i, "primeUnitaire", v)} aria-label="Prime unitaire" required={commencee(l)} />
                 </td>
                 <td className={CELLULE}>
                   <ListeDeroulante
@@ -87,7 +87,7 @@ export function LignesFormules({ initiales }: { initiales: LigneFormule[] }) {
                   />
                 </td>
                 <td className={CELLULE}>
-                  <Champ name="formule_valeur" value={l.accessoireValeur} onChange={(e) => modifier(i, "accessoireValeur", e.target.value)} aria-label="Valeur des accessoires" inputMode="decimal" required={commencee(l)} />
+                  <ChampMontant name="formule_valeur" value={l.accessoireValeur} onChange={(v) => modifier(i, "accessoireValeur", v)} aria-label="Valeur des accessoires" required={commencee(l)} />
                 </td>
                 <td className={CELLULE}>
                   <Champ name="formule_age_min" value={l.ageMin} onChange={(e) => modifier(i, "ageMin", e.target.value)} aria-label="Âge minimal" inputMode="numeric" />

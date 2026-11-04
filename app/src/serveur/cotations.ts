@@ -3,7 +3,7 @@ import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 
 import { calculerBareme, descripteurSaisie, risqueDuBareme, saisieDepuisFormulaire, versComposition, type DescripteurSaisie, type Saisie as SaisieBareme } from "@/domaine/bareme";
-import { type ResultatCalcul } from "@/domaine/calcul/calcul";
+import { joursCouverts, type ResultatCalcul } from "@/domaine/calcul/calcul";
 import {
   LONGUEUR_MAX_MOTIF_COMPOSITION,
   LONGUEUR_MIN_MOTIF_COMPOSITION,
@@ -54,6 +54,7 @@ import {
 } from "@/domaine/cotation/statuts";
 import {
   detecterForcages,
+  LIBELLE_RAISON,
   problemesForcage,
   raisonsDeValidation,
   valideurAutorise,
@@ -301,7 +302,13 @@ async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: Saisie
 /** Refus du barème (dont le message de la Technique, E4) : le premier message en titre, les autres dessous. */
 const refusBareme = (refus: { message: string }[]) => new ErreurMetier(refus[0]?.message ?? "Le barème refuse cette saisie.", refus.slice(1).map((r) => r.message));
 
-type CalculBareme = { contexte: Awaited<ReturnType<typeof resoudreContexteBareme>>; entree: EntreeComposition & { origine: "BAREME"; bareme: BaremeFige }; risque: Risque };
+type CalculBareme = {
+  contexte: Awaited<ReturnType<typeof resoudreContexteBareme>>;
+  entree: EntreeComposition & { origine: "BAREME"; bareme: BaremeFige };
+  risque: Risque;
+  /** Durée couverte et prorata appliqués par le barème (D63) : affichés avec le résultat, jamais relus par l'enregistrement. */
+  prorata: { actif: boolean; jours: number; coefficient: string };
+};
 
 /**
  * Calcule la prime d'une saisie au barème PUBLIÉ de la version en vigueur à `dateDocument` : le moteur du barème rend les lignes de prime, le
@@ -344,7 +351,12 @@ async function lignesAuBareme(
     origine: "BAREME",
     bareme: { versionId: version.id, empreinte, saisie },
   };
-  return { contexte, entree, risque: risqueDuBareme(bareme, saisie) };
+  return {
+    contexte,
+    entree,
+    risque: risqueDuBareme(bareme, saisie),
+    prorata: { actif: parametres.prorata.actif, jours: joursCouverts(demande.dateEffet, demande.dateEcheance), coefficient: calcul.coefProrata.toFixed() },
+  };
 }
 
 /**
@@ -398,6 +410,8 @@ async function calculerAuBareme(tx: Tx, saisie: SaisieCotation, dateDocument: Da
 /** Résultat du bouton « Calculer » : lignes de composition arrondies et totaux, rien n'est enregistré. */
 export type ResultatCalculBareme = {
   empreinte: string;
+  /** Durée couverte et prorata du barème (D63) : `coefficient` vaut 1 quand le produit n'applique pas de prorata. */
+  prorata: { actif: boolean; jours: number; coefficient: string };
   lignes: { libelle: string; branche: string; montantGaranti: string | null; nette: string; accessoires: string; taxe: string; ttc: string; composantes: ComposanteFigee[] }[];
   totaux: { nette: string; accessoires: string; taxe: string; ttc: string };
 };
@@ -416,7 +430,7 @@ export async function calculerCotationBareme(
   const regime = estRegimeTaxe(demande.regimeTaxe) ? demande.regimeTaxe : estTypeContrat(demande.typeContrat) ? REGIME_PAR_DEFAUT[demande.typeContrat] : undefined;
   if (regime === undefined) throw new ErreurMetier("Choisissez le type de contrat et le régime de taxe avant de calculer : ils déterminent le taux de taxe.");
   return obtenirPrisma().$transaction(async (tx) => {
-    const { entree } = await lignesAuBareme(tx, { ...demande, dateDocument: aujourdhui(), regimeTaxe: regime });
+    const { entree, prorata } = await lignesAuBareme(tx, { ...demande, dateDocument: aujourdhui(), regimeTaxe: regime });
     let resultat: ResultatCalcul;
     try {
       resultat = executerCalcul(entree, { repartitionPourcent: null, decalagesMois: null }, 1).resultat;
@@ -428,6 +442,7 @@ export async function calculerCotationBareme(
     const a = resultat.totaux.arrondi;
     return {
       empreinte: entree.bareme.empreinte,
+      prorata,
       lignes: resultat.lignes.map((l, i) => ({
         libelle: entree.lignes[i].libelle,
         branche: entree.lignes[i].branche,
@@ -439,6 +454,73 @@ export async function calculerCotationBareme(
         ttc: t(l.arrondi.ttc),
       })),
       totaux: { nette: t(a.nette), accessoires: t(a.accessoires), taxe: t(a.taxe), ttc: t(a.ttc) },
+    };
+  });
+}
+
+/** Résultat du calcul automatique d'une cotation par formules (D63) : lignes arrondies, totaux, durée couverte et raisons d'une validation. */
+export type ResultatCalculFormules = {
+  lignes: { code: string; libelle: string; effectif: number; nette: string; accessoires: string; taxe: string; ttc: string }[];
+  fraisFractionnement: { accessoires: string; taxe: string; ttc: string } | null;
+  totaux: { nette: string; accessoires: string; taxe: string; ttc: string };
+  prorata: { actif: boolean; jours: number; coefficient: string };
+  /** Libellés des raisons pour lesquelles la cotation passerait « À valider » (prime forcée, TTC au-delà du seuil) ; vide sinon. */
+  validation: string[];
+};
+
+/**
+ * Calcul automatique de l'écran de cotation d'un produit à la formule (D63) : mêmes règles que l'enregistrement du brouillon (même
+ * contexte `resoudreContexte`, qui refuse tout mode autre que « Par formule » ; mêmes contrôles des lignes ; même droit de forçage ; même
+ * moteur), sans rien écrire. Le motif d'un forçage et l'identité du souscripteur ne conditionnent pas l'affichage des montants : ils sont
+ * exigés à l'enregistrement. Le résultat n'est jamais relu par l'enregistrement, qui recalcule toujours.
+ */
+export async function calculerCotationFormules(
+  acteur: UtilisateurCourant,
+  demande: { codeProduit: string; typeContrat: string; regimeTaxe: string; dateEffet: DateIso; dateEcheance: DateIso; nombreTranches: number; lignes: SaisieCotation["lignes"] },
+): Promise<ResultatCalculFormules> {
+  await exigerAgir(acteur);
+  const problemesDateEffet = problemesDateEffetCotation(demande.dateEffet);
+  if (problemesDateEffet.length > 0) throw new ErreurMetier(problemesDateEffet.join(" "));
+  if (!estTypeContrat(demande.typeContrat)) {
+    throw new ErreurMetier("Choisissez le type de contrat (individuel, famille, groupe ou groupe ouvert) : il détermine le taux de taxe.");
+  }
+  const regime = estRegimeTaxe(demande.regimeTaxe) ? demande.regimeTaxe : REGIME_PAR_DEFAUT[demande.typeContrat];
+  return obtenirPrisma().$transaction(async (tx) => {
+    const contexte = await resoudreContexte(tx, demande.codeProduit, aujourdhui(), demande.dateEffet, regime);
+    const { version } = contexte;
+    const problemes = problemesLignes(demande.lignes, version.cotation.formulesMax);
+    if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
+    const { entree, primesTarif } = construireEntree(contexte, { dateEffet: demande.dateEffet, dateEcheance: demande.dateEcheance, lignes: demande.lignes, nombreTranches: demande.nombreTranches });
+    const forcages = detecterForcages(demande.lignes.map((l) => ({ code: l.codeFormule, primeTarif: primesTarif[l.codeFormule], primeForcee: l.primeForcee ?? null })));
+    if (forcages.length > 0 && !peutLire(await niveauDuProfil(acteur.profil, "FORCER_PRIME"))) {
+      throw new ErreurAcces("Droit insuffisant : forçage de prime.");
+    }
+    let resultat: ResultatCalcul;
+    try {
+      resultat = executerCalcul(entree, version.fractionnement, demande.nombreTranches).resultat;
+    } catch (erreur) {
+      if (erreur instanceof ErreurCalcul) throw new ErreurMetier(erreur.message);
+      throw erreur;
+    }
+    const t = (m: { toFixed(): string }) => m.toFixed();
+    const a = resultat.totaux.arrondi;
+    const raisons = raisonsDeValidation({ forcages, ttc: a.ttc, seuil: await lireSeuilValidationGlobal(demande.dateEffet) });
+    return {
+      lignes: resultat.lignes.map((l) => ({
+        code: l.code,
+        libelle: version.formules.find((f) => f.code === l.code)?.libelle ?? l.code,
+        effectif: l.effectif,
+        nette: t(l.arrondi.nette),
+        accessoires: t(l.arrondi.accessoires),
+        taxe: t(l.arrondi.taxe),
+        ttc: t(l.arrondi.ttc),
+      })),
+      fraisFractionnement: resultat.fraisFractionnement
+        ? { accessoires: t(resultat.fraisFractionnement.arrondi.accessoires), taxe: t(resultat.fraisFractionnement.arrondi.taxe), ttc: t(resultat.fraisFractionnement.arrondi.ttc) }
+        : null,
+      totaux: { nette: t(a.nette), accessoires: t(a.accessoires), taxe: t(a.taxe), ttc: t(a.ttc) },
+      prorata: { actif: version.prorata.actif, jours: resultat.joursCouverts, coefficient: t(resultat.coefProrata) },
+      validation: raisons.map((r) => LIBELLE_RAISON[r]),
     };
   });
 }

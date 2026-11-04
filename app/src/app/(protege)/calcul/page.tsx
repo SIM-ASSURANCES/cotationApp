@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { Bandeau, Bouton, Carte, Champ, ChampDate, EnTetePage, EtatVide, ListeDeroulante, Tableau, type ColonneTableau } from "@/composants/ui";
 import { dateValide, formaterDate, normaliserDateSaisie } from "@/domaine/calcul/dates";
 import { formaterMontant, type Montant } from "@/domaine/calcul/montant";
+import { libelleDureeEtProrata } from "@/domaine/calcul/libelle-prorata";
 import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT, REGIMES_TAXE, estRegimeTaxe } from "@/domaine/calcul/taxes";
 import { peutLire } from "@/domaine/droits";
 import { calculerPourProduit, aujourdhui, listerVersions, listerProduits, type ReponseCalcul } from "@/serveur/parametrage";
@@ -101,7 +102,7 @@ function Resultats({ r }: { r: ReponseCalcul }) {
       description={
         <>
           Paramétrage du produit en vigueur le {formaterDate(r.versionDu)} · taxe {r.taxe.branche} ({r.taxe.typeContrat ? `régime ${LIBELLE_TYPE_CONTRAT[r.taxe.typeContrat].toLowerCase()}` : "tous régimes"}) {r.taxe.tauxPourcent.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "").replace(".", ",")} % (en vigueur le {formaterDate(r.taxe.dateEffet)}) ·{" "}
-          {x.joursCouverts} jour(s) couverts, coefficient de prorata {x.coefProrata.toDecimalPlaces(5).toString().replace(".", ",")}
+          {libelleDureeEtProrata(x.joursCouverts, x.coefProrata)}
         </>
       }
     >

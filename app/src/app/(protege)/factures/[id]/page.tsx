@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { AvertissementsReports } from "@/composants/AvertissementsReports";
-import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
+import { Champ, ChampDate, ChampMontant, FormulaireAction } from "@/composants/FormulaireAction";
 import { composantesAMontrer, libelleSousLigne, montantSousLigne } from "@/composants/bareme/sousLignes";
 import { LignesComposition } from "@/composants/LignesComposition";
 import { Bandeau, Carte, Champ as ChampSaisie, EnTetePage, ListeDefinitions, ListeDeroulante, PastilleStatut, Tableau, type ColonneTableau, type ElementDefinition } from "@/composants/ui";
@@ -369,7 +369,7 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
               {cache}
               <div className="grid gap-x-4 sm:grid-cols-2">
                 <ChampDate nom="date" libelle="Date (JJ/MM/AAAA)" valeur={aujourdhui()} max={aujourdhui()} />
-                <Champ nom="montant" libelle={`Montant (restant dû : ${x.etat ? f(x.etat.restantDu) : "?"} F)`} autoComplete="off" />
+                <ChampMontant nom="montant" libelle={`Montant (restant dû : ${x.etat ? f(x.etat.restantDu) : "?"} F)`} />
                 <div className="mb-4">
                   <ListeDeroulante label="Canal" name="canal" required invite="— Choisir —" options={CANAUX_PAIEMENT.map((k) => ({ valeur: k, libelle: LIBELLE_CANAL[k] }))} />
                 </div>
@@ -388,7 +388,7 @@ export default async function PageFacture(props: PageProps<"/factures/[id]">) {
             <AvertissementsReports reports={x.avance.reportsEnAttente} />
             <FormulaireAction action={imputerLAvance} libelleBouton="Imputer l'avance">
               {cache}
-              <Champ nom="montant" libelle="Montant à imputer" valeur={x.avance.proposee} autoComplete="off" />
+              <ChampMontant nom="montant" libelle="Montant à imputer" valeur={x.avance.proposee} />
             </FormulaireAction>
           </Carte>
         ) : null}

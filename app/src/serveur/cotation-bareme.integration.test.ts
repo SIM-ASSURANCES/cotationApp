@@ -376,8 +376,8 @@ describe("Session B6a : cotation SECURPRO au barème (inventé), de bout en bout
     const base = demandeCalcul(essai.entrees);
     const avant = await obtenirPrisma().cotation.count();
     const r = await calculerCotationBareme(commercial, base);
-    // Forme stricte de la réponse : empreinte, lignes, totaux ; chaque ligne n'a que des libellés et des montants arrondis.
-    expect(Object.keys(r).sort()).toEqual(["empreinte", "lignes", "totaux"]);
+    // Forme stricte de la réponse : empreinte, lignes, prorata (durée couverte, D63 : ni taux ni table), totaux ; chaque ligne n'a que des libellés et des montants arrondis.
+    expect(Object.keys(r).sort()).toEqual(["empreinte", "lignes", "prorata", "totaux"]);
     // D61 : les composantes (code, libellé, montant garanti, prime nette) s'ajoutent à la ligne, comme le montant garanti de la ligne ; toujours ni taux, ni table, ni règle du barème.
     for (const l of r.lignes) expect(Object.keys(l).sort()).toEqual(["accessoires", "branche", "composantes", "libelle", "montantGaranti", "nette", "taxe", "ttc"]);
     expect(Object.keys(r.totaux).sort()).toEqual(["accessoires", "nette", "taxe", "ttc"]);

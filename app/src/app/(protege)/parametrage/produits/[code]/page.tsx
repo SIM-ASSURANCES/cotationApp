@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
-import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
+import { Champ, ChampDate, ChampMontant, FormulaireAction } from "@/composants/FormulaireAction";
+import { SectionSelonMode } from "@/composants/SectionSelonMode";
 import { LignesFormules } from "@/composants/LignesFormules";
 import { Bandeau, Carte, EnTetePage, EtatVide, LienBouton, ListeDeroulante, Tableau, ZoneTexte, type ColonneTableau } from "@/composants/ui";
 import { NIVEAUX_ARRONDI } from "@/domaine/calcul/calcul";
@@ -85,6 +86,8 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
   }
   const { produit, versions } = donnees;
   const base = versions[0]; // la plus récente : point de départ de la nouvelle version
+  // Mode proposé à la nouvelle version : celui de la dernière (le mode « Au barème » ne se choisit pas ici), « Par garanties » après un barème.
+  const modeInitial = base && base.modeTarification !== "BAREME" ? base.modeTarification : base ? "GARANTIES" : "FORMULE";
   // H140 : version future créée pour recevoir un barème, sans barème publié.
   const futures = versions.filter((v) => v.modeTarification === "GARANTIES" && v.dateEffet > aujourdhui());
   const publiees = new Set((await Promise.all(futures.map(async (v) => ((await etatDuBareme(v.id)).publie ? v.id : null)))).filter((id): id is number => id !== null));
@@ -171,14 +174,15 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
                 <ListeDeroulante
                   label="Mode de tarification"
                   name="modeTarification"
-                  defaultValue={base && base.modeTarification !== "BAREME" ? base.modeTarification : base ? "GARANTIES" : "FORMULE"}
+                  defaultValue={modeInitial}
                   options={MODES_TARIFICATION.filter((m) => m !== "BAREME").map((m) => ({ valeur: m, libelle: LIBELLE_MODE[m] }))}
                 />
               </div>
-              <Champ nom="primeMinimale" libelle="Prime minimale (facultative)" requis={false} valeur={base?.prorata.primeMinimale ? net(base.prorata.primeMinimale) : ""} autoComplete="off" />
+              <ChampMontant nom="primeMinimale" libelle="Prime minimale (facultative)" requis={false} valeur={base?.prorata.primeMinimale ? net(base.prorata.primeMinimale) : ""} />
               <div className="mb-4">
                 <ListeDeroulante
                   label="Précision d'arrondi (F)"
+                  aide="Les montants sont arrondis à ce multiple de francs : 1 = au franc, 10 = à la dizaine, 100 = à la centaine, 1 000 = au millier."
                   name="precision"
                   defaultValue={String(base?.arrondi.precision ?? 1)}
                   options={PRECISIONS.map((p) => ({ valeur: String(p), libelle: String(p) }))}
@@ -206,11 +210,13 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
               <Champ nom="tranchesMax" libelle="Nombre maximal de tranches (1 à 12)" valeur={String(base?.fractionnement.tranchesMax ?? 1)} autoComplete="off" />
               <Champ nom="repartition" libelle="Répartition en % (ex. 40 ; 30 ; 30), vide = tranches égales" requis={false} valeur={base?.fractionnement.repartitionPourcent?.join(" ; ") ?? ""} autoComplete="off" />
               <Champ nom="decalages" libelle="Décalages en mois (ex. 0 ; 3 ; 6), vide = réguliers" requis={false} valeur={base?.fractionnement.decalagesMois?.join(" ; ") ?? ""} autoComplete="off" />
-              <Champ nom="frais" libelle="Frais de fractionnement (ajoutés aux accessoires)" valeur={base ? net(base.fractionnement.frais) : "0"} autoComplete="off" />
+              <ChampMontant nom="frais" libelle="Frais de fractionnement (ajoutés aux accessoires)" valeur={base ? net(base.fractionnement.frais) : "0"} />
               <Champ nom="validiteMois" libelle="Validité d'une cotation (mois, à partir de la date d'établissement)" valeur={String(base?.cotation.validiteMois ?? 3)} autoComplete="off" />
-              <Champ nom="formulesMax" libelle="Formules comparées au plus" valeur={String(base?.cotation.formulesMax ?? 3)} autoComplete="off" />
+              <Champ nom="formulesMax" libelle="Formules comparées au plus" valeur={String(base?.cotation.formulesMax ?? 3)} autoComplete="off" aide="Nombre maximal de formules que l'on peut comparer dans une même cotation." />
             </div>
-            <h3 className={SOUS_TITRE}>Garanties du produit (mode « Par garanties » seulement)</h3>
+            {/* D63 : la section ne s'affiche que pour une version « Par garanties ». */}
+            <SectionSelonMode mode="GARANTIES" modeInitial={modeInitial}>
+            <h3 className={SOUS_TITRE}>Garanties du produit</h3>
             <p className="mb-2 text-sm text-muted-foreground">
               Une garantie par ligne : « Libellé ; CATÉGORIE_TAXE ; MONTANT_GARANTI ; ACCESSOIRES » (catégorie de taxe proposée, montant garanti par défaut en FCFA ≥ 0 facultatif,
               accessoires par défaut en FCFA ≥ 0 facultatifs). Elles pré-remplissent la composition de la prime. Aucune formule n&apos;est nécessaire dans ce mode.
@@ -230,6 +236,7 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
                 <input type="checkbox" name="garantiesSaisieLibre" defaultChecked={base?.garantiesSaisieLibre ?? true} className={CASE} /> Saisie libre autorisée (décochée : seuls les libellés de la liste sont acceptés)
               </label>
             </div>
+            </SectionSelonMode>
             <h3 className={SOUS_TITRE}>Références contractuelles (CDC §7)</h3>
             <p className="mb-2 text-sm text-muted-foreground">
               Les conditions générales ne se saisissent plus ici : le produit reçoit celles de sa branche principale, avec le visa de leur

@@ -1,4 +1,4 @@
-import { dateValide, type DateIso } from "../calcul/dates";
+import { dateValide, formaterDate, type DateIso } from "../calcul/dates";
 import { normaliserNumeroPolice, numeroCertificatParDefaut, problemesNumeroCertificat } from "../cotation/police";
 import { LONGUEUR_MAX_NUM_IDENTIFICATION, SEXES, type Assure } from "../cotation/saisie";
 
@@ -84,15 +84,28 @@ function texte(c: Cellule | undefined): string {
   return String(c).trim();
 }
 
-/** Date de naissance : cellule date d'Excel, JJ/MM/AAAA ou AAAA-MM-JJ ; null si illisible. Un nombre seul est refusé (ambigu). */
-export function lireDate(c: Cellule | undefined): DateIso | null {
-  if (c instanceof Date) return Number.isNaN(c.getTime()) ? null : c.toISOString().slice(0, 10);
+/**
+ * Ce que dit une cellule de date : une date lue, une date de forme reconnue mais qui n'existe pas au calendrier (31/02/1990), ou un
+ * texte dont la forme n'est pas reconnue (14.03.1988). `jjmmaaaa` : la date reconnue, écrite comme à l'écran, pour le message.
+ */
+export type DateLue = { genre: "LUE"; iso: DateIso } | { genre: "INEXISTANTE"; jjmmaaaa: string } | { genre: "FORMAT_INVALIDE" };
+
+/** Diagnostic d'une cellule de date : cellule date d'Excel, JJ/MM/AAAA ou AAAA-MM-JJ. Un nombre seul est refusé (ambigu). */
+export function diagnostiquerDate(c: Cellule | undefined): DateLue {
+  if (c instanceof Date) return Number.isNaN(c.getTime()) ? { genre: "FORMAT_INVALIDE" } : { genre: "LUE", iso: c.toISOString().slice(0, 10) };
   const t = texte(c);
-  let iso: string | null = null;
   const fr = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(t);
+  let iso: string;
   if (fr) iso = `${fr[3]}-${fr[2].padStart(2, "0")}-${fr[1].padStart(2, "0")}`;
   else if (/^\d{4}-\d{2}-\d{2}$/.test(t)) iso = t;
-  return iso && dateValide(iso) ? iso : null;
+  else return { genre: "FORMAT_INVALIDE" };
+  return dateValide(iso) ? { genre: "LUE", iso } : { genre: "INEXISTANTE", jjmmaaaa: formaterDate(iso) };
+}
+
+/** Date de naissance : cellule date d'Excel, JJ/MM/AAAA ou AAAA-MM-JJ ; null si illisible ou inexistante. Un nombre seul est refusé (ambigu). */
+export function lireDate(c: Cellule | undefined): DateIso | null {
+  const d = diagnostiquerDate(c);
+  return d.genre === "LUE" ? d.iso : null;
 }
 
 /** Âge en années révolues à une date (anniversaire du 29 février : le 1er mars des années non bissextiles). */
@@ -127,10 +140,11 @@ function controlerLigne(l: LigneBrute, ctx: ContexteControle): LigneControlee {
 
   let naissance: DateIso | "" = "";
   if (valeurs.date_naissance !== "") {
-    const lue = lireDate(l.cellules.date_naissance);
-    if (lue === null) erreur("date_naissance", "Date invalide : écrivez JJ/MM/AAAA (ex. 14/03/1988) ou AAAA-MM-JJ.");
-    else if (lue < "1900-01-01" || lue > ctx.aujourdhui) erreur("date_naissance", "Date de naissance impossible (avant 1900 ou dans le futur).");
-    else naissance = lue;
+    const lue = diagnostiquerDate(l.cellules.date_naissance);
+    if (lue.genre === "INEXISTANTE") erreur("date_naissance", `Date inexistante : le ${lue.jjmmaaaa} n'existe pas au calendrier. Vérifiez le jour et le mois.`);
+    else if (lue.genre === "FORMAT_INVALIDE") erreur("date_naissance", `Format de date invalide : « ${valeurs.date_naissance} ». Écrivez JJ/MM/AAAA (ex. 14/03/1988) ou AAAA-MM-JJ.`);
+    else if (lue.iso < "1900-01-01" || lue.iso > ctx.aujourdhui) erreur("date_naissance", "Date de naissance impossible (avant 1900 ou dans le futur).");
+    else naissance = lue.iso;
   }
 
   const sexe = valeurs.sexe.toUpperCase();
@@ -145,8 +159,8 @@ function controlerLigne(l: LigneBrute, ctx: ContexteControle): LigneControlee {
     else if (!ctx.formulesPolice.includes(formule)) erreur("formule", `Formule « ${formule} » non retenue dans la police (formules de la police : ${ctx.formulesPolice.join(", ")}).`);
     else if (naissance !== "") {
       const age = ageRevolu(naissance, ctx.dateEffet);
-      if (parametree.ageMin !== null && age < parametree.ageMin) erreur("date_naissance", `Âge hors limite : ${age} ans à la date d'adhésion (${ctx.dateEffet}), minimum ${parametree.ageMin} ans pour la formule ${formule}.`);
-      if (parametree.ageMax !== null && age > parametree.ageMax) erreur("date_naissance", `Âge hors limite : ${age} ans à la date d'adhésion (${ctx.dateEffet}), maximum ${parametree.ageMax} ans pour la formule ${formule}.`);
+      if (parametree.ageMin !== null && age < parametree.ageMin) erreur("date_naissance", `Âge hors limite : ${age} ans à la date d'adhésion (${formaterDate(ctx.dateEffet)}), minimum ${parametree.ageMin} ans pour la formule ${formule}.`);
+      if (parametree.ageMax !== null && age > parametree.ageMax) erreur("date_naissance", `Âge hors limite : ${age} ans à la date d'adhésion (${formaterDate(ctx.dateEffet)}), maximum ${parametree.ageMax} ans pour la formule ${formule}.`);
     }
   }
 

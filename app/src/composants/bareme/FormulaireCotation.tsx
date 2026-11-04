@@ -3,7 +3,7 @@
 import { useId, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 
 import { ChampDate } from "@/composants/FormulaireAction";
-import { Carte, Champ, ListeDeroulante } from "@/composants/ui";
+import { Carte, Champ, ChampMontant, ListeDeroulante } from "@/composants/ui";
 import { ancrageDesChamps, champActif, etatDepuisSaisie, garantieSouscrite, type DescripteurChamp, type DescripteurSaisie, type EtatSaisie } from "@/domaine/bareme/formulaire";
 import type { ConditionAffichage, Saisie } from "@/domaine/bareme/schema";
 
@@ -214,7 +214,11 @@ function ChampDuBareme({ champ, valeurs, condition }: { champ: DescripteurChamp;
     default:
       return (
         <div className="mb-4">
-          <Champ label={libelle} aide={aide} name={nom} defaultValue={premiere} inputMode={champ.type === "TEXTE" ? undefined : "decimal"} autoComplete="off" />
+          {champ.type === "MONTANT" ? (
+            <ChampMontant label={libelle} aide={aide} name={nom} defaultValue={premiere} />
+          ) : (
+            <Champ label={libelle} aide={aide} name={nom} defaultValue={premiere} inputMode={champ.type === "TEXTE" ? undefined : "decimal"} autoComplete="off" />
+          )}
           {note}
         </div>
       );

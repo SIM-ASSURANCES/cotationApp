@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Bouton, Champ, ListeDeroulante } from "@/composants/ui";
+import { Bouton, Champ, ChampMontant, ListeDeroulante } from "@/composants/ui";
 
 export type LigneComposition = {
   libelle: string;
@@ -97,21 +97,19 @@ export function LignesComposition({
                   />
                 </td>
                 <td className={CELLULE}>
-                  <Champ
+                  <ChampMontant
                     name="ligne_montant_garanti"
                     value={l.montantGaranti}
-                    onChange={(e) => modifier(i, "montantGaranti", e.target.value)}
+                    onChange={(v) => modifier(i, "montantGaranti", v)}
                     aria-label="Montant garanti"
                     placeholder="Facultatif"
-                    inputMode="decimal"
-                    className="text-right tabular-nums"
                   />
                 </td>
                 <td className={CELLULE}>
-                  <Champ name="ligne_nette" value={l.primeNette} onChange={(e) => modifier(i, "primeNette", e.target.value)} aria-label="Prime nette" inputMode="decimal" className="text-right tabular-nums" required />
+                  <ChampMontant name="ligne_nette" value={l.primeNette} onChange={(v) => modifier(i, "primeNette", v)} aria-label="Prime nette" required />
                 </td>
                 <td className={CELLULE}>
-                  <Champ name="ligne_accessoires" value={l.accessoires} onChange={(e) => modifier(i, "accessoires", e.target.value)} aria-label="Accessoires" inputMode="decimal" className="text-right tabular-nums" required />
+                  <ChampMontant name="ligne_accessoires" value={l.accessoires} onChange={(v) => modifier(i, "accessoires", v)} aria-label="Accessoires" required />
                 </td>
                 <td className={CELLULE}>
                   <Bouton variante="secondaire" onClick={() => setLignes((x) => x.filter((_, k) => k !== i))} disabled={lignes.length === 1}>

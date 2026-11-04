@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Bouton, Champ, Pastille, ZoneTexte, ListeDeroulante, classesControle } from "@/composants/ui";
+import { Bouton, Champ, Pastille, ZoneTexte, ListeDeroulante, classesControle, useSaisieMontant } from "@/composants/ui";
 import {
   analyserPlage,
   changerCles,
@@ -240,6 +240,7 @@ function GrilleDeCases({ t, grille, ctx, disabled }: { t: Table; grille: Grille;
 /** Une case : le texte est jugé à la sortie du champ (ou à Entrée) ; un nombre refusé revient à la valeur enregistrée. */
 function CaseDeTable({ nom, valeur, disabled, onCommit }: { nom: string; valeur: string | undefined; disabled: boolean; onCommit: (texte: string) => boolean }) {
   const [texte, setTexte] = useState(valeur ?? "");
+  const saisie = useSaisieMontant({ value: texte, onChange: setTexte });
   const finir = () => {
     if (texte !== (valeur ?? "") && !onCommit(texte)) setTexte(valeur ?? "");
   };
@@ -247,14 +248,10 @@ function CaseDeTable({ nom, valeur, disabled, onCommit }: { nom: string; valeur:
   return (
     <input
       type="text"
-      inputMode="decimal"
-      autoComplete="off"
-      spellCheck={false}
+      {...saisie}
       aria-label={nom}
       aria-invalid={vide ? true : undefined}
       disabled={disabled}
-      value={texte}
-      onChange={(e) => setTexte(e.target.value)}
       onBlur={finir}
       onKeyDown={(e) => {
         if (e.key === "Enter") {

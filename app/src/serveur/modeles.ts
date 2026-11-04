@@ -209,6 +209,47 @@ export async function listerModeles(acteur: UtilisateurCourant): Promise<LigneMo
   return modeles.map((m) => ligne(m, m.versions.map(cycle), jour, libelles));
 }
 
+/** Produits qui peuvent porter des modèles, pour le regroupement de l'écran « Modèles » : un produit sans modèle y apparaît (ses modèles manquent). */
+export type ProduitDesModeles = { code: string; libelle: string; branchePrincipale: string | null; actif: boolean };
+
+export async function listerProduitsDesModeles(acteur: UtilisateurCourant): Promise<ProduitDesModeles[]> {
+  await exiger(acteur, "lire");
+  const produits = await obtenirPrisma().produit.findMany({ select: { code: true, libelle: true, branchePrincipale: true, actif: true }, orderBy: { code: "asc" } });
+  return produits.map((p) => ({ code: p.code, libelle: p.libelle, branchePrincipale: p.branchePrincipale, actif: p.actif }));
+}
+
+/** Une version soumise qui attend sa publication (D63) : le modèle, et ce qu'il faut pour décider de l'ouvrir. */
+export type LigneAPublier = LigneModele & { version: { id: number; numero: number; auteur: string; soumisLe: Date | null; dateEffet: DateIso } };
+
+/**
+ * Vue « À valider / À publier » (D63) : les versions SOUMISES que l'acteur peut publier lui-même (le valideur n'est jamais l'auteur, CDC
+ * §4.1, §6.6 : `peutPublier`). Réservée au droit « Publier un modèle » : contrôlé ICI, à chaque appel, pas seulement par l'écran. Un profil
+ * sans ce droit reçoit un refus, jamais une liste vide (une liste vide dirait « rien à publier »). Du plus ancien au plus récent.
+ */
+export async function listerModelesAPublier(acteur: UtilisateurCourant): Promise<LigneAPublier[]> {
+  await exiger(acteur, "publier");
+  const jour = aujourdhui();
+  const modeles = await obtenirPrisma().modele.findMany({
+    where: { versions: { some: { statut: "SOUMIS" } } },
+    include: {
+      produit: { select: { code: true, branchePrincipale: true } },
+      brancheCg: { select: { branchePrincipale: true } },
+      versions: { select: { ...champsVersion, auteurIdentifiant: true, soumisLe: true } },
+    },
+  });
+  const libelles = await libellesDesBranches();
+  const lignes: LigneAPublier[] = [];
+  for (const m of modeles) {
+    const cycles = m.versions.map(cycle);
+    const base = ligne(m, cycles, jour, libelles);
+    for (const v of m.versions) {
+      if (!peutPublier(cycle(v), acteur.id)) continue;
+      lignes.push({ ...base, version: { id: v.id, numero: v.numero, auteur: v.auteurIdentifiant, soumisLe: v.soumisLe, dateEffet: depuisDate(v.dateEffet) } });
+    }
+  }
+  return lignes.sort((a, b) => (a.version.soumisLe?.getTime() ?? 0) - (b.version.soumisLe?.getTime() ?? 0) || a.id - b.id);
+}
+
 export async function lireModele(acteur: UtilisateurCourant, id: number): Promise<ModeleLu | null> {
   const droits = await exiger(acteur, "lire");
   const jour = aujourdhui();

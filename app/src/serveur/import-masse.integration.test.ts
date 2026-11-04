@@ -304,7 +304,7 @@ describe.skipIf(!process.env.REDIS_URL)("import en masse : contrôle, rapport, c
     rapport.eachRow((r) => lignes.push((r.values as unknown[]).slice(1)));
     expect(lignes[0]).toEqual(["Ligne", "Colonne", "Valeur", "Message"]);
     expect(lignes.slice(1).map((l) => [l[0], l[1]])).toEqual([[4, "date_naissance"], [5, "nom_prenoms"], [6, "formule"]]);
-    expect(String(lignes[1][3])).toMatch(/Date invalide/);
+    expect(String(lignes[1][3])).toContain("Date inexistante : le 31/02/1990");
 
     // Confirmation : une seule nouvelle version, deux adhérents ajoutés (ordres 3 et 4).
     expect(await confirmerImport(technique, lotId, null)).toEqual({ enFile: true });

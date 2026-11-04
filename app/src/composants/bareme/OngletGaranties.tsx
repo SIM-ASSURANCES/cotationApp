@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Bouton, Champ, ListeDeroulante, Pastille, ZoneTexte } from "@/composants/ui";
+import { Bouton, Champ, ChampMontant, ListeDeroulante, Pastille, ZoneTexte } from "@/composants/ui";
 import {
   MESSAGE_PROFONDEUR,
   PROFONDEUR_MAX,
@@ -49,7 +49,7 @@ function EditeurAccessoires({ valeur, onChange, aucun, disabled, etiquette }: { 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <ListeDeroulante label={etiquette} value={mode} disabled={disabled} options={[{ valeur: "", libelle: aucun }, ...MODES]} onChange={(e) => changerMode(e.target.value)} />
         {valeur && valeur.mode !== "PAR_TRANCHE" ? (
-          <Champ label="Montant (F CFA)" inputMode="decimal" autoComplete="off" disabled={disabled} value={valeur.montant} onChange={(e) => onChange({ mode: valeur.mode, montant: decimalSaisi(e.target.value) })} />
+          <ChampMontant label="Montant (F CFA)" disabled={disabled} value={valeur.montant} onChange={(v) => onChange({ mode: valeur.mode, montant: decimalSaisi(v) })} />
         ) : null}
       </div>
       {valeur?.mode === "PAR_TRANCHE" ? (
@@ -60,7 +60,7 @@ function EditeurAccessoires({ valeur, onChange, aucun, disabled, etiquette }: { 
               <div key={i} className="grid grid-cols-1 gap-3 rounded-lg border border-border p-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end">
                 <Champ label={`Tranche ${i + 1} : de (assurés)`} inputMode="numeric" disabled={disabled} value={String(t.de)} onChange={(e) => remplacer({ de: Number(e.target.value) })} />
                 <Champ label="à (assurés)" inputMode="numeric" disabled={disabled} value={String(t.a)} onChange={(e) => remplacer({ a: Number(e.target.value) })} />
-                <Champ label="Montant (F CFA)" inputMode="decimal" autoComplete="off" disabled={disabled} value={t.montant} onChange={(e) => remplacer({ montant: decimalSaisi(e.target.value) })} />
+                <ChampMontant label="Montant (F CFA)" disabled={disabled} value={t.montant} onChange={(v) => remplacer({ montant: decimalSaisi(v) })} />
                 {!disabled && valeur.tranches.length > 1 ? (
                   <Bouton variante="danger" onClick={() => onChange({ mode: "PAR_TRANCHE", tranches: valeur.tranches.filter((_, k) => k !== i) })} aria-label={`Supprimer la tranche ${i + 1}`}>
                     Supprimer
@@ -293,7 +293,7 @@ function Composantes({ ctx, garantie, disabled, majGarantie }: { ctx: ContexteEd
             )}
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Champ label="Minimum de prime (facultatif)" inputMode="decimal" autoComplete="off" disabled={disabled} value={c.minimum ?? ""} onChange={(e) => majComposante(c.code, (x) => ({ ...x, minimum: e.target.value === "" ? undefined : decimalSaisi(e.target.value) }))} />
+            <ChampMontant label="Minimum de prime (facultatif)" disabled={disabled} value={c.minimum ?? ""} onChange={(v) => majComposante(c.code, (x) => ({ ...x, minimum: v === "" ? undefined : decimalSaisi(v) }))} />
             <div className="self-end">
               <CaseACocher libelle="Par tête (multipliée par l'effectif)" coche={c.parTete === true} disabled={disabled} onChange={(v) => majComposante(c.code, (x) => ({ ...x, parTete: v ? true : undefined }))} />
             </div>

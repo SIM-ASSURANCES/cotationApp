@@ -1,6 +1,5 @@
-import Link from "next/link";
-
-import { Bandeau, EnTetePage, Tableau } from "@/composants/ui";
+import { ChoixProduitCotation } from "@/composants/ChoixProduitCotation";
+import { Bandeau, EnTetePage } from "@/composants/ui";
 import { compositionPossible, enVigueur } from "@/domaine/calcul/parametrage";
 import { peutAgir } from "@/domaine/droits";
 import { listerClients } from "@/serveur/clients";
@@ -20,25 +19,12 @@ export default async function PageNouvelleCotation(props: PageProps<"/cotations/
     const produits = (await listerProduits(utilisateur)).filter((p) => p.actif && p.versions.length > 0);
     return (
       <main className="space-y-6">
-        <EnTetePage titre="Nouvelle cotation" sousTitre="Choisissez le produit." filAriane={[{ libelle: "Cotations", href: "/cotations" }, { libelle: "Nouvelle cotation" }]} />
-        <Tableau
-          legende="Produits"
-          lignes={produits}
-          cleLigne={(p) => p.code}
-          messageVide="Aucun produit paramétré : un profil Technique doit d'abord en créer un."
-          colonnes={[
-            {
-              cle: "code",
-              entete: "Produit",
-              rendu: (p) => (
-                <Link href={`/cotations/nouvelle?produit=${p.code}`} className="font-medium text-primary underline">
-                  {p.code}
-                </Link>
-              ),
-            },
-            { cle: "libelle", entete: "Libellé", rendu: (p) => p.libelle },
-          ]}
-        />
+        <EnTetePage titre="Nouvelle cotation" sousTitre="Choisissez la branche principale, puis le produit." filAriane={[{ libelle: "Cotations", href: "/cotations" }, { libelle: "Nouvelle cotation" }]} />
+        {produits.length === 0 ? (
+          <Bandeau ton="neutre">Aucun produit paramétré : un profil Technique doit d'abord en créer un.</Bandeau>
+        ) : (
+          <ChoixProduitCotation produits={produits.map((p) => ({ code: p.code, libelle: p.libelle, branchePrincipale: p.branchePrincipale, branchePrincipaleLibelle: p.branchePrincipaleLibelle }))} />
+        )}
       </main>
     );
   }

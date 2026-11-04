@@ -11,6 +11,7 @@ import { lireJournal } from "./audit";
 import { creerClient, initialiserMotifsRefus } from "./clients";
 import {
   accepter,
+  calculerCotationFormules,
   creerBrouillon,
   expirerCotations,
   lireCotation,
@@ -644,5 +645,99 @@ describe("saisie, droits et traçabilité", () => {
     } finally {
       fixerDateMinimumEffetPourTests("2026-01-01");
     }
+  });
+});
+
+// ---------------------------------------------------------------- Calcul automatique d'une cotation par formules (D63)
+
+describe("calcul automatique par formules : le même moteur, au franc près", () => {
+  const demandeT1 = () => ({
+    codeProduit: CODE,
+    typeContrat: "GROUPE",
+    regimeTaxe: "",
+    dateEffet: "2026-01-01",
+    dateEcheance: "2026-12-31",
+    nombreTranches: 4,
+    lignes: [
+      { codeFormule: "SOLO", effectif: 3, primeForcee: null, accessoireValeur: null },
+      { codeFormule: "FAMILLE", effectif: 60, primeForcee: null, accessoireValeur: null },
+    ],
+  });
+
+  it("T1 : 3 Solo + 60 Famille = 15 888 000 F, ligne par ligne comme l'enregistrement du brouillon", async () => {
+    const calcul = await calculerCotationFormules(commercial, demandeT1());
+    expect(calcul.totaux.ttc).toBe("15888000");
+    expect(calcul.lignes.map((l) => [l.code, l.libelle, l.effectif, l.ttc])).toEqual([
+      ["SOLO", "Solo", 3, "288000"],
+      ["FAMILLE", "Famille", 60, "15600000"],
+    ]);
+
+    // L'enregistrement recalcule toujours : mêmes montants, au franc.
+    const id = await creerBrouillon(commercial, saisie(), null);
+    const brouillon = (await lireCotation(commercial, id))!;
+    expect(calcul.totaux).toEqual({
+      nette: brouillon.resultat.totaux.arrondi.nette.toFixed(),
+      accessoires: brouillon.resultat.totaux.arrondi.accessoires.toFixed(),
+      taxe: brouillon.resultat.totaux.arrondi.taxe.toFixed(),
+      ttc: brouillon.resultat.totaux.arrondi.ttc.toFixed(),
+    });
+    expect(calcul.lignes.map((l) => l.ttc)).toEqual(brouillon.resultat.lignes.map((l) => l.arrondi.ttc.toFixed()));
+  });
+
+  it("année pleine : 365 jours couverts, coefficient de prorata 1, prorata actif ; rien n'est écrit", async () => {
+    const avant = await obtenirPrisma().cotation.count();
+    const calcul = await calculerCotationFormules(commercial, demandeT1());
+    expect(calcul.prorata).toEqual({ actif: true, jours: 365, coefficient: "1" });
+    expect(calcul.validation).toEqual([]);
+    expect(await obtenirPrisma().cotation.count()).toBe(avant);
+  });
+
+  it("période plus courte : la durée couverte et le coefficient viennent du moteur (334 jours = 334/365)", async () => {
+    const calcul = await calculerCotationFormules(commercial, { ...demandeT1(), dateEcheance: "2026-11-30", nombreTranches: 1 });
+    expect(calcul.prorata.jours).toBe(334);
+    expect(Number(calcul.prorata.coefficient)).toBeCloseTo(334 / 365, 10);
+  });
+
+  it("au-dessus du seuil de validation : la cotation passerait « À valider », dit en clair", async () => {
+    const calcul = await calculerCotationFormules(commercial, { ...demandeT1(), lignes: [{ codeFormule: "FAMILLE", effectif: 100, primeForcee: null, accessoireValeur: null }] });
+    expect(calcul.totaux.ttc).toBe("25857899"); // 100 familles : (100 × 252 657,63 + 210 000) × 1,015, au-dessus du seuil de 20 000 000
+    expect(calcul.validation).toEqual(["Seuil de TTC dépassé"]);
+  });
+
+  it("mêmes refus que l'enregistrement : type de contrat absent, formule inconnue, effectif nul", async () => {
+    await expect(calculerCotationFormules(commercial, { ...demandeT1(), typeContrat: "" })).rejects.toThrow(/type de contrat/);
+    await expect(calculerCotationFormules(commercial, { ...demandeT1(), lignes: [{ codeFormule: "INCONNUE", effectif: 1, primeForcee: null, accessoireValeur: null }] })).rejects.toThrow(ErreurMetier);
+    await expect(calculerCotationFormules(commercial, { ...demandeT1(), lignes: [{ codeFormule: "SOLO", effectif: 0, primeForcee: null, accessoireValeur: null }] })).rejects.toThrow(ErreurMetier);
+  });
+
+  it("prime forcée : le droit de forçage est exigé comme à l'enregistrement ; avec lui, le calcul le dit (« Prime forcée »)", async () => {
+    const forcee = { ...demandeT1(), lignes: [{ codeFormule: "SOLO", effectif: 3, primeForcee: "90000", accessoireValeur: null }] };
+    const avec = await calculerCotationFormules(commercial, forcee);
+    expect(avec.validation).toContain("Prime forcée");
+    expect(avec.lignes[0].nette).toBe("270000"); // 3 × 90 000 : la prime forcée remplace le tarif
+    try {
+      await enregistrerDroit(admin, { profil: "COMMERCIAL", action: "FORCER_PRIME", niveau: "AUCUN" }, null);
+      await expect(calculerCotationFormules(commercial, forcee)).rejects.toThrow(ErreurAcces);
+      // Sans forçage, le calcul reste permis.
+      await expect(calculerCotationFormules(commercial, demandeT1())).resolves.toBeTruthy();
+    } finally {
+      await enregistrerDroit(admin, { profil: "COMMERCIAL", action: "FORCER_PRIME", niveau: "DEMANDE" }, null);
+    }
+  });
+
+  it("un produit « Par garanties » n'a jamais de calcul automatique (D31)", async () => {
+    const parGaranties = `GAR_${CODE}`.slice(0, 40);
+    await creerProduit(technique, { code: parGaranties, libelle: "Par garanties (test)", gamme: "SECUR", branchePrincipale: "MALADIE", branche: BRANCHE }, null);
+    await creerVersion(
+      technique,
+      parGaranties,
+      { ...versionBeni(), modeTarification: "GARANTIES", formules: [], garantiesSaisieLibre: true, garanties: [], references: { csModeleCode: null, csVisa: null } },
+      null,
+    );
+    await expect(calculerCotationFormules(commercial, { ...demandeT1(), codeProduit: parGaranties })).rejects.toThrow(/garanties/i);
+  });
+
+  it("droit de création de cotation exigé (un profil sans ce droit est refusé)", async () => {
+    await expect(calculerCotationFormules(dg, demandeT1())).rejects.toThrow(ErreurAcces);
   });
 });

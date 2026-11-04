@@ -167,14 +167,21 @@ export function verifierBareme(b: Bareme, options: { publication?: boolean } = {
       if (s.effet === "E2" && s.reduction && (ref.includes(".") || cibles.length === 0)) ajoute("CIBLE_REDUCTION", `${ou} : une réduction cible une garantie entière, pas « ${ref} ».`);
       if (s.effet === "E1") {
         for (const cible of cibles) {
-          if (!sourcesE1.has(cible)) ajoute("E1_SUR_TAUX_FIXE", `${ou} : la composante « ${cible} » a un taux fixe, un sous-jacent E1 ne peut pas le remplacer.`);
+          if (!sourcesE1.has(cible)) ajoute("E1_SUR_TAUX_FIXE", `${ou} : la composante « ${cible} » a un taux fixe, un sous-jacent E1 ne peut pas le remplacer. Retirez cette composante des cibles du sous-jacent, ou donnez-lui un taux « lu dans une table » (onglet Garanties).`);
           else sourcesE1.set(cible, (sourcesE1.get(cible) ?? 0) + 1);
         }
       }
     }
   }
   for (const [cible, n] of sourcesE1) {
-    if (n !== 1) ajoute("TAUX_SANS_SOURCE", `La composante « ${cible} » attend son taux d'un sous-jacent E1 : ${n === 0 ? "aucun ne la vise" : `${n} la visent`}.`);
+    if (n !== 1) ajoute(
+      "TAUX_SANS_SOURCE",
+      `La composante « ${cible} » attend son taux d'un sous-jacent E1 : ${n === 0 ? "aucun ne la vise" : `${n} la visent`}. ${
+        n === 0
+          ? "Créez un sous-jacent E1 qui lit une table et vise cette composante (onglet Sous-jacents), ou donnez-lui un taux fixe (onglet Garanties)."
+          : "Gardez un seul sous-jacent E1 qui vise cette composante (onglet Sous-jacents) : supprimez les autres ou retirez-lui cette cible."
+      }`,
+    );
   }
 
   // Jeux d'essai : un nom par essai, et un résultat attendu qui vérifie quelque chose (un essai sans attendu serait toujours vert).

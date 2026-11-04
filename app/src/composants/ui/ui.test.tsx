@@ -3,7 +3,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { Bandeau, Bouton, Carte, CarteIndicateur, Champ, ChampFormulaire, classesBouton, EnTetePage, EtatVide, FondDeMarque, Icone, LienBouton, ListeDefinitions, ListeDeroulante, Pastille, PastilleStatut, Tableau, tonDuStatut, ZoneTexte } from "./index";
+import { Bandeau, Bouton, Carte, CarteIndicateur, Champ, ChampFormulaire, ChampMontant, classesBouton, EnTetePage, EtatVide, FondDeMarque, Icone, LienBouton, ListeDefinitions, ListeDeroulante, Pastille, PastilleStatut, Tableau, tonDuStatut, ZoneTexte } from "./index";
 import { TRACES_PICTOGRAMME } from "./pictogramme";
 
 const rendre = (element: React.ReactElement) => renderToStaticMarkup(element);
@@ -217,5 +217,33 @@ describe("refonte V2 : table unique statut → ton, lien-bouton, bandeau, liste 
     expect(html).toContain("Irréversible.");
     expect(html).toContain("border-danger-border");
     expect(rendre(<Carte>x</Carte>)).not.toContain("<h2");
+  });
+});
+
+describe("ChampMontant (D63) : séparateur de milliers à l'affichage, saisie lisible, aucune validation", () => {
+  const NB = " ";
+
+  it("valeur initiale mise en forme (séparateur de milliers, virgule décimale), name conservé", () => {
+    const html = rendre(<ChampMontant label="Prime minimale" name="primeMinimale" defaultValue="1000000" />);
+    expect(html).toContain(`value="1${NB}000${NB}000"`);
+    expect(html).toContain('name="primeMinimale"');
+    expect(html).toContain('inputMode="decimal"');
+    expect(rendre(<ChampMontant label="m" name="m" defaultValue="93581.33" />)).toContain(`value="93${NB}581,33"`);
+  });
+
+  it("mode contrôlé : la valeur de la page (sans séparateur) s'affiche avec séparateur", () => {
+    expect(rendre(<ChampMontant label="m" value="2500000" onChange={() => {}} />)).toContain(`value="2${NB}500${NB}000"`);
+  });
+
+  it("champ entier : clavier numérique ; vide : reste vide ; aligné à droite en chiffres tabulaires", () => {
+    const html = rendre(<ChampMontant label="m" name="m" decimales={false} />);
+    expect(html).toContain('inputMode="numeric"');
+    expect(html).toContain('value=""');
+    expect(html).toContain("text-right");
+    expect(html).toContain("tabular-nums");
+  });
+
+  it("un texte qui n'est pas un nombre est laissé tel quel (le serveur le refusera)", () => {
+    expect(rendre(<ChampMontant label="m" name="m" defaultValue="12 abc" />)).toContain('value="12 abc"');
   });
 });

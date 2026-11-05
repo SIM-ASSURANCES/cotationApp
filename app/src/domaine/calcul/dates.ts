@@ -46,11 +46,14 @@ export function ajouterMois(date: DateIso, mois: number): DateIso {
 }
 
 /**
- * Échéance d'un contrat de durée imposée (D64) : date d'effet + 1 an - 1 jour (effet 01/01/2027 : échéance 31/12/2027). Un effet au 29 février
- * retombe sur le 28 février de l'année suivante (comme `ajouterMois`) : échéance le 27 février (H192).
+ * Échéance d'un contrat de durée imposée (D64) : la veille du même jour de l'année suivante (effet 01/01/2027 : échéance 31/12/2027). Un effet au
+ * 29 février n'a pas de même jour l'année suivante : ce jour est le 1er mars, donc échéance au 28 février, 365 jours (H192).
  */
 export function echeanceUnAn(dateEffet: DateIso): DateIso {
-  return ajouterJours(ajouterMois(dateEffet, 12), -1);
+  const t = new Date(enUtc(dateEffet));
+  // Date.UTC reporte le 29 février d'une année non bissextile au 1er mars.
+  const anniversaire = new Date(Date.UTC(t.getUTCFullYear() + 1, t.getUTCMonth(), t.getUTCDate()));
+  return ajouterJours(anniversaire.toISOString().slice(0, 10), -1);
 }
 
 /** Ajoute (ou retire, si négatif) un nombre de jours. */

@@ -38,11 +38,16 @@ describe("dates (D37, H107)", () => {
 });
 
 describe("échéance d'une durée imposée (D64)", () => {
-  it("effet + 1 an - 1 jour", async () => {
-    const { echeanceUnAn } = await import("./dates");
+  it("la veille du même jour de l'année suivante", async () => {
+    const { echeanceUnAn, ecartEnJours } = await import("./dates");
     expect(echeanceUnAn("2027-01-01")).toBe("2027-12-31");
     expect(echeanceUnAn("2026-11-05")).toBe("2027-11-04");
     expect(echeanceUnAn("2027-03-01")).toBe("2028-02-29"); // l'année suivante est bissextile : 366 jours
-    expect(echeanceUnAn("2028-02-29")).toBe("2029-02-27"); // H192 : le 29 février retombe au 28 février
+    expect(ecartEnJours("2027-03-01", "2028-02-29") + 1).toBe(366);
+  });
+  it("un effet au 29 février : le même jour de l'année suivante est le 1er mars, donc échéance au 28 février (366 jours comptés inclus)", async () => {
+    const { echeanceUnAn, ecartEnJours } = await import("./dates");
+    expect(echeanceUnAn("2028-02-29")).toBe("2029-02-28");
+    expect(ecartEnJours("2028-02-29", "2029-02-28") + 1).toBe(366);
   });
 });

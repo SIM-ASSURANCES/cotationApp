@@ -133,7 +133,7 @@ describe("Une table incomplète bloque la publication", () => {
 
     const r = await enregistrer(versionId, casse);
     expect(r.problemes.map((p) => p.code)).toEqual(["TABLE_INCOMPLETE"]);
-    expect(r.problemes[0].message).toBe("Table « securite » : la ligne « OUI|NON » manque.");
+    expect(r.problemes[0].message).toBe("Table « securite » : la ligne « OUI|NON » manque. Ajoutez cette ligne avec son taux (onglet Tables).");
 
     const refus = (await publierBareme(technique, versionId, "Table incomplète", null).catch((e) => e)) as ErreurBaremeInvalide;
     expect(refus).toBeInstanceOf(ErreurBaremeInvalide);

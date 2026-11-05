@@ -5,7 +5,7 @@ import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireActio
 import { LignesAssures } from "@/composants/LignesDynamiques";
 import { TachesPolice } from "@/composants/TachesPolice";
 import { Carte, Champ as ChampSaisie, EnTetePage, ListeDeroulante, PastilleStatut, Tableau } from "@/composants/ui";
-import { aujourdhui, formaterDate } from "@/domaine/calcul/dates";
+import { formaterDate } from "@/domaine/calcul/dates";
 import { LIBELLE_MOTIF_ADHERENTS } from "@/domaine/cotation/adherents";
 import { numeroCertificatParDefaut, racineCertificat } from "@/domaine/cotation/police";
 import { peutAgir, peutLire } from "@/domaine/droits";
@@ -30,6 +30,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
   const cpAJour = vue.cp !== null && vue.cp.versionAdherents === derniere?.numero;
   const [lots, taches] = await Promise.all([listerLots(utilisateur, { policeId }), tachesDePolice(utilisateur, policeId)]);
   const produitCode = vue.police.produitCode;
+  const aidePeriode = `Toute date de la période de la police, du ${formaterDate(vue.police.dateEffet)} au ${formaterDate(vue.police.dateEcheance)} (passée ou à venir).`;
 
   return (
     <main className="space-y-6">
@@ -80,7 +81,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
           </div>
           {agit ? (
             <div className="max-w-xs">
-              <ChampDate nom="dateEffet" libelle="Date d'effet du retrait (JJ/MM/AAAA)" valeur={derniere?.dateEffet} min={vue.police.dateEffet} max={vue.police.dateEcheance} />
+              <ChampDate nom="dateEffet" libelle="Date d'effet du retrait (JJ/MM/AAAA)" valeur={derniere?.dateEffet} aide={aidePeriode} />
             </div>
           ) : null}
         </FormulaireAction>
@@ -95,7 +96,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
               <LignesAssures initiales={[{ nom: "", naissance: "", sexe: "", lien: "", identification: "", formule: "" }]} formules={vue.formules.map((code) => ({ code, libelle: code }))} />
             </div>
             <div className="max-w-xs">
-              <ChampDate nom="dateEffet" libelle="Date d'effet de l'incorporation (JJ/MM/AAAA)" valeur={derniere?.dateEffet} min={vue.police.dateEffet} max={vue.police.dateEcheance} />
+              <ChampDate nom="dateEffet" libelle="Date d'effet de l'incorporation (JJ/MM/AAAA)" valeur={derniere?.dateEffet} aide={aidePeriode} />
             </div>
           </FormulaireAction>
         </Carte>
@@ -129,7 +130,7 @@ export default async function PageAdherents(props: PageProps<"/cotations/[id]/ad
               />
             </div>
             <div className="max-w-xs">
-              <ChampDate nom="dateEffet" libelle="Date d'effet de l'incorporation (JJ/MM/AAAA)" valeur={derniere?.dateEffet} min={vue.police.dateEffet} max={aujourdhui()} />
+              <ChampDate nom="dateEffet" libelle="Date d'effet de l'incorporation (JJ/MM/AAAA)" valeur={derniere?.dateEffet} aide={aidePeriode} />
             </div>
           </FormulaireAction>
           {lots.length > 0 ? (

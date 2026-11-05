@@ -89,3 +89,16 @@ describe("garde-fou contre le verrouillage de l'administration", () => {
     expect(modificationDroitInterdite("COMMERCIAL", "GERER_UTILISATEURS", "OUI")).toBeNull();
   });
 });
+
+describe("import des adhérents et certificats (D65, décision 5)", () => {
+  const matrice = droitsParDefaut();
+  it("la Technique ET la Production y agissent par défaut (EMETTRE_CONTRAT)", () => {
+    expect(peutAgir(matrice.TECHNIQUE.EMETTRE_CONTRAT)).toBe(true);
+    expect(peutAgir(matrice.GESTIONNAIRE_PRODUCTION.EMETTRE_CONTRAT)).toBe(true);
+  });
+  it("les autres droits de ce niveau ne changent pas : Commercial, Comptabilité et Admin système n'y agissent pas", () => {
+    expect(peutAgir(matrice.COMMERCIAL.EMETTRE_CONTRAT)).toBe(false);
+    expect(peutAgir(matrice.COMPTABILITE.EMETTRE_CONTRAT)).toBe(false);
+    expect(peutAgir(matrice.ADMIN_SYSTEME.EMETTRE_CONTRAT)).toBe(false);
+  });
+});

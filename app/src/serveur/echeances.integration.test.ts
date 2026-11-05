@@ -1,6 +1,7 @@
 // Session 5b : avis d'échéance et relances (CDC §12), liste du jour, lots, tableaux de bord. Mise en place reprise de
 // factures.integration.test.ts (polices T2 et T3, modèles). Générateur SIMULÉ, stockage EN MÉMOIRE, vraie base et vrai
 // Redis (lots par la file de tâches, traités ici directement). Toutes les données sont inventées.
+import { lettreAttendueNumeroPolice } from "@/domaine/cotation/police";
 import { createHash } from "node:crypto";
 
 process.env.URL_PUBLIQUE = "https://documents.exemple.ci";
@@ -58,6 +59,11 @@ let produitGroupe: string;
 let produitIndividuel: string;
 let compteurPolice = 0;
 const numeroPolice = () => `TST-2026-${String(Date.now() % 1_000_000).padStart(6, "0")}-I${String(++compteurPolice).padStart(5, "0")}`;
+/** Numéro de police dont la lettre suit le type de contrat de la cotation (D65, décision 2). */
+const numeroPourCotation = async (cotationId: number) => {
+  const c = await obtenirPrisma().cotation.findUniqueOrThrow({ where: { id: cotationId } });
+  return numeroPolice().replace(/-[A-Z](\d{5})$/, `-${lettreAttendueNumeroPolice(c.typeContrat) ?? "I"}$1`);
+};
 
 const demandes: DemandePdf[] = [];
 const fichiers = new Map<string, Uint8Array>();
@@ -152,7 +158,7 @@ async function police(saisie: Omit<SaisieCotation, "clientId" | "motifForcage" |
   const cotationId = await creerBrouillon(commercial, { ...saisie, clientId: null, motifForcage: null, beneficiaires: [], contactsUrgence: [], risque: {} }, null);
   // Au-dessus du seuil du produit, la cotation passe d'abord par la validation de la Technique (CDC §4.1).
   if ((await soumettre(commercial, cotationId, null)).statut === "A_VALIDER") await valider(technique, cotationId, null);
-  const { numeroPolice: numero } = await accepter(commercial, cotationId, codes, numeroPolice(), null);
+  const { numeroPolice: numero } = await accepter(commercial, cotationId, codes, await numeroPourCotation(cotationId), null);
   await emettreCp(technique, cotationId, null);
   const p = await obtenirPrisma().police.findUniqueOrThrow({ where: { numero } });
   return { cotationId, policeId: p.id, numero };

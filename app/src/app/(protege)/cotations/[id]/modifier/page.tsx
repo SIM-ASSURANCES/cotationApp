@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 
 import { EnTetePage } from "@/composants/ui";
-import { compositionPossible, enVigueur } from "@/domaine/calcul/parametrage";
+import { compositionPossible, dateDeVersionAnticipee, enVigueur } from "@/domaine/calcul/parametrage";
 import { peutModifier } from "@/domaine/cotation/statuts";
 import { peutAgir } from "@/domaine/droits";
 import { listerClients } from "@/serveur/clients";
@@ -28,7 +28,8 @@ export default async function PageModifierCotation(props: PageProps<"/cotations/
     redirect(`/cotations/${cotation.id}`);
   }
   const donnees = await listerVersions(utilisateur, cotation.produit.code);
-  const version = donnees ? enVigueur(donnees.versions, aujourdhui()) : null;
+  const dateVersion = donnees ? dateDeVersionAnticipee(donnees.versions.map((v) => v.dateEffet), aujourdhui()) : aujourdhui();
+  const version = donnees ? enVigueur(donnees.versions, dateVersion) : null;
   if (!donnees || !version) {
     redirect(`/cotations/${cotation.id}`);
   }
@@ -49,6 +50,7 @@ export default async function PageModifierCotation(props: PageProps<"/cotations/
         formulesMax={version.cotation.formulesMax}
         intermediaires={intermediaires.map((i) => ({ code: i.code, nom: i.nom, role: i.role }))}
         parGaranties={compositionPossible(version.modeTarification)}
+        debutProduit={dateVersion > aujourdhui() ? dateVersion : undefined}
         peutCreerIntermediaire={creerIntermediaire}
         bareme={bareme ? { descripteur: bareme.descripteur, saisie: cotation.composition?.bareme?.saisie } : undefined}
         base={cotation}

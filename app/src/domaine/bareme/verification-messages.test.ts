@@ -41,3 +41,32 @@ describe("verifierBareme : les messages disent quoi faire", () => {
     expect(m).toContain("Retirez cette composante des cibles du sous-jacent");
   });
 });
+
+// D65 (décision 7, H190 complétée) : les autres messages disent aussi quoi faire.
+describe("verifierBareme : les autres messages disent quoi faire (D65)", () => {
+  it("TABLE_INCOMPLETE et LIGNE_INCONNUE", () => {
+    const manque = variante((d) => {
+      delete (d.tables[1].lignes as unknown as Record<string, string>)["OUI|NON"];
+    });
+    expect(message(manque, "TABLE_INCOMPLETE")).toMatch(/manque\. Ajoutez cette ligne avec son taux \(onglet Tables\)/);
+    const inconnue = variante((d) => {
+      (d.tables[0].lignes as unknown as Record<string, string>)["9"] = "1";
+    });
+    expect(message(inconnue, "LIGNE_INCONNUE")).toContain("Supprimez cette ligne (onglet Tables)");
+  });
+
+  it("CODE_EN_DOUBLE, REFERENCE_INCONNUE et AUCUN_ESSAI", () => {
+    expect(message(variante((d) => { d.garanties[3].code = "dde"; }), "CODE_EN_DOUBLE")).toContain("Donnez à chacun un code différent");
+    expect(message(variante((d) => { d.garanties[2].composantes[0].assiette = "fantome"; }), "REFERENCE_INCONNUE")).toContain("Choisissez un champ");
+    expect(message(variante((d) => { d.jeuxEssai = []; }), "AUCUN_ESSAI")).toContain("onglet Jeux d'essai");
+  });
+
+  it("tout problème signalé se termine par une consigne (aucun message ne s'arrête au constat)", () => {
+    const cas = [
+      variante((d) => { delete (d.tables[1].lignes as unknown as Record<string, string>)["OUI|NON"]; }),
+      variante((d) => { d.sousJacents.push({ code: "x", effet: "E2", table: "fantome", cibles: ["vol"] } as never); }),
+      variante((d) => { d.sousJacents.push({ code: "x", effet: "E2", table: "taux_incendie", cibles: ["fantome"] } as never); }),
+    ];
+    for (const problemes of cas) for (const p of problemes) expect(p.message, p.code).toMatch(/(Ajoutez|Supprimez|Choisissez|Créez|Gardez|Retirez|Donnez|Corrigez|Renseignez|Placez|Visez|Saisissez|Inversez|Ajustez)/);
+  });
+});

@@ -1,5 +1,6 @@
 // Session 4a : compléments du souscripteur, bénéficiaires, contacts d'urgence, passage cotation → police.
 // Vraie base PostgreSQL de test (npm run test:integration).
+import { lettreAttendueNumeroPolice } from "@/domaine/cotation/police";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { fixerDateMinimumEffetPourTests } from "@/domaine/calcul/dates";
@@ -78,6 +79,11 @@ const saisie = (surcharge: Partial<SaisieCotation> = {}): SaisieCotation => ({
 
 let compteurPolice = 0;
 const numeroPolice = () => `TST-2026-${String(Date.now() % 1_000_000).padStart(6, "0")}-I${String(++compteurPolice).padStart(5, "0")}`;
+/** Numéro de police dont la lettre suit le type de contrat de la cotation (D65, décision 2). */
+const numeroPourCotation = async (cotationId: number) => {
+  const c = await obtenirPrisma().cotation.findUniqueOrThrow({ where: { id: cotationId } });
+  return numeroPolice().replace(/-[A-Z](\d{5})$/, `-${lettreAttendueNumeroPolice(c.typeContrat) ?? "I"}$1`);
+};
 
 async function emise(s: SaisieCotation): Promise<number> {
   const id = await creerBrouillon(commercial, s, null);
@@ -117,7 +123,7 @@ describe("compléments du souscripteur", () => {
 
     expect(c.souscripteur.profession).toBe("Comptable");
     expect(c.souscripteur.nb_enfants).toBe(2);
-    const { numeroPolice: numero } = await accepter(commercial, id, ["SOLO"], numeroPolice(), null);
+    const { numeroPolice: numero } = await accepter(commercial, id, ["SOLO"], await numeroPourCotation(id), null);
     const p = await police(numero);
     expect(p.souscripteur).toMatchObject({ nom: "KOUADIO", profession: "Comptable", date_naissance: "1985-04-12", groupe_sanguin: "O+", nb_enfants: 2 });
   });
@@ -154,7 +160,7 @@ describe("bénéficiaires et contacts d'urgence", () => {
     await expect(obtenirPrisma().$executeRawUnsafe(`UPDATE cotations SET beneficiaires = '[]'::jsonb WHERE id = ${id}`)).rejects.toThrow(/cotation figée/);
     await expect(obtenirPrisma().$executeRawUnsafe(`UPDATE cotations SET contacts_urgence = '[]'::jsonb WHERE id = ${id}`)).rejects.toThrow(/cotation figée/);
 
-    const { numeroPolice: numero } = await accepter(commercial, id, ["SOLO"], numeroPolice(), null);
+    const { numeroPolice: numero } = await accepter(commercial, id, ["SOLO"], await numeroPourCotation(id), null);
     const p = await police(numero);
     expect(p.beneficiaires).toEqual(trois);
     expect(p.contactsUrgence).toEqual([{ nom_prenoms: "KOUADIO Luc", contact: "0700000099" }]);
@@ -184,7 +190,7 @@ describe("bénéficiaires et contacts d'urgence", () => {
 
   it("à l'acceptation, on peut compléter ce qu'on ne connaissait pas : la police les porte, la cotation figée reste inchangée", async () => {
     const id = await emise(saisie({ beneficiaires: null, contactsUrgence: null, souscripteur: { ...prospect } }));
-    const { numeroPolice: numero } = await accepter(commercial, id, ["SOLO"], numeroPolice(), null, {
+    const { numeroPolice: numero } = await accepter(commercial, id, ["SOLO"], await numeroPourCotation(id), null, {
       souscripteur: { profession: "Enseignant", nb_enfants: 1 },
       beneficiaires: trois,
       contactsUrgence: [],
@@ -203,7 +209,7 @@ describe("bénéficiaires et contacts d'urgence", () => {
     const id = await emise(saisie());
     const faux = [{ ...trois[0], quote_part: "10" }];
 
-    await expect(accepter(commercial, id, ["SOLO"], numeroPolice(), null, { souscripteur: {}, beneficiaires: faux, contactsUrgence: [] })).rejects.toThrow(/10 %/);
+    await expect(accepter(commercial, id, ["SOLO"], await numeroPourCotation(id), null, { souscripteur: {}, beneficiaires: faux, contactsUrgence: [] })).rejects.toThrow(/10 %/);
     expect((await lireCotation(commercial, id))!.statut).toBe("EMISE");
     expect((await lireCotation(commercial, id))!.numeroPolice).toBeNull();
   });
@@ -213,7 +219,7 @@ describe("contrat de groupe : version initiale de la liste des adhérents", () =
   it("la police d'un contrat GROUPE reçoit les assurés de la cotation comme version 1 (liste initiale)", async () => {
     const adherents = [assure(1), assure(2), assure(3)];
     const id = await emise(saisie({ typeContrat: "GROUPE", assures: adherents }));
-    const { numeroPolice: numero } = await accepter(commercial, id, ["SOLO"], numeroPolice(), null);
+    const { numeroPolice: numero } = await accepter(commercial, id, ["SOLO"], await numeroPourCotation(id), null);
 
     const p = await police(numero);
     expect(p.adherents).toHaveLength(1);
@@ -223,14 +229,14 @@ describe("contrat de groupe : version initiale de la liste des adhérents", () =
 
   it("un contrat individuel n'a pas de liste d'adhérents", async () => {
     const id = await emise(saisie({ assures: [assure(1)] }));
-    const { numeroPolice: numero } = await accepter(commercial, id, ["SOLO"], numeroPolice(), null);
+    const { numeroPolice: numero } = await accepter(commercial, id, ["SOLO"], await numeroPourCotation(id), null);
 
     expect((await police(numero)).adherents).toHaveLength(0);
   });
 
   it("une version d'adhérents ne se modifie ni ne se supprime (ajout seul, déclencheur)", async () => {
     const id = await emise(saisie({ typeContrat: "GROUPE", assures: [assure(1)] }));
-    const { numeroPolice: numero } = await accepter(commercial, id, ["SOLO"], numeroPolice(), null);
+    const { numeroPolice: numero } = await accepter(commercial, id, ["SOLO"], await numeroPourCotation(id), null);
     const v = (await police(numero)).adherents[0];
 
     await expect(obtenirPrisma().$executeRawUnsafe(`UPDATE adherents_versions SET adherents = '[]'::jsonb WHERE id = ${v.id}`)).rejects.toThrow();

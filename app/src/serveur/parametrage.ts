@@ -13,6 +13,7 @@ import {
   calculAutomatiquePossible,
   codeValide,
   compositionPossible,
+  dateDeVersionAnticipee,
   enVigueur,
   estBranchePrincipaleValide,
   libelleBranchePrincipale,
@@ -648,6 +649,18 @@ export type ContexteCalcul = {
   version: VersionProduit;
   taxe: TaxeSaisie & { tauxPourcent: string };
 };
+
+/**
+ * Date à laquelle résoudre la version d'un produit pour une COTATION (D65, décision 3 de la Direction Technique du 04/11/2026) :
+ * aujourd'hui s'il existe une version en vigueur ; sinon la date de la première version, quand elle commence plus tard (un produit
+ * se cote dès sa création). Le document reste daté d'aujourd'hui ; seule la version consultée change. Rend le jour donné si le
+ * produit est inconnu ou sans version : l'erreur habituelle s'applique alors.
+ */
+export async function dateDeVersionPourCotation(client: ClientLecture, codeProduit: string, jour: DateIso = aujourdhui()): Promise<DateIso> {
+  const produit = await client.produit.findUnique({ where: { code: codeProduit }, include: { versions: { select: { dateEffet: true } } } });
+  if (!produit) return jour;
+  return dateDeVersionAnticipee(produit.versions.map((v) => depuisDate(v.dateEffet)), jour);
+}
 
 /**
  * Produit actif et version EN VIGUEUR à la date du document (étape commune au calcul automatique et à la composition). Ne regarde

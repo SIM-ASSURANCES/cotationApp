@@ -220,6 +220,7 @@ export function donneesDocument(s: SourceDocument): Record<string, unknown> {
       duree_jours: s.joursCouverts,
       duree_libelle: libelleDuree(s.dateEffet, s.dateEcheance),
       type_contrat: s.typeContrat ?? NON_FOURNI,
+      liste_adherents_vide: s.assures.length === 0,
       police_mere: s.policeMere ?? NON_FOURNI,
       nantissement: NON_FOURNI,
     },

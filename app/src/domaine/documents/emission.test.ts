@@ -8,6 +8,7 @@ import {
   cheminStockageArborescent,
   masquerSouscripteur,
   nettoyerSegment,
+  peutReediterType,
   problemesVisas,
   segmentValide,
   statutPublic,
@@ -347,5 +348,14 @@ describe("données d'une cotation T1 (dictionnaire, montants du moteur)", () => 
     expect(duree("2026-01-01", "2026-12-31")).toMatchObject({ duree_libelle: "1 an", duree_jours: r.joursCouverts });
     expect(duree("2026-07-22", "2027-01-21").duree_libelle).toBe("6 mois");
     expect(duree("2026-07-22", "2026-12-31").duree_libelle).toBe("163 jours");
+  });
+});
+
+describe("Rééditer (D65, décision 6)", () => {
+  it("n'est pas proposé pour une facture, un avoir ni un reçu", () => {
+    for (const t of ["FACTURE", "AVOIR", "RECU"]) expect(peutReediterType(t), t).toBe(false);
+  });
+  it("reste proposé pour la cotation, les conditions particulières et le certificat", () => {
+    for (const t of ["COTATION", "CP", "CERTIFICAT"]) expect(peutReediterType(t), t).toBe(true);
   });
 });

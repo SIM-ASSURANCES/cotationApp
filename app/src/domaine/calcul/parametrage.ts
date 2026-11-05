@@ -334,6 +334,16 @@ export function enVigueur<T extends { dateEffet: DateIso }>(versions: T[], date:
 }
 
 /**
+ * Date de résolution de la version pour une cotation (D65) : `jour` s'il existe une version en vigueur ce jour-là ; sinon la date de la
+ * toute première version si elle est postérieure (le produit n'a pas encore commencé) ; sinon `jour` (l'erreur habituelle s'applique).
+ */
+export function dateDeVersionAnticipee(datesDeVersions: readonly DateIso[], jour: DateIso): DateIso {
+  if (datesDeVersions.some((d) => d <= jour)) return jour;
+  const premiere = [...datesDeVersions].sort()[0];
+  return premiere ?? jour;
+}
+
+/**
  * Alerte H140 (B6a) : une version FUTURE créée « Par garanties » pour recevoir un barème, et dont le barème n'est pas publié, deviendra une
  * version par garanties (composition manuelle) à sa date d'effet si la bascule n'a pas eu lieu. Rend ces versions, avec les jours restants.
  */

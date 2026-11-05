@@ -38,6 +38,30 @@ export function problemesNumeroPolice(numero: string, format: string): string[] 
   return [];
 }
 
+/**
+ * Lettre du numéro de police selon le type de contrat (décision de la Direction Technique du 04/11/2026, D65) :
+ * G pour un groupe ou un groupe ouvert, I pour un individuel ou une famille (H200 : FAMILLE, hypothèse à confirmer).
+ */
+export function lettreAttendueNumeroPolice(typeContrat: string | null): "G" | "I" | null {
+  if (typeContrat === "GROUPE" || typeContrat === "GROUPE_OUVERT") return "G";
+  if (typeContrat === "INDIVIDUEL" || typeContrat === "FAMILLE") return "I";
+  return null;
+}
+
+const LIBELLE_TYPE_POUR_LETTRE: Record<string, string> = { GROUPE: "un contrat de groupe", GROUPE_OUVERT: "un contrat de groupe ouvert", INDIVIDUEL: "un contrat individuel", FAMILLE: "un contrat famille" };
+
+/** Refus (message qui donne la lettre attendue) d'un numéro dont la lettre ne correspond pas au type de contrat ; vide sinon. */
+export function problemesLettreNumeroPolice(numero: string, typeContrat: string | null): string[] {
+  const attendue = lettreAttendueNumeroPolice(typeContrat);
+  if (attendue === null) return [];
+  const lettre = /([A-Z])\d{5}$/.exec(normaliserNumeroPolice(numero))?.[1];
+  if (lettre === undefined || lettre === attendue) return []; // sans lettre reconnaissable, le format paramétré est seul juge
+  const autre = attendue === "G" ? "I" : "G";
+  return [
+    `Le numéro de police « ${normaliserNumeroPolice(numero)} » se termine par la lettre ${lettre}, or ${LIBELLE_TYPE_POUR_LETTRE[typeContrat ?? ""]} porte la lettre ${attendue} (${attendue}00000 en fin de numéro) : la lettre ${autre} est réservée aux ${attendue === "G" ? "contrats individuels et famille" : "contrats de groupe"}. Corrigez la lettre du numéro.`,
+  ];
+}
+
 /** Fin attendue d'un numéro de contrat : G ou I suivi de `00000` (D27). */
 const FIN_CONTRAT = /[GI]00000$/;
 /** Numéro découpé : racine jusqu'à la lettre G ou I comprise, puis 5 chiffres. */

@@ -19,6 +19,7 @@ import { donneesDocument, type FormuleSource, type GarantieSource, type SourceDo
 import {
   DOCUMENTS,
   estTypeDocument,
+  peutReediterType,
   masquerSouscripteur,
   nomSouscripteur,
   problemesVisas,
@@ -613,7 +614,8 @@ const derniereVersionAdherents = (police: PoliceChargee): number | null => (poli
 /**
  * Production des conditions particulières d'une police : CP → annexes → CS → CG, visas vérifiés (§6.8).
  * Contrat de groupe (§10.2) : c'est la police MÈRE ; la liste des adhérents (la liste courante) est
- * TOUJOURS renvoyée en annexe, même courte, et la version de cette liste est conservée avec le document.
+ * TOUJOURS renvoyée en annexe, même courte, et la version de cette liste est conservée avec le document. Exception (D65) : une police
+ * dont la liste est VIDE n'impose aucune annexe.
  */
 async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<Production> {
   const date = aujourdhui();
@@ -678,7 +680,8 @@ async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<
     donnees: (version, url) => donneesDocument(source(version, url)),
     filigrane: null,
     origine: null,
-    listesEnAnnexe: groupe ? ["assures"] : [],
+    // D65 : sans adhérent nommé, aucune annexe imposée (le modèle écrit « La liste nominative… » avec police.liste_adherents_vide).
+    listesEnAnnexe: groupe && (police.assures as unknown as Assure[]).length > 0 ? ["assures"] : [],
     versionAdherents: groupe ? derniereVersionAdherents(police) : null,
   };
 }
@@ -870,7 +873,7 @@ export async function reediter(acteur: UtilisateurCourant, documentId: number, a
   await exigerSurType(acteur, d.type, true);
   // Session 4b (H55) : une facture se réédite à chaque paiement (version + 1, restant dû à jour) ; un avoir et un reçu ne
   // changent pas. Leur PDF en attente se relance depuis la fiche de la facture, à l'identique.
-  if (d.type === "FACTURE" || d.type === "AVOIR" || d.type === "RECU") {
+  if (!peutReediterType(d.type)) {
     throw new ErreurMetier("Une facture, un avoir ou un reçu ne se réédite pas ici : la facture est rééditée à chaque paiement, et un PDF en attente se relance depuis la fiche de la facture.");
   }
   const origine = d.origineId ? await prisma.documentEmis.findUniqueOrThrow({ where: { id: d.origineId } }) : d;

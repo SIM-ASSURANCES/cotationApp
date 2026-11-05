@@ -4,6 +4,7 @@ import { useId, useMemo, useRef, useState, type ChangeEvent, type ReactNode } fr
 
 import { ChampDate } from "@/composants/FormulaireAction";
 import { Carte, Champ, ChampMontant, ListeDeroulante } from "@/composants/ui";
+import { libellePlage } from "@/domaine/bareme/plage";
 import { ancrageDesChamps, champActif, etatDepuisSaisie, garantieSouscrite, type DescripteurChamp, type DescripteurSaisie, type EtatSaisie } from "@/domaine/bareme/formulaire";
 import type { ConditionAffichage, Saisie } from "@/domaine/bareme/schema";
 
@@ -163,7 +164,9 @@ function Case({ nom, valeur, cochee, libelle, ouvert, controle }: { nom: string;
 function ChampDuBareme({ champ, valeurs, condition }: { champ: DescripteurChamp; valeurs: string[]; condition?: string }) {
   const nom = `bareme_${champ.code}`;
   const libelle = `${champ.libelle}${champ.obligatoire ? " *" : ""}`;
-  const aide = champ.aide;
+  // D64 : la plage du champ borné s'affiche sous le champ (avec l'aide du barème) et au survol.
+  const plage = champ.type === "MONTANT" || champ.type === "NOMBRE" ? libellePlage(champ) : null;
+  const aide = [champ.aide, plage ? `Plage admise : ${plage}.` : null].filter((x) => x).join(" ") || undefined;
   const premiere = valeurs[0] ?? "";
   const note = condition ? <p className="-mt-3 mb-4 text-sm text-muted-foreground">Affiché si {condition}.</p> : null;
   switch (champ.type) {
@@ -215,9 +218,9 @@ function ChampDuBareme({ champ, valeurs, condition }: { champ: DescripteurChamp;
       return (
         <div className="mb-4">
           {champ.type === "MONTANT" ? (
-            <ChampMontant label={libelle} aide={aide} name={nom} defaultValue={premiere} />
+            <ChampMontant label={libelle} aide={aide} name={nom} defaultValue={premiere} title={plage ? `Plage admise : ${plage}` : undefined} />
           ) : (
-            <Champ label={libelle} aide={aide} name={nom} defaultValue={premiere} inputMode={champ.type === "TEXTE" ? undefined : "decimal"} autoComplete="off" />
+            <Champ label={libelle} aide={aide} name={nom} defaultValue={premiere} inputMode={champ.type === "TEXTE" ? undefined : "decimal"} autoComplete="off" title={plage ? `Plage admise : ${plage}` : undefined} />
           )}
           {note}
         </div>

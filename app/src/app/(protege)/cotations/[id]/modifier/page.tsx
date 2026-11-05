@@ -52,6 +52,7 @@ export default async function PageModifierCotation(props: PageProps<"/cotations/
         parGaranties={compositionPossible(version.modeTarification)}
         debutProduit={dateVersion > aujourdhui() ? dateVersion : undefined}
         peutCreerIntermediaire={creerIntermediaire}
+        dureeImposee={version.dureeImposeeUnAn === true}
         bareme={bareme ? { descripteur: bareme.descripteur, saisie: cotation.composition?.bareme?.saisie } : undefined}
         base={cotation}
       />

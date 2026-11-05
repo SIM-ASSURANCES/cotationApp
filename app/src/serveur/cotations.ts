@@ -22,7 +22,7 @@ import {
   type LigneDePrime,
 } from "@/domaine/calcul/composition";
 import { compositionPossible, MESSAGE_BROUILLON_A_FORMULES, MESSAGE_BROUILLON_A_FORMULES_BAREME, MESSAGE_TARIFICATION_AU_BAREME, messageBrouillonAFormules, problemesLibellesGaranties, type GarantieParametree, type ModeTarification } from "@/domaine/calcul/parametrage";
-import { formaterDate, problemesDateEffetCotation, type DateIso } from "@/domaine/calcul/dates";
+import { dateValide, echeanceUnAn, formaterDate, problemesDateEffetCotation, type DateIso } from "@/domaine/calcul/dates";
 import type { Tranche } from "@/domaine/calcul/echeancier";
 import { ErreurCalcul, montant } from "@/domaine/calcul/montant";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
@@ -226,10 +226,21 @@ type Calcul = {
 };
 
 /**
+ * Durée imposée (D64) : si la version en vigueur à `dateDocument` impose un contrat d'un an, l'échéance est CELLE QUE LE SERVEUR CALCULE (effet + 1 an - 1 jour),
+ * quelle que soit la date reçue ; sans ce réglage, la saisie est rendue telle quelle. Un effet invalide est laissé aux contrôles qui suivent.
+ */
+export async function avecDureeImposee<T extends { codeProduit: string; dateEffet: DateIso; dateEcheance: DateIso }>(tx: Tx, saisie: T, dateDocument: DateIso): Promise<T> {
+  if (!dateValide(saisie.dateEffet)) return saisie;
+  const { version } = await resoudreVersion(tx, saisie.codeProduit, dateDocument);
+  return version.dureeImposeeUnAn === true ? { ...saisie, dateEcheance: echeanceUnAn(saisie.dateEffet) } : saisie;
+}
+
+/**
  * Valide la saisie puis calcule avec les paramètres en vigueur à `dateDocument` : tout montant vient
  * du moteur, jamais de la saisie. Un forçage exige le droit « Demande » ou « Valide » ET un motif.
  */
-async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: SaisieCotation, dateDocument: DateIso): Promise<Calcul> {
+async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisieRecue: SaisieCotation, dateDocument: DateIso): Promise<Calcul> {
+  const saisie = await avecDureeImposee(tx, saisieRecue, dateDocument);
   const typeContrat = saisie.typeContrat;
   if (!estTypeContrat(typeContrat)) {
     throw new ErreurMetier("Choisissez le type de contrat (individuel, famille, groupe ou groupe ouvert) : il détermine le taux de taxe.");
@@ -435,7 +446,8 @@ export async function calculerCotationBareme(
   const regime = estRegimeTaxe(demande.regimeTaxe) ? demande.regimeTaxe : estTypeContrat(demande.typeContrat) ? REGIME_PAR_DEFAUT[demande.typeContrat] : undefined;
   if (regime === undefined) throw new ErreurMetier("Choisissez le type de contrat et le régime de taxe avant de calculer : ils déterminent le taux de taxe.");
   return obtenirPrisma().$transaction(async (tx) => {
-    const { entree, prorata } = await lignesAuBareme(tx, { ...demande, dateDocument: await dateDeVersionPourCotation(tx, demande.codeProduit), regimeTaxe: regime });
+    const dateDocument = await dateDeVersionPourCotation(tx, demande.codeProduit);
+    const { entree, prorata } = await lignesAuBareme(tx, { ...(await avecDureeImposee(tx, demande, dateDocument)), dateDocument, regimeTaxe: regime });
     let resultat: ResultatCalcul;
     try {
       resultat = executerCalcul(entree, { repartitionPourcent: null, decalagesMois: null }, 1).resultat;
@@ -481,9 +493,10 @@ export type ResultatCalculFormules = {
  */
 export async function calculerCotationFormules(
   acteur: UtilisateurCourant,
-  demande: { codeProduit: string; typeContrat: string; regimeTaxe: string; dateEffet: DateIso; dateEcheance: DateIso; nombreTranches: number; lignes: SaisieCotation["lignes"] },
+  demandeRecue: { codeProduit: string; typeContrat: string; regimeTaxe: string; dateEffet: DateIso; dateEcheance: DateIso; nombreTranches: number; lignes: SaisieCotation["lignes"] },
 ): Promise<ResultatCalculFormules> {
   await exigerAgir(acteur);
+  let demande = demandeRecue;
   const problemesDateEffet = problemesDateEffetCotation(demande.dateEffet);
   if (problemesDateEffet.length > 0) throw new ErreurMetier(problemesDateEffet.join(" "));
   if (!estTypeContrat(demande.typeContrat)) {
@@ -491,7 +504,9 @@ export async function calculerCotationFormules(
   }
   const regime = estRegimeTaxe(demande.regimeTaxe) ? demande.regimeTaxe : REGIME_PAR_DEFAUT[demande.typeContrat];
   return obtenirPrisma().$transaction(async (tx) => {
-    const contexte = await resoudreContexte(tx, demande.codeProduit, await dateDeVersionPourCotation(tx, demande.codeProduit), demande.dateEffet, regime);
+    const dateDocument = await dateDeVersionPourCotation(tx, demande.codeProduit);
+    demande = await avecDureeImposee(tx, demandeRecue, dateDocument);
+    const contexte = await resoudreContexte(tx, demande.codeProduit, dateDocument, demande.dateEffet, regime);
     const { version } = contexte;
     const problemes = problemesLignes(demande.lignes, version.cotation.formulesMax);
     if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
@@ -648,7 +663,8 @@ function donneesAEcrire(saisie: SaisieCotation, c: Calcul) {
     regimeTaxe: c.regimeTaxe,
     souscripteur: c.souscripteur as unknown as Prisma.InputJsonValue,
     dateEffet: versDate(saisie.dateEffet),
-    dateEcheance: versDate(saisie.dateEcheance),
+    // Celle du calcul : la durée imposée (D64) la fixe côté serveur.
+    dateEcheance: versDate(c.entree.dateEcheance),
     nombreTranches: saisie.nombreTranches,
     lignes: c.lignesStockees as unknown as Prisma.InputJsonValue,
     motifForcage: c.forcages.length > 0 ? (saisie.motifForcage ?? "").trim() : null,
@@ -723,11 +739,13 @@ async function chargerPourModification(tx: Tx, id: number) {
  * (les montants saisis valaient pour les conditions d'origine, sans prorata). L'ancienne composition, avec son auteur et son motif, est gardée
  * au journal (`COTATION_COMPOSITION_VIDEE`). Un changement du nombre de tranches garde la composition (seul l'échéancier change).
  */
-export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, saisie: SaisieCotation, adresseIp: string | null): Promise<{ compositionVidee: boolean }> {
+export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, saisieRecue: SaisieCotation, adresseIp: string | null): Promise<{ compositionVidee: boolean }> {
+  let saisie = saisieRecue;
   await exigerAgir(acteur);
   const problemesDateEffet = problemesDateEffetCotation(saisie.dateEffet);
   if (problemesDateEffet.length > 0) throw new ErreurMetier(problemesDateEffet.join(" "));
   return obtenirPrisma().$transaction(async (tx) => {
+    saisie = await avecDureeImposee(tx, saisieRecue, await dateDeVersionPourCotation(tx, saisieRecue.codeProduit));
     const avant = await chargerPourModification(tx, id);
     if (avant.produit.code !== saisie.codeProduit) throw new ErreurMetier("Le produit d'une cotation ne se change pas : créez une nouvelle cotation.");
     // Qui modifie un brouillon composé (souscripteur, dates, assurés…) ne touche pas à la composition : ses lignes sont reprises telles quelles,

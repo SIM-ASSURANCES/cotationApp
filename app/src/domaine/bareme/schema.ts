@@ -67,6 +67,8 @@ const composante = z
     assiette: operande,
     taux,
     minimum: decimal.optional(),
+    /** D64 : le minimum (fixe ou E5) s'applique AVANT les coefficients E2 ; sans ce réglage, après (comportement historique). */
+    minimumAvantCoefficients: z.boolean().optional(),
     parTete: z.boolean().optional(),
   })
   .strict();

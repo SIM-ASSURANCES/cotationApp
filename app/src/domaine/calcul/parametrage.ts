@@ -143,6 +143,11 @@ export type VersionSaisie = {
   dateEffet: DateIso;
   arrondi: RegleArrondi;
   prorata: { actif: boolean; primeMinimale: string | null };
+  /**
+   * D64 : durée du contrat imposée à 1 an, sans prorata (tous modes). Cotation : échéance = effet + 1 an - 1 jour, non modifiable ; coefficient 1.
+   * Absent ou faux : les dates sont saisies (comportement d'avant). Exclut `prorata.actif`.
+   */
+  dureeImposeeUnAn?: boolean;
   fractionnement: {
     tranchesMax: number;
     /** Répartition en % utilisée quand le nombre de tranches choisi lui est égal. */
@@ -224,6 +229,7 @@ export function problemesVersion(v: VersionSaisie): string[] {
   if (!SENS_ARRONDI.includes(v.arrondi.sens)) p.push("Le sens d'arrondi est invalide.");
   if (!NIVEAUX_ARRONDI.includes(v.arrondi.niveau)) p.push("Le niveau d'arrondi est invalide.");
   if (!COMPOSANTES.includes(v.arrondi.composanteAbsorbante)) p.push("La composante absorbant l'écart d'arrondi est invalide.");
+  if (v.dureeImposeeUnAn === true && v.prorata.actif) p.push("La durée du contrat imposée à 1 an exclut le prorata : décochez le prorata temporis (le coefficient de prorata vaut 1).");
   montantPositifOuNul(v.prorata.primeMinimale, "La prime minimale", p);
   montantPositifOuNul(v.fractionnement.frais, "Les frais de fractionnement", p);
   montantPositifOuNul(v.seuilValidationTtc, "Le seuil de validation", p);

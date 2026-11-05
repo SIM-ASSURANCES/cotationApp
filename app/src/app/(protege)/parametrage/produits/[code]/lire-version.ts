@@ -61,6 +61,7 @@ export function lireVersion(donnees: FormData): VersionSaisie {
       composanteAbsorbante: "TAXE",
     },
     prorata: { actif: donnees.get("prorataActif") === "on", primeMinimale: mOuNull(champOuNull(donnees, "primeMinimale")) },
+    dureeImposeeUnAn: donnees.get("dureeImposeeUnAn") === "on",
     fractionnement: {
       tranchesMax: Number(champ(donnees, "tranchesMax")),
       repartitionPourcent: liste(champOuNull(donnees, "repartition"))?.map(m) ?? null,

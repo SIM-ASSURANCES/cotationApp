@@ -236,6 +236,8 @@ model ProduitVersion {
   arrondiNiveau               String    @map("arrondi_niveau")
   arrondiComposante           String    @map("arrondi_composante")
   prorataActif                Boolean   @map("prorata_actif")
+  /// D64 : la durée du contrat est imposée à 1 an (échéance = effet + 1 an - 1 jour, non modifiable), sans prorata. CHECK : exclut prorata_actif.
+  dureeImposeeUnAn            Boolean   @default(false) @map("duree_imposee_un_an")
   primeMinimale               Decimal?  @map("prime_minimale") @db.Decimal(18, 6)
   fractionnementTranchesMax   Int       @default(1) @map("fractionnement_tranches_max")
   /// Tableau JSON de pourcentages en texte (["40","30","30"]), ou null : tranches égales.

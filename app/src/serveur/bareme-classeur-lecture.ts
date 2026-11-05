@@ -259,7 +259,7 @@ function lireExpression(c: Cellule, lec: Lecture): unknown {
 
 const COLONNES_CHAMPS = ["code", "libelle", "aide", "type", "bloc", "obligatoire", "numerique", "min", "max", "si_type", "si_cible", "si_valeur", "sur_documents"] as const;
 const COLONNES_GARANTIES = ["code", "nom", "definition", "afficher_sur_documents", "souscription", "si_type", "si_cible", "si_valeur", "taxe", "accessoires_mode", "accessoires_montant"] as const;
-const COLONNES_COMPOSANTES = ["garantie", "code", "souscription", "assiette", "taux_unite", "taux_fixe", "taux_source", "minimum", "par_tete"] as const;
+const COLONNES_COMPOSANTES = ["garantie", "code", "souscription", "assiette", "taux_unite", "taux_fixe", "taux_source", "minimum", "minimum_avant_coefficients", "par_tete"] as const;
 const COLONNES_SOUS_JACENTS = ["code", "effet", "table", "cibles", "reduction", "mode", "quand_type", "quand_gauche", "quand_comparateur", "quand_droite", "message"] as const;
 const COLONNES_ESSAIS = ["essai", "rubrique", "cle", "valeur", "nette", "acc", "taxe", "ttc"] as const;
 const APPLICABLE: Record<string, readonly string[]> = {
@@ -477,6 +477,7 @@ function lireGaranties(classeur: ExcelJS.Workbook, lec: Lecture, doc: Objet) {
       ["code", "code", "texte"],
       ["souscription", "souscription", "texte"],
       ["minimum", "minimum", "decimal"],
+      ["minimum_avant_coefficients", "minimumAvantCoefficients", "booleen"],
       ["par_tete", "parTete", "booleen"],
     ] as const) {
       lec.noter(`${base}.${cle}`, l.cellule(col));

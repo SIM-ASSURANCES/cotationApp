@@ -59,7 +59,7 @@ function Resume({ v, codeProduit, peutEcrire, autreVersionAvecBareme }: { v: Ver
       <p className="mb-3 text-sm text-muted-foreground">
         Tarification : {LIBELLE_MODE[v.modeTarification] ?? v.modeTarification}
         {v.garanties && v.garanties.length > 0 ? ` — garanties : ${v.garanties.map(formaterGarantieResume).join(", ")}${v.garantiesSaisieLibre === false ? " ; saisie libre interdite" : ""}` : ""} ·{" "}
-        Arrondi : {v.arrondi.precision} F, {LIBELLE_SENS[v.arrondi.sens].toLowerCase()}, {LIBELLE_NIVEAU[v.arrondi.niveau].toLowerCase()} · Prorata {v.prorata.actif ? "actif" : "inactif"}
+        Arrondi : {v.arrondi.precision} F, {LIBELLE_SENS[v.arrondi.sens].toLowerCase()}, {LIBELLE_NIVEAU[v.arrondi.niveau].toLowerCase()} · Prorata {v.prorata.actif ? "actif" : "inactif"}{v.dureeImposeeUnAn ? " · Durée imposée : 1 an" : ""}
         {v.prorata.primeMinimale ? `, prime minimale ${net(v.prorata.primeMinimale)}` : ""} · Fractionnement jusqu'à {v.fractionnement.tranchesMax} tranche(s)
         {net(v.fractionnement.frais) !== "0" ? `, frais ${net(v.fractionnement.frais)}` : ""} · Validité {v.cotation.validiteMois} mois
         {v.seuilValidationTtc ? ` · Double validation au-delà de ${net(v.seuilValidationTtc)} F TTC` : ""}
@@ -206,6 +206,9 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
               </div>
               <label className="mb-4 flex min-h-10 items-center gap-2 text-sm font-medium lg:min-h-0">
                 <input type="checkbox" name="prorataActif" defaultChecked={base?.prorata.actif ?? true} className={CASE} /> Prorata temporis actif (jours inclus / 365)
+              </label>
+              <label className="mb-4 flex min-h-10 items-center gap-2 text-sm font-medium lg:min-h-0">
+                <input type="checkbox" name="dureeImposeeUnAn" defaultChecked={base?.dureeImposeeUnAn ?? false} className={CASE} /> Durée du contrat imposée : 1 an, sans prorata (échéance = effet + 1 an − 1 jour)
               </label>
               <Champ nom="tranchesMax" libelle="Nombre maximal de tranches (1 à 12)" valeur={String(base?.fractionnement.tranchesMax ?? 1)} autoComplete="off" />
               <Champ nom="repartition" libelle="Répartition en % (ex. 40 ; 30 ; 30), vide = tranches égales" requis={false} valeur={base?.fractionnement.repartitionPourcent?.join(" ; ") ?? ""} autoComplete="off" />

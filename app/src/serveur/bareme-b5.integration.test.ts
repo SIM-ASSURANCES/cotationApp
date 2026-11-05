@@ -37,6 +37,9 @@ import { obtenirPrisma } from "./prisma";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
 
+import { construireClasseur } from "./bareme-classeur-ecriture";
+import { importerBaremeXlsx } from "./bareme-excel";
+
 const MDP = "phrase-de-passe-inventee-2026";
 const unique = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`;
 const CODE = (p: string) => unique(p).toUpperCase().replace(/-/g, "_");
@@ -321,6 +324,24 @@ describe("Ajout 10 : un code de champ du publié d'origine ne change pas côté 
 
     const apres = await obtenirPrisma().baremeDocument.findFirstOrThrow({ where: { versionId: v2 } });
     expect(apres.empreinte).toBe(avant.empreinte);
+  });
+
+  it("D64 : une liste de montants devient un montant borné dans la nouvelle version, à l'écran comme à l'import, sans refus de la garde des codes", async () => {
+    const { v2 } = await versionDeuxDepuisPublie();
+    const copie = await brouillonDe(v2);
+    const enMontant = (b: Bareme, code: string): Bareme => ({
+      ...b,
+      champs: b.champs.map((c) => (c.code === "vol_caisse_montant" ? { code, type: "MONTANT" as const, bloc: c.bloc, si: c.si, libelle: c.libelle, min: "50000", max: "200000" } : c)),
+      jeuxEssai: b.jeuxEssai.map((e) => ({ ...e, entrees: { ...e.entrees, champs: Object.fromEntries(Object.entries(e.entrees.champs).map(([k, v]) => [k === "vol_caisse_montant" ? code : k, v])) } })),
+    });
+    // À l'écran : même code, puis autre code.
+    await expect(enregistrer(v2, enMontant(copie, "vol_caisse_montant"))).resolves.toMatchObject({ problemes: [] });
+    expect((await brouillonDe(v2)).champs.find((c) => c.code === "vol_caisse_montant")).toMatchObject({ type: "MONTANT", min: "50000", max: "200000" });
+    await expect(enregistrer(v2, enMontant(copie, "vol_caisse_saisie"))).resolves.toBeDefined();
+    // À l'import : même service, sans tolérance d'intégrité.
+    const classeur = await construireClasseur(enMontant(copie, "vol_caisse_montant"), { titre: "Import (test D64)" });
+    await expect(importerBaremeXlsx(technique, v2, "montant.xlsx", classeur, null)).resolves.toBeDefined();
+    expect((await brouillonDe(v2)).champs.find((c) => c.code === "vol_caisse_montant")?.type).toBe("MONTANT");
   });
 
   it("supprimer un champ reste permis (le contrôle des balises protège les modèles) ; ajouter un champ aussi", async () => {

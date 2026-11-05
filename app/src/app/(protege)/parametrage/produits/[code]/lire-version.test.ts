@@ -108,3 +108,18 @@ describe("session 6.2b : garanties du produit", () => {
     expect(lireVersion(formulaireBeni()).garanties).toEqual([]);
   });
 });
+
+describe("D64 : durée du contrat imposée (1 an, sans prorata)", () => {
+  it("la case est lue ; absente, le réglage est faux (comportement d'avant)", () => {
+    expect(lireVersion(formulaireBeni()).dureeImposeeUnAn).toBe(false);
+    const d = formulaireBeni({ dureeImposeeUnAn: "on" });
+    d.delete("prorataActif");
+    const v = lireVersion(d);
+    expect(v.dureeImposeeUnAn).toBe(true);
+    expect(problemesVersion(v)).toEqual([]);
+  });
+  it("la durée imposée et le prorata s'excluent : refus qui le dit", () => {
+    const v = lireVersion(formulaireBeni({ dureeImposeeUnAn: "on" })); // le prorata est coché
+    expect(problemesVersion(v).join(" ")).toContain("exclut le prorata");
+  });
+});

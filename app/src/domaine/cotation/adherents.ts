@@ -1,4 +1,4 @@
-import { dateValide, type DateIso } from "../calcul/dates";
+import { dateValide, formaterDate, type DateIso } from "../calcul/dates";
 import { problemesAssures, NOMBRE_MAX_ASSURES, type Assure } from "./saisie";
 
 /**
@@ -38,12 +38,12 @@ export type Periode = { dateEffet: DateIso; dateEcheance: DateIso };
 
 /** Date d'un changement : dans la période de la police et jamais avant le changement précédent. */
 export function problemesDateChangement(dateEffet: DateIso, police: Periode, derniere: DateIso): string[] {
-  if (!dateValide(dateEffet)) return ["Date d'effet du changement invalide (AAAA-MM-JJ)."];
+  if (!dateValide(dateEffet)) return ["Date d'effet du changement invalide (JJ/MM/AAAA)."];
   const p: string[] = [];
   if (dateEffet < police.dateEffet || dateEffet > police.dateEcheance) {
-    p.push(`La date d'effet du changement doit être comprise entre le ${police.dateEffet} et le ${police.dateEcheance} (période de la police).`);
+    p.push(`La date d'effet du changement doit être comprise entre le ${formaterDate(police.dateEffet)} et le ${formaterDate(police.dateEcheance)} (période de la police).`);
   }
-  if (dateEffet < derniere) p.push(`La date d'effet du changement ne peut pas précéder le dernier changement (${derniere}).`);
+  if (dateEffet < derniere) p.push(`La date d'effet du changement ne peut pas précéder le dernier changement (${formaterDate(derniere)}).`);
   return p;
 }
 

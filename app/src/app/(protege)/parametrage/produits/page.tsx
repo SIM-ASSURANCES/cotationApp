@@ -73,7 +73,7 @@ export default async function PageProduits({ searchParams }: { searchParams?: Pr
           <FormulaireAction action={creerUnProduit} libelleBouton="Créer">
             <Champ nom="code" libelle="Code (ex. RELAXSANTE)" autoComplete="off" />
             <Champ nom="libelle" libelle="Libellé" autoComplete="off" />
-            <Champ nom="gamme" libelle="Gamme (ex. RELAX)" autoComplete="off" />
+            <Champ nom="gamme" libelle="Gamme (ex. RELAX)" autoComplete="off" aide="Famille commerciale du produit (ex. RELAX), utilisée par les modèles de documents : balise produit.gamme." />
             <div className="mb-4">
               <ListeDeroulante
                 label="Branche (classement)"

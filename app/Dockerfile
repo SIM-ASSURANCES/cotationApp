@@ -15,7 +15,11 @@ WORKDIR /app
 # lance « prisma generate ») : tant que ces fichiers ne changent pas, cette couche reste en cache.
 COPY package.json package-lock.json prisma7.config.ts ./
 COPY prisma ./prisma
-RUN npm ci
+# Réseau de serveur parfois instable (ECONNRESET en plein téléchargement) : le cache de téléchargement de BuildKit conserve les
+# archives déjà reçues d'un essai à l'autre, même après un échec, et npm refait quelques tentatives de plus, avec des délais plus
+# longs (comme Dockerfile.tests). Aucune dépendance ne change : `npm ci` installe toujours exactement package-lock.json. Les trois
+# images (application, travailleur, outils) partent de cette étape.
+RUN --mount=type=cache,target=/root/.npm npm ci --fetch-retries=6 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
 FROM dependances AS construction
 COPY . .

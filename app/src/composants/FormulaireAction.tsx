@@ -2,7 +2,7 @@
 
 import { startTransition, useActionState, useRef, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 
-import { Bouton, Champ as ChampSaisie, ChampDate as ChampDateSaisie, Icone } from "@/composants/ui";
+import { Bouton, Champ as ChampSaisie, ChampDate as ChampDateSaisie, ChampMontant as ChampMontantSaisie, Icone } from "@/composants/ui";
 
 import type { ActionFormulaire, EtatFormulaire } from "./types";
 
@@ -121,6 +121,7 @@ export function Champ({
   requis = true,
   autoComplete,
   valeur,
+  aide,
 }: {
   nom: string;
   libelle: string;
@@ -128,11 +129,39 @@ export function Champ({
   requis?: boolean;
   autoComplete?: string;
   valeur?: string;
+  /** Phrase d'aide sous le champ (disparaît devant un message d'erreur). */
+  aide?: string;
 }) {
   // Le `div` reprend l'espacement de l'ancienne étiquette (mb-4) : les champs se suivent sans rien entre eux.
   return (
     <div className="mb-4">
-      <ChampSaisie name={nom} label={libelle} type={type} required={requis} autoComplete={autoComplete} defaultValue={valeur} />
+      <ChampSaisie name={nom} label={libelle} type={type} required={requis} autoComplete={autoComplete} defaultValue={valeur} aide={aide} />
+    </div>
+  );
+}
+
+/**
+ * Champ de montant d'un formulaire d'action (D63) : mêmes props que `Champ`, avec le séparateur de milliers à l'écran pendant la saisie
+ * et la valeur envoyée sans séparateur (voir `ChampMontant`). `decimales={false}` pour un montant entier.
+ */
+export function ChampMontant({
+  nom,
+  libelle,
+  requis = true,
+  valeur,
+  decimales = true,
+  aide,
+}: {
+  nom: string;
+  libelle: string;
+  requis?: boolean;
+  valeur?: string;
+  decimales?: boolean;
+  aide?: string;
+}) {
+  return (
+    <div className="mb-4">
+      <ChampMontantSaisie name={nom} label={libelle} required={requis} defaultValue={valeur} decimales={decimales} aide={aide} />
     </div>
   );
 }

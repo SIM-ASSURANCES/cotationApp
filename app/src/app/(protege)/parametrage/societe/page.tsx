@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
+import { Champ, ChampDate, ChampMontant, FormulaireAction } from "@/composants/FormulaireAction";
 import { Carte, Champ as ChampSaisie, EnTetePage, ListeDeroulante, Tableau, ZoneTexte, type ColonneTableau } from "@/composants/ui";
 import { formaterDate } from "@/domaine/calcul/dates";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
@@ -198,7 +198,7 @@ export default async function PageSociete() {
           <FormulaireAction action={enregistrerLeSeuilValidation} garderApresSucces libelleBouton="Enregistrer le seuil">
             <div className="mb-4 grid gap-x-6 gap-y-4 sm:grid-cols-3">
               <div className="sm:col-span-2">
-                <Champ nom="seuil" libelle="Seuil de validation (FCFA TTC)" valeur={formaterMontant(montant(lu.seuilValidation.enVigueur))} autoComplete="off" />
+                <ChampMontant nom="seuil" libelle="Seuil de validation (FCFA TTC)" valeur={formaterMontant(montant(lu.seuilValidation.enVigueur))} />
               </div>
               <ChampDate nom="dateEffet" libelle="À partir du (JJ/MM/AAAA)" valeur={aujourdhui()} min={aujourdhui()} />
             </div>

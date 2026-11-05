@@ -200,7 +200,7 @@ function FicheEssai({
               <ChampCode
                 key={`ttc-${e.attendu.ttc ?? ""}`}
                 label="TTC total attendu"
-                inputMode="decimal"
+                montant
                 valeur={e.attendu.ttc ?? ""}
                 disabled={disabled}
                 valider={(texte) => {
@@ -221,7 +221,7 @@ function FicheEssai({
                         <ChampCode
                           key={`${l.g}-${m}-${l[m] ?? ""}`}
                           label={`${LIBELLE_MONTANT[m]} attendu`}
-                          inputMode="decimal"
+                          montant
                           valeur={l[m] ?? ""}
                           disabled={disabled}
                           valider={(texte) => {

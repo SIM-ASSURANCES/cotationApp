@@ -69,7 +69,12 @@ describe("contrôles ligne par ligne (CDC §13)", () => {
   });
 
   it("formats : date invalide ou impossible, sexe, numéro hors format ou déjà pris", () => {
-    expect(messages(ligne({ date_naissance: "31/02/1990" }))[0]).toMatch(/^date_naissance : Date invalide/);
+    // D63 : une date qui n'existe pas (31/02) se distingue d'un format illisible (14.03.1988), et les dates des messages sont en JJ/MM/AAAA.
+    expect(messages(ligne({ date_naissance: "31/02/1990" }))).toEqual(["date_naissance : Date inexistante : le 31/02/1990 n'existe pas au calendrier. Vérifiez le jour et le mois."]);
+    expect(messages(ligne({ date_naissance: "1990-02-30" }))).toEqual(["date_naissance : Date inexistante : le 30/02/1990 n'existe pas au calendrier. Vérifiez le jour et le mois."]);
+    expect(messages(ligne({ date_naissance: "14.03.1988" }))).toEqual(["date_naissance : Format de date invalide : « 14.03.1988 ». Écrivez JJ/MM/AAAA (ex. 14/03/1988) ou AAAA-MM-JJ."]);
+    expect(messages(ligne({ date_naissance: "14-03-1988" }))[0]).toMatch(/^date_naissance : Format de date invalide/);
+    expect(messages(ligne({ date_naissance: "n'importe quoi" }))[0]).toMatch(/^date_naissance : Format de date invalide/);
     expect(messages(ligne({ date_naissance: "01/01/2030" }))[0]).toMatch(/impossible/);
     expect(messages(ligne({ sexe: "X" }))).toEqual(["sexe : Sexe invalide : M, F ou vide."]);
     expect(messages(ligne({ numero_certificat: "CERT-1" }))[0]).toMatch(/^numero_certificat : Le numéro du certificat « CERT-1 » doit s'écrire TST-2026-000001-G suivi/);
@@ -94,7 +99,7 @@ describe("contrôles ligne par ligne (CDC §13)", () => {
 
   it("âges limites de la formule, à la date d'effet de l'incorporation (H62)", () => {
     expect(messages(ligne({ date_naissance: "02/07/2008" }))).toEqual([
-      "date_naissance : Âge hors limite : 17 ans à la date d'adhésion (2026-07-01), minimum 18 ans pour la formule SOLO.",
+      "date_naissance : Âge hors limite : 17 ans à la date d'adhésion (01/07/2026), minimum 18 ans pour la formule SOLO.",
     ]);
     expect(messages(ligne({ date_naissance: "01/07/2008" }))).toEqual([]);
     expect(messages(ligne({ date_naissance: "30/06/1960" }))[0]).toMatch(/66 ans .* maximum 65 ans/);
@@ -105,7 +110,7 @@ describe("contrôles ligne par ligne (CDC §13)", () => {
     // 17 ans au 01/01/2026 (début de la police), 18 ans au 01/07/2026 (date d'adhésion) : accepté.
     expect(messages(ligne({ date_naissance: "02/03/2008" }))).toEqual([]);
     // 65 ans au début de la police, 66 ans à la date d'adhésion : refusé.
-    expect(messages(ligne({ date_naissance: "15/03/1960" }))[0]).toMatch(/66 ans à la date d'adhésion \(2026-07-01\), maximum 65 ans/);
+    expect(messages(ligne({ date_naissance: "15/03/1960" }))[0]).toContain("66 ans à la date d'adhésion (01/07/2026), maximum 65 ans");
   });
 });
 

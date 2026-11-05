@@ -9,6 +9,7 @@ import { Bandeau, Bouton, Carte, Tableau } from "@/composants/ui";
 import { champsManquants, etatDepuisSaisie, type DescripteurSaisie } from "@/domaine/bareme/formulaire";
 import type { Saisie } from "@/domaine/bareme/schema";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
+import { libelleDureeEtProrata } from "@/domaine/calcul/libelle-prorata";
 
 import { calculerLaPrimeBareme, type EtatCalculBareme } from "./actions";
 
@@ -149,6 +150,7 @@ export function ChampsBareme({ descripteur, initiale }: { descripteur: Descripte
                     { cle: "ttc", entete: "TTC", alignement: "droite", className: "font-semibold", rendu: (l) => (l.sous ? null : f(l.ttc)) },
                   ]}
                 />
+                <p className="mt-2 text-sm text-neutral">{libelleDureeEtProrata(etat.resultat.prorata.jours, etat.resultat.prorata.coefficient, etat.resultat.prorata.actif)}.</p>
                 <p className="mt-2 text-sm text-neutral">Barème publié (empreinte {etat.resultat.empreinte.slice(0, 16)}…). Ces montants sont recalculés à l&apos;enregistrement.</p>
               </div>
             ) : null}

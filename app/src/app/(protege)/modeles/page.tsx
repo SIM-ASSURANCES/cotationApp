@@ -3,70 +3,22 @@ import { redirect } from "next/navigation";
 
 import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
 import { FormulaireCreationModele } from "@/composants/FormulaireCreationModele";
-import { Carte, EnTetePage, LienBouton, Pastille, Tableau, type ColonneTableau } from "@/composants/ui";
+import { Carte, EnTetePage, LienBouton } from "@/composants/ui";
 import { cx } from "@/composants/ui/classes";
 import { formaterDate } from "@/domaine/calcul/dates";
 import { peutAgir, peutLire } from "@/domaine/droits";
+import { regrouperParProduit } from "@/domaine/documents/regroupement-modeles";
 import { niveauDuProfil } from "@/serveur/droits";
-import { historiqueSeuilListe, lireSeuilListe, listerBranchesDesModeles, listerModeles, type LigneModele } from "@/serveur/modeles";
+import { historiqueSeuilListe, lireSeuilListe, listerBranchesDesModeles, listerModeles, listerModelesAPublier, listerProduitsDesModeles } from "@/serveur/modeles";
 import { aujourdhui, listerProduits } from "@/serveur/parametrage";
 import { exigerUtilisateur } from "@/serveur/session";
 
 import { creerUnModele, enregistrerLeSeuil } from "./actions";
-import { PastilleVersion } from "./pastille-version";
+import { GroupeBrancheModeles, TableauAPublier } from "./groupes-modeles";
 
-const COLONNES: ColonneTableau<LigneModele>[] = [
-  {
-    cle: "code",
-    entete: "Code",
-    rendu: (m) => (
-      <span className="inline-flex flex-wrap items-center gap-2">
-        <Link href={`/modeles/${m.id}`} className="font-semibold text-primary hover:underline">
-          {m.code || "—"}
-        </Link>
-        {m.codeCgManquant ? (
-          <Pastille ton="avertissement">Code CG manquant</Pastille>
-        ) : null}
-      </span>
-    ),
-  },
-  {
-    cle: "type",
-    entete: "Type",
-    rendu: (m) => (
-      <>
-        <span className="font-medium text-foreground">{m.libelleType}</span>
-        {m.precision ? <span className="block text-xs text-muted-foreground">{m.precision}</span> : null}
-      </>
-    ),
-  },
-  { cle: "libelle", entete: "Libellé", rendu: (m) => m.libelle },
-  {
-    cle: "branche",
-    entete: "Branche",
-    rendu: (m) =>
-      m.branchePrincipaleLibelle ? (
-        <span className="text-xs font-semibold text-foreground">{m.branchePrincipaleLibelle}</span>
-      ) : (
-        <Pastille>Transversal / commun</Pastille>
-      ),
-  },
-  { cle: "produit", entete: "Produit", rendu: (m) => m.produitCode ?? "commun" },
-  { cle: "vigueur", entete: "En vigueur", rendu: (m) => (m.enVigueur ? `v${m.enVigueur.numero} depuis le ${formaterDate(m.enVigueur.dateEffet)}` : "aucune") },
-  {
-    cle: "derniere",
-    entete: "Dernière version",
-    rendu: (m) =>
-      m.derniere ? (
-        <span className="inline-flex flex-wrap items-center gap-2">
-          <span>v{m.derniere.numero}</span>
-          <PastilleVersion statut={m.derniere.statut} libelle={m.derniere.libelleStatut} />
-        </span>
-      ) : (
-        "aucun dépôt"
-      ),
-  },
-];
+const ONGLET = "inline-flex min-h-10 items-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors lg:min-h-0";
+const ONGLET_ACTIF = "bg-primary text-primary-foreground font-semibold";
+const ONGLET_INACTIF = "bg-muted text-neutral hover:text-foreground";
 
 export default async function PageModeles(props: PageProps<"/modeles">) {
   const utilisateur = await exigerUtilisateur();
@@ -80,23 +32,37 @@ export default async function PageModeles(props: PageProps<"/modeles">) {
   ]);
   if (!peutLire(depot) && !peutLire(publication)) redirect("/acces-refuse");
 
-  const [modeles, seuil, historique, produits, branches] = await Promise.all([
+  // « À valider / À publier » : réservé au droit de publication (aussi contrôlé dans `listerModelesAPublier`) ; l'onglet et son compteur
+  // n'existent que pour ce profil.
+  const peutPublier = peutAgir(publication);
+  const vueAPublier = peutPublier && searchParams.vue === "a-publier";
+
+  const [modeles, seuil, historique, produits, branches, produitsDesModeles, aPublier] = await Promise.all([
     listerModeles(utilisateur),
     lireSeuilListe(),
     historiqueSeuilListe(utilisateur),
     peutAgir(depot) ? listerProduits(utilisateur) : Promise.resolve([]),
     listerBranchesDesModeles(utilisateur),
+    listerProduitsDesModeles(utilisateur),
+    peutPublier ? listerModelesAPublier(utilisateur) : Promise.resolve([]),
   ]);
 
-  // Filtrage des modèles selon la branche sélectionnée
-  const modelesFiltres =
-    brancheChoisie === "TRANSVERSAL"
-      ? modeles.filter((m) => !m.branchePrincipale)
-      : brancheChoisie
-        ? modeles.filter((m) => m.branchePrincipale === brancheChoisie)
-        : modeles;
-
+  // Un produit désactivé sans modèle n'apporte que du bruit (trois « manquants ») : il ne figure que s'il porte des modèles.
+  const produitsARanger = produitsDesModeles.filter((p) => p.actif || modeles.some((m) => m.produitCode === p.code));
   const nbTransversaux = modeles.filter((m) => !m.branchePrincipale).length;
+  const lienOnglet = (actif: boolean) => cx(ONGLET, actif ? ONGLET_ACTIF : ONGLET_INACTIF);
+
+  // Branches à montrer : celle qui est choisie, sinon toutes (puis les modèles et produits sans branche).
+  const groupes =
+    brancheChoisie === "TRANSVERSAL"
+      ? [{ titre: undefined, groupe: regrouperParProduit(null, produitsARanger, modeles) }]
+      : brancheChoisie
+        ? [{ titre: undefined, groupe: regrouperParProduit(brancheChoisie, produitsARanger, modeles) }]
+        : [
+            ...branches.map((b) => ({ titre: b.libelle as string | undefined, groupe: regrouperParProduit(b.code, produitsARanger, modeles) })),
+            { titre: "Transversaux et communs" as string | undefined, groupe: regrouperParProduit(null, produitsARanger, modeles) },
+          ];
+  const rienAMontrer = groupes.every(({ groupe }) => groupe.produits.length === 0 && groupe.communs.length === 0);
 
   return (
     <main className="space-y-6">
@@ -108,58 +74,41 @@ export default async function PageModeles(props: PageProps<"/modeles">) {
         <LienBouton href="/modeles/aide">Aide à la rédaction des modèles : syntaxe, filtres et dictionnaire des champs</LienBouton>
       </p>
 
-      {/* Rangement par branches : Onglets / Filtres rapides */}
+      {/* Rangement par branches, puis par produit : onglets */}
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2 border-b border-border pb-3 text-sm">
-          <Link
-            href="/modeles"
-            className={cx(
-              "inline-flex min-h-10 items-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors lg:min-h-0",
-              !brancheChoisie
-                ? "bg-primary text-primary-foreground font-semibold"
-                : "bg-muted text-neutral hover:text-foreground",
-            )}
-          >
+          <Link href="/modeles" className={lienOnglet(!brancheChoisie && !vueAPublier)}>
             Tous les modèles ({modeles.length})
           </Link>
           {branches.map((b) => {
             const nb = modeles.filter((m) => m.branchePrincipale === b.code).length;
-            const actif = brancheChoisie === b.code;
             return (
-              <Link
-                key={b.code}
-                href={`/modeles?branche=${b.code}`}
-                className={cx(
-                  "inline-flex min-h-10 items-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors lg:min-h-0",
-                  actif
-                    ? "bg-primary text-primary-foreground font-semibold"
-                    : "bg-muted text-neutral hover:text-foreground",
-                )}
-              >
+              <Link key={b.code} href={`/modeles?branche=${b.code}`} className={lienOnglet(!vueAPublier && brancheChoisie === b.code)}>
                 {b.libelle} ({nb})
               </Link>
             );
           })}
-          <Link
-            href="/modeles?branche=TRANSVERSAL"
-            className={cx(
-              "inline-flex min-h-10 items-center rounded-lg px-3 py-1.5 text-xs font-medium transition-colors lg:min-h-0",
-              brancheChoisie === "TRANSVERSAL"
-                ? "bg-primary text-primary-foreground font-semibold"
-                : "bg-muted text-neutral hover:text-foreground",
-            )}
-          >
+          <Link href="/modeles?branche=TRANSVERSAL" className={lienOnglet(!vueAPublier && brancheChoisie === "TRANSVERSAL")}>
             Transversaux & Communs ({nbTransversaux})
           </Link>
+          {peutPublier ? (
+            <Link href="/modeles?vue=a-publier" className={lienOnglet(vueAPublier)}>
+              À valider / À publier ({aPublier.length})
+            </Link>
+          ) : null}
         </div>
 
-        <Tableau
-          colonnes={COLONNES}
-          lignes={modelesFiltres}
-          cleLigne={(m) => String(m.id)}
-          messageVide={brancheChoisie ? "Aucun modèle enregistré pour cette branche." : "Aucun modèle."}
-          legende="Modèles Word"
-        />
+        {vueAPublier ? (
+          <TableauAPublier lignes={aPublier} />
+        ) : rienAMontrer ? (
+          <p className="text-sm text-muted-foreground">{brancheChoisie ? "Aucun modèle enregistré pour cette branche." : "Aucun modèle."}</p>
+        ) : (
+          <div className="space-y-8">
+            {groupes.map(({ titre, groupe }) => (
+              <GroupeBrancheModeles key={groupe.branche ?? "transversal"} groupe={groupe} titre={titre} />
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="grid items-start gap-6 lg:grid-cols-2">

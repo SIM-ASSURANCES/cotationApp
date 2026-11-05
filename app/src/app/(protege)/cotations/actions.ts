@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import type { EtatFormulaire } from "@/composants/types";
 import { avertissementNumeroContrat } from "@/domaine/cotation/police";
 import type { IntermediaireDocument } from "@/domaine/intermediaires";
-import { accepter, calculerCotationBareme, composerLaPrime, creerBrouillon, modifierBrouillon, refuser, renvoyerEnBrouillon, soumettre, valider, type ResultatCalculBareme } from "@/serveur/cotations";
+import { accepter, calculerCotationBareme, calculerCotationFormules, composerLaPrime, creerBrouillon, modifierBrouillon, refuser, renvoyerEnBrouillon, soumettre, valider, type ResultatCalculBareme, type ResultatCalculFormules } from "@/serveur/cotations";
 import { emettreCotation, reediter, soumettreCp } from "@/serveur/documents";
 import { creerIntermediaire } from "@/serveur/intermediaires";
 import { ErreurMetier, type UtilisateurCourant } from "@/serveur/types";
@@ -146,6 +146,23 @@ export async function calculerLaPrimeBareme(_etat: EtatCalculBareme, donnees: Fo
   const baremeBrut = saisie.baremeBrut;
   const r = await avecMessage((acteur) =>
     calculerCotationBareme(acteur, { codeProduit: saisie.codeProduit, typeContrat: saisie.typeContrat, regimeTaxe: saisie.regimeTaxe, dateEffet: saisie.dateEffet, dateEcheance: saisie.dateEcheance, nombreTranches: saisie.nombreTranches, baremeBrut }),
+  );
+  return r.ok ? { resultat: r.valeur } : { erreur: r.etat.erreur, ...(r.etat.details?.length ? { details: r.etat.details } : {}) };
+}
+
+// ---------------------------------------------------------------- Cotation par formules : calcul automatique (D63)
+
+/** État du calcul automatique d'une cotation par formules : le résultat, ou le refus du serveur (message et détails). */
+export type EtatCalculFormules = { erreur?: string; details?: string[]; resultat?: ResultatCalculFormules };
+
+/**
+ * Calcul automatique de la cotation par formules (même mécanisme que le barème, D62) : mêmes règles que l'enregistrement du brouillon, sans
+ * rien écrire. Le navigateur n'envoie que la saisie ; tout montant vient du moteur, ici.
+ */
+export async function calculerLaPrimeFormules(_etat: EtatCalculFormules, donnees: FormData): Promise<EtatCalculFormules> {
+  const saisie = lireCotation(donnees);
+  const r = await avecMessage((acteur) =>
+    calculerCotationFormules(acteur, { codeProduit: saisie.codeProduit, typeContrat: saisie.typeContrat, regimeTaxe: saisie.regimeTaxe, dateEffet: saisie.dateEffet, dateEcheance: saisie.dateEcheance, nombreTranches: saisie.nombreTranches, lignes: saisie.lignes }),
   );
   return r.ok ? { resultat: r.valeur } : { erreur: r.etat.erreur, ...(r.etat.details?.length ? { details: r.etat.details } : {}) };
 }

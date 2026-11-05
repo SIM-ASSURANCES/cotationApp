@@ -6,6 +6,7 @@ export { CarteIndicateur, type TonIndicateur } from "./CarteIndicateur";
 export { Champ } from "./Champ";
 export { ChampDate } from "./ChampDate";
 export { ChampFormulaire, classesControle } from "./ChampFormulaire";
+export { ChampMontant, useSaisieMontant } from "./ChampMontant";
 export { EnTetePage, type MiettePage } from "./EnTetePage";
 export { EtatVide } from "./EtatVide";
 export { FondDeMarque, type PositionFiligrane } from "./FondDeMarque";

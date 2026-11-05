@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Bouton, Champ, ListeDeroulante, Pastille, ZoneTexte } from "@/composants/ui";
+import { Bouton, Champ, ChampMontant, ListeDeroulante, Pastille, ZoneTexte } from "@/composants/ui";
 import {
   TYPES_CHAMP,
   attributsDuChamp,
@@ -187,8 +187,8 @@ export function OngletChamps({ ctx, disabled }: { ctx: ContexteEdition; disabled
               </div>
               {c.type === "NOMBRE" || c.type === "MONTANT" ? (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Champ label="Minimum (facultatif)" inputMode="decimal" autoComplete="off" value={c.min ?? ""} disabled={disabled} onChange={(e) => majChamp(c.code, (x) => ({ ...x, min: e.target.value === "" ? undefined : decimalSaisi(e.target.value) }))} />
-                  <Champ label="Maximum (facultatif)" inputMode="decimal" autoComplete="off" value={c.max ?? ""} disabled={disabled} onChange={(e) => majChamp(c.code, (x) => ({ ...x, max: e.target.value === "" ? undefined : decimalSaisi(e.target.value) }))} />
+                  <ChampMontant label="Minimum (facultatif)" value={c.min ?? ""} disabled={disabled} onChange={(v) => majChamp(c.code, (x) => ({ ...x, min: v === "" ? undefined : decimalSaisi(v) }))} />
+                  <ChampMontant label="Maximum (facultatif)" value={c.max ?? ""} disabled={disabled} onChange={(v) => majChamp(c.code, (x) => ({ ...x, max: v === "" ? undefined : decimalSaisi(v) }))} />
                 </div>
               ) : null}
               <EditeurCondition b={doc} etiquette="Afficher ce champ" sauf={c.code} disabled={disabled} valeur={c.si} onChange={(si) => majChamp(c.code, (x) => ({ ...x, si }))} />
@@ -270,7 +270,11 @@ function ValeursListe({ ctx, champ, disabled, majChamp }: { ctx: ContexteEdition
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
             {numerique ? null : <Champ label="Nouvelle valeur (libellé)" value={libelleNeuf} autoComplete="off" onChange={(e) => setLibelleNeuf(e.target.value)} />}
-            <Champ label={numerique ? "Nouveau montant" : "Code (facultatif, proposé depuis le libellé)"} inputMode={numerique ? "decimal" : undefined} value={codeNeuf} autoComplete="off" onChange={(e) => setCodeNeuf(e.target.value)} />
+            {numerique ? (
+              <ChampMontant label="Nouveau montant" value={codeNeuf} onChange={setCodeNeuf} />
+            ) : (
+              <Champ label="Code (facultatif, proposé depuis le libellé)" value={codeNeuf} autoComplete="off" onChange={(e) => setCodeNeuf(e.target.value)} />
+            )}
             <Bouton variante="secondaire" onClick={ajouter}>
               Ajouter la valeur
             </Bouton>

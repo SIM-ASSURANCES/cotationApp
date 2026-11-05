@@ -1,5 +1,5 @@
 import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
-import { Bandeau, Carte, Champ as ChampSaisie } from "@/composants/ui";
+import { Bandeau, Carte, Champ as ChampSaisie, ChampMontant } from "@/composants/ui";
 import { ChampsSouscripteurDynamiques } from "@/composants/ChampsSouscripteurDynamiques";
 import { SectionsAnnexesCotation } from "@/composants/SectionsAnnexesCotation";
 import { SelectionIntermediaires } from "@/composants/SelectionIntermediaires";
@@ -13,6 +13,7 @@ import type { DetailCotation } from "@/serveur/cotations";
 import type { DescripteurSaisie, Saisie as SaisieBareme } from "@/domaine/bareme";
 
 import { creerIntermediaireDepuisCotation, enregistrerCotation } from "./actions";
+import { CalculFormules } from "./calcul-formules";
 import { ChampsBareme } from "./champs-bareme";
 
 // Tableau manuel (cellules = champs) aux classes du composant Tableau. Pas de zébrure : un champ teinté ne doit pas reposer sur un fond bg-muted.
@@ -54,7 +55,7 @@ export function FormulaireCotation({
   const s = base?.souscripteur;
   return (
     // Chaque rubrique est une carte : les champs (fond teinté) reposent toujours sur le fond blanc de la carte.
-    <FormulaireAction action={enregistrerCotation} libelleBouton={base ? "Enregistrer le brouillon" : "Créer le brouillon"} className="space-y-6" entreeSur={bareme ? "[data-calculer]" : undefined}>
+    <FormulaireAction action={enregistrerCotation} libelleBouton={base ? "Enregistrer le brouillon" : "Créer le brouillon"} className="space-y-6" entreeSur={bareme || !parGaranties ? "[data-calculer]" : undefined}>
       <input type="hidden" name="codeProduit" value={produit.code} />
       {base ? <input type="hidden" name="id" value={base.id} /> : null}
 
@@ -136,16 +137,15 @@ export function FormulaireCotation({
                       </td>
                       <td className={CELLULE}>
                         <div className="w-40">
-                          <ChampSaisie name={`forcee_${f.code}`} defaultValue={forcee ? montant(forcee).toString() : ""} inputMode="decimal" className="text-right tabular-nums" aria-label={`Prime forcée ${f.code}`} />
+                          <ChampMontant name={`forcee_${f.code}`} defaultValue={forcee ? montant(forcee).toString() : ""} aria-label={`Prime forcée ${f.code}`} />
                         </div>
                       </td>
                       <td className={CELLULE}>
                         <div className="flex items-center gap-2">
                           <div className="w-32">
-                            <ChampSaisie
-                              name={`acc_${f.code}`} className="text-right tabular-nums"
+                            <ChampMontant
+                              name={`acc_${f.code}`}
                               defaultValue={montant(ligneDe(f.code)?.accessoireSaisi ?? f.accessoireValeur).toString().replace(".", ",")}
-                              inputMode="decimal"
                               aria-label={`Accessoires ${f.code}`}
                             />
                           </div>
@@ -159,6 +159,7 @@ export function FormulaireCotation({
             </table>
           </div>
           <Champ nom="motifForcage" libelle="Motif du forçage (obligatoire si une prime est forcée)" requis={false} valeur={base?.motifForcage ?? ""} autoComplete="off" />
+          <CalculFormules calculerAuDepart={Boolean(base)} />
         </Carte>
       )}
 

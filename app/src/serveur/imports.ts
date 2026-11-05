@@ -6,7 +6,7 @@ import { Prisma } from "@/generated/prisma/client";
 
 import { baremeTarifeParEffectif } from "@/domaine/bareme";
 import { estComposition, estCompositionBareme, type BaremeFige, type DonneesCalcul } from "@/domaine/calcul/composition";
-import { dateValide, type DateIso } from "@/domaine/calcul/dates";
+import { dateValide, formaterDate, type DateIso } from "@/domaine/calcul/dates";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
 import { normaliserNumeroPolice, numeroCertificatParDefaut } from "@/domaine/cotation/police";
 import type { Assure } from "@/domaine/cotation/saisie";
@@ -285,13 +285,13 @@ async function policeMere(policeId: number, client: Prisma.TransactionClient = o
 
 /** Date d'effet de l'incorporation : dans la période de la police, et jamais avant le dernier changement de la liste. */
 async function verifierDate(police: PoliceAvecVersion, dateEffet: DateIso): Promise<void> {
-  if (!dateValide(dateEffet)) throw new ErreurMetier("Date d'effet de l'incorporation invalide (AAAA-MM-JJ).");
+  if (!dateValide(dateEffet)) throw new ErreurMetier("Date d'effet de l'incorporation invalide (JJ/MM/AAAA).");
   const debut = depuisDate(police.dateEffet);
   const fin = depuisDate(police.dateEcheance);
-  if (dateEffet < debut || dateEffet > fin) throw new ErreurMetier(`La date d'effet de l'incorporation doit être comprise entre le ${debut} et le ${fin} (période de la police).`);
+  if (dateEffet < debut || dateEffet > fin) throw new ErreurMetier(`La date d'effet de l'incorporation doit être comprise entre le ${formaterDate(debut)} et le ${formaterDate(fin)} (période de la police).`);
   const derniere = await obtenirPrisma().adherentsVersion.findFirst({ where: { policeId: police.id }, orderBy: { numero: "desc" }, select: { dateEffet: true } });
   if (!derniere) throw new ErreurMetier("Cette police n'a pas de liste initiale d'adhérents : elle date d'avant la session 4a.");
-  if (dateEffet < depuisDate(derniere.dateEffet)) throw new ErreurMetier(`La date d'effet ne peut pas précéder le dernier changement de la liste (${depuisDate(derniere.dateEffet)}).`);
+  if (dateEffet < depuisDate(derniere.dateEffet)) throw new ErreurMetier(`La date d'effet ne peut pas précéder le dernier changement de la liste (${formaterDate(depuisDate(derniere.dateEffet))}).`);
 }
 
 /**

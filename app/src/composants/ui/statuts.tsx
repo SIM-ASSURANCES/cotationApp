@@ -47,6 +47,8 @@ const TON_PAR_STATUT: Record<string, TonPastille> = {
   // Session SECURPRO (D37) : alertes sur l'existant en base de développement.
   "Branche à renseigner": "avertissement",
   "Code CG manquant": "avertissement",
+  // Écran Modèles (D63) : un produit dont le modèle de cotation, de CP ou de certificat n'est pas déposé.
+  "Manquant": "avertissement",
   // Étape 6 (D42) : conditions générales par branche.
   "En vigueur": "succes",
   "CG à renseigner": "avertissement",

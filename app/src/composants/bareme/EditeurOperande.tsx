@@ -1,6 +1,6 @@
 "use client";
 
-import { Bouton, Champ, ListeDeroulante, type OptionListe } from "@/composants/ui";
+import { Bouton, ChampMontant, ListeDeroulante, type OptionListe } from "@/composants/ui";
 import {
   FORME_OPERATION,
   GENRES_OPERATION,
@@ -77,7 +77,7 @@ export function EditeurOperande({
         {genre === "CHAMP" && typeof op === "string" ? choisir(op, champs, "Champ") : null}
         {genre === "INTERMEDIAIRE" && typeof op === "string" ? choisir(op, intermediaires, "Valeur intermédiaire") : null}
         {genre === "CONSTANTE" ? (
-          <Champ label="Nombre" inputMode="decimal" autoComplete="off" disabled={disabled} value={texteConstante(op)} onChange={(e) => onChange(decimalSaisi(e.target.value))} />
+          <ChampMontant label="Nombre" disabled={disabled} value={texteConstante(op)} onChange={(v) => onChange(decimalSaisi(v))} />
         ) : null}
         {genre === "TABLE" && Array.isArray(op) ? choisir(String(op[1] ?? ""), tables, "Table (lue par ses clés)") : null}
       </div>

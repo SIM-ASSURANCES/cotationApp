@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, type KeyboardEvent, type ReactNode } from "react";
 
 import type { EtatFormulaire } from "@/composants/types";
-import { Bouton, Champ } from "@/composants/ui";
+import { Bouton, Champ, ChampMontant } from "@/composants/ui";
 import type { Bareme, ControlesDePublication, Ecart, Resultat } from "@/domaine/bareme";
 
 /** Ce que reçoit chaque onglet : le document, comment le modifier, et ce qui est figé par une publication. */
@@ -50,11 +50,19 @@ export function CaseACocher({ libelle, coche, onChange, disabled }: { libelle: s
  * que quelque chose le lit. `valider` rend vrai si le changement est accepté ; sinon le texte revient à la valeur enregistrée.
  * À utiliser avec `key={valeur}` : le champ repart de la nouvelle valeur après un changement accepté.
  */
-export function ChampCode({ label, valeur, valider, disabled, aide, inputMode }: { label: string; valeur: string; valider: (nouveau: string) => boolean; disabled?: boolean; aide?: string; inputMode?: "decimal" | "text" }) {
+export function ChampCode({ label, valeur, valider, disabled, aide, montant }: { label: string; valeur: string; valider: (nouveau: string) => boolean; disabled?: boolean; aide?: string; montant?: boolean }) {
   const [texte, setTexte] = useState(valeur);
   const finir = () => {
     if (texte !== valeur && !valider(texte)) setTexte(valeur);
   };
+  const surTouche = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      finir();
+    }
+  };
+  // Un montant (D63) : séparateur de milliers à l'écran, texte sans séparateur transmis au domaine.
+  if (montant) return <ChampMontant label={label} value={texte} disabled={disabled} aide={aide} onChange={setTexte} onBlur={finir} onKeyDown={surTouche} />;
   return (
     <Champ
       label={label}
@@ -63,15 +71,9 @@ export function ChampCode({ label, valeur, valider, disabled, aide, inputMode }:
       aide={aide}
       autoComplete="off"
       spellCheck={false}
-      inputMode={inputMode}
       onChange={(e) => setTexte(e.target.value)}
       onBlur={finir}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          finir();
-        }
-      }}
+      onKeyDown={surTouche}
     />
   );
 }

@@ -157,6 +157,19 @@ body {
   html {
     scroll-padding-top: 8rem;
   }
+
+  /* Un titre ou un paragraphe qui contient un mot sans coupure (empreinte de 64 caractères, code de modèle, identifiant) ne doit jamais
+     élargir la page : à 390 px, il faisait défiler la page horizontalement (fiche produit, éditeur de barème, fiche d'un modèle,
+     portefeuille) et, la page étant plus large que l'écran, le filigrane fixe de la coquille semblait en être la cause (D63). Le mot ne se
+     coupe qu'à défaut d'autre possibilité ; `anywhere` (et non `break-word`) réduit aussi la largeur minimale demandée dans une
+     grille ou une flexbox. Pas de `table`, `td` ni `th` : un tableau défile dans son conteneur, ses colonnes gardent leur largeur. */
+  h1,
+  h2,
+  h3,
+  h4,
+  p {
+    overflow-wrap: anywhere;
+  }
 }
 
 /* Ombres « élevées » teintées du bleu principal, réservées aux surfaces de contenu (cartes, panneaux), jamais aux boutons ni aux

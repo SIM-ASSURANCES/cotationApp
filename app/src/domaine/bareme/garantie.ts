@@ -61,7 +61,7 @@ export function calculerComposante(b: Bareme, g: Garantie, c: Composante, ctx: C
   if ("fixe" in c.taux) taux = montant(c.taux.fixe);
   else {
     const e1 = ciblant(b, "E1", g, c);
-    if (e1.length !== 1) throw new ErreurBareme("TAUX_SANS_SOURCE", `${nom} : le taux doit venir d'un seul sous-jacent E1 (${e1.length} trouvé).`, undefined, g.code);
+    if (e1.length !== 1) throw new ErreurBareme("TAUX_SANS_SOURCE", `${nom} : le taux doit venir d'un seul sous-jacent E1 (${e1.length} trouvé). ${e1.length === 0 ? "Créez un sous-jacent E1 qui lit une table et vise cette composante." : "Gardez un seul sous-jacent E1 qui vise cette composante."}`, undefined, g.code);
     taux = valeurTable(b, e1[0].table, ctx);
   }
   let prime = assiette.mul(taux).div(c.taux.unite === "PERMILLE" ? 1000 : 100);

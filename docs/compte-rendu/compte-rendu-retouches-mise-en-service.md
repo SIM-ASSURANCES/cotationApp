@@ -41,8 +41,22 @@ La recette navigateur couvre les trois e2e demandés : saisie d'un montant avec 
 - La règle « le valideur n'est jamais l'auteur » de la vue n'a pas de test d'intégration (aucun profil par défaut ne dépose et publie ; l'auteur d'une version ne se modifie pas en base) ; elle est portée par `peutPublier`, déjà testée.
 - Messages de `verifierBareme` : seule la famille « taux sans source » est complétée (H190).
 - Le test d'intégration `modeles` n'est pas rejouable deux fois de suite sur la même base (annexe et seuil) : défaut existant, la suite complète repart d'une base préparée.
-- L'image `sim-tests-generateur:latest` est antérieure à D61 : sans y monter `generateur/app`, un e2e (`bareme-documents-garanties`) échoue (« donnée absente : garantie »). Sans lien avec cette session ; l'image est à reconstruire.
+- L'image `sim-tests-generateur:latest` était antérieure à D61 (un e2e échouait sans montage de `generateur/app`) : **reconstruite le 05/11/2026**, voir « Passage complet sur machine calme ».
 
 ## Non vérifié
 - **`app/Dockerfile` n'a pas été construit** : le changement (cache BuildKit et options de `npm ci`) reproduit celui de `Dockerfile.tests`, mais aucune image de production n'a été reconstruite ici. À valider par `docker compose build` sur le poste de recette.
 - Safari / iPhone et appareils réels : captures et mesures faites sous Chromium seulement. Le collage au presse-papiers a été joué par Chromium (autorisation `clipboard`).
+
+## Passage complet sur machine calme (05/11/2026)
+Images de test reconstruites depuis `main` (e21681a, à jour de `sim/main`) sous les tags de `sim-tests` : `sim-tests-tests:latest` (et `:poppler`, même image) par `app/Dockerfile.tests`, `sim-tests-generateur:latest` par `generateur/Dockerfile` (contexte `generateur/`, polices comprises). Aucune image ni aucun conteneur `sim-b1` touché. Une seule pile (`sim-retouches`, recréée), aucune autre pile de test active ; le générateur est celui de l'image neuve, **sans montage de `generateur/app`**. Les six étapes ont tourné à la suite, dans le conteneur, sur la branche `retouches-mise-en-service`.
+
+| Suite | Résultat mesuré |
+|---|---|
+| `npm run typecheck` | sans erreur |
+| `npm run lint` | sans erreur |
+| Unitaires (`npm test`) | **78 fichiers, 924 tests** verts |
+| Intégration (`npm run test:integration`) | **33 fichiers, 451 tests** verts, en un seul passage |
+| E2E (`npm run test:e2e`) | **11 fichiers, 20 tests** verts, dont `bareme-documents-garanties` avec l'image neuve |
+| `npm run build` | réussi (sortie autonome complétée) |
+
+`factures.integration.test.ts` : **40 tests verts dans le passage complet**, dont les deux tests de concurrence (numérotation sans trou sous concurrence ; écritures concurrentes d'une même cotation) qui avaient expiré à la session précédente sur machine chargée. Cela confirme la cause (charge de la machine) ; aucun code modifié.

@@ -72,7 +72,7 @@ describe("création, cases et comptage", () => {
     const b = ok(creerTable(base, "coef_situation", ["situation"]));
     const t = b.tables.find((x) => x.code === "coef_situation")!;
     expect(comptageDeTable(b, t)).toEqual({ remplies: 0, total: 2, manquantes: ["BOUTIQUE", "MARCHE"], inconnues: [] });
-    expect(problemesDeTables(b).map((p) => p.message)).toEqual(expect.arrayContaining(["Table « coef_situation » : la ligne « BOUTIQUE » manque."]));
+    expect(problemesDeTables(b).map((p) => p.message)).toEqual(expect.arrayContaining(["Table « coef_situation » : la ligne « BOUTIQUE » manque. Ajoutez cette ligne avec son taux (onglet Tables)."]));
   });
   it("une case se pose au décimal (virgule acceptée) et se vide ; un texte qui n'est pas un nombre est refusé", () => {
     let b = ok(creerTable(base, "coef_situation", ["situation"]));

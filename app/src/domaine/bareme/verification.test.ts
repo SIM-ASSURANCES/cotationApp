@@ -29,7 +29,7 @@ describe("verifierBareme : intégrité", () => {
     const p = variante((d) => {
       d.champs = d.champs.filter((c) => c.code !== "gardien");
     });
-    expect(p.map((x) => x.message)).toContain("Table « secu_incendie » : le champ « gardien » n'existe pas.");
+    expect(p.map((x) => x.message)).toContain("Table « secu_incendie » : le champ « gardien » n'existe pas. Choisissez un champ existant, ou retirez-le des champs lus par la table.");
   });
   it("garantie qui lit un champ inexistant", () => {
     expect(codes(variante((d) => { d.garanties[2].composantes[0].assiette = "fantome"; }))).toContain("REFERENCE_INCONNUE");

@@ -110,3 +110,15 @@ Dans la CP générale, une boucle sur les garanties insère le sous-modèle de c
 - **Dépôt de la CP** : si elle appelle `bloc("garanties", g.code)`, chaque garantie du barème publié du produit qui n'a pas de sous-modèle publié est signalée **en avertissement** (le dépôt est accepté : les modèles et le barème ont chacun leur date d'effet). Même avertissement pour un sous-modèle `garanties` dont la clé n'est le code d'aucune garantie du barème.
 - **Réédition** : les versions des sous-modèles utilisées sont **conservées avec le document émis** ; la réédition retrouve les mêmes, même si une nouvelle version a été publiée depuis (T10).
 - **Ancien usage inchangé** : `bloc("garanties", f.code)` dans `{%p for f in formules %}` (une description des garanties par **formule**, A10) fonctionne comme avant ; seul le bloc dont la clé est `g.code` dans une boucle sur `garanties_souscrites` reçoit `garantie`.
+
+## Contrat de groupe sans adhérent nommé (D65)
+
+Une police de groupe peut être créée sans liste nominative : ses adhérents sont incorporés ensuite. Tant que la liste est vide, les conditions particulières (CP) **n'imposent aucune annexe** « liste des adhérents » : la CP s'émet sans modèle d'annexe des adhérents. La donnée `police.liste_adherents_vide` (booléen) vaut vrai dans ce cas ; elle permet au modèle d'écrire la phrase validée par la Direction Technique, à l'endroit où l'annexe serait citée :
+
+```
+{%p if police.liste_adherents_vide %}
+La liste nominative des adhérents sera établie à leur incorporation.
+{%p endif %}
+```
+
+Pour garder la même place à la liste quand elle existe, ajouter la clause inverse : `{%p if not police.liste_adherents_vide %}` … renvoi à l'annexe … `{%p endif %}`. Dès la première incorporation, une réédition des CP (version suivante) repasse la donnée à faux et reprend l'annexe des adhérents.

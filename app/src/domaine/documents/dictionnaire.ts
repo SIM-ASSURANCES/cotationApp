@@ -148,6 +148,7 @@ const CHAMPS_DE_BASE: readonly Champ[] = [
   c("police.duree_jours", "entier", "Durée en jours", 365, S3),
   c("police.duree_libelle", "texte", "Durée en toutes lettres", "un an", S3),
   c("police.type_contrat", "texte", "INDIVIDUEL, FAMILLE, GROUPE ou GROUPE_OUVERT", "FAMILLE", S3),
+  c("police.liste_adherents_vide", "booleen", "Vrai si la police n'a aucun adhérent nommé (contrat de groupe créé sans liste) : le modèle peut alors écrire la phrase « La liste nominative des adhérents sera établie à leur incorporation. » (extension D65, H201)", false, S3),
   c("police.police_mere", "texte", "Police mère (certificat d'adhésion) ; vide pour un autre document", "", S3, FACULTATIF),
   c("police.nantissement", "objet", "Nantissement (SECURSTOCK) ; vide s'il n'y en a pas", undefined, S3, FACULTATIF),
   c("police.nantissement.beneficiaire", "texte", "Bénéficiaire du nantissement", "BANQUE EXEMPLE", S3),

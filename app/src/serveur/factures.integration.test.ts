@@ -1,6 +1,7 @@
 // Session 4b : factures, avoirs, paiements, reçus (CDC §11, §12). Jeux T2, T3, T4, numérotation sans trou sous
 // concurrence, « Oui (sous seuil) » à l'émission d'une facture, PDF en attente. Générateur SIMULÉ, stockage EN MÉMOIRE.
 // Toutes les données sont inventées.
+import { lettreAttendueNumeroPolice } from "@/domaine/cotation/police";
 import { createHash } from "node:crypto";
 
 process.env.URL_PUBLIQUE = "https://documents.exemple.ci";
@@ -64,6 +65,11 @@ let produitGroupe: string;
 let produitIndividuel: string;
 let compteurPolice = 0;
 const numeroPolice = () => `TST-2026-${String(Date.now() % 1_000_000).padStart(6, "0")}-I${String(++compteurPolice).padStart(5, "0")}`;
+/** Numéro de police dont la lettre suit le type de contrat de la cotation (D65, décision 2). */
+const numeroPourCotation = async (cotationId: number) => {
+  const c = await obtenirPrisma().cotation.findUniqueOrThrow({ where: { id: cotationId } });
+  return numeroPolice().replace(/-[A-Z](\d{5})$/, `-${lettreAttendueNumeroPolice(c.typeContrat) ?? "I"}$1`);
+};
 
 const demandes: DemandePdf[] = [];
 const fichiers = new Map<string, Uint8Array>();
@@ -118,7 +124,7 @@ async function police(saisie: Omit<SaisieCotation, "clientId" | "motifForcage" |
   const cotationId = await creerBrouillon(commercial, { ...saisie, clientId: null, motifForcage: null, beneficiaires: [], contactsUrgence: [], risque: {} }, null);
   // Au-dessus du seuil du produit, la cotation passe d'abord par la validation de la Technique (CDC §4.1).
   if ((await soumettre(commercial, cotationId, null)).statut === "A_VALIDER") await valider(technique, cotationId, null);
-  const { numeroPolice: numero } = await accepter(commercial, cotationId, codes, numeroPolice(), null);
+  const { numeroPolice: numero } = await accepter(commercial, cotationId, codes, await numeroPourCotation(cotationId), null);
   await emettreCp(technique, cotationId, null);
   const p = await obtenirPrisma().police.findUniqueOrThrow({ where: { numero } });
   return { cotationId, policeId: p.id, numero };
@@ -1011,7 +1017,7 @@ describe("session 6.2b : produit par garanties, de la cotation composée à la f
     if (s.statut === "A_VALIDER") {
       await valider(techniqueValideur, id, null);
     }
-    const { numeroPolice: numero } = await accepter(commercial, id, [], numeroPolice(), null);
+    const { numeroPolice: numero } = await accepter(commercial, id, [], await numeroPourCotation(id), null);
     if (options.emettreLesCp !== false) await emettreCp(technique, id, null);
     const police = await obtenirPrisma().police.findUniqueOrThrow({ where: { numero } });
     return { cotationId: id, policeId: police.id, numero };
@@ -1066,7 +1072,7 @@ describe("session 6.2b : produit par garanties, de la cotation composée à la f
     }, null);
     await composerLaPrime(technique, id, [{ libelle: "Vol", branche: p.iard, primeNette: "9850", accessoires: "2500" }], "Une seule garantie (inventée)", null);
     await soumettre(commercial, id, null);
-    const { numeroPolice: numero } = await accepter(commercial, id, [], numeroPolice(), null);
+    const { numeroPolice: numero } = await accepter(commercial, id, [], await numeroPourCotation(id), null);
     await emettreCp(technique, id, null);
     const pol = await obtenirPrisma().police.findUniqueOrThrow({ where: { numero } });
     const fid = await creerFactureAffaireNouvelle(technique, pol.id, null, null);

@@ -22,7 +22,7 @@ import {
   type LigneDePrime,
 } from "@/domaine/calcul/composition";
 import { compositionPossible, MESSAGE_BROUILLON_A_FORMULES, MESSAGE_BROUILLON_A_FORMULES_BAREME, MESSAGE_TARIFICATION_AU_BAREME, messageBrouillonAFormules, problemesLibellesGaranties, type GarantieParametree, type ModeTarification } from "@/domaine/calcul/parametrage";
-import { problemesDateEffetCotation, type DateIso } from "@/domaine/calcul/dates";
+import { formaterDate, problemesDateEffetCotation, type DateIso } from "@/domaine/calcul/dates";
 import type { Tranche } from "@/domaine/calcul/echeancier";
 import { ErreurCalcul, montant } from "@/domaine/calcul/montant";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
@@ -60,7 +60,7 @@ import {
   valideurAutorise,
   type RaisonValidation,
 } from "@/domaine/cotation/validation";
-import { normaliserNumeroPolice, problemesNumeroPolice } from "@/domaine/cotation/police";
+import { normaliserNumeroPolice, problemesLettreNumeroPolice, problemesNumeroPolice } from "@/domaine/cotation/police";
 import { estRegimeTaxe, estTypeContrat, REGIME_PAR_DEFAUT, type RegimeTaxe, type TypeContrat } from "@/domaine/calcul/taxes";
 import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
 import type { IntermediaireDocument } from "@/domaine/intermediaires";
@@ -77,6 +77,7 @@ import {
   executerCalcul,
   exigerModeCoherent,
   exigerModeCoherentEnVigueur,
+  dateDeVersionPourCotation,
   figerLesTaux,
   MESSAGE_NON_COMPOSEE,
   resoudreContexte,
@@ -236,6 +237,10 @@ async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisie: Saisie
   const regimeTaxe = saisie.regimeTaxe ?? REGIME_PAR_DEFAUT[typeContrat];
   if (!estRegimeTaxe(regimeTaxe)) {
     throw new ErreurMetier("Choisissez le régime de taxe (individuel ou groupe) : il détermine le taux de taxe.");
+  }
+  // D65 : produit qui ne commence que plus tard (dateDocument postérieure à aujourd'hui) : la date d'effet ne précède pas son début.
+  if (dateDocument > aujourdhui() && saisie.dateEffet < dateDocument) {
+    throw new ErreurMetier(`Le paramétrage de ce produit ne commence que le ${formaterDate(dateDocument)} : la date d'effet de la cotation ne peut pas être antérieure.`);
   }
   // Le mode de la version en vigueur choisit la voie : calcul automatique (FORMULE) ou composition par la Technique (GARANTIES, 6.2b).
   const modeVersion = (await resoudreVersion(tx, saisie.codeProduit, dateDocument)).version.modeTarification;
@@ -430,7 +435,7 @@ export async function calculerCotationBareme(
   const regime = estRegimeTaxe(demande.regimeTaxe) ? demande.regimeTaxe : estTypeContrat(demande.typeContrat) ? REGIME_PAR_DEFAUT[demande.typeContrat] : undefined;
   if (regime === undefined) throw new ErreurMetier("Choisissez le type de contrat et le régime de taxe avant de calculer : ils déterminent le taux de taxe.");
   return obtenirPrisma().$transaction(async (tx) => {
-    const { entree, prorata } = await lignesAuBareme(tx, { ...demande, dateDocument: aujourdhui(), regimeTaxe: regime });
+    const { entree, prorata } = await lignesAuBareme(tx, { ...demande, dateDocument: await dateDeVersionPourCotation(tx, demande.codeProduit), regimeTaxe: regime });
     let resultat: ResultatCalcul;
     try {
       resultat = executerCalcul(entree, { repartitionPourcent: null, decalagesMois: null }, 1).resultat;
@@ -486,7 +491,7 @@ export async function calculerCotationFormules(
   }
   const regime = estRegimeTaxe(demande.regimeTaxe) ? demande.regimeTaxe : REGIME_PAR_DEFAUT[demande.typeContrat];
   return obtenirPrisma().$transaction(async (tx) => {
-    const contexte = await resoudreContexte(tx, demande.codeProduit, aujourdhui(), demande.dateEffet, regime);
+    const contexte = await resoudreContexte(tx, demande.codeProduit, await dateDeVersionPourCotation(tx, demande.codeProduit), demande.dateEffet, regime);
     const { version } = contexte;
     const problemes = problemesLignes(demande.lignes, version.cotation.formulesMax);
     if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
@@ -531,7 +536,7 @@ export async function calculerCotationFormules(
  */
 export async function lireDescripteurBareme(acteur: UtilisateurCourant, codeProduit: string): Promise<{ descripteur: DescripteurSaisie; empreinte: string }> {
   await exigerAgir(acteur);
-  const { version } = await resoudreContexteBareme(obtenirPrisma(), codeProduit, aujourdhui());
+  const { version } = await resoudreContexteBareme(obtenirPrisma(), codeProduit, await dateDeVersionPourCotation(obtenirPrisma(), codeProduit));
   const { bareme, empreinte } = await lireBaremePublie(obtenirPrisma(), version.id);
   return { descripteur: descripteurSaisie(bareme), empreinte };
 }
@@ -668,7 +673,7 @@ export async function creerBrouillon(acteur: UtilisateurCourant, saisie: SaisieC
   const problemesDateEffet = problemesDateEffetCotation(saisie.dateEffet);
   if (problemesDateEffet.length > 0) throw new ErreurMetier(problemesDateEffet.join(" "));
   return obtenirPrisma().$transaction(async (tx) => {
-    const c = await calculerSaisie(tx, acteur, saisie, aujourdhui());
+    const c = await calculerSaisie(tx, acteur, saisie, await dateDeVersionPourCotation(tx, saisie.codeProduit));
     const intermediaires = await resoudreIntermediaires(tx, saisie.intermediaires ?? []);
     const cree = await tx.cotation.create({
       data: { ...donneesAEcrire(saisie, c), statut: "BROUILLON", auteurId: acteur.id, auteurIdentifiant: acteur.identifiant, contributeurs: [acteur.id] },
@@ -730,7 +735,7 @@ export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, 
     const anciennes = avant.donneesCalcul as unknown as DonneesCalcul | null;
     // Un brouillon préparé avec des formules ne se convertit pas en brouillon « à composer » (H89) : l'écran de modification d'un produit passé
     // « par garanties » n'envoie plus de formule, donc ce n'est pas le contenu de la saisie qui le trahit, mais la nature de l'enregistré.
-    const modeEnVigueur = (await resoudreVersion(tx, saisie.codeProduit, aujourdhui())).version.modeTarification;
+    const modeEnVigueur = (await resoudreVersion(tx, saisie.codeProduit, await dateDeVersionPourCotation(tx, saisie.codeProduit))).version.modeTarification;
     if (anciennes && !estComposition(anciennes) && compositionPossible(modeEnVigueur)) throw new ErreurMetier(MESSAGE_BROUILLON_A_FORMULES);
     if (anciennes && !estComposition(anciennes) && modeEnVigueur === "BAREME") throw new ErreurMetier(MESSAGE_BROUILLON_A_FORMULES_BAREME);
     // H98 : qu'est-ce qui change, parmi ce dont dépendent les montants composés ?
@@ -748,7 +753,7 @@ export async function modifierBrouillon(acteur: UtilisateurCourant, id: number, 
     else if (deBareme) {
       if (saisie.bareme === undefined && saisie.baremeBrut === undefined) saisie = { ...saisie, bareme: anciennes.bareme.saisie };
     } else if (saisie.composition === undefined && anciennes && estComposition(anciennes)) saisie = { ...saisie, composition: saisieDesLignes(anciennes.lignes) };
-    const c = await calculerSaisie(tx, acteur, saisie, aujourdhui());
+    const c = await calculerSaisie(tx, acteur, saisie, await dateDeVersionPourCotation(tx, saisie.codeProduit));
     const intermediairesAvant = (await tx.cotationIntermediaire.findMany({ where: { cotationId: id }, orderBy: { ordre: "asc" } })).map((i) => i.code);
     const intermediaires = saisie.intermediaires === undefined ? null : await resoudreIntermediaires(tx, saisie.intermediaires, intermediairesAvant);
     // Qui a modifié un brouillon ne pourra pas le valider (séparation des tâches renforcée, H9).
@@ -860,7 +865,7 @@ export async function composerLaPrime(acteur: UtilisateurCourant, id: number, li
     const anciennes = avant.donneesCalcul as unknown as DonneesCalcul | null;
     const saisie: SaisieCotation = { ...saisieDepuisCotation(avant), composition: lignes };
     // refuse un produit qui n'est pas en mode GARANTIES (la prime d'une formule ne se compose pas)
-    const c = await calculerSaisie(tx, acteur, saisie, aujourdhui());
+    const c = await calculerSaisie(tx, acteur, saisie, await dateDeVersionPourCotation(tx, saisie.codeProduit));
     if (!estComposition(c.entree)) throw new ErreurMetier("Ce produit se tarifie à la formule : la prime se calcule, elle ne se compose pas.");
     const contributeurs = avant.contributeurs.includes(acteur.id) ? avant.contributeurs : [...avant.contributeurs, acteur.id];
     const maintenant = new Date();
@@ -930,7 +935,7 @@ export async function soumettre(acteur: UtilisateurCourant, id: number, adresseI
       throw new ErreurMetier("Ce brouillon date d'avant le choix du type de contrat : modifiez-le pour indiquer le type de contrat, puis soumettez-le.");
     }
     const saisie = saisieDepuisCotation(cotation);
-    const c = await calculerSaisie(tx, acteur, saisie, aujourdhui());
+    const c = await calculerSaisie(tx, acteur, saisie, await dateDeVersionPourCotation(tx, saisie.codeProduit));
     // Session 6.2b : une prime « à composer » ne se soumet pas (rien n'est écrit : la transaction est annulée).
     if (estNonComposee(c.entree)) throw new ErreurMetier(MESSAGE_NON_COMPOSEE);
     await tx.cotation.update({ where: { id }, data: donneesAEcrire(saisie, c) });
@@ -1079,6 +1084,8 @@ async function accepterDansTransaction(
     const { cotation, statut } = await chargerEmise(tx, id);
     if (statut === "EXPIREE") throw new ErreurMetier("Cette cotation est expirée : elle ne peut plus être acceptée ni transformée en police.");
     if (!peutAccepter(statut)) throw new ErreurMetier("Seule une cotation émise peut être acceptée.");
+    const problemesLettre = problemesLettreNumeroPolice(numeroPolice, cotation.typeContrat);
+    if (problemesLettre.length > 0) throw new ErreurMetier(problemesLettre.join(" "));
 
     const entree = cotation.donneesCalcul as unknown as DonneesCalcul;
     // Une cotation composée (session 6.2b) s'accepte en entier : il n'y a pas de formules entre lesquelles choisir, la composition est reprise

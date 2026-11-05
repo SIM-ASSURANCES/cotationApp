@@ -22,6 +22,13 @@ export const DOCUMENTS: Record<TypeDocument, { libelle: string; accord: "f" | "m
 
 export const estTypeDocument = (valeur: string): valeur is TypeDocument => (TYPES_DOCUMENT as readonly string[]).includes(valeur);
 
+/**
+ * Types de document qui ne se rééditent pas à la demande (D65, décision 6) : la facture est rééditée à chaque paiement, l'avoir et le
+ * reçu ne changent pas. L'action « Rééditer » n'est donc pas proposée pour eux (et le serveur la refuse toujours).
+ */
+export const TYPES_NON_REEDITABLES: readonly string[] = ["FACTURE", "AVOIR", "RECU"];
+export const peutReediterType = (type: string): boolean => !TYPES_NON_REEDITABLES.includes(type);
+
 const accorder = (racine: string, accord: "f" | "m" | "fp") => racine + { f: "e", m: "", fp: "es" }[accord];
 
 // ------------------------------------------------------------------ Souscripteur masqué (§14.1)

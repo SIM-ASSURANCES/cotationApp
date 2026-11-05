@@ -13,7 +13,8 @@ import { formaterDate } from "@/domaine/calcul/dates";
 import { formaterMontant, montant, type Montant } from "@/domaine/calcul/montant";
 import { LIBELLE_REGIME_TAXE, LIBELLE_TYPE_CONTRAT } from "@/domaine/calcul/taxes";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
-import { avertissementNumeroContrat, FORMAT_NUMERO_POLICE_DEFAUT } from "@/domaine/cotation/police";
+import { peutReediterType } from "@/domaine/documents/emission";
+import { avertissementNumeroContrat, FORMAT_NUMERO_POLICE_DEFAUT, lettreAttendueNumeroPolice } from "@/domaine/cotation/police";
 import { LIBELLE_STATUT, peutAccepter, peutEtreValidee, peutModifier } from "@/domaine/cotation/statuts";
 import { LIBELLE_RAISON } from "@/domaine/cotation/validation";
 import { peutAgir, peutLire, peutValider } from "@/domaine/droits";
@@ -454,7 +455,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
                 cle: "action",
                 entete: "Action",
                 rendu: (d) =>
-                  d.version === derniere(d.numero) && (d.type === "CP" ? peutAgir(niveauContrat) : agit) ? (
+                  peutReediterType(d.type) && d.version === derniere(d.numero) && (d.type === "CP" ? peutAgir(niveauContrat) : agit) ? (
                     <FormulaireAction action={reediterDocument} libelleBouton="Rééditer" discret>
                       <input type="hidden" name="id" value={c.id} />
                       <input type="hidden" name="documentId" value={d.id} />
@@ -571,7 +572,7 @@ export default async function PageCotation(props: PageProps<"/cotations/[id]">) 
                 <ChampNumeroPolice label="Numéro de police attribué par SIM (obligatoire)">
                   <p className="text-xs text-neutral">
                     Format contrôlé : <code>{formatPolice}</code>
-                    {formatPolice === FORMAT_NUMERO_POLICE_DEFAUT ? " (par défaut)" : ""}. Le module ne génère jamais ce numéro.
+                    {formatPolice === FORMAT_NUMERO_POLICE_DEFAUT ? " (par défaut)" : ""}. Le module ne génère jamais ce numéro.{lettreAttendueNumeroPolice(c.typeContrat) ? ` Lettre attendue pour ce contrat : ${lettreAttendueNumeroPolice(c.typeContrat)} (fin de numéro ${lettreAttendueNumeroPolice(c.typeContrat)}00000).` : ""}
                   </p>
                 </ChampNumeroPolice>
               </div>

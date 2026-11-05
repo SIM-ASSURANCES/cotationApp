@@ -3,7 +3,7 @@ import { Bandeau, Carte, Champ as ChampSaisie, ChampMontant } from "@/composants
 import { ChampsSouscripteurDynamiques } from "@/composants/ChampsSouscripteurDynamiques";
 import { SectionsAnnexesCotation } from "@/composants/SectionsAnnexesCotation";
 import { SelectionIntermediaires } from "@/composants/SelectionIntermediaires";
-import { aujourdhui } from "@/domaine/calcul/dates";
+import { aujourdhui, formaterDate } from "@/domaine/calcul/dates";
 import { montant } from "@/domaine/calcul/montant";
 import { ChoixContrat } from "@/composants/ChoixContrat";
 import type { LigneClient } from "@/serveur/clients";
@@ -30,6 +30,7 @@ export function FormulaireCotation({
   formulesMax,
   intermediaires,
   parGaranties = false,
+  debutProduit,
   peutCreerIntermediaire = false,
   bareme,
   base,
@@ -43,6 +44,8 @@ export function FormulaireCotation({
   intermediaires: IntermediaireDocument[];
   /** Produit en mode GARANTIES (session 6.2b) : pas de formules, la prime est composée ensuite par la Technique. */
   parGaranties?: boolean;
+  /** D65 : date de la première version du produit quand elle est postérieure à aujourd'hui (la date d'effet ne peut pas la précéder). */
+  debutProduit?: string;
   /** Le profil a le droit de paramétrage (H79) : le bouton « Nouvel intermédiaire » s'affiche. */
   peutCreerIntermediaire?: boolean;
   /** Produit au barème (B6a) : écran généré depuis le barème publié ; la saisie enregistrée (modification) pré-remplit les champs. */
@@ -53,6 +56,7 @@ export function FormulaireCotation({
   // Un intermédiaire déjà choisi et désactivé depuis reste proposé sur son brouillon.
   const choixPossibles = [...intermediaires, ...(base?.intermediaires ?? []).filter((i) => !intermediaires.some((x) => x.code === i.code))];
   const s = base?.souscripteur;
+  const dateEffetMin = debutProduit && debutProduit > aujourdhui() ? debutProduit : aujourdhui();
   return (
     // Chaque rubrique est une carte : les champs (fond teinté) reposent toujours sur le fond blanc de la carte.
     <FormulaireAction action={enregistrerCotation} libelleBouton={base ? "Enregistrer le brouillon" : "Créer le brouillon"} className="space-y-6" entreeSur={bareme || !parGaranties ? "[data-calculer]" : undefined}>
@@ -81,8 +85,8 @@ export function FormulaireCotation({
 
       <Carte titre="Période et fractionnement">
         <div className="grid max-w-4xl gap-x-6 sm:grid-cols-3">
-          <ChampDate nom="dateEffet" libelle="Date d'effet (JJ/MM/AAAA)" valeur={base?.dateEffet ?? aujourdhui()} min={aujourdhui()} />
-          <ChampDate nom="dateEcheance" libelle="Date d'échéance (JJ/MM/AAAA)" valeur={base?.dateEcheance} min={aujourdhui()} />
+          <ChampDate nom="dateEffet" libelle="Date d'effet (JJ/MM/AAAA)" valeur={base?.dateEffet ?? dateEffetMin} min={dateEffetMin} aide={debutProduit ? `Ce produit ne commence que le ${formaterDate(debutProduit)} : la date d'effet part de cette date.` : undefined} />
+          <ChampDate nom="dateEcheance" libelle="Date d'échéance (JJ/MM/AAAA)" valeur={base?.dateEcheance} min={dateEffetMin} />
           <Champ nom="nombreTranches" libelle={`Nombre de tranches (1 à ${tranchesMax})`} valeur={String(base?.nombreTranches ?? 1)} autoComplete="off" />
         </div>
       </Carte>

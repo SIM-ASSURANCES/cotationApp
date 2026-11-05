@@ -366,3 +366,75 @@ describe("CG figée d'un contrat en cours (H118)", () => {
     expect(derniereDemande().donnees.produit).toMatchObject({ cg_visa: "VISA-NOUVELLE-H118" });
   });
 });
+
+// D65 (décisions de la Direction Technique du 04/11/2026).
+const saisieGroupe = (surcharge: Partial<SaisieCotation> = {}): SaisieCotation => ({
+  codeProduit: produitCode,
+  clientId: null,
+  typeContrat: "GROUPE",
+  souscripteur: { type: "MORALE", nom: "", prenoms: "", raison_sociale: "ENTREPRISE INVENTÉE", telephone: "", email: "", adresse: "" },
+  dateEffet: "2026-01-01",
+  dateEcheance: "2026-12-31",
+  nombreTranches: 1,
+  lignes: [{ codeFormule: "SOLO", effectif: 3 }],
+  motifForcage: null,
+  assures: trois,
+  beneficiaires: benef,
+  contactsUrgence: [],
+  risque: {},
+  ...surcharge,
+});
+
+describe("D65 : lettre du numéro de police, incorporation sur une police à venir, CP sans adhérent", () => {
+  it("décision 2 : la lettre suit le type de contrat ; le refus donne la lettre attendue, la bonne lettre passe", async () => {
+    const id = await creerBrouillon(commercial, saisieGroupe(), null);
+    await soumettre(commercial, id, null);
+    await expect(accepter(commercial, id, ["SOLO"], numeroPolice("I"), null)).rejects.toThrow(/porte la lettre G/);
+    await expect(accepter(commercial, id, ["SOLO"], numeroPolice("G"), null)).resolves.toBeDefined();
+  });
+
+  it("décision 1 : on incorpore à une date future d'une police qui démarre dans le futur ; hors période, message de l'application", async () => {
+    const id = await creerBrouillon(commercial, saisieGroupe({ dateEffet: "2027-03-01", dateEcheance: "2028-02-29" }), null);
+    await soumettre(commercial, id, null);
+    const { numeroPolice: numero } = await accepter(commercial, id, ["SOLO"], numeroPolice("G"), null);
+    const police = await obtenirPrisma().police.findUniqueOrThrow({ where: { numero } });
+    await expect(incorporerAdherents(technique, police.id, "2027-06-01", [adherent(4)], null)).resolves.toMatchObject({ ordres: [4] });
+    await expect(incorporerAdherents(technique, police.id, "2027-02-28", [adherent(5)], null)).rejects.toThrow(/comprise entre le 01\/03\/2027 et le 29\/02\/2028/);
+  });
+
+  it("décision 4 : un groupe sans adhérent nommé n'impose aucune annexe ; la donnée liste_adherents_vide est vraie", async () => {
+    const id = await creerBrouillon(commercial, saisieGroupe({ assures: [] }), null);
+    await soumettre(commercial, id, null);
+    await accepter(commercial, id, ["SOLO"], numeroPolice("G"), null);
+    await emettreCp(technique, id, null);
+    expect(derniereDemande().listesEnAnnexe).toEqual([]);
+    expect(derniereDemande().donnees.police).toMatchObject({ liste_adherents_vide: true });
+    // Avec des adhérents, l'annexe reste imposée et la donnée est fausse.
+    const avec = await policeDeGroupe();
+    await emettreCp(technique, avec.cotationId, null);
+    expect(derniereDemande().listesEnAnnexe).toEqual(["assures"]);
+    expect(derniereDemande().donnees.police).toMatchObject({ liste_adherents_vide: false });
+  });
+
+  it("décision 3 : un produit dont la première version commence plus tard se cote, à partir de la date de cette version", async () => {
+    const code = CODE("FUT");
+    const branche = `SANTE_${code}`;
+    await assurerBranche(branche);
+    await creerTaxe(technique, { branche, typeContrat: "GROUPE", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
+    await creerProduit(technique, { code, libelle: "Produit à venir (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche }, null);
+    await creerVersion(technique, code, {
+      dateEffet: "2027-01-01",
+      arrondi: { precision: 1, sens: "PROCHE", niveau: "LIGNE", composanteAbsorbante: "TAXE" },
+      prorata: { actif: true, primeMinimale: null },
+      fractionnement: { tranchesMax: 4, repartitionPourcent: null, decalagesMois: null, frais: "0" },
+      cotation: { validiteMois: 3, formulesMax: 3 },
+      seuilValidationTtc: "20000000",
+      formules: [{ code: "SOLO", libelle: "Solo", tauxCouverture: "80", primeUnitaire: "93581.33", accessoireMode: "FIXE", accessoireValeur: "3000" }],
+      references: { csModeleCode: null, csVisa: null },
+    }, null);
+    const futur = saisieGroupe({ codeProduit: code, dateEffet: "2027-01-01", dateEcheance: "2027-12-31" });
+    const id = await creerBrouillon(commercial, futur, null);
+    expect((await soumettre(commercial, id, null)).statut).toBe("EMISE");
+    await expect(creerBrouillon(commercial, { ...futur, dateEffet: "2026-12-01" }, null)).rejects.toThrow(/ne commence que le 01\/01\/2027/);
+  });
+});

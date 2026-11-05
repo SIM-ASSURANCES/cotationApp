@@ -1,7 +1,7 @@
 // Session 6.0 : numéros de contrat et de certificat (réponses de la Technique, D27 ; H31, H37 fermées).
 import { describe, expect, it } from "vitest";
 
-import { avertissementNumeroContrat, numeroCertificatParDefaut, problemesNumeroCertificat, racineCertificat } from "./police";
+import { avertissementNumeroContrat, lettreAttendueNumeroPolice, numeroCertificatParDefaut, problemesLettreNumeroPolice, problemesNumeroCertificat, racineCertificat } from "./police";
 
 describe("numéro de contrat : se termine par 00000 après G ou I (avertissement, jamais bloquant)", () => {
   it("aucun avertissement pour G00000 ou I00000, ni pour un champ vide", () => {
@@ -37,5 +37,31 @@ describe("numéro de certificat dérivé de la police mère", () => {
     expect(problemesNumeroCertificat("SCD-2026-000088-G0042", police)[0]).toMatch(/doit s'écrire/);
     expect(problemesNumeroCertificat("SCD-2026-000088-G00000", police)[0]).toMatch(/réservé au contrat/);
     expect(problemesNumeroCertificat("", police)).toEqual(["Le numéro du certificat est obligatoire."]);
+  });
+});
+
+describe("lettre du numéro de police selon le type de contrat (D65, décision 2)", () => {
+  it("G pour groupe et groupe ouvert, I pour individuel et famille (H200)", () => {
+    expect(lettreAttendueNumeroPolice("GROUPE")).toBe("G");
+    expect(lettreAttendueNumeroPolice("GROUPE_OUVERT")).toBe("G");
+    expect(lettreAttendueNumeroPolice("INDIVIDUEL")).toBe("I");
+    expect(lettreAttendueNumeroPolice("FAMILLE")).toBe("I");
+    expect(lettreAttendueNumeroPolice(null)).toBeNull();
+  });
+  it("accepte la bonne lettre, sans tenir compte de la casse saisie", () => {
+    expect(problemesLettreNumeroPolice("SCD-2026-000088-G00000", "GROUPE")).toEqual([]);
+    expect(problemesLettreNumeroPolice("scd-2026-000088-i00000", "FAMILLE")).toEqual([]);
+  });
+  it("refuse la mauvaise lettre avec un message qui donne la lettre attendue", () => {
+    const g = problemesLettreNumeroPolice("SCD-2026-000088-I00000", "GROUPE_OUVERT");
+    expect(g).toHaveLength(1);
+    expect(g[0]).toContain("lettre I");
+    expect(g[0]).toContain("porte la lettre G");
+    const i = problemesLettreNumeroPolice("SCD-2026-000088-G00000", "INDIVIDUEL");
+    expect(i[0]).toContain("porte la lettre I");
+  });
+  it("sans type de contrat connu, ou sans lettre reconnaissable, le format paramétré reste seul juge", () => {
+    expect(problemesLettreNumeroPolice("SCD-2026-000088-I00000", null)).toEqual([]);
+    expect(problemesLettreNumeroPolice("12345", "GROUPE")).toEqual([]);
   });
 });

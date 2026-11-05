@@ -238,3 +238,59 @@ describe("prorata temporis du produit : jours inclus / 365, après la réduction
     expect([m.totaux.arrondi.nette, m.totaux.arrondi.accessoires, m.totaux.arrondi.taxe, m.totaux.arrondi.ttc].map((x) => x.toFixed())).toEqual(["1800", "500", "167", "2467"]);
   });
 });
+
+describe("D64 : ordre du minimum et des coefficients, par composante", () => {
+  const tables = [
+    { code: "coef", cles: ["oui"], lignes: { OUI: "1.25", NON: "1" } },
+    { code: "mini", cles: ["oui"], lignes: { OUI: "2500", NON: "2500" } },
+  ];
+  const coef = { code: "coef", effet: "E2", table: "coef", cibles: ["g.base"] };
+  const avec = (composante: Record<string, unknown>, ...autres: unknown[]) =>
+    base({
+      tables,
+      garanties: [{ code: "g", nom: "Garantie G", souscription: "OBLIGATOIRE", composantes: [{ code: "base", assiette: "valeur", taux: { unite: "PERMILLE", fixe: "10" }, ...composante }] }],
+      ...sj(coef, ...autres),
+    });
+  const petit = saisie({ valeur: "62500" }); // 62 500 × 10 ‰ = 625
+
+  it("par défaut, le minimum passe après les coefficients : max(625 × 1,25 ; 2 500) = 2 500", () => {
+    expect(net(avec({ minimum: "2500" }), petit)).toBe("2500");
+  });
+  it("réglé « avant », le minimum passe avant : max(625 ; 2 500) × 1,25 = 3 125", () => {
+    expect(net(avec({ minimum: "2500", minimumAvantCoefficients: true }), petit)).toBe("3125");
+  });
+  it("le même ordre vaut pour un minimum E5, et le réglage « faux » égale l'absence de réglage", () => {
+    const e5 = { code: "m", effet: "E5", mode: "MINIMUM", table: "mini", cibles: ["g.base"] };
+    expect(net(avec({ minimumAvantCoefficients: true }, e5), petit)).toBe("3125");
+    expect(net(avec({ minimumAvantCoefficients: false }, e5), petit)).toBe("2500");
+    expect(net(avec({}, e5), petit)).toBe("2500");
+  });
+  it("quand le minimum ne joue pas, l'ordre ne change rien", () => {
+    expect(net(avec({ minimum: "2500", minimumAvantCoefficients: true }))).toBe("12500");
+    expect(net(avec({ minimum: "2500" }))).toBe("12500");
+  });
+  it("le réglage est propre à la composante : l'autre composante garde l'ordre par défaut", () => {
+    const deux = base({
+      tables,
+      garanties: [
+        {
+          code: "g",
+          nom: "Garantie G",
+          souscription: "OBLIGATOIRE",
+          composantes: [
+            { code: "base", assiette: "valeur", taux: { unite: "PERMILLE", fixe: "10" }, minimum: "2500", minimumAvantCoefficients: true },
+            { code: "autre", assiette: "valeur", taux: { unite: "PERMILLE", fixe: "10" }, minimum: "2500" },
+          ],
+        },
+      ],
+      ...sj(coef, { code: "coef2", effet: "E2", table: "coef", cibles: ["g.autre"] }),
+    });
+    expect(net(deux, petit)).toBe("5625"); // 3 125 + 2 500
+  });
+  it("verifierBareme refuse le réglage sur une composante sans aucun minimum", () => {
+    expect(verifierBareme(avec({ minimumAvantCoefficients: true })).map((x) => x.code)).toContain("MINIMUM_ABSENT");
+    expect(verifierBareme(avec({ minimum: "2500", minimumAvantCoefficients: true })).map((x) => x.code)).not.toContain("MINIMUM_ABSENT");
+    const e5 = { code: "m", effet: "E5", mode: "MINIMUM", table: "mini", cibles: ["g"] };
+    expect(verifierBareme(avec({ minimumAvantCoefficients: true }, e5)).map((x) => x.code)).not.toContain("MINIMUM_ABSENT");
+  });
+});

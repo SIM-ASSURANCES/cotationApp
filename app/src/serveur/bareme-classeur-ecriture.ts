@@ -72,7 +72,7 @@ function ecrireChamps(classeur: ExcelJS.Workbook, b: Bareme) {
 
 function ecrireGaranties(classeur: ExcelJS.Workbook, b: Bareme) {
   const wg = feuilleAvecEntetes(classeur, FEUILLE.garanties, ["code", "nom", "definition", "afficher_sur_documents", "souscription", "si_type", "si_cible", "si_valeur", "taxe", "accessoires_mode", "accessoires_montant"], { nom: 28, definition: 30 });
-  const wc = feuilleAvecEntetes(classeur, FEUILLE.composantes, ["garantie", "code", "souscription", "assiette", "taux_unite", "taux_fixe", "taux_source", "minimum", "par_tete"], { assiette: 44 });
+  const wc = feuilleAvecEntetes(classeur, FEUILLE.composantes, ["garantie", "code", "souscription", "assiette", "taux_unite", "taux_fixe", "taux_source", "minimum", "minimum_avant_coefficients", "par_tete"], { assiette: 44 });
   for (const g of b.garanties as Garantie[]) {
     const [t, cible, valeur] = condition(g.si);
     wg.addRow({ code: g.code, nom: g.nom, definition: g.definition, afficher_sur_documents: ouiNon(g.afficherSurDocuments), souscription: g.souscription, si_type: t, si_cible: cible, si_valeur: valeur, taxe: g.taxe, accessoires_mode: g.accessoires?.mode, accessoires_montant: montantAccessoires(g.accessoires) });
@@ -86,6 +86,7 @@ function ecrireGaranties(classeur: ExcelJS.Workbook, b: Bareme) {
         taux_fixe: "fixe" in c.taux ? decimal(c.taux.fixe) : undefined,
         taux_source: "source" in c.taux ? c.taux.source : undefined,
         minimum: decimal(c.minimum),
+        minimum_avant_coefficients: ouiNon(c.minimumAvantCoefficients),
         par_tete: ouiNon(c.parTete),
       });
     }
@@ -97,6 +98,7 @@ function ecrireGaranties(classeur: ExcelJS.Workbook, b: Bareme) {
   listeDeroulante(wc, "souscription", ["OBLIGATOIRE", "OPTIONNELLE"]);
   listeDeroulante(wc, "taux_unite", ["PERMILLE", "POURCENT"]);
   listeDeroulante(wc, "taux_source", ["E1"]);
+  listeDeroulante(wc, "minimum_avant_coefficients", ["OUI", "NON"]);
   listeDeroulante(wc, "par_tete", ["OUI", "NON"]);
 }
 
@@ -175,6 +177,7 @@ const AIDE = [
   "• Intermediaires : valeurs calculées nommées (code, expression).",
   "• Accessoires (produit, dans ce Lisez-moi, ou garantie) : PAR_GARANTIE, PAR_CONTRAT, PAR_TETE ou PAR_TRANCHE. En PAR_TRANCHE le montant dépend de l'effectif assuré : écrivez « 1-5: 2500; 6-10: 4000 » (tranches bornées, à partir de 1, sans trou ni chevauchement).",
   "• Garanties : une ligne par garantie ; Composantes : une ligne par composante (garantie = code de la garantie). Un taux est fixe (taux_fixe) OU tiré d'un sous-jacent E1 (taux_source = E1).",
+  "• Composantes, colonne minimum_avant_coefficients : OUI = le minimum (colonne minimum, ou sous-jacent E5 minimum) s'applique AVANT les coefficients E2 (625 → max(625 ; 2 500) × 1,25 = 3 125) ; vide ou NON = APRÈS, comme avant (max(625 × 1,25 ; 2 500) = 2 500).",
   "• Tables : un bloc par table — ligne « TABLE | code | clé en lignes | clé en colonnes », puis la grille (clés en colonnes sur la 1re ligne, clés en lignes dans la colonne A).",
   "• SousJacents : effets E1 (taux), E2 (coefficient ou réduction en %), E4 (contrôle qui refuse, avec son message), E5 (minimum, plafond, ajout).",
   "• Essais : une ligne ESSAI par jeu, puis ses lignes CHAMP, CHOIX (valeurs séparées par ;), SOUSCRIT, EFFECTIF, ATTENDU_LIGNE, ATTENDU_TTC ou ATTENDU_REFUS.",

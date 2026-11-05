@@ -272,3 +272,69 @@ describe("classeur du barème : accessoires par tranche d'effectif (B6a)", () =>
     expect(e.find((x) => x.regle === "TRANCHES_TROU")!.message).toContain("effectifs 6 à 7");
   });
 });
+
+describe("classeur du barème : minimum avant les coefficients et champ liste devenu montant (D64)", () => {
+  const avecReglage = (): Bareme => {
+    const b = structuredClone(baremeSecurpro());
+    const caisse = b.garanties.find((g) => g.code === "vol")!.composantes.find((c) => c.code === "caisse")!;
+    caisse.minimumAvantCoefficients = true;
+    return b;
+  };
+
+  it("le modèle porte la colonne minimum_avant_coefficients (liste OUI/NON) et le Lisez-moi l'explique", async () => {
+    const c = await charger(await modele());
+    const entetes: string[] = [];
+    c.getWorksheet(FEUILLE.composantes)!.getRow(1).eachCell((cell) => entetes.push(String(cell.value)));
+    expect(entetes).toContain("minimum_avant_coefficients");
+    const textes: string[] = [];
+    c.getWorksheet(FEUILLE.lisezmoi)!.eachRow((row) => textes.push(String(row.getCell(1).value)));
+    expect(textes.some((t) => t.includes("minimum_avant_coefficients"))).toBe(true);
+  });
+
+  it("aller-retour : le réglage survit et l'empreinte est identique ; sans réglage, l'empreinte du barème d'origine est inchangée", async () => {
+    const b = avecReglage();
+    const exporte = await construireClasseur(b, { titre: "Export (test)", empreinte: empreinteBareme(b) });
+    const relu = await analyserClasseur(exporte);
+    expect(relu.erreurs).toEqual([]);
+    expect(empreinteBareme(relu.bareme)).toBe(empreinteBareme(b));
+    expect(relu.bareme!.garanties.find((g) => g.code === "vol")!.composantes.find((c) => c.code === "caisse")!.minimumAvantCoefficients).toBe(true);
+    expect(empreinteBareme(b)).not.toBe(empreinteBareme(baremeSecurpro()));
+    expect(empreinteBareme((await analyserClasseur(await modele())).bareme)).toBe(empreinteBareme(baremeSecurpro()));
+  });
+
+  it("un classeur d'avant la colonne (sans minimum_avant_coefficients) se lit toujours", async () => {
+    const octets = await modifie((c) => {
+      const ws = c.getWorksheet(FEUILLE.composantes)!;
+      let colonne = 0;
+      ws.getRow(1).eachCell((cell, n) => {
+        if (String(cell.value) === "minimum_avant_coefficients") colonne = n;
+      });
+      ws.spliceColumns(colonne, 1);
+    });
+    const r = await analyserClasseur(octets);
+    expect(r.erreurs).toEqual([]);
+    expect(empreinteBareme(r.bareme)).toBe(empreinteBareme(baremeSecurpro()));
+  });
+
+  it("une valeur autre que OUI/NON est refusée en nommant la cellule", async () => {
+    const octets = await modifie((c) => {
+      const ws = c.getWorksheet(FEUILLE.composantes)!;
+      let colonne = 0;
+      ws.getRow(1).eachCell((cell, n) => {
+        if (String(cell.value) === "minimum_avant_coefficients") colonne = n;
+      });
+      ws.getRow(2).getCell(colonne).value = "PEUT-ETRE";
+    });
+    expect((await analyserClasseur(octets)).erreurs.map((e) => e.ref).join(" ")).toContain(`${FEUILLE.composantes}!`);
+  });
+
+  it("un champ liste devenu montant borné (type MONTANT, min, max, plus de valeurs) s'importe : aller-retour à empreinte identique", async () => {
+    const b = structuredClone(baremeSecurpro());
+    b.champs = b.champs.map((c) => (c.code === "vol_caisse_montant" ? { code: c.code, type: "MONTANT" as const, bloc: c.bloc, si: c.si, libelle: c.libelle, min: "50000", max: "200000" } : c));
+    const exporte = await construireClasseur(b, { titre: "Export (test)" });
+    const relu = await analyserClasseur(exporte);
+    expect(relu.erreurs).toEqual([]);
+    expect(empreinteBareme(relu.bareme)).toBe(empreinteBareme(b));
+    expect(relu.bareme!.champs.find((c) => c.code === "vol_caisse_montant")).toMatchObject({ type: "MONTANT", min: "50000", max: "200000" });
+  });
+});

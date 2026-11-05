@@ -1,5 +1,6 @@
 import { normaliserDateSaisie } from "../calcul/dates";
 import { codeValeur } from "./contexte";
+import { horsPlage, messageHorsPlage } from "./plage";
 import type { Bareme, Champ, ConditionAffichage, Saisie, ValeurSaisie } from "./schema";
 
 /**
@@ -149,6 +150,21 @@ export function champsManquants(d: DescripteurSaisie, e: EtatSaisie, effectif: s
   const manquants = d.champs.filter((c) => c.obligatoire && champActif(d, e, c.code) && !(e.champs[c.code] ?? []).some((v) => v.trim() !== "")).map((c) => c.libelle);
   if (d.effectif && effectif.trim() === "") manquants.push("Nombre d'assurés");
   return manquants;
+}
+
+/**
+ * Messages des champs montant ou nombre VISIBLES dont la valeur saisie sort de la plage du barème (D64) : ils nomment le champ et la plage.
+ * Le calcul automatique ne part pas tant que la liste n'est pas vide ; le serveur refuse de même (même texte, `contexte.ts`).
+ */
+export function champsHorsPlage(d: DescripteurSaisie, e: EtatSaisie): string[] {
+  const messages: string[] = [];
+  for (const c of d.champs) {
+    if ((c.type !== "MONTANT" && c.type !== "NOMBRE") || !champActif(d, e, c.code)) continue;
+    const saisi = texteDe(e.champs[c.code]);
+    const hors = saisi === undefined ? null : horsPlage(c, saisi);
+    if (hors) messages.push(messageHorsPlage(c.libelle, hors.valeur, hors.plage));
+  }
+  return messages;
 }
 
 /**

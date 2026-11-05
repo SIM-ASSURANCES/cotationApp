@@ -6,6 +6,7 @@ import { SelectionIntermediaires } from "@/composants/SelectionIntermediaires";
 import { aujourdhui } from "@/domaine/calcul/dates";
 import { montant } from "@/domaine/calcul/montant";
 import { ChoixContrat } from "@/composants/ChoixContrat";
+import { EcheanceImposee } from "@/composants/EcheanceImposee";
 import type { LigneClient } from "@/serveur/clients";
 import type { IntermediaireDocument } from "@/domaine/intermediaires";
 import type { DetailCotation } from "@/serveur/cotations";
@@ -31,6 +32,7 @@ export function FormulaireCotation({
   intermediaires,
   parGaranties = false,
   peutCreerIntermediaire = false,
+  dureeImposee = false,
   bareme,
   base,
 }: {
@@ -45,6 +47,8 @@ export function FormulaireCotation({
   parGaranties?: boolean;
   /** Le profil a le droit de paramétrage (H79) : le bouton « Nouvel intermédiaire » s'affiche. */
   peutCreerIntermediaire?: boolean;
+  /** La version impose un contrat d'un an (D64) : l'échéance s'affiche, calculée, et ne se saisit pas. */
+  dureeImposee?: boolean;
   /** Produit au barème (B6a) : écran généré depuis le barème publié ; la saisie enregistrée (modification) pré-remplit les champs. */
   bareme?: { descripteur: DescripteurSaisie; saisie?: SaisieBareme };
   base?: DetailCotation;
@@ -82,7 +86,7 @@ export function FormulaireCotation({
       <Carte titre="Période et fractionnement">
         <div className="grid max-w-4xl gap-x-6 sm:grid-cols-3">
           <ChampDate nom="dateEffet" libelle="Date d'effet (JJ/MM/AAAA)" valeur={base?.dateEffet ?? aujourdhui()} min={aujourdhui()} />
-          <ChampDate nom="dateEcheance" libelle="Date d'échéance (JJ/MM/AAAA)" valeur={base?.dateEcheance} min={aujourdhui()} />
+          {dureeImposee ? <EcheanceImposee dateEffetInitiale={base?.dateEffet ?? aujourdhui()} /> : <ChampDate nom="dateEcheance" libelle="Date d'échéance (JJ/MM/AAAA)" valeur={base?.dateEcheance} min={aujourdhui()} />}
           <Champ nom="nombreTranches" libelle={`Nombre de tranches (1 à ${tranchesMax})`} valeur={String(base?.nombreTranches ?? 1)} autoComplete="off" />
         </div>
       </Carte>

@@ -1,6 +1,7 @@
 import { dateValide } from "../calcul/dates";
 import { DecimalMontant, analyserMontant, montant, type Montant } from "../calcul/montant";
 import { ErreurBareme, ValeurAbsente, type Refus } from "./erreurs";
+import { horsPlage, messageHorsPlage } from "./plage";
 import type { Bareme, Champ, ConditionAffichage, Garantie, Saisie, ValeurSaisie } from "./schema";
 
 type Lecture = { valeur?: ValeurSaisie; erreur?: string; absent?: string };
@@ -116,8 +117,8 @@ export class Contexte {
         } catch (e) {
           return erreur(e instanceof Error ? e.message : "nombre invalide.");
         }
-        if (c.min !== undefined && montant(n).lt(c.min)) return erreur(`la valeur doit être au moins ${c.min}.`);
-        if (c.max !== undefined && montant(n).gt(c.max)) return erreur(`la valeur doit être au plus ${c.max}.`);
+        const hors = horsPlage(c, n);
+        if (hors) return { erreur: messageHorsPlage(nom, hors.valeur, hors.plage) };
         return { valeur: n };
       }
       case "LISTE": {

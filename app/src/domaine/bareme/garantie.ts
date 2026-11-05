@@ -66,11 +66,15 @@ export function calculerComposante(b: Bareme, g: Garantie, c: Composante, ctx: C
   }
   let prime = assiette.mul(taux).div(c.taux.unite === "PERMILLE" ? 1000 : 100);
 
-  for (const s of ciblant(b, "E2", g, c)) if (!s.reduction) prime = prime.mul(valeurTable(b, s.table, ctx));
-
   const e5 = ciblant(b, "E5", g, c);
   const minimums = [...(c.minimum !== undefined ? [montant(c.minimum)] : []), ...e5.filter((s) => s.mode === "MINIMUM").map((s) => valeurTable(b, s.table, ctx))];
-  for (const m of minimums) if (prime.lt(m)) prime = m;
+  const appliquerMinimums = () => {
+    for (const m of minimums) if (prime.lt(m)) prime = m;
+  };
+  // D64 : par composante, le minimum passe avant les coefficients (625 → max(625 ; 2 500) × 1,25 = 3 125) ou, par défaut, après (2 500).
+  if (c.minimumAvantCoefficients === true) appliquerMinimums();
+  for (const s of ciblant(b, "E2", g, c)) if (!s.reduction) prime = prime.mul(valeurTable(b, s.table, ctx));
+  if (c.minimumAvantCoefficients !== true) appliquerMinimums();
   for (const s of e5.filter((x) => x.mode === "PLAFOND")) {
     const p = valeurTable(b, s.table, ctx);
     if (prime.gt(p)) prime = p;

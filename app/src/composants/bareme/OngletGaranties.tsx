@@ -294,7 +294,8 @@ function Composantes({ ctx, garantie, disabled, majGarantie }: { ctx: ContexteEd
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <ChampMontant label="Minimum de prime (facultatif)" disabled={disabled} value={c.minimum ?? ""} onChange={(v) => majComposante(c.code, (x) => ({ ...x, minimum: v === "" ? undefined : decimalSaisi(v) }))} />
-            <div className="self-end">
+            <div className="flex flex-col gap-2 self-end">
+              <CaseACocher libelle="Minimum appliqué avant les coefficients" coche={c.minimumAvantCoefficients === true} disabled={disabled} onChange={(v) => majComposante(c.code, (x) => ({ ...x, minimumAvantCoefficients: v ? true : undefined }))} />
               <CaseACocher libelle="Par tête (multipliée par l'effectif)" coche={c.parTete === true} disabled={disabled} onChange={(v) => majComposante(c.code, (x) => ({ ...x, parTete: v ? true : undefined }))} />
             </div>
           </div>

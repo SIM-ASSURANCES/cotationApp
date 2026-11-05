@@ -57,6 +57,7 @@ export default async function PageNouvelleCotation(props: PageProps<"/cotations/
         intermediaires={intermediaires.map((i) => ({ code: i.code, nom: i.nom, role: i.role }))}
         parGaranties={compositionPossible(version.modeTarification)}
         peutCreerIntermediaire={creerIntermediaire}
+        dureeImposee={version.dureeImposeeUnAn === true}
         bareme={bareme ? { descripteur: bareme.descripteur } : undefined}
       />
     </main>

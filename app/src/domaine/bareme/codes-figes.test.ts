@@ -5,6 +5,7 @@ import { balisesRisqueDeLAnalyse, balisesSansCle, renommagesInterdits } from "./
 import { codesRisqueDuBareme } from "./documents";
 import type { Bareme } from "./schema";
 import { baremeSecurpro } from "./securpro-fixture";
+import { verifierBareme } from "./verification";
 
 const clone = (): Bareme => structuredClone(baremeSecurpro());
 
@@ -94,5 +95,26 @@ describe("balises des modèles publiés (ajout 9)", () => {
     const sans = clone();
     sans.champs = sans.champs.filter((c) => c.code !== "camera");
     expect(balisesSansCle([{ description: "modèle CP S v1", chemins: ["risque.camera"] }], sans)).toEqual(["modèle CP S v1 cite risque.camera, absent du barème"]);
+  });
+});
+
+describe("D64 (point 5) : changer le type d'un champ « liste » en « montant » dans une version issue d'un publié", () => {
+  const origine = baremeSecurpro();
+  /** `vol_caisse_montant` est une liste de montants (50 000, 100 000, 200 000) : elle devient un montant borné. */
+  const enMontant = (b: Bareme, code = "vol_caisse_montant"): Bareme => ({
+    ...b,
+    champs: b.champs.map((c) => (c.code === "vol_caisse_montant" ? { code, type: "MONTANT", bloc: c.bloc, si: c.si, min: "50000", max: "200000", libelle: c.libelle } : c)),
+    jeuxEssai: b.jeuxEssai,
+  });
+  it("même code, autre type, avec bornes : la garde des codes (H167) ne refuse rien", () => {
+    expect(renommagesInterdits(origine, enMontant(origine))).toEqual([]);
+  });
+  it("autre code, autre type : ce n'est pas un renommage (le type diffère), la garde ne refuse rien non plus", () => {
+    const b = enMontant(origine, "vol_caisse_saisie");
+    expect(b.champs.some((c) => c.code === "vol_caisse_montant")).toBe(false);
+    expect(renommagesInterdits(origine, b)).toEqual([]);
+  });
+  it("le barème reste valide au sens de verifierBareme (le champ n'est la clé d'aucune table)", () => {
+    expect(verifierBareme(enMontant(origine)).map((p) => p.code)).not.toContain("CLE_INVALIDE");
   });
 });

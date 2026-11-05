@@ -173,6 +173,15 @@ export function verifierBareme(b: Bareme, options: { publication?: boolean } = {
       }
     }
   }
+  // D64 : « minimum avant les coefficients » n'a de sens que si la composante a un minimum (fixe, ou sous-jacent E5 MINIMUM qui la vise).
+  const avecMinimumE5 = new Set(b.sousJacents.flatMap((s) => (s.effet === "E5" && s.mode === "MINIMUM" ? s.cibles.flatMap(resout) : [])));
+  for (const g of b.garanties) {
+    for (const c of g.composantes) {
+      if (c.minimumAvantCoefficients === true && c.minimum === undefined && !avecMinimumE5.has(`${g.code}.${c.code}`)) {
+        ajoute("MINIMUM_ABSENT", `Garantie « ${g.code} », composante « ${c.code} » : « minimum appliqué avant les coefficients » est demandé, mais la composante n'a aucun minimum. Renseignez son minimum (onglet Garanties) ou un sous-jacent E5 « minimum » qui la vise, ou décochez ce réglage.`);
+      }
+    }
+  }
   for (const [cible, n] of sourcesE1) {
     if (n !== 1) ajoute(
       "TAUX_SANS_SOURCE",

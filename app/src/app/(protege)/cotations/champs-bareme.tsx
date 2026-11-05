@@ -6,7 +6,7 @@ import { creerCalculDiffere, DELAI_CALCUL_MS } from "@/composants/bareme/calculD
 import { FormulaireCotation, type ChangementSaisie } from "@/composants/bareme/FormulaireCotation";
 import { composantesAMontrer, libelleSousLigne, montantSousLigne } from "@/composants/bareme/sousLignes";
 import { Bandeau, Bouton, Carte, Tableau } from "@/composants/ui";
-import { champsManquants, etatDepuisSaisie, type DescripteurSaisie } from "@/domaine/bareme/formulaire";
+import { champsHorsPlage, champsManquants, etatDepuisSaisie, type DescripteurSaisie } from "@/domaine/bareme/formulaire";
 import type { Saisie } from "@/domaine/bareme/schema";
 import { formaterMontant, montant } from "@/domaine/calcul/montant";
 import { libelleDureeEtProrata } from "@/domaine/calcul/libelle-prorata";
@@ -35,6 +35,8 @@ function manquantsDuFormulaire(formulaire: HTMLFormElement): string[] {
 export function ChampsBareme({ descripteur, initiale }: { descripteur: DescripteurSaisie; initiale?: Saisie }) {
   const [etat, setEtat] = useState<EtatCalculBareme>({});
   const [manquants, setManquants] = useState<string[]>([]);
+  // D64 : valeurs saisies hors de la plage du barème ; tant qu'il y en a, aucun calcul ne part.
+  const [horsPlage, setHorsPlage] = useState<string[]>([]);
   const [attente, setAttente] = useState(false);
   const [panne, setPanne] = useState(false);
   // Le formulaire parent (celui du champ caché ci-dessous), connu après le premier rendu.
@@ -67,8 +69,10 @@ export function ChampsBareme({ descripteur, initiale }: { descripteur: Descripte
   const evaluer = useCallback(() => {
     if (!formulaire) return;
     const manque = [...manquantsDuFormulaire(formulaire), ...champsManquants(descripteurCourant.current, dernier.current.etat, dernier.current.effectif)];
+    const hors = champsHorsPlage(descripteurCourant.current, dernier.current.etat);
     setManquants(manque);
-    if (manque.length > 0) {
+    setHorsPlage(hors);
+    if (manque.length > 0 || hors.length > 0) {
       calcul.annuler();
       setEtat({});
       setPanne(false);
@@ -127,7 +131,16 @@ export function ChampsBareme({ descripteur, initiale }: { descripteur: Descripte
                 ) : null}
               </Bandeau>
             ) : null}
-            {manquants.length > 0 && !etat.resultat ? <p className="text-sm text-neutral">Complétez : {manquants.join(", ")}.</p> : null}
+            {horsPlage.length > 0 ? (
+              <Bandeau ton="danger" role="alert" titre="Une valeur est hors de sa plage : le calcul ne part pas.">
+                <ul className="mt-1 list-disc space-y-1 pl-5">
+                  {horsPlage.map((m) => (
+                    <li key={m}>{m}</li>
+                  ))}
+                </ul>
+              </Bandeau>
+            ) : null}
+            {manquants.length > 0 && horsPlage.length === 0 && !etat.resultat ? <p className="text-sm text-neutral">Complétez : {manquants.join(", ")}.</p> : null}
             {etat.resultat ? (
               <div aria-live="polite" aria-busy={attente} className={attente ? "opacity-60" : undefined}>
                 <Tableau

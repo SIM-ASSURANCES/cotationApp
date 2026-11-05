@@ -36,3 +36,13 @@ describe("dates (D37, H107)", () => {
     expect(problemesDateEffetCotation("2026-10-21", "2026-10-20")).toEqual([]);
   });
 });
+
+describe("échéance d'une durée imposée (D64)", () => {
+  it("effet + 1 an - 1 jour", async () => {
+    const { echeanceUnAn } = await import("./dates");
+    expect(echeanceUnAn("2027-01-01")).toBe("2027-12-31");
+    expect(echeanceUnAn("2026-11-05")).toBe("2027-11-04");
+    expect(echeanceUnAn("2027-03-01")).toBe("2028-02-29"); // l'année suivante est bissextile : 366 jours
+    expect(echeanceUnAn("2028-02-29")).toBe("2029-02-27"); // H192 : le 29 février retombe au 28 février
+  });
+});

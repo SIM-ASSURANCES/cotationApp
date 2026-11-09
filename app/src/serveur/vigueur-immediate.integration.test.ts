@@ -354,7 +354,7 @@ describe("D66 test 9 — non-régression : version provisoire d'avant D66", () =
     expect((await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { id: v.id } })).modeTarification).toBe("BAREME");
   });
 
-  it("un produit dont l'historique mêle les modes reste lisible : la correction d'un barème publié ramène au barème sans toucher aux versions existantes", async () => {
+  it("historique mêlé : « Ajouter une version » garde le mode précédent ; seule exception, creerVersionDepuisBareme (copie d'un barème PUBLIÉ du même produit) ramène au barème pour réparer une version « Par garanties » créée par erreur, sans toucher aux versions existantes", async () => {
     const code = CODE("MIXTE");
     const { versionId: v1 } = await creerProduitAuBareme(technique, code, branches, 10);
     // Historique d'avant D66 : une version provisoire « Par garanties » créée en SQL (la base l'admet encore), en vigueur aujourd'hui.

@@ -1,7 +1,7 @@
 // D66 : version au barème « en préparation », date provisoire « dès la publication », mode figé par produit. Pur, sans base.
 import { describe, expect, it } from "vitest";
 
-import { baseDeNouvelleVersion, DATE_EFFET_A_LA_PUBLICATION, enVigueur, estEffetALaPublication, estEnPreparation, problemeChangementDeMode, problemesVersion, versionPourCotation, type VersionSaisie } from "./parametrage";
+import { actionsDeBareme, baseDeNouvelleVersion, DATE_EFFET_A_LA_PUBLICATION, enVigueur, estEffetALaPublication, estEnPreparation, problemeChangementDeMode, problemesVersion, versionPourCotation, type VersionSaisie } from "./parametrage";
 
 const base: VersionSaisie = {
   dateEffet: "2026-11-09",
@@ -96,5 +96,23 @@ describe("D66 : pré-remplissage de « Ajouter une version » et date de cotatio
     // Produit pas encore commencé (D65.3) : la première version RETENUE, jamais la préparation.
     const futur = [v(2, DATE_EFFET_A_LA_PUBLICATION, "BAREME", true), v(1, "2026-12-01", "BAREME")];
     expect(versionPourCotation(futur, "2026-11-09")).toEqual({ dateVersion: "2026-12-01", version: futur[1] });
+  });
+});
+
+describe("D66, H212 : actions de barème par version", () => {
+  const vide = { brouillon: null, publie: null };
+  const jour = "2026-11-09";
+  it("une version Par formule ou Par garanties sans barème n'a aucune action", () => {
+    for (const mode of ["FORMULE", "GARANTIES"]) {
+      expect(actionsDeBareme({ modeTarification: mode, dateEffet: "2026-12-01" }, vide, jour)).toEqual({ afficher: false, creerVide: false, importer: false, rejouerEtPublier: false, nouvelleVersion: false, basculer: false });
+    }
+  });
+  it("une version au barème sans barème : barème vide et import", () => {
+    expect(actionsDeBareme({ modeTarification: "BAREME", dateEffet: DATE_EFFET_A_LA_PUBLICATION }, vide, jour)).toMatchObject({ afficher: true, creerVide: true, importer: true, rejouerEtPublier: false });
+  });
+  it("une version provisoire d'avant D66 avec brouillon : publiable, ni barème vide ni import ; avec publié : basculable tant que sa date est future", () => {
+    expect(actionsDeBareme({ modeTarification: "GARANTIES", dateEffet: "2026-12-01" }, { brouillon: {}, publie: null }, jour)).toEqual({ afficher: true, creerVide: false, importer: false, rejouerEtPublier: true, nouvelleVersion: false, basculer: false });
+    expect(actionsDeBareme({ modeTarification: "GARANTIES", dateEffet: "2026-12-01" }, { brouillon: null, publie: {} }, jour)).toMatchObject({ nouvelleVersion: true, basculer: true, importer: false });
+    expect(actionsDeBareme({ modeTarification: "GARANTIES", dateEffet: "2026-11-09" }, { brouillon: null, publie: {} }, jour)).toMatchObject({ nouvelleVersion: true, basculer: false });
   });
 });

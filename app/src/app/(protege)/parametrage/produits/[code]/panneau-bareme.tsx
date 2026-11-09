@@ -1,8 +1,8 @@
 import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
 import { Bandeau, Champ as ChampFichier, LienBouton, ListeDeroulante } from "@/composants/ui";
 import { formaterDate } from "@/domaine/calcul/dates";
-import { estEffetALaPublication } from "@/domaine/calcul/parametrage";
-import { etatDuBareme } from "@/serveur/bareme";
+import { actionsDeBareme, estEffetALaPublication } from "@/domaine/calcul/parametrage";
+import { etatDuBareme, type EtatBareme } from "@/serveur/bareme";
 import { aujourdhui, type VersionProduit } from "@/serveur/parametrage";
 
 import { basculerAuBareme, creerUnBaremeVide, creerUneVersionDepuisLeBareme, importerLeBareme, publierLeBareme, rejouerLesEssais } from "./actions";
@@ -11,16 +11,20 @@ const iso = (d: Date) => d.toISOString().slice(0, 10);
 /** « du 15/11/2026 » ou « dès la publication » (date provisoire d'une version au barème en préparation, D66). */
 const quand = (date: string) => (estEffetALaPublication(date) ? "« dès la publication » (en préparation)" : `du ${formaterDate(date)}`);
 
-/** Une version peut recevoir un barème tant qu'elle n'est pas en vigueur dans un autre mode, ou si elle est déjà au barème. */
-export const versionAvecBareme = (v: Pick<VersionProduit, "dateEffet" | "modeTarification">) => v.modeTarification === "BAREME" || v.dateEffet > aujourdhui();
 
 /**
  * Barème d'une version (B9, D50) : télécharger le modèle, importer un classeur (→ brouillon), rejouer les essais, publier (motif),
  * exporter le barème publié, puis basculer la version au barème. B4 (D58) : créer un barème vide et le modifier à l'écran ; la correction d'un
  * barème publié passe par une NOUVELLE version (date saisie) qui en reçoit la copie en brouillon (H157). B5 (D59) : tables, sous-jacents, jeux d'essai, aperçu et publication se font aussi à l'écran ; le classeur reste une autre voie vers le même document.
  */
-export async function PanneauBareme({ codeProduit, version, autreVersionAvecBareme }: { codeProduit: string; version: VersionProduit; autreVersionAvecBareme?: { id: number; dateEffet: string; publie: boolean } }) {
-  const etat = await etatDuBareme(version.id);
+export async function PanneauBareme(props: { codeProduit: string; version: VersionProduit; autreVersionAvecBareme?: { id: number; dateEffet: string; publie: boolean } }) {
+  return <PresentationPanneauBareme {...props} etat={await etatDuBareme(props.version.id)} />;
+}
+
+/** Le panneau lui-même : ne propose que ce que `actionsDeBareme` permet (rien du tout pour une version « Par formule » ou « Par garanties » sans barème). */
+export function PresentationPanneauBareme({ codeProduit, version, etat, autreVersionAvecBareme }: { codeProduit: string; version: VersionProduit; etat: EtatBareme; autreVersionAvecBareme?: { id: number; dateEffet: string; publie: boolean } }) {
+  const a = actionsDeBareme(version, etat, aujourdhui());
+  if (!a.afficher) return null;
   const caches = (
     <>
       <input type="hidden" name="codeProduit" value={codeProduit} />
@@ -28,7 +32,7 @@ export async function PanneauBareme({ codeProduit, version, autreVersionAvecBare
     </>
   );
   const editeur = `/parametrage/produits/${codeProduit}/bareme/${version.id}`;
-  const peutBasculer = etat.publie !== null && version.modeTarification !== "BAREME" && version.dateEffet > aujourdhui();
+  const peutBasculer = a.basculer;
 
   return (
     <section id={`bareme-${version.id}`} className="mt-4 space-y-3 border-t border-border pt-4" aria-label={`Barème de la version ${quand(version.dateEffet)}`}>
@@ -42,7 +46,7 @@ export async function PanneauBareme({ codeProduit, version, autreVersionAvecBare
       </p>
       {!etat.publie && version.modeTarification !== "BAREME" ? (
         <p className="text-sm text-muted-foreground">
-          Parcours : créer la version à une date future, importer un classeur ou saisir le barème à l&apos;écran, publier le barème, puis basculer la version au barème.
+          Version provisoire d&apos;avant D66 qui a déjà un barème : modifiez-le à l&apos;écran, rejouez les essais, publiez-le, puis basculez la version au barème. Un barème ne se crée plus sur une version qui n&apos;est pas au barème.
         </p>
       ) : null}
       {!etat.publie && version.enPreparation ? (
@@ -53,9 +57,11 @@ export async function PanneauBareme({ codeProduit, version, autreVersionAvecBare
       ) : null}
 
       <div className="flex flex-wrap gap-2">
-        <LienBouton href={`/api/bareme/${version.id}/modele`} title="Classeur Excel avec un exemple inventé (SECURPRO)">
-          Télécharger le modèle
-        </LienBouton>
+        {a.importer ? (
+          <LienBouton href={`/api/bareme/${version.id}/modele`} title="Classeur Excel avec un exemple inventé (SECURPRO)">
+            Télécharger le modèle
+          </LienBouton>
+        ) : null}
         {etat.brouillon || etat.publie ? (
           <LienBouton href={editeur} variante={etat.brouillon ? "principal" : "secondaire"}>
             {etat.brouillon ? "Modifier à l'écran" : "Consulter à l'écran"}
@@ -68,14 +74,14 @@ export async function PanneauBareme({ codeProduit, version, autreVersionAvecBare
         ) : null}
       </div>
 
-      {!etat.brouillon && !etat.publie ? (
+      {a.creerVide ? (
         <FormulaireAction action={creerUnBaremeVide} libelleBouton="Créer un barème vide">
           {caches}
           <p className="mb-3 text-sm text-muted-foreground">Un brouillon neuf, sans classeur : vous le remplissez entièrement à l&apos;écran (champs, valeurs intermédiaires, garanties, tables, sous-jacents, jeux d&apos;essai), puis vous le publiez depuis l&apos;onglet Publier.</p>
         </FormulaireAction>
       ) : null}
 
-      {etat.publie ? (
+      {a.nouvelleVersion ? (
         autreVersionAvecBareme ? (
           <Bandeau ton="avertissement" titre="Une version à venir a déjà un barème">
             La version {quand(autreVersionAvecBareme.dateEffet)} a déjà {autreVersionAvecBareme.publie ? "un barème publié" : "un brouillon de barème"} : ouvrez-la plutôt que d&apos;en créer une autre.{" "}
@@ -108,8 +114,9 @@ export async function PanneauBareme({ codeProduit, version, autreVersionAvecBare
         )
       ) : null}
 
-      {!etat.publie ? (
+      {a.importer || a.rejouerEtPublier ? (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {a.importer ? (
           <FormulaireAction action={importerLeBareme} libelleBouton="Importer (→ brouillon)">
             {caches}
             <div className="mb-4">
@@ -123,8 +130,9 @@ export async function PanneauBareme({ codeProduit, version, autreVersionAvecBare
               />
             </div>
           </FormulaireAction>
+          ) : null}
 
-          {etat.brouillon ? (
+          {a.rejouerEtPublier ? (
             <>
               <FormulaireAction action={rejouerLesEssais} libelleBouton="Rejouer les essais" discret>
                 {caches}

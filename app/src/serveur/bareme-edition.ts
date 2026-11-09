@@ -7,7 +7,7 @@ import { aujourdhui, dateValide, formaterDate, type DateIso } from "@/domaine/ca
 import { DATE_EFFET_A_LA_PUBLICATION, estEffetALaPublication, problemesVersion, type VersionSaisie } from "@/domaine/calcul/parametrage";
 
 import { journaliser } from "./audit";
-import { depuisDate, empreinteBareme, enJson, exigerPreparable, motifValide, publierDansTransaction, resume, verrouillerVersion } from "./bareme";
+import { depuisDate, empreinteBareme, enJson, exigerPreparable, exigerVersionAuBareme, motifValide, publierDansTransaction, resume, verrouillerVersion } from "./bareme";
 import { creerVersionDansTransaction, exigerEcriture, versVersion } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { ErreurMetier, type UtilisateurCourant } from "./types";
@@ -77,6 +77,7 @@ export async function creerBaremeVide(acteur: UtilisateurCourant, versionId: num
   return obtenirPrisma().$transaction(async (tx) => {
     const version = await verrouillerVersion(tx, versionId);
     exigerPreparable(version);
+    exigerVersionAuBareme(version.modeTarification);
     if (await tx.baremeDocument.findFirst({ where: { versionId }, select: { id: true } })) {
       throw new ErreurMetier("Cette version a déjà un barème : ouvrez-le pour le modifier à l'écran.");
     }

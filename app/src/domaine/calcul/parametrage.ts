@@ -356,6 +356,28 @@ export function enVigueur<T extends { dateEffet: DateIso; enPreparation?: boolea
 }
 
 /**
+ * Ce que l'écran propose sur le barème d'une version (D66, H212). Le mode est figé par produit : on ne CRÉE un barème (vide ou importé) que sur une version
+ * déjà au barème. Une version « Par formule » ou « Par garanties » n'a aucune action de barème, SAUF une version provisoire d'avant D66 (H140) qui a DÉJÀ un
+ * barème (brouillon ou publié) : elle reste modifiable à l'écran, publiable et basculable.
+ */
+export function actionsDeBareme(
+  v: { modeTarification: string; dateEffet: DateIso },
+  etat: { brouillon: unknown; publie: unknown },
+  jour: DateIso,
+): { afficher: boolean; creerVide: boolean; importer: boolean; rejouerEtPublier: boolean; nouvelleVersion: boolean; basculer: boolean } {
+  const auBareme = v.modeTarification === "BAREME";
+  const aUnBareme = Boolean(etat.brouillon || etat.publie);
+  return {
+    afficher: auBareme || aUnBareme,
+    creerVide: auBareme && !aUnBareme,
+    importer: auBareme && !etat.publie,
+    rejouerEtPublier: Boolean(etat.brouillon) && !etat.publie,
+    nouvelleVersion: Boolean(etat.publie),
+    basculer: Boolean(etat.publie) && !auBareme && v.dateEffet > jour,
+  };
+}
+
+/**
  * Version et date de résolution d'une COTATION (D65 point 3, D66) : une version au barème en préparation ne compte ni pour la date ni pour la version,
  * donc ne propose jamais sa date provisoire et n'empêche pas de coter avec la version précédente. `version` est `null` quand aucune ne peut servir.
  */

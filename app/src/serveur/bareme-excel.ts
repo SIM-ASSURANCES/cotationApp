@@ -6,7 +6,7 @@ import { estEffetALaPublication } from "@/domaine/calcul/parametrage";
 import { journaliser } from "./audit";
 import { construireClasseur } from "./bareme-classeur-ecriture";
 import { analyserClasseur, ErreurImportBareme, TAILLE_MAX_CLASSEUR } from "./bareme-classeur-lecture";
-import { enregistrerBrouillonBareme, lireBaremePublie } from "./bareme";
+import { enregistrerBrouillonBareme, exigerVersionAuBareme, lireBaremePublie } from "./bareme";
 import { exigerEcriture } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { ErreurMetier, type UtilisateurCourant } from "./types";
@@ -53,6 +53,10 @@ export async function importerBaremeXlsx(acteur: UtilisateurCourant, versionId: 
   await exigerEcriture(acteur);
   if (!/\.xlsx$/i.test(nomFichier)) throw new ErreurMetier("Format non pris en charge : déposez un classeur .xlsx (Excel).");
   if (contenu.byteLength > TAILLE_MAX_CLASSEUR) throw new ErreurMetier(`Le fichier dépasse ${TAILLE_MAX_CLASSEUR / 1024 / 1024} Mo.`);
+  // D66, H212 : le classeur ne s'importe que sur une version déjà au barème (le mode est figé par produit).
+  const version = await obtenirPrisma().produitVersion.findUnique({ where: { id: versionId }, select: { modeTarification: true } });
+  if (!version) throw new ErreurMetier("Version de produit introuvable.");
+  exigerVersionAuBareme(version.modeTarification);
   const lu = await analyserClasseur(contenu);
   if (lu.erreurs.length > 0 || !lu.bareme) throw new ErreurImportBareme(lu.erreurs);
   const brouillon = await enregistrerBrouillonBareme(acteur, versionId, lu.bareme, adresseIp);

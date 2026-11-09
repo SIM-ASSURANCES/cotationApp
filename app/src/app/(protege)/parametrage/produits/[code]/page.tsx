@@ -13,7 +13,7 @@ import { exigerDroit } from "@/serveur/session";
 import { ajouterUneVersion, renseignerBranchePrincipale } from "./actions";
 import { FormulaireNouvelleVersion } from "./formulaire-version";
 import { LIBELLE_MODE, LIBELLE_NIVEAU, LIBELLE_SENS, net } from "./libelles-produit";
-import { PanneauBareme, versionAvecBareme } from "./panneau-bareme";
+import { PanneauBareme } from "./panneau-bareme";
 
 type Formule = VersionProduit["formules"][number];
 
@@ -56,7 +56,7 @@ function Resume({ v, codeProduit, peutEcrire, autreVersionAvecBareme }: { v: Ver
       {afficheTableauFormules(v) ? (
         <Tableau colonnes={COLONNES_FORMULES} lignes={v.formules} cleLigne={(f) => f.code} messageVide="Aucune formule." legende={`Formules de la version du ${formaterDate(v.dateEffet)}`} />
       ) : null}
-      {peutEcrire && versionAvecBareme(v) ? <PanneauBareme codeProduit={codeProduit} version={v} autreVersionAvecBareme={autreVersionAvecBareme} /> : null}
+      {peutEcrire ? <PanneauBareme codeProduit={codeProduit} version={v} autreVersionAvecBareme={autreVersionAvecBareme} /> : null}
     </Carte>
   );
 }

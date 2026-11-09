@@ -24,7 +24,7 @@ import type { Souscripteur } from "@/domaine/cotation/saisie";
 
 import { lireJournal } from "./audit";
 import { assurerBranche } from "./branches-test";
-import { basculerVersionAuBareme, empreinteBareme, enregistrerBrouillonBareme, ErreurBaremeInvalide, lireBaremePublie, publierBareme, rejouerLesEssaisBareme } from "./bareme";
+import { empreinteBareme, enregistrerBrouillonBareme, ErreurBaremeInvalide, lireBaremePublie, publierBareme, rejouerLesEssaisBareme } from "./bareme";
 import { creerBaremeVide, creerVersionDepuisBareme, lireBaremePourEdition } from "./bareme-edition";
 import { exporterBaremePublieXlsx, importerBaremeXlsx } from "./bareme-excel";
 import { creerBrouillon } from "./cotations";
@@ -74,7 +74,8 @@ const versionBase = (dateEffet: string): VersionSaisie => ({
 async function nouvelleVersion(options: { enVigueur?: boolean } = {}): Promise<{ code: string; versionId: number }> {
   const code = CODE("ECRAN");
   await creerProduit(technique, { code, libelle: "Produit édité à l'écran (inventé)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: IARD }, null);
-  await creerVersion(technique, code, versionBase(options.enVigueur ? "2020-01-01" : debutTest()), null);
+  // D66 : une version à venir naît au barème (en préparation) ; une version déjà en vigueur reste « Par garanties » (le refus « déjà en vigueur » est testé).
+  await creerVersion(technique, code, options.enVigueur ? versionBase("2020-01-01") : { ...versionBase(debutTest()), modeTarification: "BAREME" }, null);
   const v = await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produit: { code } } });
   return { code, versionId: v.id };
 }
@@ -300,8 +301,7 @@ describe("Aller-retour : un barème modifié à l'écran, publié, exporté, ré
 
 describe("Corriger un barème publié : une nouvelle version, par le service existant (H157)", () => {
   async function versionEnVigueurAuBareme() {
-    const { code, versionId, empreinte } = await versionPubliee();
-    await basculerVersionAuBareme(technique, versionId, null);
+    const { code, versionId, empreinte } = await versionPubliee(); // déjà au barème (D66) : plus de bascule
     await changerLaVersionPourTest(versionId, "date_effet = DATE '2020-01-01'");
     return { code, versionId, empreinte };
   }
@@ -431,7 +431,6 @@ describe("Corriger un barème publié : une nouvelle version, par le service exi
 describe("Empreinte : recalculée à chaque enregistrement, égale au SHA-256 du contenu publié", () => {
   it("copie d'un publié, taux modifié, enregistré : l'empreinte du brouillon diffère de celle du publié ; publiée : SHA-256 du contenu final", async () => {
     const { versionId, empreinte: empreintePubliee } = await versionPubliee();
-    await basculerVersionAuBareme(technique, versionId, null);
     await changerLaVersionPourTest(versionId, "date_effet = DATE '2020-01-01'");
     const { versionId: copieId } = await creerVersionDepuisBareme(technique, versionId, dans(50), null);
     expect((await lignes(copieId))[0].empreinte).toBe(empreintePubliee); // copie intacte : même contenu, même empreinte

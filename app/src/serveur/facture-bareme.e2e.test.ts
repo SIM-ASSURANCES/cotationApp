@@ -14,9 +14,8 @@ import { documentSecurpro } from "@/domaine/bareme/securpro-fixture";
 import { ajouterJours } from "@/domaine/calcul/dates";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 
-import { basculerVersionAuBareme, lireBaremePublie, publierBareme } from "./bareme";
-import { construireClasseur } from "./bareme-classeur-ecriture";
-import { importerBaremeXlsx } from "./bareme-excel";
+import { enregistrerBrouillonBareme, basculerVersionAuBareme, lireBaremePublie, publierBareme } from "./bareme";
+
 import { assurerBranche, rattacherCgDeTest } from "./branches-test";
 import { obtenirConfig } from "./config";
 import { accepter, creerBrouillon, lireCotation, soumettre, type SaisieCotation } from "./cotations";
@@ -53,7 +52,6 @@ let iard: string;
 async function compte(identifiant: string): Promise<UtilisateurCourant> {
   return versUtilisateurCourant(await obtenirPrisma().utilisateur.findUniqueOrThrow({ where: { identifiant }, include: { profil: true } }));
 }
-
 
 async function publier(type: "CG" | "CP" | "COTATION" | "FACTURE", produitCode: string | null, nom: string, surcharge: Record<string, unknown> = {}): Promise<string> {
   const id = await creerModele(technique, { type, code: CODE(type), libelle: type === "CG" ? "SECURPRO – Conditions générales (test)" : `${type} (bout en bout)`, produitCode, ...sans }, null);
@@ -129,7 +127,7 @@ beforeAll(async () => {
   const carte: Record<string, string> = { IARD: iard, INCENDIE: incendie };
   d.produit.taxe = carte[d.produit.taxe];
   for (const g of d.garanties) if (g.taxe) g.taxe = carte[g.taxe];
-  await importerBaremeXlsx(technique, versionId, "securpro.xlsx", await construireClasseur(lireBareme(d), { titre: "SECURPRO inventé (test D60)" }), null);
+  await enregistrerBrouillonBareme(technique, versionId, lireBareme(d), null); // D66 : le classeur ne s'importe plus sur une version qui n'est pas au barème
   await publierBareme(technique, versionId, "Barème SECURPRO inventé (test D60)", null);
   await basculerVersionAuBareme(technique, versionId, null);
   await changerLaVersionPourTest(versionId, "date_effet = DATE '2020-01-01'");

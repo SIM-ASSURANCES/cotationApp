@@ -8,10 +8,13 @@ import { baseDeNouvelleVersion, DATE_EFFET_A_LA_PUBLICATION, enVigueur, versionP
 import type { Souscripteur } from "@/domaine/cotation/saisie";
 
 import { basculerVersionAuBareme, controlerAvantPublication, depuisDate, enregistrerBrouillonBareme, ErreurPublicationBareme, lireBaremePublie, publierBareme, publierBaremeDetaille, rejouerLesEssaisBareme } from "./bareme";
-import { creerVersionDepuisBareme } from "./bareme-edition";
+import { creerBaremeVide, creerVersionDepuisBareme } from "./bareme-edition";
+import { construireClasseur } from "./bareme-classeur-ecriture";
+import { importerBaremeXlsx } from "./bareme-excel";
 import { calculerCotationBareme, creerBrouillon, lireCotation, soumettre, type SaisieCotation } from "./cotations";
 import { debutTest, finTest } from "./dates-test";
 import { initialiserProfilsEtDroits } from "./droits";
+import { ajouterVersionHeritee } from "./produit-bareme-test";
 import { calculerPourProduit, creerProduit, creerTaxe, creerVersion, dateDeVersionPourCotation, exigerModeCoherentEnVigueur, listerProduits, listerVersions, resoudreVersion, taxeEnVigueur } from "./parametrage";
 import { assurerBranche } from "./branches-test";
 import { fixerSeuilGlobalDeTest, retablirSeuilGlobalDeTest } from "./parametres-test";
@@ -485,5 +488,58 @@ describe("D66 relecture — la date provisoire 9999-12-31 ne sort nulle part", (
     const id = await creerBrouillon(commercial, saisie(code, essai), null);
     expect((await lireCotation(commercial, id))!.versionDateEffet).toBe(ajouterJours(aujourdhui(), -10));
     expect((await soumettre(commercial, id, null)).statut).toBe("EMISE");
+  });
+});
+
+describe("D66, H212 — un barème ne se crée que sur une version déjà au barème", () => {
+  const refus = /n'est pas tarifée au barème.*nouveau produit/;
+
+  it("produits PAR FORMULES et PAR GARANTIES, version à date future : barème vide et import refusés avec un message clair, rien n'est écrit", async () => {
+    const classeur = await construireClasseur(baremeAuxBranches(branches), { titre: "Import refusé (test H212)" });
+    for (const [mode, version] of [
+      ["FORMULE", versionFormule(ajouterJours(aujourdhui(), 30))],
+      ["GARANTIES", { ...versionGaranties(ajouterJours(aujourdhui(), 30)) }],
+    ] as const) {
+      const code = CODE(`H212_${mode}`);
+      await produitSimple(code);
+      await creerVersion(technique, code, mode === "FORMULE" ? versionFormule("2020-01-01") : versionGaranties("2020-01-01"), null);
+      await creerVersion(technique, code, version, null);
+      const futur = (await versionsDe(code)).find((v) => depuisDate(v.dateEffet) > aujourdhui())!;
+      await expect(creerBaremeVide(technique, futur.id, null), mode).rejects.toThrow(refus);
+      await expect(importerBaremeXlsx(technique, futur.id, "securpro.xlsx", classeur, null), mode).rejects.toThrow(refus);
+      expect(await baremesDe(code), mode).toHaveLength(0);
+    }
+  });
+
+  it("produit AU BARÈME : barème vide et import restent possibles (inchangé)", async () => {
+    const classeur = await construireClasseur(baremeAuxBranches(branches), { titre: "Import (test H212)" });
+    const a = CODE("H212_BAREME_A");
+    await produitSimple(a);
+    await creerVersion(technique, a, versionAuBareme(DATE_EFFET_A_LA_PUBLICATION), null);
+    const va = (await versionsDe(a))[0];
+    await expect(creerBaremeVide(technique, va.id, null)).resolves.toMatchObject({ id: expect.any(Number) });
+    const b = CODE("H212_BAREME_B");
+    await produitSimple(b);
+    await creerVersion(technique, b, versionAuBareme(DATE_EFFET_A_LA_PUBLICATION), null);
+    const vb = (await versionsDe(b))[0];
+    await expect(importerBaremeXlsx(technique, vb.id, "securpro.xlsx", classeur, null)).resolves.toMatchObject({ id: expect.any(Number) });
+  });
+
+  it("version provisoire d'avant D66 avec brouillon : toujours modifiable, publiable et basculable ; la réparation à partir d'un barème PUBLIÉ reste permise", async () => {
+    const code = CODE("H212_H140");
+    await produitSimple(code);
+    await creerVersion(technique, code, versionGaranties(ajouterJours(aujourdhui(), 30)), null);
+    const v = (await versionsDe(code))[0];
+    await enregistrerBrouillonBareme(technique, v.id, baremeAuxBranches(branches), null); // le brouillon existe (donnée d'avant D66)
+    await enregistrerBrouillonBareme(technique, v.id, baremeAuxBranches(branches), null); // modifiable
+    await publierBareme(technique, v.id, "Barème de la version provisoire (test H212)", null);
+    await basculerVersionAuBareme(technique, v.id, null);
+    expect((await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { id: v.id } })).modeTarification).toBe("BAREME");
+    // Réparation : une version « Par garanties » créée par erreur sur un produit qui a un barème publié (donnée posée comme avant D66).
+    const code2 = CODE("H212_REPARE");
+    const { versionId: v1 } = await creerProduitAuBareme(technique, code2, branches, 10);
+    await ajouterVersionHeritee(technique, code2, versionGaranties(aujourdhui()));
+    const repare = await creerVersionDepuisBareme(technique, v1, ajouterJours(aujourdhui(), 1), null);
+    expect((await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { id: repare.versionId } })).modeTarification).toBe("BAREME");
   });
 });

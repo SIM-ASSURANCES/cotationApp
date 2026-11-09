@@ -10,9 +10,9 @@ import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 
 import { assurerBranche } from "./branches-test";
 import { decrireEcart, enregistrerBrouillonBareme, lireBaremePublie, publierBareme, rejouerLesEssaisBareme } from "./bareme";
-import { construireClasseur } from "./bareme-classeur-ecriture";
+
 import { lireBaremePourEdition } from "./bareme-edition";
-import { importerBaremeXlsx } from "./bareme-excel";
+
 import { debutTest } from "./dates-test";
 import { initialiserProfilsEtDroits } from "./droits";
 import { creerProduit, creerTaxe, creerVersion } from "./parametrage";
@@ -75,7 +75,7 @@ describe("Parcours de la Technique à l'écran : champ liste, garantie à deux c
     await creerVersion(technique, code, version, null);
     const { id: versionId } = await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produit: { code } } });
     // Le barème de départ vient du classeur (il porte les jeux d'essai, qui s'éditent en B5) ; tout le reste se modifie ensuite à l'écran.
-    await importerBaremeXlsx(technique, versionId, "securpro.xlsx", await construireClasseur(secuproDeTest(), { titre: "SECURPRO inventé (test B4)" }), null);
+    await enregistrerBrouillonBareme(technique, versionId, secuproDeTest(), null); // D66 : le classeur ne s'importe plus sur une version qui n'est pas au barème
 
     // 1. L'écran s'ouvre sur le brouillon enregistré, sans aucun problème (le rendu de l'éditeur est vérifié par EditeurBareme.test.tsx).
     const ouvert = (await lireBaremePourEdition(technique, versionId))!;

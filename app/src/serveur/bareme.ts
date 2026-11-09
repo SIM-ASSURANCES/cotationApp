@@ -126,6 +126,15 @@ export function exigerPreparable(v: VersionChargee): void {
   }
 }
 
+/** Mode figé par produit (D66, H212) : un barème (vide ou importé) ne se crée que sur une version déjà au barème. */
+export function exigerVersionAuBareme(mode: string): void {
+  if (mode === "BAREME") return;
+  const nom = mode === "GARANTIES" ? "Par garanties" : mode === "FORMULE" ? "Par formule" : mode;
+  throw new ErreurMetier(
+    `Cette version n'est pas tarifée au barème (mode « ${nom} »). Le mode de tarification est figé par produit : un barème ne s'ajoute pas à une version ${nom.toLowerCase()}. Pour tarifer au barème, créez un nouveau produit.`,
+  );
+}
+
 /**
  * Règles du produit que le barème ne porte pas, lues dans la version : arrondi et prorata. Les taux de taxe sont ceux en vigueur
  * à la date de l'essai (régime individuel). La période d'essai est d'un an qui commence à la date d'effet de la version, ou

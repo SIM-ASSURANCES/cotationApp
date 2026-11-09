@@ -9,9 +9,8 @@ import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Souscripteur } from "@/domaine/cotation/saisie";
 
 import { assurerBranche } from "./branches-test";
-import { basculerVersionAuBareme, lireBaremePublie, publierBareme } from "./bareme";
-import { construireClasseur } from "./bareme-classeur-ecriture";
-import { importerBaremeXlsx } from "./bareme-excel";
+import { enregistrerBrouillonBareme, basculerVersionAuBareme, lireBaremePublie, publierBareme } from "./bareme";
+
 import { calculerCotationBareme, creerBrouillon, lireCotation, modifierBrouillon, type SaisieCotation } from "./cotations";
 import { initialiserProfilsEtDroits } from "./droits";
 import { creerProduit, creerTaxe, creerVersion } from "./parametrage";
@@ -106,7 +105,7 @@ beforeAll(async () => {
     null,
   );
   versionId = (await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produit: { code: CODE } } })).id;
-  await importerBaremeXlsx(technique, versionId, "securpro.xlsx", await construireClasseur(baremeAuxBranches(), { titre: "SECURPRO inventé (test D64)" }), null);
+  await enregistrerBrouillonBareme(technique, versionId, baremeAuxBranches(), null); // D66 : le classeur ne s'importe plus sur une version qui n'est pas au barème
   await publierBareme(technique, versionId, "Barème SECURPRO inventé (test D64)", null);
   await basculerVersionAuBareme(technique, versionId, null);
   await obtenirPrisma().$transaction(async (tx) => {

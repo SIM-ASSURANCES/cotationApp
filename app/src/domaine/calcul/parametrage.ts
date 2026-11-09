@@ -356,6 +356,26 @@ export function enVigueur<T extends { dateEffet: DateIso; enPreparation?: boolea
 }
 
 /**
+ * Version et date de résolution d'une COTATION (D65 point 3, D66) : une version au barème en préparation ne compte ni pour la date ni pour la version,
+ * donc ne propose jamais sa date provisoire et n'empêche pas de coter avec la version précédente. `version` est `null` quand aucune ne peut servir.
+ */
+export function versionPourCotation<T extends { dateEffet: DateIso; enPreparation?: boolean }>(versions: readonly T[], jour: DateIso): { dateVersion: DateIso; version: T | null } {
+  const retenues = versions.filter((v) => v.enPreparation !== true);
+  const dateVersion = dateDeVersionAnticipee(retenues.map((v) => v.dateEffet), jour);
+  return { dateVersion, version: enVigueur([...retenues], dateVersion) };
+}
+
+/**
+ * D66 — d'où viennent le mode et les valeurs pré-remplies de « Ajouter une version ». `versions` : celles du produit, de la plus récente à la plus
+ * ancienne par date d'effet. Le MODE est celui de la version la plus récente, y compris une version au barème en préparation (c'est la règle du
+ * service). Les VALEURS pré-remplies (arrondi, prorata, durée imposée, fractionnement, validité, références) sont celles de la dernière version
+ * RETENUE : ce qui sert ou servira vraiment, pas un travail en cours ; à défaut (produit neuf au barème), celles de la version en préparation.
+ */
+export function baseDeNouvelleVersion<T extends { modeTarification: ModeTarification; enPreparation?: boolean }>(versions: readonly T[]): { base: T | null; mode: ModeTarification | null } {
+  return { base: versions.find((v) => v.enPreparation !== true) ?? versions[0] ?? null, mode: versions[0]?.modeTarification ?? null };
+}
+
+/**
  * Le mode de tarification est figé par produit (D66) : il se choisit à la première version, toute version suivante prend celui de la précédente.
  * `precedent` : mode de la version la plus récente du produit (`null` : première version). `demande` absent : le mode précédent s'applique.
  * Rend le refus, ou `null`.

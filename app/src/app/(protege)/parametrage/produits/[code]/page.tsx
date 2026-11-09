@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { FormulaireAction } from "@/composants/FormulaireAction";
 import { Bandeau, Carte, EnTetePage, EtatVide, LienBouton, ListeDeroulante, Tableau, type ColonneTableau } from "@/composants/ui";
 import { formaterDate } from "@/domaine/calcul/dates";
-import { afficheTableauFormules, estEffetALaPublication, versionsProvisoiresSansBareme } from "@/domaine/calcul/parametrage";
+import { afficheTableauFormules, baseDeNouvelleVersion, estEffetALaPublication, versionsProvisoiresSansBareme } from "@/domaine/calcul/parametrage";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
 import { etatDuBareme } from "@/serveur/bareme";
@@ -73,7 +73,11 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
     notFound();
   }
   const { produit, versions } = donnees;
-  const base = versions[0]; // la plus récente : point de départ de la nouvelle version
+  // D66 — d'où viennent le mode et les paramètres pré-remplis de « Ajouter une version » :
+  //  - le MODE est celui de la version la plus RÉCENTE par date, y compris une version au barème en préparation (c'est la règle du service : `creerVersion`) ;
+  //  - les PARAMÈTRES (arrondi, prorata, durée imposée, fractionnement, validité, références) sont ceux de la dernière version RETENUE, hors préparation :
+  //    ce qui sert (ou servira) vraiment, pas un travail en cours. Sans version retenue (produit neuf au barème), ceux de la version en préparation.
+  const { base, mode: modeDuProduit } = baseDeNouvelleVersion(versions);
   // H140 : version future créée pour recevoir un barème, sans barème publié.
   const futures = versions.filter((v) => v.modeTarification === "GARANTIES" && v.dateEffet > aujourdhui());
   const publiees = new Set((await Promise.all(futures.map(async (v) => ((await etatDuBareme(v.id)).publie ? v.id : null)))).filter((id): id is number => id !== null));
@@ -135,7 +139,7 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
       ) : null}
 
       {peutAgir(niveau) ? (
-        <FormulaireNouvelleVersion codeProduit={produit.code} base={base ?? null} action={ajouterUneVersion} baremePublie={baremePublie} />
+        <FormulaireNouvelleVersion codeProduit={produit.code} base={base ?? null} mode={modeDuProduit} action={ajouterUneVersion} baremePublie={baremePublie} />
       ) : (
         <Bandeau ton="neutre">Consultation seule.</Bandeau>
       )}

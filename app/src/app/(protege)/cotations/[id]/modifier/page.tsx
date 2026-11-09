@@ -1,7 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 
 import { EnTetePage } from "@/composants/ui";
-import { compositionPossible, dateDeVersionAnticipee, enVigueur } from "@/domaine/calcul/parametrage";
+import { compositionPossible, versionPourCotation } from "@/domaine/calcul/parametrage";
 import { peutModifier } from "@/domaine/cotation/statuts";
 import { peutAgir } from "@/domaine/droits";
 import { listerClients } from "@/serveur/clients";
@@ -28,8 +28,7 @@ export default async function PageModifierCotation(props: PageProps<"/cotations/
     redirect(`/cotations/${cotation.id}`);
   }
   const donnees = await listerVersions(utilisateur, cotation.produit.code);
-  const dateVersion = donnees ? dateDeVersionAnticipee(donnees.versions.filter((v) => !v.enPreparation).map((v) => v.dateEffet), aujourdhui()) : aujourdhui();
-  const version = donnees ? enVigueur(donnees.versions, dateVersion) : null;
+  const { dateVersion, version } = donnees ? versionPourCotation(donnees.versions, aujourdhui()) : { dateVersion: aujourdhui(), version: null };
   if (!donnees || !version) {
     redirect(`/cotations/${cotation.id}`);
   }

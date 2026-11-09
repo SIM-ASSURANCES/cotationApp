@@ -175,7 +175,12 @@ export async function creerVersionDepuisBareme(acteur: UtilisateurCourant, versi
       throw new ErreurMetier("Une version « dès la publication » est déjà en préparation pour ce produit : ouvrez-la sur la fiche du produit, ou publiez-la d'abord.");
     }
 
-    const derniere = await tx.produitVersion.findFirstOrThrow({ where: { produitId: source.produitId }, orderBy: { dateEffet: "desc" }, include: { formules: true, baremes: { select: { statut: true } } } });
+    // Paramètres de la dernière version RETENUE (D66) : une version au barème en préparation n'est pas encore un paramétrage qui sert.
+    const derniere = await tx.produitVersion.findFirstOrThrow({
+      where: { produitId: source.produitId, NOT: { modeTarification: "BAREME", baremes: { none: { statut: "PUBLIE" } } } },
+      orderBy: { dateEffet: "desc" },
+      include: { formules: true, baremes: { select: { statut: true } } },
+    });
     // Mêmes paramètres qu'un ajout ordinaire (pré-remplissage par la dernière version), AU BARÈME (D66).
     const saisie: VersionSaisie = { ...versVersion(derniere), dateEffet: date, modeTarification: "BAREME", garanties: [], garantiesSaisieLibre: true };
     const problemes = problemesVersion(saisie);

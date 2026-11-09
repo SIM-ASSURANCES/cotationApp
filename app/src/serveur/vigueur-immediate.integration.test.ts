@@ -4,15 +4,16 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { lireBareme } from "@/domaine/bareme";
 import { ajouterJours, aujourdhui, echeanceUnAn } from "@/domaine/calcul/dates";
-import { DATE_EFFET_A_LA_PUBLICATION, enVigueur, type VersionSaisie } from "@/domaine/calcul/parametrage";
+import { baseDeNouvelleVersion, DATE_EFFET_A_LA_PUBLICATION, enVigueur, versionPourCotation, type VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Souscripteur } from "@/domaine/cotation/saisie";
 
-import { basculerVersionAuBareme, depuisDate, enregistrerBrouillonBareme, ErreurPublicationBareme, lireBaremePublie, publierBareme, publierBaremeDetaille } from "./bareme";
+import { basculerVersionAuBareme, controlerAvantPublication, depuisDate, enregistrerBrouillonBareme, ErreurPublicationBareme, lireBaremePublie, publierBareme, publierBaremeDetaille, rejouerLesEssaisBareme } from "./bareme";
 import { creerVersionDepuisBareme } from "./bareme-edition";
 import { calculerCotationBareme, creerBrouillon, lireCotation, soumettre, type SaisieCotation } from "./cotations";
 import { debutTest, finTest } from "./dates-test";
 import { initialiserProfilsEtDroits } from "./droits";
-import { calculerPourProduit, creerProduit, creerVersion, dateDeVersionPourCotation, exigerModeCoherentEnVigueur, resoudreVersion } from "./parametrage";
+import { calculerPourProduit, creerProduit, creerTaxe, creerVersion, dateDeVersionPourCotation, exigerModeCoherentEnVigueur, listerProduits, listerVersions, resoudreVersion, taxeEnVigueur } from "./parametrage";
+import { assurerBranche } from "./branches-test";
 import { fixerSeuilGlobalDeTest, retablirSeuilGlobalDeTest } from "./parametres-test";
 import { baremeAuxBranches, creerBranchesFiscales, creerProduitAuBareme, dateDeVersion, versionAuBareme, type BranchesFiscales } from "./produit-bareme-test";
 import { obtenirPrisma } from "./prisma";
@@ -379,5 +380,110 @@ describe("D66 — la version en préparation est écartée par le domaine", () =
     ];
     expect(enVigueur(v, "2026-07-01")?.id).toBe(1);
     expect(enVigueur([{ dateEffet: "2026-06-01", enPreparation: true }], "2026-07-01")).toBeNull();
+  });
+});
+
+describe("D66 relecture — la date provisoire 9999-12-31 ne sort nulle part", () => {
+  const vide = { champs: {}, souscrit: [] } as Entrees;
+
+  it("2a. produit NEUF au barème, version « dès la publication » en préparation : aucune date en 9999 proposée, aucun calcul ; après publication, cotation le jour même", async () => {
+    const code = CODE("NEUF");
+    await produitSimple(code);
+    await creerVersion(technique, code, versionAuBareme(DATE_EFFET_A_LA_PUBLICATION), null);
+    // Les écrans de cotation : produit non proposé, date et version calculées comme le font « Nouvelle cotation » et « Modifier ».
+    expect((await listerProduits(technique)).find((p) => p.code === code)!.versions).toEqual([]);
+    const avant = (await listerVersions(technique, code))!;
+    expect(avant.versions).toHaveLength(1);
+    expect(avant.versions[0].enPreparation).toBe(true);
+    expect(avant.produit.versions).toEqual([]);
+    const { dateVersion, version } = versionPourCotation(avant.versions, aujourdhui());
+    expect(dateVersion).toBe(aujourdhui());
+    expect(dateVersion.startsWith("9999")).toBe(false);
+    expect(version).toBeNull();
+    await expect(calculerCotationBareme(commercial, demande(code, vide))).rejects.toThrow(/Aucun paramétrage/);
+    // L'écran « Ajouter une version » : le mode est celui de la version en préparation.
+    expect(baseDeNouvelleVersion(avant.versions).mode).toBe("BAREME");
+
+    const v = avant.versions[0];
+    await enregistrerBrouillonBareme(technique, v.id, baremeAuxBranches(branches), null);
+    await publierBareme(technique, v.id, "Produit neuf (test D66)", null);
+    const apres = (await listerVersions(technique, code))!;
+    const choisie = versionPourCotation(apres.versions, aujourdhui());
+    expect([choisie.dateVersion, choisie.version?.id, choisie.version?.dateEffet]).toEqual([aujourdhui(), v.id, aujourdhui()]);
+    const essai = await essaiDe(v.id);
+    expect((await calculerCotationBareme(commercial, demande(code, essai))).totaux.ttc).toBe("139420");
+    expect((await lireCotation(commercial, await creerBrouillon(commercial, saisie(code, essai), null)))!.versionDateEffet).toBe(aujourdhui());
+  });
+
+  it("2b. « Ajouter une version » pendant qu'une version est en préparation : mode de la plus récente, valeurs de la dernière retenue ; la préparation n'est pas touchée", async () => {
+    const code = CODE("PENDANT");
+    const { versionId: v1 } = await creerProduitAuBareme(technique, code, branches, 10);
+    const { versionId: v2 } = await creerVersionDepuisBareme(technique, v1, "", null); // en préparation, avec son brouillon
+    const { versions } = (await listerVersions(technique, code))!;
+    expect(versions.map((v) => v.id)).toEqual([v2, v1]); // la préparation est la plus récente par date
+    const { base, mode } = baseDeNouvelleVersion(versions);
+    expect([base!.id, mode]).toEqual([v1, "BAREME"]);
+
+    // Le service suit la même règle : le mode est celui de la plus récente (BAREME), un autre est refusé.
+    await expect(creerVersion(technique, code, versionFormule(debutTest()), null)).rejects.toThrow(/figé par produit/);
+    // « Dès la publication » est déjà pris par la préparation ; une date future passe, reprend le barème de la v1 et se publie.
+    await expect(creerVersion(technique, code, versionAuBareme(DATE_EFFET_A_LA_PUBLICATION), null, { motifPublication: "Doublon" })).rejects.toThrow(/déjà en préparation/);
+    const futur = ajouterJours(aujourdhui(), 25);
+    const creee = await creerVersion(technique, code, versionAuBareme(futur, { dureeImposeeUnAn: true }), null, { motifPublication: "Durée imposée (test D66)" });
+    expect(creee).toMatchObject({ dateEffet: futur, baremePublie: true });
+    expect(await dateDe(v2)).toBe(DATE_EFFET_A_LA_PUBLICATION); // la préparation n'a pas bougé
+    expect((await baremesDe(code)).filter((b) => b.versionId === v2).map((b) => b.statut)).toEqual(["BROUILLON"]);
+    expect((await resoudreVersion(obtenirPrisma(), code, aujourdhui())).version.id).toBe(v1);
+  });
+
+  it("2b bis. la correction d'un barème prend les paramètres de la dernière version RETENUE, pas ceux d'une version en préparation", async () => {
+    const code = CODE("PARAMS");
+    const { versionId: v1 } = await creerProduitAuBareme(technique, code, branches, 10);
+    const { versionId: v2 } = await creerVersionDepuisBareme(technique, v1, "", null);
+    // La préparation porte un réglage de travail (durée imposée) ; on retire son brouillon pour pouvoir créer une autre correction.
+    await obtenirPrisma().$executeRawUnsafe(`UPDATE produit_versions SET duree_imposee_un_an = true WHERE id = ${v2}`);
+    await obtenirPrisma().$executeRawUnsafe(`DELETE FROM bareme_documents WHERE version_id = ${v2}`);
+    const { versionId: v3 } = await creerVersionDepuisBareme(technique, v1, ajouterJours(aujourdhui(), 30), null);
+    expect((await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { id: v3 } })).dureeImposeeUnAn).toBe(false); // celui de la v1, retenue
+  });
+
+  it("2c. les essais rejoués (brouillon, contrôle, publication) lisent la taxe en vigueur AUJOURD'HUI, pas au 31/12/9999", async () => {
+    // Branches dont le taux change en 2100 : un essai lu à une date lointaine ne retomberait plus sur 139 420 F.
+    const suffixe = CODE("TX").slice(-8);
+    const incendie = `INC_${suffixe}`;
+    const iard = `IARD_${suffixe}`;
+    for (const [branche, juste, piege] of [[incendie, "12.5", "40"], [iard, "7.25", "50"]] as const) {
+      await assurerBranche(branche);
+      await creerTaxe(technique, { branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: juste, assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: "2099-12-31" }, null);
+      await creerTaxe(technique, { branche, typeContrat: null, tauxMixte: false, commentaire: null, tauxPourcent: piege, assiette: "NETTE_ACCESSOIRES", dateEffet: "2100-01-01", dateFin: null }, null);
+    }
+    expect((await taxeEnVigueur(obtenirPrisma(), iard, "INDIVIDUEL", DATE_EFFET_A_LA_PUBLICATION)).tauxPourcent).toBe("50"); // le piège existe bien
+    const brs = { incendie, iard };
+    const code = CODE("SECURPRO_TX");
+    await creerProduit(technique, { code, libelle: "Sécur Pro (inventé, taxes D66)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: iard }, null);
+    await creerVersion(technique, code, versionAuBareme(DATE_EFFET_A_LA_PUBLICATION), null);
+    const v = (await versionsDe(code))[0];
+    await enregistrerBrouillonBareme(technique, v.id, baremeAuxBranches(brs), null);
+    expect(await rejouerLesEssaisBareme(technique, v.id)).toEqual([]);
+    const controles = await controlerAvantPublication(technique, v.id);
+    expect(controles.ecarts).toEqual([]);
+    await publierBareme(technique, v.id, "Taxes lues à la date du jour (test D66)", null);
+    expect(await dateDe(v.id)).toBe(aujourdhui());
+  });
+
+  it("3. version en préparation dont la date future est passée, sans barème publié : la cotation se calcule avec la version précédente, sans refus", async () => {
+    const code = CODE("DEPASSEE");
+    const { versionId: v1 } = await creerProduitAuBareme(technique, code, branches, 10);
+    const { versionId: v2 } = await creerVersionDepuisBareme(technique, v1, ajouterJours(aujourdhui(), 20), null);
+    await dateDeVersion(v2, ajouterJours(aujourdhui(), -2)); // la date prévue est atteinte, le barème n'est pas publié
+    const essai = await essaiDe(v1);
+    expect((await resoudreVersion(obtenirPrisma(), code, aujourdhui())).version.id).toBe(v1);
+    expect(await dateDeVersionPourCotation(obtenirPrisma(), code)).toBe(aujourdhui());
+    const { versions } = (await listerVersions(technique, code))!;
+    expect(versionPourCotation(versions, aujourdhui()).version?.id).toBe(v1);
+    expect((await calculerCotationBareme(commercial, demande(code, essai))).totaux.ttc).toBe("139420");
+    const id = await creerBrouillon(commercial, saisie(code, essai), null);
+    expect((await lireCotation(commercial, id))!.versionDateEffet).toBe(ajouterJours(aujourdhui(), -10));
+    expect((await soumettre(commercial, id, null)).statut).toBe("EMISE");
   });
 });

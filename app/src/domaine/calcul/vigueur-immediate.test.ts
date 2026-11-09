@@ -1,7 +1,7 @@
 // D66 : version au barème « en préparation », date provisoire « dès la publication », mode figé par produit. Pur, sans base.
 import { describe, expect, it } from "vitest";
 
-import { DATE_EFFET_A_LA_PUBLICATION, enVigueur, estEffetALaPublication, estEnPreparation, problemeChangementDeMode, problemesVersion, type VersionSaisie } from "./parametrage";
+import { baseDeNouvelleVersion, DATE_EFFET_A_LA_PUBLICATION, enVigueur, estEffetALaPublication, estEnPreparation, problemeChangementDeMode, problemesVersion, versionPourCotation, type VersionSaisie } from "./parametrage";
 
 const base: VersionSaisie = {
   dateEffet: "2026-11-09",
@@ -67,5 +67,34 @@ describe("D66 : le mode de tarification est figé par produit", () => {
     }
     expect(problemeChangementDeMode("FORMULE", "BAREME")).toContain("Par formule");
     expect(problemeChangementDeMode("FORMULE", "BAREME")).toContain("Au barème");
+  });
+});
+
+describe("D66 : pré-remplissage de « Ajouter une version » et date de cotation", () => {
+  const v = (id: number, dateEffet: string, modeTarification: "FORMULE" | "GARANTIES" | "BAREME", enPreparation = false) => ({ id, dateEffet, modeTarification, enPreparation });
+
+  it("le mode vient de la version la plus récente (préparation comprise), les valeurs de la dernière version retenue", () => {
+    const versions = [v(3, DATE_EFFET_A_LA_PUBLICATION, "BAREME", true), v(2, "2026-10-01", "BAREME"), v(1, "2026-01-01", "BAREME")];
+    expect(baseDeNouvelleVersion(versions)).toEqual({ base: versions[1], mode: "BAREME" });
+  });
+
+  it("historique mixte : le mode suit la plus récente, les valeurs la dernière retenue", () => {
+    const versions = [v(3, DATE_EFFET_A_LA_PUBLICATION, "BAREME", true), v(2, "2026-11-09", "GARANTIES"), v(1, "2026-01-01", "BAREME")];
+    expect(baseDeNouvelleVersion(versions)).toEqual({ base: versions[1], mode: "BAREME" });
+  });
+
+  it("produit neuf au barème (seule version en préparation) : valeurs de cette version ; aucun historique : rien", () => {
+    const seule = [v(1, DATE_EFFET_A_LA_PUBLICATION, "BAREME", true)];
+    expect(baseDeNouvelleVersion(seule)).toEqual({ base: seule[0], mode: "BAREME" });
+    expect(baseDeNouvelleVersion([])).toEqual({ base: null, mode: null });
+  });
+
+  it("cotation : la version en préparation ne donne ni date ni version ; la précédente sert, même si la date prévue de la préparation est passée", () => {
+    expect(versionPourCotation([v(1, DATE_EFFET_A_LA_PUBLICATION, "BAREME", true)], "2026-11-09")).toEqual({ dateVersion: "2026-11-09", version: null });
+    const apresDatePrevue = [v(2, "2026-11-01", "BAREME", true), v(1, "2026-01-01", "BAREME")];
+    expect(versionPourCotation(apresDatePrevue, "2026-11-09")).toEqual({ dateVersion: "2026-11-09", version: apresDatePrevue[1] });
+    // Produit pas encore commencé (D65.3) : la première version RETENUE, jamais la préparation.
+    const futur = [v(2, DATE_EFFET_A_LA_PUBLICATION, "BAREME", true), v(1, "2026-12-01", "BAREME")];
+    expect(versionPourCotation(futur, "2026-11-09")).toEqual({ dateVersion: "2026-12-01", version: futur[1] });
   });
 });

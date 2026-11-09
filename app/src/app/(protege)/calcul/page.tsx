@@ -178,7 +178,8 @@ export default async function PageCalcul(props: PageProps<"/calcul">) {
   const dateDocument = normaliserDateSaisie(premier(q.dateDocument)) || aujourdhui();
   const tranches = premier(q.tranches) || "1";
   const regimeTaxe = premier(q.regimeTaxe);
-  const formules = donnees?.versions[0]?.formules ?? [];
+  // Dernière version par date, hors version au barème en préparation (D66) : elle n'a pas de formule et ne sert nulle part.
+  const formules = donnees?.versions.find((v) => !v.enPreparation)?.formules ?? [];
 
   let resultat: ReponseCalcul | null = null;
   let erreur: string | null = null;

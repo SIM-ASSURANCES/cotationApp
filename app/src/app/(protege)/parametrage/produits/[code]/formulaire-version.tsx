@@ -36,8 +36,9 @@ function SectionMode({ mode, modeFige, modeInitial, children }: { mode: ModeTari
  * ce mode sont rendues : formules pour « Par formule », garanties pour « Par garanties », renvoi vers le barème pour « Au barème ». Les paramètres
  * communs (date, arrondi, prorata ou durée imposée, fractionnement, validité, références) restent pour tous les modes.
  */
-export function FormulaireNouvelleVersion({ codeProduit, base, action, baremePublie }: { codeProduit: string; base: VersionProduit | null; action: ActionFormulaire; baremePublie: boolean }) {
-  const modeFige: ModeTarification | null = base?.modeTarification ?? null;
+export function FormulaireNouvelleVersion({ codeProduit, base, mode, action, baremePublie }: { codeProduit: string; base: VersionProduit | null; mode?: ModeTarification | null; action: ActionFormulaire; baremePublie: boolean }) {
+  // Le mode est celui de la version la plus récente du produit (règle du service) ; `base` ne fournit que les valeurs pré-remplies.
+  const modeFige: ModeTarification | null = mode !== undefined ? mode : (base?.modeTarification ?? null);
   const modeInitial: ModeTarification = modeFige ?? "FORMULE";
   const peutEtreBareme = modeFige === null || modeFige === "BAREME";
 

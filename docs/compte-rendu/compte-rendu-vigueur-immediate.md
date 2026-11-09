@@ -28,13 +28,13 @@ Branche `phase-vigueur-immediate` depuis `main` (1121678), commits locaux seulem
 2. Version en préparation à date future dont la date est passée : inutilisable, publication refusée (H206) ; aucune alerte à l'écran.
 3. Le refus d'« Ajouter une version » au barème (essai rouge) n'est pas journalisé (H208).
 4. Ajouter une version FORMULE ou GARANTIES accepte toujours une date passée (comportement inchangé).
-5. Correction du barème d'un produit à historique mixte : permise (H204), à valider avec la Technique.
+5. **Règle (Thierry, 09/11)** : un produit dont la dernière version est « Par garanties » ne revient pas au barème ; on crée un nouveau produit (D66, H204). **Écart à trancher avant la fusion** : le code (`creerVersionDepuisBareme`) et un test d'intégration autorisent encore ce retour.
 
 ## Recette pour Thierry (6 étapes)
 1. Déployer (`docker compose up -d --build` : la migration s'applique seule). Ne pas relancer sim-b1 avant d'avoir relu cette liste.
 2. Produits > SECURPRO : lire l'historique. Repérer la version « Par garanties » créée par erreur (date d'effet, case durée imposée).
-3. Si cette version est **à date future** : sur sa fiche, exporter le barème publié de la version au barème, l'importer ici, rejouer les essais, publier, puis « Basculer la version au barème » (chemin conservé pour les versions provisoires). La durée imposée est gardée.
-4. Si elle est **déjà en vigueur** : sur la dernière version publiée au barème, « Créer une nouvelle version à partir de ce barème », entrée « dès la publication » (ou la date de demain si une version existe aujourd'hui) ; vérifier à l'écran de modification la case durée imposée (reprise de la dernière version), publier avec un motif.
+3. Si cette version est **encore à date future** : seul cas d'avant D66 conservé (version provisoire H140). Sur sa fiche, exporter le barème publié de la version au barème, l'importer ici, rejouer les essais, publier, puis « Basculer la version au barème ». La durée imposée est gardée. *Exception d'avant D66 : à confirmer par Thierry avant de l'appliquer.*
+4. Si elle est **déjà en vigueur** (ou si la dernière version est « Par garanties » pour une autre raison) : **aucune réparation** sur ce produit, qui ne revient pas au barème. Créer un **nouveau produit** au barème (première version « dès la publication », classeur exporté de l'ancien produit et importé, publié avec motif). La procédure « nouvelle version à partir du barème publié » écrite ici auparavant était **fausse** pour ce cas.
 5. Contrôle : nouvelle cotation SECURPRO (essai de 139 420 F) ; sa fiche indique la version du jour. Une cotation émise avant garde son ancienne version.
 6. Contrôle de l'écran : « Ajouter une version » sur SECURPRO affiche « Au barème » en lecture seule, « dès la publication » et le motif ; sur un produit par formules, aucune liste de garanties.
 

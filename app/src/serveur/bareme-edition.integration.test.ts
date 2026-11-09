@@ -31,6 +31,7 @@ import { creerBrouillon } from "./cotations";
 import { debutTest } from "./dates-test";
 import { initialiserProfilsEtDroits } from "./droits";
 import { creerProduit, creerTaxe, creerVersion, listerVersions } from "./parametrage";
+import { ajouterVersionHeritee } from "./produit-bareme-test";
 import { obtenirPrisma } from "./prisma";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
@@ -342,12 +343,12 @@ describe("Corriger un barème publié : une nouvelle version, par le service exi
 
     const cree = await creerVersionDepuisBareme(technique, versionId, date, "10.0.0.5");
 
-    // La nouvelle version : date saisie, mode provisoire (H140), mêmes paramètres que la version de départ, copie du publié en brouillon.
+    // La nouvelle version : date saisie, AU BARÈME « en préparation » (D66, plus de mode provisoire), mêmes paramètres que la version de départ, copie du publié en brouillon.
     expect(cree.codeProduit).toBe(code);
     expect(await versionsDe(code)).toHaveLength(nombreDeVersions + 1);
     const nouvelle = await prisma.produitVersion.findUniqueOrThrow({ where: { id: cree.versionId } });
     expect(nouvelle.dateEffet.toISOString().slice(0, 10)).toBe(date);
-    expect(nouvelle.modeTarification).toBe("GARANTIES");
+    expect(nouvelle.modeTarification).toBe("BAREME");
     expect(nouvelle.arrondiPrecision).toBe(sourceAvant.arrondiPrecision);
     expect(nouvelle.validiteMois).toBe(sourceAvant.validiteMois);
     expect(nouvelle.creePar).toBe(technique.identifiant);
@@ -366,15 +367,14 @@ describe("Corriger un barème publié : une nouvelle version, par le service exi
 
     // Deux entrées de journal : la version (service existant) et la copie du barème.
     const journal = (await lireJournal({ action: "PARAMETRE_MODIFIE" })).lignes;
-    expect(journal.find((l) => l.objet === `produit_version ${cree.versionId}`)?.apres).toMatchObject({ produit: code, dateEffet: date, modeTarification: "GARANTIES" });
+    expect(journal.find((l) => l.objet === `produit_version ${cree.versionId}`)?.apres).toMatchObject({ produit: code, dateEffet: date, modeTarification: "BAREME" });
     const entreeCopie = journal.find((l) => l.objet === `bareme_document ${copie.id}`)!;
     expect(entreeCopie.apres).toMatchObject({ versionId: cree.versionId, statut: "BROUILLON", origine: "COPIE_DU_PUBLIE", copieDe: { versionId, empreinte } });
 
-    // L'alerte H140 s'applique à la nouvelle version : à venir, « Par garanties », sans barème publié.
+    // D66 : la nouvelle version est « en préparation » (au barème, sans barème publié) : l'alerte H140 ne la concerne plus, la version en vigueur sert toujours.
     const { versions } = (await listerVersions(technique, code))!;
-    const alertes = versionsProvisoiresSansBareme(versions, new Set([versionId]), aujourdhui());
-    expect(alertes.map((a) => a.id)).toEqual([cree.versionId]);
-    expect(alertes[0].joursRestants).toBe(45);
+    expect(versions.find((v) => v.id === cree.versionId)).toMatchObject({ modeTarification: "BAREME", enPreparation: true });
+    expect(versionsProvisoiresSansBareme(versions, new Set([versionId]), aujourdhui())).toEqual([]);
 
     // Une fois modifiée à l'écran, la copie suit le parcours normal ; le publié reste celui de la version en vigueur.
     const edition = (await lireBaremePourEdition(technique, cree.versionId))!;
@@ -382,14 +382,19 @@ describe("Corriger un barème publié : une nouvelle version, par le service exi
     expect(edition.preparable).toBe(true);
   });
 
-  it("refuse une date passée, d'aujourd'hui ou illisible, sans rien créer", async () => {
+  it("refuse une date passée, d'aujourd'hui ou illisible, sans rien créer ; une date vide vaut « dès la publication » (D66)", async () => {
     const { code, versionId } = await versionEnVigueurAuBareme();
     const nombre = (await versionsDe(code)).length;
-    for (const date of [ajouterJours(aujourdhui(), -1), aujourdhui(), "", "31/12/2030", "2030-02-30"]) {
+    for (const date of [ajouterJours(aujourdhui(), -1), aujourdhui(), "31/12/2030", "2030-02-30"]) {
       await expect(creerVersionDepuisBareme(technique, versionId, date, null)).rejects.toBeInstanceOf(ErreurMetier);
     }
     await expect(creerVersionDepuisBareme(technique, versionId, ajouterJours(aujourdhui(), -1), null)).rejects.toThrow(/postérieure à aujourd'hui/);
     expect(await versionsDe(code)).toHaveLength(nombre);
+    // Date vide : la version naît « dès la publication » (D66).
+    const creee = await creerVersionDepuisBareme(technique, versionId, "", null);
+    expect(await versionsDe(code)).toHaveLength(nombre + 1);
+    const ligne = await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { id: creee.versionId } });
+    expect([ligne.modeTarification, ligne.dateEffet.toISOString().slice(0, 10)]).toEqual(["BAREME", "9999-12-31"]);
   });
 
   it("refuse quand une version à venir a déjà un barème (en la nommant), et ne crée rien", async () => {
@@ -409,7 +414,7 @@ describe("Corriger un barème publié : une nouvelle version, par le service exi
   it("une version à venir SANS barème n'empêche pas la création, et la même date d'effet est refusée par la règle existante sans rien laisser", async () => {
     const { code, versionId } = await versionEnVigueurAuBareme();
     const date = dans(60);
-    await creerVersion(technique, code, versionBase(date), null);
+    await ajouterVersionHeritee(technique, code, versionBase(date)); // version « Par garanties » d'avant D66 : la base l'admet, creerVersion ne la crée plus
     const avant = await obtenirPrisma().baremeDocument.count();
     await expect(creerVersionDepuisBareme(technique, versionId, date, null)).rejects.toThrow(/Une version existe déjà à cette date d'effet/);
     expect(await obtenirPrisma().baremeDocument.count()).toBe(avant); // la version et sa copie vont ensemble : rien n'est resté

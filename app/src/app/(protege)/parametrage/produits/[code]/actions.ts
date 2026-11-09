@@ -5,20 +5,35 @@ import { redirect } from "next/navigation";
 
 import type { EtatFormulaire } from "@/composants/types";
 import type { ControlesDePublication, Ecart } from "@/domaine/bareme";
-import { basculerVersionAuBareme, controlerAvantPublication, decrireEcart, enregistrerBrouillonBareme, publierBareme, rejouerLesEssaisBareme } from "@/serveur/bareme";
+import { formaterDate } from "@/domaine/calcul/dates";
+import { DATE_EFFET_A_LA_PUBLICATION } from "@/domaine/calcul/parametrage";
+import { basculerVersionAuBareme, controlerAvantPublication, decrireEcart, enregistrerBrouillonBareme, publierBaremeDetaille, rejouerLesEssaisBareme, type PublicationFaite } from "@/serveur/bareme";
 import { creerBaremeVide, creerVersionDepuisBareme } from "@/serveur/bareme-edition";
 import { importerBaremeXlsx } from "@/serveur/bareme-excel";
-import { creerVersion, modifierBranchePrincipaleProduit } from "@/serveur/parametrage";
+import { creerVersion, modifierBranchePrincipaleProduit, type VersionCreee } from "@/serveur/parametrage";
 
 import { avecMessage, champ, executerAction } from "../../../executer";
 import { lireVersion } from "./lire-version";
 
+/** Date d'effet d'une version : « dès la publication » (choix `effet`, D66) vaut la date provisoire, sinon la date saisie. */
+const dateDemandee = (donnees: FormData): string =>
+  // Le choix `effet` est envoyé par la section « barème » même masquée : il ne compte que pour une version au barème (ou pour la correction d'un barème, sans mode).
+  champ(donnees, "effet") === "PUBLICATION" && ["", "BAREME"].includes(champ(donnees, "modeTarification")) ? DATE_EFFET_A_LA_PUBLICATION : champ(donnees, "dateEffet");
+
 export async function ajouterUneVersion(_etat: EtatFormulaire, donnees: FormData): Promise<EtatFormulaire> {
-  const saisie = lireVersion(donnees);
+  const saisie = { ...lireVersion(donnees), dateEffet: dateDemandee(donnees) };
   const code = champ(donnees, "codeProduit");
+  let creee: VersionCreee | undefined;
   return executerAction(
-    (acteur, ip) => creerVersion(acteur, code, saisie, ip),
-    `Version du ${saisie.dateEffet} enregistrée : elle s'applique aux documents datés à partir de ce jour.`,
+    async (acteur, ip) => {
+      creee = await creerVersion(acteur, code, saisie, ip, { motifPublication: champ(donnees, "motifPublication") });
+    },
+    () =>
+      creee?.modeTarification !== "BAREME"
+        ? `Version du ${formaterDate(creee?.dateEffet ?? saisie.dateEffet)} enregistrée : elle s'applique aux documents datés à partir de ce jour.`
+        : creee.baremePublie
+          ? `Version au barème enregistrée avec le barème publié repris : elle s'applique à partir du ${formaterDate(creee.dateEffet)}.`
+          : "Version au barème créée « en préparation » : créez ou importez son barème, puis publiez-le. D'ici là, la version précédente continue de servir.",
     `/parametrage/produits/${code}`,
   );
 }
@@ -59,8 +74,21 @@ export async function rejouerLesEssais(_etat: EtatFormulaire, donnees: FormData)
   );
 }
 
+/** Message après une publication : une version au barème entre en vigueur par sa publication (D66) ; une version provisoire d'avant D66 se bascule encore. */
+const messagePublication = (p: PublicationFaite): string =>
+  p.modeTarification === "BAREME"
+    ? `Barème publié : il ne se modifie plus. La version s'applique à partir du ${formaterDate(p.dateEffet)}.`
+    : "Barème publié : il ne se modifie plus. Basculez maintenant la version au barème.";
+
 export async function publierLeBareme(_etat: EtatFormulaire, donnees: FormData): Promise<EtatFormulaire> {
-  return executerAction((acteur, ip) => publierBareme(acteur, versionId(donnees), champ(donnees, "motif"), ip).then(() => undefined), "Barème publié : il ne se modifie plus. Basculez maintenant la version au barème.", chemin(donnees));
+  let faite: PublicationFaite | undefined;
+  return executerAction(
+    async (acteur, ip) => {
+      faite = await publierBaremeDetaille(acteur, versionId(donnees), champ(donnees, "motif"), ip);
+    },
+    () => (faite ? messagePublication(faite) : "Barème publié."),
+    chemin(donnees),
+  );
 }
 
 export async function basculerAuBareme(_etat: EtatFormulaire, donnees: FormData): Promise<EtatFormulaire> {
@@ -80,7 +108,7 @@ export async function creerUnBaremeVide(_etat: EtatFormulaire, donnees: FormData
 
 /** Correction d'un barème publié : nouvelle version (date saisie) qui reçoit la copie en brouillon, puis l'éditeur de cette version (H157). */
 export async function creerUneVersionDepuisLeBareme(_etat: EtatFormulaire, donnees: FormData): Promise<EtatFormulaire> {
-  const r = await avecMessage((acteur, ip) => creerVersionDepuisBareme(acteur, versionId(donnees), champ(donnees, "dateEffet"), ip));
+  const r = await avecMessage((acteur, ip) => creerVersionDepuisBareme(acteur, versionId(donnees), dateDemandee(donnees), ip));
   if (!r.ok) return r.etat;
   redirect(cheminEditeur(r.valeur.codeProduit, r.valeur.versionId));
 }
@@ -136,12 +164,12 @@ export async function controlerLaPublicationEcran(codeProduit: string, id: numbe
 
 /** Onglet Publier : publication du brouillon enregistré (motif obligatoire), par le service existant. */
 export async function publierLeBaremeEcran(codeProduit: string, id: number, motif: string): Promise<EtatFormulaire> {
-  let empreinte = "";
+  let faite: PublicationFaite | undefined;
   const etat = await executerAction(
     async (acteur, ip) => {
-      empreinte = (await publierBareme(acteur, id, motif, ip)).empreinte;
+      faite = await publierBaremeDetaille(acteur, id, motif, ip);
     },
-    () => `Barème publié (empreinte ${empreinte}) : il ne se modifie plus. Basculez maintenant la version au barème.`,
+    () => (faite ? `${messagePublication(faite).replace("Barème publié :", `Barème publié (empreinte ${faite.empreinte}) :`)}` : "Barème publié."),
     cheminEditeur(codeProduit, id),
   );
   if (etat.succes) revalidatePath(ficheProduit(codeProduit));

@@ -1,14 +1,18 @@
 import "server-only";
 
+import type { Prisma } from "@/generated/prisma/client";
+
 import { baremeVide, schemaBareme, VERSION_SCHEMA_BAREME, verifierBareme, type Bareme, type Probleme } from "@/domaine/bareme";
 import { aujourdhui, dateValide, formaterDate, type DateIso } from "@/domaine/calcul/dates";
-import { problemesVersion, type VersionSaisie } from "@/domaine/calcul/parametrage";
+import { DATE_EFFET_A_LA_PUBLICATION, estEffetALaPublication, problemesVersion, type VersionSaisie } from "@/domaine/calcul/parametrage";
 
 import { journaliser } from "./audit";
-import { depuisDate, empreinteBareme, enJson, exigerPreparable, resume, verrouillerVersion } from "./bareme";
+import { depuisDate, empreinteBareme, enJson, exigerPreparable, motifValide, publierDansTransaction, resume, verrouillerVersion } from "./bareme";
 import { creerVersionDansTransaction, exigerEcriture, versVersion } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { ErreurMetier, type UtilisateurCourant } from "./types";
+
+const versDate = (iso: DateIso) => new Date(`${iso}T00:00:00.000Z`);
 
 /**
  * Barème d'une version, côté ÉCRAN d'édition (session B4, D58). L'écran édite le même document que l'import (`bareme_documents`,
@@ -90,19 +94,59 @@ export async function creerBaremeVide(acteur: UtilisateurCourant, versionId: num
   });
 }
 
+/** Date d'effet demandée pour une version au barème : vide ou « dès la publication » (date provisoire, D66), sinon une date postérieure à aujourd'hui. */
+function dateEffetDemandee(dateEffet: string): DateIso {
+  const date = dateEffet.trim();
+  if (date === "" || estEffetALaPublication(date)) return DATE_EFFET_A_LA_PUBLICATION;
+  if (!dateValide(date)) throw new ErreurMetier("La date d'effet est invalide : saisissez-la en JJ/MM/AAAA, ou choisissez « dès la publication ».");
+  if (date <= aujourdhui()) {
+    throw new ErreurMetier("La date d'effet d'une version au barème est « dès la publication » ou une date postérieure à aujourd'hui : une version ne prend jamais effet rétroactivement.");
+  }
+  return date;
+}
+
+/** Le barème publié le plus récent d'un produit (par date d'effet de sa version), relu et contrôlé ; `null` si le produit n'en a pas. */
+async function baremePublieLePlusRecent(tx: Prisma.TransactionClient, produitId: number) {
+  const publie = await tx.baremeDocument.findFirst({ where: { statut: "PUBLIE", version: { produitId } }, orderBy: { version: { dateEffet: "desc" } } });
+  if (!publie) return null;
+  if (publie.schemaVersion !== VERSION_SCHEMA_BAREME || empreinteBareme(publie.contenu) !== publie.empreinte) {
+    throw new ErreurMetier("Le barème publié ne correspond plus à son empreinte : il a été altéré hors de l'application. Aucune copie n'est faite.");
+  }
+  return { ligne: publie, bareme: schemaBareme.parse(publie.contenu) };
+}
+
+/** Copie un barème publié en BROUILLON de la version `versionId` (même contenu, donc même empreinte) et le journalise. */
+async function copierEnBrouillon(tx: Prisma.TransactionClient, acteur: UtilisateurCourant, versionId: number, source: { versionId: number; empreinte: string; bareme: Bareme }, adresseIp: string | null) {
+  const ligne = await tx.baremeDocument.create({
+    data: { versionId, statut: "BROUILLON", contenu: enJson(source.bareme), empreinte: empreinteBareme(source.bareme), schemaVersion: VERSION_SCHEMA_BAREME, creePar: acteur.identifiant },
+  });
+  await journaliser(
+    {
+      acteur: { id: acteur.id, identifiant: acteur.identifiant },
+      action: "PARAMETRE_MODIFIE",
+      objetType: "bareme_document",
+      objetId: ligne.id,
+      apres: { versionId, statut: "BROUILLON", empreinte: ligne.empreinte, origine: "COPIE_DU_PUBLIE", copieDe: { versionId: source.versionId, empreinte: source.empreinte }, ...resume(source.bareme) },
+      adresseIp,
+    },
+    tx,
+  );
+  return ligne;
+}
+
 /**
  * Un barème PUBLIÉ ne se modifie jamais (D49) : sa correction est une NOUVELLE version du produit (H157). Crée cette version par le service
- * de création de version existant (mêmes contrôles, même journal, paramètres de la dernière version comme un ajout ordinaire), à une date
- * d'effet SAISIE et postérieure à aujourd'hui, puis y copie le barème publié en BROUILLON. Tout dans une transaction : la version n'existe
- * pas sans sa copie. Le publié d'origine et les cotations qui le citent ne sont pas touchés.
+ * de création de version existant (mêmes contrôles, même journal, paramètres de la dernière version comme un ajout ordinaire), AU BARÈME et « en
+ * préparation » (D66, plus de version provisoire « Par garanties »), puis y copie le barème publié en BROUILLON. Sa date d'effet est « dès la
+ * publication » (défaut : `dateEffet` vide) ou une date postérieure à aujourd'hui. Tout dans une transaction : la version n'existe pas sans sa
+ * copie. Le publié d'origine et les cotations qui le citent ne sont pas touchés ; la version précédente continue de servir jusqu'à la publication.
+ *
+ * Le produit qui a un barème publié est un produit au barème : la correction est donc permise même si sa dernière version est restée « Par garanties »
+ * (réparation d'une version provisoire d'avant D66, H140 : la seule façon de revenir au barème sans changer le mode d'une version existante).
  */
 export async function creerVersionDepuisBareme(acteur: UtilisateurCourant, versionSourceId: number, dateEffet: string, adresseIp: string | null): Promise<{ versionId: number; codeProduit: string }> {
   await exigerEcriture(acteur);
-  const date = dateEffet.trim();
-  if (!dateValide(date)) throw new ErreurMetier("La date d'effet est invalide : saisissez-la en JJ/MM/AAAA.");
-  if (date <= aujourdhui()) {
-    throw new ErreurMetier("La date d'effet doit être postérieure à aujourd'hui : un barème ne se prépare que sur une version qui n'est pas encore en vigueur.");
-  }
+  const date = dateEffetDemandee(dateEffet);
 
   return obtenirPrisma().$transaction(async (tx) => {
     const source = await tx.produitVersion.findUnique({ where: { id: versionSourceId }, include: { produit: true } });
@@ -113,8 +157,9 @@ export async function creerVersionDepuisBareme(acteur: UtilisateurCourant, versi
       throw new ErreurMetier("Le barème publié ne correspond plus à son empreinte : il a été altéré hors de l'application. Aucune copie n'est faite.");
     }
     const bareme = schemaBareme.parse(publie.contenu);
+    await tx.$queryRaw`SELECT id FROM produits WHERE id = ${source.produitId} FOR NO KEY UPDATE`;
 
-    // Une version à venir qui a déjà un barème (brouillon ou publié) : on l'ouvre, on n'en crée pas une autre.
+    // Une version à venir (ou « dès la publication ») qui a déjà un barème (brouillon ou publié) : on l'ouvre, on n'en crée pas une autre.
     const avenir = await tx.produitVersion.findMany({
       where: { produitId: source.produitId, id: { not: versionSourceId }, baremes: { some: {} } },
       include: { baremes: { select: { statut: true } } },
@@ -123,30 +168,46 @@ export async function creerVersionDepuisBareme(acteur: UtilisateurCourant, versi
     const deja = avenir.find((x) => depuisDate(x.dateEffet) > aujourdhui());
     if (deja) {
       const etat = deja.baremes.some((x) => x.statut === "PUBLIE") ? "un barème publié" : "un brouillon de barème";
-      throw new ErreurMetier(`La version du ${formaterDate(depuisDate(deja.dateEffet))} (à venir) a déjà ${etat} : ouvrez-la sur la fiche du produit plutôt que d'en créer une autre.`);
+      const quand = estEffetALaPublication(depuisDate(deja.dateEffet)) ? "« dès la publication » (en préparation)" : `du ${formaterDate(depuisDate(deja.dateEffet))} (à venir)`;
+      throw new ErreurMetier(`La version ${quand} a déjà ${etat} : ouvrez-la sur la fiche du produit plutôt que d'en créer une autre.`);
+    }
+    if (estEffetALaPublication(date) && (await tx.produitVersion.findUnique({ where: { produitId_dateEffet: { produitId: source.produitId, dateEffet: versDate(date) } }, select: { id: true } }))) {
+      throw new ErreurMetier("Une version « dès la publication » est déjà en préparation pour ce produit : ouvrez-la sur la fiche du produit, ou publiez-la d'abord.");
     }
 
-    const derniere = await tx.produitVersion.findFirstOrThrow({ where: { produitId: source.produitId }, orderBy: { dateEffet: "desc" }, include: { formules: true } });
-    // Mêmes paramètres qu'un ajout ordinaire (pré-remplissage par la dernière version), en mode provisoire « Par garanties » (D50, H140).
-    const saisie: VersionSaisie = { ...versVersion(derniere), dateEffet: date, modeTarification: "GARANTIES" };
+    const derniere = await tx.produitVersion.findFirstOrThrow({ where: { produitId: source.produitId }, orderBy: { dateEffet: "desc" }, include: { formules: true, baremes: { select: { statut: true } } } });
+    // Mêmes paramètres qu'un ajout ordinaire (pré-remplissage par la dernière version), AU BARÈME (D66).
+    const saisie: VersionSaisie = { ...versVersion(derniere), dateEffet: date, modeTarification: "BAREME", garanties: [], garantiesSaisieLibre: true };
     const problemes = problemesVersion(saisie);
     if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
 
     const versionId = await creerVersionDansTransaction(tx, acteur, source.produit.code, saisie, adresseIp);
-    const ligne = await tx.baremeDocument.create({
-      data: { versionId, statut: "BROUILLON", contenu: enJson(bareme), empreinte: empreinteBareme(bareme), schemaVersion: VERSION_SCHEMA_BAREME, creePar: acteur.identifiant },
-    });
-    await journaliser(
-      {
-        acteur: { id: acteur.id, identifiant: acteur.identifiant },
-        action: "PARAMETRE_MODIFIE",
-        objetType: "bareme_document",
-        objetId: ligne.id,
-        apres: { versionId, statut: "BROUILLON", empreinte: ligne.empreinte, origine: "COPIE_DU_PUBLIE", copieDe: { versionId: versionSourceId, empreinte: publie.empreinte }, ...resume(bareme) },
-        adresseIp,
-      },
-      tx,
-    );
+    await copierEnBrouillon(tx, acteur, versionId, { versionId: versionSourceId, empreinte: publie.empreinte, bareme }, adresseIp);
     return { versionId, codeProduit: source.produit.code };
   });
+}
+
+/**
+ * « Ajouter une version » sur un produit AU BARÈME (D66), dans la transaction de `creerVersion` (mode déjà contrôlé, saisie déjà validée) :
+ *  - le produit n'a encore aucun barème publié : la version naît « en préparation », sans barème (la Technique le crée, l'importe, le publie) ;
+ *  - sinon : elle reprend le barème publié le plus récent (copie, même empreinte), rejoue ses essais avec les paramètres de la saisie, et SE PUBLIE
+ *    aussitôt si tout est vert (motif obligatoire), « dès la publication » ou à la date future saisie. Un essai rouge, un doublon de date ou un
+ *    motif manquant annulent tout : aucune version n'est créée.
+ */
+export async function creerVersionAuBaremeDansTransaction(tx: Prisma.TransactionClient, acteur: UtilisateurCourant, codeProduit: string, saisie: VersionSaisie, motifPublication: string, adresseIp: string | null): Promise<{ versionId: number; publiee: boolean }> {
+  const date = dateEffetDemandee(saisie.dateEffet);
+  const produit = await tx.produit.findUniqueOrThrow({ where: { code: codeProduit }, select: { id: true } });
+  const source = await baremePublieLePlusRecent(tx, produit.id);
+  const motif = source ? motifValide(motifPublication) : "";
+  if (estEffetALaPublication(date) && (await tx.produitVersion.findUnique({ where: { produitId_dateEffet: { produitId: produit.id, dateEffet: versDate(date) } }, select: { id: true } }))) {
+    throw new ErreurMetier("Une version « dès la publication » est déjà en préparation pour ce produit : ouvrez-la sur la fiche du produit, ou publiez-la d'abord.");
+  }
+
+  const versionId = await creerVersionDansTransaction(tx, acteur, codeProduit, { ...saisie, dateEffet: date, modeTarification: "BAREME" }, adresseIp);
+  if (!source) return { versionId, publiee: false };
+
+  await copierEnBrouillon(tx, acteur, versionId, { versionId: source.ligne.versionId, empreinte: source.ligne.empreinte, bareme: source.bareme }, adresseIp);
+  const issue = await publierDansTransaction(tx, acteur, versionId, motif, adresseIp, { journaliserLesRefus: false });
+  if ("erreur" in issue) throw issue.erreur;
+  return { versionId, publiee: true };
 }

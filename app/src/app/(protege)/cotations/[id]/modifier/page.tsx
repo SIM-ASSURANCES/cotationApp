@@ -28,7 +28,7 @@ export default async function PageModifierCotation(props: PageProps<"/cotations/
     redirect(`/cotations/${cotation.id}`);
   }
   const donnees = await listerVersions(utilisateur, cotation.produit.code);
-  const dateVersion = donnees ? dateDeVersionAnticipee(donnees.versions.map((v) => v.dateEffet), aujourdhui()) : aujourdhui();
+  const dateVersion = donnees ? dateDeVersionAnticipee(donnees.versions.filter((v) => !v.enPreparation).map((v) => v.dateEffet), aujourdhui()) : aujourdhui();
   const version = donnees ? enVigueur(donnees.versions, dateVersion) : null;
   if (!donnees || !version) {
     redirect(`/cotations/${cotation.id}`);

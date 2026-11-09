@@ -81,3 +81,39 @@ describe("saisie des montants : analyseur unique, du formulaire à la base", () 
     expect((await versions()).length).toBe(avant);
   });
 });
+
+describe("D66 : mode figé par produit, du formulaire à la base", () => {
+  it("un mode différent de celui du produit, envoyé à la main dans la requête, est refusé sans rien créer ; sans champ ou avec le même mode, la version est créée", async () => {
+    const code = `${CODE}_FIGE`;
+    await creerProduit(acteurConnecte, { code, libelle: "Mode figé (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: "SANTE" }, null);
+    const envoi = (date: string, mode?: string) => {
+      const d = formulaire(date, "1 000");
+      d.set("codeProduit", code);
+      if (mode !== undefined) d.set("modeTarification", mode);
+      return d;
+    };
+    const lignes = () => obtenirPrisma().produitVersion.findMany({ where: { produit: { code } } });
+
+    expect((await ajouterUneVersion({}, envoi("2020-01-01", "FORMULE"))).erreur).toBeUndefined(); // première version : le mode se choisit
+    for (const mode of ["GARANTIES", "BAREME"]) {
+      const etat = await ajouterUneVersion({}, envoi("2026-09-01", mode));
+      expect(etat.erreur, mode).toMatch(/figé par produit/);
+      expect((await lignes()).length, mode).toBe(1);
+    }
+    expect((await ajouterUneVersion({}, envoi("2026-09-01", "FORMULE"))).erreur).toBeUndefined();
+    expect((await ajouterUneVersion({}, envoi("2026-10-01"))).erreur).toBeUndefined(); // champ absent : le défaut du formulaire est FORMULE, le mode du produit
+    expect((await lignes()).map((v) => v.modeTarification)).toEqual(["FORMULE", "FORMULE", "FORMULE"]);
+  });
+
+  it("« dès la publication » envoyé pour un produit par formules est refusé : il n'existe que pour le barème", async () => {
+    const code = `${CODE}_FIGE`;
+    const d = formulaire("2026-11-01", "1 000");
+    d.set("codeProduit", code);
+    d.set("modeTarification", "FORMULE");
+    d.set("effet", "PUBLICATION"); // la section « barème » est masquée à l'écran (formulaire de première version) mais son champ part tout de même
+    const avant = (await obtenirPrisma().produitVersion.findMany({ where: { produit: { code } } })).length;
+    const etat = await ajouterUneVersion({}, d);
+    expect(etat.erreur).toBeUndefined(); // ignoré : le mode envoyé n'est pas BAREME, la date saisie s'applique
+    expect((await obtenirPrisma().produitVersion.findMany({ where: { produit: { code } } })).length).toBe(avant + 1);
+  });
+});

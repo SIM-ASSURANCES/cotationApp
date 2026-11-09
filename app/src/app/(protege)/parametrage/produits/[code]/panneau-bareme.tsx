@@ -1,12 +1,15 @@
 import { Champ, ChampDate, FormulaireAction } from "@/composants/FormulaireAction";
-import { Bandeau, Champ as ChampFichier, LienBouton } from "@/composants/ui";
+import { Bandeau, Champ as ChampFichier, LienBouton, ListeDeroulante } from "@/composants/ui";
 import { formaterDate } from "@/domaine/calcul/dates";
+import { estEffetALaPublication } from "@/domaine/calcul/parametrage";
 import { etatDuBareme } from "@/serveur/bareme";
 import { aujourdhui, type VersionProduit } from "@/serveur/parametrage";
 
 import { basculerAuBareme, creerUnBaremeVide, creerUneVersionDepuisLeBareme, importerLeBareme, publierLeBareme, rejouerLesEssais } from "./actions";
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
+/** « du 15/11/2026 » ou « dès la publication » (date provisoire d'une version au barème en préparation, D66). */
+const quand = (date: string) => (estEffetALaPublication(date) ? "« dès la publication » (en préparation)" : `du ${formaterDate(date)}`);
 
 /** Une version peut recevoir un barème tant qu'elle n'est pas en vigueur dans un autre mode, ou si elle est déjà au barème. */
 export const versionAvecBareme = (v: Pick<VersionProduit, "dateEffet" | "modeTarification">) => v.modeTarification === "BAREME" || v.dateEffet > aujourdhui();
@@ -28,7 +31,7 @@ export async function PanneauBareme({ codeProduit, version, autreVersionAvecBare
   const peutBasculer = etat.publie !== null && version.modeTarification !== "BAREME" && version.dateEffet > aujourdhui();
 
   return (
-    <section id={`bareme-${version.id}`} className="mt-4 space-y-3 border-t border-border pt-4" aria-label={`Barème de la version du ${formaterDate(version.dateEffet)}`}>
+    <section id={`bareme-${version.id}`} className="mt-4 space-y-3 border-t border-border pt-4" aria-label={`Barème de la version ${quand(version.dateEffet)}`}>
       <h4 className="text-base font-bold text-foreground">Barème de cette version</h4>
       <p className="text-sm text-muted-foreground">
         {etat.publie
@@ -40,6 +43,12 @@ export async function PanneauBareme({ codeProduit, version, autreVersionAvecBare
       {!etat.publie && version.modeTarification !== "BAREME" ? (
         <p className="text-sm text-muted-foreground">
           Parcours : créer la version à une date future, importer un classeur ou saisir le barème à l&apos;écran, publier le barème, puis basculer la version au barème.
+        </p>
+      ) : null}
+      {!etat.publie && version.enPreparation ? (
+        <p className="text-sm text-muted-foreground">
+          Version au barème en préparation : importez un classeur ou saisissez le barème à l&apos;écran, puis publiez-le. La publication fait entrer la version en vigueur
+          ({estEffetALaPublication(version.dateEffet) ? "le jour même" : `le ${formaterDate(version.dateEffet)}`}) ; d&apos;ici là, la version précédente continue de servir.
         </p>
       ) : null}
 
@@ -69,7 +78,7 @@ export async function PanneauBareme({ codeProduit, version, autreVersionAvecBare
       {etat.publie ? (
         autreVersionAvecBareme ? (
           <Bandeau ton="avertissement" titre="Une version à venir a déjà un barème">
-            La version du {formaterDate(autreVersionAvecBareme.dateEffet)} a déjà {autreVersionAvecBareme.publie ? "un barème publié" : "un brouillon de barème"} : ouvrez-la plutôt que d&apos;en créer une autre.{" "}
+            La version {quand(autreVersionAvecBareme.dateEffet)} a déjà {autreVersionAvecBareme.publie ? "un barème publié" : "un brouillon de barème"} : ouvrez-la plutôt que d&apos;en créer une autre.{" "}
             <a className="font-medium underline" href={`#bareme-${autreVersionAvecBareme.id}`}>
               Aller à cette version
             </a>
@@ -78,10 +87,22 @@ export async function PanneauBareme({ codeProduit, version, autreVersionAvecBare
           <FormulaireAction action={creerUneVersionDepuisLeBareme} libelleBouton="Créer une nouvelle version à partir de ce barème">
             {caches}
             <p className="mb-3 text-sm text-muted-foreground">
-              Un barème publié ne se modifie jamais. Pour le corriger, une nouvelle version du produit est créée à la date d&apos;effet que vous saisissez (postérieure à aujourd&apos;hui, avec les paramètres de la dernière version) ; elle reçoit une copie de ce barème en brouillon, que vous modifiez à l&apos;écran. Le barème publié et les cotations qui le citent ne changent pas.
+              Un barème publié ne se modifie jamais. Pour le corriger, une nouvelle version du produit est créée au barème, « en préparation » (avec les paramètres de la dernière version) ; elle reçoit une copie de ce barème en brouillon, que vous modifiez à l&apos;écran puis publiez. Tant qu&apos;elle n&apos;est pas publiée, la version actuelle continue de servir. Le barème publié et les cotations qui le citent ne changent pas.
             </p>
-            <div className="max-w-xs">
-              <ChampDate nom="dateEffet" libelle="Date d'effet de la nouvelle version (JJ/MM/AAAA)" />
+            <div className="grid max-w-3xl gap-x-6 sm:grid-cols-2">
+              <div className="mb-4">
+                <ListeDeroulante
+                  label="Entrée en vigueur de la nouvelle version"
+                  name="effet"
+                  defaultValue="PUBLICATION"
+                  aide="« Dès la publication » : la version entre en vigueur le jour où vous publiez son barème. Sinon, saisissez une date future."
+                  options={[
+                    { valeur: "PUBLICATION", libelle: "Dès la publication du barème" },
+                    { valeur: "DATE", libelle: "À la date future saisie" },
+                  ]}
+                />
+              </div>
+              <ChampDate nom="dateEffet" libelle="Date d'effet future (JJ/MM/AAAA)" requis={false} aide="À remplir seulement pour une entrée en vigueur à une date future." />
             </div>
           </FormulaireAction>
         )

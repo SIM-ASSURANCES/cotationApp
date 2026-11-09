@@ -30,7 +30,7 @@ export default async function PageNouvelleCotation(props: PageProps<"/cotations/
   }
 
   const donnees = await listerVersions(utilisateur, code);
-  const dateVersion = donnees ? dateDeVersionAnticipee(donnees.versions.map((v) => v.dateEffet), aujourdhui()) : aujourdhui();
+  const dateVersion = donnees ? dateDeVersionAnticipee(donnees.versions.filter((v) => !v.enPreparation).map((v) => v.dateEffet), aujourdhui()) : aujourdhui();
   const version = donnees ? enVigueur(donnees.versions, dateVersion) : null;
   if (!donnees || !version) {
     return (

@@ -16,11 +16,13 @@ import {
   dateDeVersionAnticipee,
   enVigueur,
   estBranchePrincipaleValide,
+  estEnPreparation,
   libelleBranchePrincipale,
   MESSAGE_COMPOSITION_IMPOSSIBLE,
   MESSAGE_BAREME_INCOHERENT,
   MESSAGE_TARIFICATION_AU_BAREME,
   MESSAGE_TARIFICATION_PAR_GARANTIES,
+  problemeChangementDeMode,
   problemesTaxe,
   problemesVersion,
   type CodeBranchePrincipale,
@@ -246,9 +248,14 @@ export type ClientLecture = Pick<Prisma.TransactionClient, "taxe" | "produit">;
  * brouillon de renouvellement). Pour ce qui est déjà émis ou figé sur la police (T10), cette fonction n'est jamais appelée.
  */
 export async function exigerCalculAutomatiqueEnVigueur(client: Pick<Prisma.TransactionClient, "produitVersion">, produitId: number, date: DateIso): Promise<void> {
-  const versions = await client.produitVersion.findMany({ where: { produitId }, select: { dateEffet: true, modeTarification: true } });
-  const enCours = enVigueur(versions.map((v) => ({ dateEffet: depuisDate(v.dateEffet), modeTarification: v.modeTarification })), date);
+  const enCours = enVigueur(await versionsLegeres(client, produitId), date);
   if (enCours) exigerCalculAutomatique(enCours.modeTarification);
+}
+
+/** Date, mode et état « en préparation » (D66) des versions d'un produit : de quoi retenir la version en vigueur sans charger les formules. */
+async function versionsLegeres(client: Pick<Prisma.TransactionClient, "produitVersion">, produitId: number) {
+  const versions = await client.produitVersion.findMany({ where: { produitId }, select: { dateEffet: true, modeTarification: true, baremes: { where: { statut: "PUBLIE" }, select: { id: true } } } });
+  return versions.map((v) => ({ dateEffet: depuisDate(v.dateEffet), modeTarification: v.modeTarification, enPreparation: estEnPreparation(v, v.baremes.length > 0) }));
 }
 
 /** Taux le plus précis pour la branche et le régime de taxe, en vigueur à la date d'effet (D18 ; H29 fermée, session 6.0). */
@@ -345,7 +352,7 @@ export async function listerProduits(acteur: UtilisateurCourant, filtre?: { bran
     where: branchePrincipale ? { branchePrincipale } : undefined,
     include: {
       branchePrincipaleRef: true,
-      versions: { select: { dateEffet: true }, orderBy: { dateEffet: "desc" } },
+      versions: { select: { dateEffet: true, modeTarification: true, baremes: { where: { statut: "PUBLIE" }, select: { id: true } } }, orderBy: { dateEffet: "desc" } },
     },
     orderBy: { code: "asc" },
   });
@@ -357,7 +364,8 @@ export async function listerProduits(acteur: UtilisateurCourant, filtre?: { bran
     branchePrincipaleLibelle: p.branchePrincipaleRef?.libelle ?? libelleBranchePrincipale(p.branchePrincipale),
     branche: p.branche,
     actif: p.actif,
-    versions: p.versions.map((v) => depuisDate(v.dateEffet)),
+    // Les versions en préparation (D66) ne comptent pas : un produit n'est cotable qu'avec une version qui peut servir.
+    versions: p.versions.filter((v) => !estEnPreparation(v, v.baremes.length > 0)).map((v) => depuisDate(v.dateEffet)),
   }));
 }
 
@@ -437,7 +445,12 @@ export async function modifierBranchePrincipaleProduit(
 }
 
 /** Une version lue en base porte toujours son mode de tarification (la colonne est obligatoire). */
-export type VersionProduit = VersionSaisie & { id: number; modeTarification: ModeTarification };
+export type VersionProduit = VersionSaisie & {
+  id: number;
+  modeTarification: ModeTarification;
+  /** D66 : version au barème dont le barème n'est pas publié. Aucun site ne la retient (voir `enVigueur`). */
+  enPreparation: boolean;
+};
 
 /** Refus de la composition manuelle pour une version qui n'est pas en mode GARANTIES (session 6.2b). */
 export function exigerComposition(mode: string): void {
@@ -458,9 +471,10 @@ export function exigerCalculAutomatique(mode: string): void {
   }
 }
 
-export function versVersion(v: Prisma.ProduitVersionGetPayload<{ include: { formules: true } }>): VersionProduit {
+export function versVersion(v: Prisma.ProduitVersionGetPayload<{ include: { formules: true; baremes: { select: { statut: true } } } }>): VersionProduit {
   return {
     id: v.id,
+    enPreparation: estEnPreparation(v, v.baremes.some((b) => b.statut === "PUBLIE")),
     dateEffet: depuisDate(v.dateEffet),
     arrondi: {
       precision: v.arrondiPrecision as Precision,
@@ -505,12 +519,13 @@ export async function listerVersions(acteur: UtilisateurCourant, codeProduit: st
     where: { code: codeProduit },
     include: {
       branchePrincipaleRef: true,
-      versions: { include: { formules: true }, orderBy: { dateEffet: "desc" } },
+      versions: { include: { formules: true, baremes: { select: { statut: true } } }, orderBy: { dateEffet: "desc" } },
     },
   });
   if (!produit) {
     return null;
   }
+  const lues = produit.versions.map(versVersion);
   return {
     produit: {
       code: produit.code,
@@ -520,21 +535,50 @@ export async function listerVersions(acteur: UtilisateurCourant, codeProduit: st
       branchePrincipaleLibelle: produit.branchePrincipaleRef?.libelle ?? libelleBranchePrincipale(produit.branchePrincipale),
       branche: produit.branche,
       actif: produit.actif,
-      versions: produit.versions.map((v) => depuisDate(v.dateEffet)),
+      versions: lues.filter((v) => !v.enPreparation).map((v) => v.dateEffet),
     },
-    versions: produit.versions.map(versVersion),
+    versions: lues,
   };
 }
 
-/** Ajoute une version (jamais de modification) : c'est ainsi que le paramétrage reste historisé. */
-export async function creerVersion(acteur: UtilisateurCourant, codeProduit: string, saisie: VersionSaisie, adresseIp: string | null): Promise<void> {
-  await exigerEcriture(acteur);
-  refuserSiProblemes(problemesVersion(saisie));
-  if (saisie.modeTarification === "BAREME") {
-    throw new ErreurMetier("Une version ne se crée pas directement au barème : créez-la dans un autre mode à une date d'effet future, importez et publiez son barème, puis basculez-la au barème.");
-  }
+/** Options de `creerVersion` : le motif de publication, exigé quand la version au barème reprend un barème déjà publié et entre en vigueur à l'instant (D66). */
+export type OptionsCreationVersion = { motifPublication?: string };
+/** Version créée : son mode, sa date d'effet définitive (celle du jour pour « dès la publication » publiée), et si son barème est publié. */
+export type VersionCreee = { versionId: number; modeTarification: ModeTarification; dateEffet: DateIso; baremePublie: boolean };
 
-  await obtenirPrisma().$transaction((tx) => creerVersionDansTransaction(tx, acteur, codeProduit, saisie, adresseIp));
+/**
+ * Ajoute une version (jamais de modification) : c'est ainsi que le paramétrage reste historisé.
+ *
+ * D66 : le mode de tarification est FIGÉ PAR PRODUIT. Il se choisit à la première version ; toute version suivante prend celui de la précédente
+ * (la plus récente par date d'effet), et une demande de mode différent est refusée, même envoyée à la main. Un mode absent de la demande
+ * prend celui de la précédente. Une version au barème a son propre chemin (`creerVersionAuBaremeDansTransaction`) : elle naît « en
+ * préparation », ou, quand le produit a déjà un barème publié, reprend ce barème et entre en vigueur par sa publication immédiate.
+ */
+export async function creerVersion(acteur: UtilisateurCourant, codeProduit: string, saisie: VersionSaisie, adresseIp: string | null, options: OptionsCreationVersion = {}): Promise<VersionCreee> {
+  await exigerEcriture(acteur);
+
+  return obtenirPrisma().$transaction(async (tx) => {
+    const produit = await tx.produit.findUnique({ where: { code: codeProduit }, select: { id: true } });
+    if (!produit) throw new ErreurMetier("Produit introuvable.");
+    // Verrou du produit : deux ajouts simultanés s'enchaînent, le second voit le mode et les dates du premier.
+    await tx.$queryRaw`SELECT id FROM produits WHERE id = ${produit.id} FOR NO KEY UPDATE`;
+    const precedente = await tx.produitVersion.findFirst({ where: { produitId: produit.id }, orderBy: { dateEffet: "desc" }, select: { modeTarification: true } });
+    const refus = problemeChangementDeMode(precedente?.modeTarification ?? null, saisie.modeTarification);
+    if (refus) throw new ErreurMetier(refus);
+    const mode = (saisie.modeTarification ?? precedente?.modeTarification ?? "FORMULE") as ModeTarification;
+    const complete: VersionSaisie = { ...saisie, modeTarification: mode };
+    refuserSiProblemes(problemesVersion(complete));
+
+    if (mode === "BAREME") {
+      // Import différé : `bareme-edition` importe ce fichier (pas de cycle au chargement).
+      const { creerVersionAuBaremeDansTransaction } = await import("./bareme-edition");
+      const { versionId, publiee } = await creerVersionAuBaremeDansTransaction(tx, acteur, codeProduit, complete, options.motifPublication ?? "", adresseIp);
+      const creee = await tx.produitVersion.findUniqueOrThrow({ where: { id: versionId }, select: { dateEffet: true } });
+      return { versionId, modeTarification: mode, dateEffet: depuisDate(creee.dateEffet), baremePublie: publiee };
+    }
+    const versionId = await creerVersionDansTransaction(tx, acteur, codeProduit, complete, adresseIp);
+    return { versionId, modeTarification: mode, dateEffet: complete.dateEffet, baremePublie: false };
+  });
 }
 
 /**
@@ -659,9 +703,10 @@ export type ContexteCalcul = {
  * produit est inconnu ou sans version : l'erreur habituelle s'applique alors.
  */
 export async function dateDeVersionPourCotation(client: ClientLecture, codeProduit: string, jour: DateIso = aujourdhui()): Promise<DateIso> {
-  const produit = await client.produit.findUnique({ where: { code: codeProduit }, include: { versions: { select: { dateEffet: true } } } });
+  const produit = await client.produit.findUnique({ where: { code: codeProduit }, include: { versions: { select: { dateEffet: true, modeTarification: true, baremes: { where: { statut: "PUBLIE" }, select: { id: true } } } } } });
   if (!produit) return jour;
-  return dateDeVersionAnticipee(produit.versions.map((v) => depuisDate(v.dateEffet)), jour);
+  // Une version en préparation (D66) ne compte pas : le produit n'a « pas encore commencé » tant qu'aucune version ne peut servir.
+  return dateDeVersionAnticipee(produit.versions.filter((v) => !estEnPreparation(v, v.baremes.length > 0)).map((v) => depuisDate(v.dateEffet)), jour);
 }
 
 /**
@@ -674,7 +719,7 @@ export async function resoudreVersion(client: ClientLecture, codeProduit: string
   }
   const produit = await client.produit.findUnique({
     where: { code: codeProduit },
-    include: { versions: { include: { formules: true } } },
+    include: { versions: { include: { formules: true, baremes: { select: { statut: true } } } } },
   });
   if (!produit) {
     throw new ErreurMetier("Produit introuvable.");
@@ -738,8 +783,7 @@ export function exigerBareme(mode: string): void {
 
 /** Idem pour la version EN VIGUEUR à `date` (un document préparé avant une bascule de mode ne s'émet plus : sessions 6.2a et 6.2b). */
 export async function exigerModeCoherentEnVigueur(client: Pick<Prisma.TransactionClient, "produitVersion">, produitId: number, date: DateIso, donnees: DonneesCalcul): Promise<void> {
-  const versions = await client.produitVersion.findMany({ where: { produitId }, select: { dateEffet: true, modeTarification: true } });
-  const enCours = enVigueur(versions.map((v) => ({ dateEffet: depuisDate(v.dateEffet), modeTarification: v.modeTarification })), date);
+  const enCours = enVigueur(await versionsLegeres(client, produitId), date);
   if (!enCours) return;
   const nature = natureDuCalcul(donnees);
   if (nature === "BAREME") exigerBareme(enCours.modeTarification);

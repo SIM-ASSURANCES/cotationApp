@@ -224,6 +224,7 @@ export function problemesVersion(v: VersionSaisie): string[] {
     }
   }
   if (!dateValide(v.dateEffet)) p.push("La date d'effet est invalide.");
+  if (estEffetALaPublication(v.dateEffet) && v.modeTarification !== "BAREME") p.push("« Dès la publication » n'existe que pour une version au barème : saisissez une date d'effet.");
   if (v.modeTarification !== undefined && !MODES_TARIFICATION.includes(v.modeTarification)) p.push("Le mode de tarification est invalide (par formule, par garanties ou au barème).");
   if (!PRECISIONS.includes(v.arrondi.precision)) p.push("La précision d'arrondi doit être 1, 10, 100 ou 1 000.");
   if (!SENS_ARRONDI.includes(v.arrondi.sens)) p.push("Le sens d'arrondi est invalide.");
@@ -334,9 +335,35 @@ export function problemesTaxe(t: TaxeSaisie): string[] {
   return p;
 }
 
-/** Version en vigueur à une date : la plus récente dont la date d'effet n'est pas postérieure. */
-export function enVigueur<T extends { dateEffet: DateIso }>(versions: T[], date: DateIso): T | null {
-  return versions.filter((v) => v.dateEffet <= date).sort((a, b) => (a.dateEffet < b.dateEffet ? 1 : -1))[0] ?? null;
+/**
+ * Date d'effet PROVISOIRE d'une version au barème « dès la publication » (D66). La colonne `date_effet` est obligatoire et unique par produit : on y
+ * range une date lointaine, qu'aucun document n'atteint, jusqu'à la publication du barème, qui la remplace par la date du jour. Elle ne s'affiche
+ * jamais comme une date : l'écran écrit « dès la publication ». Une seule version par produit peut l'occuper (unicité existante).
+ */
+export const DATE_EFFET_A_LA_PUBLICATION: DateIso = "9999-12-31";
+export const estEffetALaPublication = (dateEffet: DateIso): boolean => dateEffet === DATE_EFFET_A_LA_PUBLICATION;
+
+/**
+ * Une version au barème dont le barème n'est pas publié est « en préparation » (D66) : aucun site de calcul, de cotation, de soumission,
+ * d'émission ni de document ne la retient, la version précédente continue de servir. Les versions d'avant D66 en mode BAREME ont toutes un barème
+ * publié (le déclencheur de la base l'imposait) : elles ne sont jamais en préparation.
+ */
+export const estEnPreparation = (v: { modeTarification: string }, aUnBaremePublie: boolean): boolean => v.modeTarification === "BAREME" && !aUnBaremePublie;
+
+/** Version en vigueur à une date : la plus récente dont la date d'effet n'est pas postérieure. Une version en préparation (D66) n'est jamais retenue. */
+export function enVigueur<T extends { dateEffet: DateIso; enPreparation?: boolean }>(versions: T[], date: DateIso): T | null {
+  return versions.filter((v) => v.dateEffet <= date && v.enPreparation !== true).sort((a, b) => (a.dateEffet < b.dateEffet ? 1 : -1))[0] ?? null;
+}
+
+/**
+ * Le mode de tarification est figé par produit (D66) : il se choisit à la première version, toute version suivante prend celui de la précédente.
+ * `precedent` : mode de la version la plus récente du produit (`null` : première version). `demande` absent : le mode précédent s'applique.
+ * Rend le refus, ou `null`.
+ */
+export function problemeChangementDeMode(precedent: string | null, demande: string | undefined): string | null {
+  if (precedent === null || demande === undefined || demande === precedent) return null;
+  const nom = (m: string) => LIBELLE_MODE_COURT[m as ModeTarification] ?? m;
+  return `Le mode de tarification est figé par produit : ce produit est tarifé « ${nom(precedent)} », une nouvelle version ne peut pas passer « ${nom(demande)} ». Pour tarifer autrement, créez un nouveau produit.`;
 }
 
 /**

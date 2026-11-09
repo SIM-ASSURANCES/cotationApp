@@ -1,13 +1,9 @@
 import { notFound } from "next/navigation";
 
-import { Champ, ChampDate, ChampMontant, FormulaireAction } from "@/composants/FormulaireAction";
-import { SectionSelonMode } from "@/composants/SectionSelonMode";
-import { LignesFormules } from "@/composants/LignesFormules";
-import { Bandeau, Carte, EnTetePage, EtatVide, LienBouton, ListeDeroulante, Tableau, ZoneTexte, type ColonneTableau } from "@/composants/ui";
-import { NIVEAUX_ARRONDI } from "@/domaine/calcul/calcul";
+import { FormulaireAction } from "@/composants/FormulaireAction";
+import { Bandeau, Carte, EnTetePage, EtatVide, LienBouton, ListeDeroulante, Tableau, type ColonneTableau } from "@/composants/ui";
 import { formaterDate } from "@/domaine/calcul/dates";
-import { PRECISIONS, SENS_ARRONDI, montant } from "@/domaine/calcul/montant";
-import { MODES_TARIFICATION, afficheTableauFormules, versionsProvisoiresSansBareme } from "@/domaine/calcul/parametrage";
+import { afficheTableauFormules, estEffetALaPublication, versionsProvisoiresSansBareme } from "@/domaine/calcul/parametrage";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
 import { etatDuBareme } from "@/serveur/bareme";
@@ -15,17 +11,9 @@ import { aujourdhui, listerBranchesPrincipales, listerVersions, type VersionProd
 import { exigerDroit } from "@/serveur/session";
 
 import { ajouterUneVersion, renseignerBranchePrincipale } from "./actions";
+import { FormulaireNouvelleVersion } from "./formulaire-version";
+import { LIBELLE_MODE, LIBELLE_NIVEAU, LIBELLE_SENS, net } from "./libelles-produit";
 import { PanneauBareme, versionAvecBareme } from "./panneau-bareme";
-
-const LIBELLE_SENS = { PROCHE: "Au plus proche", SUPERIEUR: "Au supérieur", INFERIEUR: "À l'inférieur" } as const;
-const LIBELLE_NIVEAU = { LIGNE: "Chaque ligne", TOTAL: "Total seulement" } as const;
-const LIBELLE_MODE = { FORMULE: "Par formule (calcul automatique)", GARANTIES: "Par garanties (prime composée par la Technique, calcul automatique refusé)", BAREME: "Au barème (prime tirée du barème publié de la version)" } as const;
-/** Intertitre d'un bloc à l'intérieur d'une carte de formulaire. */
-const SOUS_TITRE = "mb-1 text-base font-bold text-foreground";
-const CASE = "size-4 accent-primary";
-
-/** Décimal en texte sans zéros inutiles (« 3000.000000 » devient « 3000 »). */
-const net = (texte: string) => montant(texte).toString();
 
 type Formule = VersionProduit["formules"][number];
 
@@ -46,16 +34,16 @@ function formaterGarantieResume(g: NonNullable<VersionProduit["garanties"]>[numb
   return details.length > 0 ? `${g.libelle} (${details.join(", ")})` : g.libelle;
 }
 
-function formaterGarantieSaisie(g: NonNullable<VersionProduit["garanties"]>[number]): string {
-  if (g.accessoires != null) return `${g.libelle} ; ${g.branche ?? ""} ; ${g.montantGaranti != null ? net(g.montantGaranti) : ""} ; ${net(g.accessoires)}`;
-  if (g.montantGaranti != null) return `${g.libelle} ; ${g.branche ?? ""} ; ${net(g.montantGaranti)}`;
-  return g.branche ? `${g.libelle} ; ${g.branche}` : g.libelle;
-}
-
 function Resume({ v, codeProduit, peutEcrire, autreVersionAvecBareme }: { v: VersionProduit; codeProduit: string; peutEcrire: boolean; autreVersionAvecBareme?: { id: number; dateEffet: string; publie: boolean } }) {
   return (
     <Carte>
-      <h3 className="mb-2 text-base font-bold text-foreground">Version en vigueur depuis le {formaterDate(v.dateEffet)}</h3>
+      <h3 className="mb-2 text-base font-bold text-foreground">
+        {v.enPreparation
+          ? estEffetALaPublication(v.dateEffet)
+            ? "Version au barème en préparation : en vigueur dès la publication de son barème"
+            : `Version au barème en préparation : prévue le ${formaterDate(v.dateEffet)}, en vigueur à la publication de son barème`
+          : `Version en vigueur depuis le ${formaterDate(v.dateEffet)}`}
+      </h3>
       <p className="mb-3 text-sm text-muted-foreground">
         Tarification : {LIBELLE_MODE[v.modeTarification] ?? v.modeTarification}
         {v.garanties && v.garanties.length > 0 ? ` — garanties : ${v.garanties.map(formaterGarantieResume).join(", ")}${v.garantiesSaisieLibre === false ? " ; saisie libre interdite" : ""}` : ""} ·{" "}
@@ -86,8 +74,6 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
   }
   const { produit, versions } = donnees;
   const base = versions[0]; // la plus récente : point de départ de la nouvelle version
-  // Mode proposé à la nouvelle version : celui de la dernière (le mode « Au barème » ne se choisit pas ici), « Par garanties » après un barème.
-  const modeInitial = base && base.modeTarification !== "BAREME" ? base.modeTarification : base ? "GARANTIES" : "FORMULE";
   // H140 : version future créée pour recevoir un barème, sans barème publié.
   const futures = versions.filter((v) => v.modeTarification === "GARANTIES" && v.dateEffet > aujourdhui());
   const publiees = new Set((await Promise.all(futures.map(async (v) => ((await etatDuBareme(v.id)).publie ? v.id : null)))).filter((id): id is number => id !== null));
@@ -97,6 +83,8 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
   const avenirAvecBareme = versions
     .filter((v) => v.dateEffet > aujourdhui() && (etats.get(v.id)?.brouillon || etats.get(v.id)?.publie))
     .map((v) => ({ id: v.id, dateEffet: v.dateEffet, publie: Boolean(etats.get(v.id)?.publie) }));
+  // Le produit a un barème publié : « Ajouter une version » au barème le reprend et se publie aussitôt (motif demandé).
+  const baremePublie = [...etats.values()].some((e) => e.publie);
 
   return (
     <main className="space-y-6">
@@ -147,124 +135,7 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
       ) : null}
 
       {peutAgir(niveau) ? (
-        <Carte
-          titre="Ajouter une version"
-          description={
-            <>
-              Une version en vigueur ne se modifie jamais : on en ajoute une avec sa date d'effet
-              {base ? ", pré-remplie avec la dernière version" : ""}. Les primes unitaires se saisissent avec leurs décimales.
-            </>
-          }
-        >
-          <p className="mb-4 text-sm text-muted-foreground">
-            Un produit tarifé par garanties (SECURPRO, SECURHOME, SECURHOME +, RELAXACCIDENTS) a son mode « Par garanties » dès sa première version : une
-            version « Par formule » plus ancienne resterait en vigueur, et calculée, pour tout document daté avant la date d&apos;effet de la suivante.
-            Une version « Par garanties » ne calcule rien : la prime est composée par la Technique, garantie par garantie, sur chaque cotation. Elle n&apos;a besoin d&apos;aucune
-            formule (la liste des garanties ci-dessous est facultative) ; un assuré n&apos;y a pas de formule.
-          </p>
-          <p className="mb-4 text-sm text-muted-foreground">
-            Le mode « Au barème » n&apos;est pas proposé ici : il n&apos;existe qu&apos;une fois un barème publié. Créez la version à une date future, puis, sur sa
-            fiche (historique ci-dessous), importez le classeur du barème, publiez-le et basculez la version au barème.
-          </p>
-          <FormulaireAction action={ajouterUneVersion} libelleBouton="Enregistrer la version">
-            <input type="hidden" name="codeProduit" value={produit.code} />
-            <div className="mb-4 grid max-w-4xl gap-x-6 sm:grid-cols-2">
-              <ChampDate nom="dateEffet" libelle="Date d'effet (JJ/MM/AAAA)" />
-              <div className="mb-4">
-                <ListeDeroulante
-                  label="Mode de tarification"
-                  name="modeTarification"
-                  defaultValue={modeInitial}
-                  options={MODES_TARIFICATION.filter((m) => m !== "BAREME").map((m) => ({ valeur: m, libelle: LIBELLE_MODE[m] }))}
-                />
-              </div>
-              <ChampMontant nom="primeMinimale" libelle="Prime minimale (facultative)" requis={false} valeur={base?.prorata.primeMinimale ? net(base.prorata.primeMinimale) : ""} />
-              <div className="mb-4">
-                <ListeDeroulante
-                  label="Précision d'arrondi (F)"
-                  aide="Les montants sont arrondis à ce multiple de francs : 1 = au franc, 10 = à la dizaine, 100 = à la centaine, 1 000 = au millier."
-                  name="precision"
-                  defaultValue={String(base?.arrondi.precision ?? 1)}
-                  options={PRECISIONS.map((p) => ({ valeur: String(p), libelle: String(p) }))}
-                />
-              </div>
-              <div className="mb-4">
-                <ListeDeroulante
-                  label="Sens d'arrondi"
-                  name="sens"
-                  defaultValue={base?.arrondi.sens ?? "PROCHE"}
-                  options={SENS_ARRONDI.map((s) => ({ valeur: s, libelle: LIBELLE_SENS[s] }))}
-                />
-              </div>
-              <div className="mb-4">
-                <ListeDeroulante
-                  label="Niveau d'arrondi"
-                  name="niveau"
-                  defaultValue={base?.arrondi.niveau ?? "LIGNE"}
-                  options={NIVEAUX_ARRONDI.map((n) => ({ valeur: n, libelle: LIBELLE_NIVEAU[n] }))}
-                />
-              </div>
-              <label className="mb-4 flex min-h-10 items-center gap-2 text-sm font-medium lg:min-h-0">
-                <input type="checkbox" name="prorataActif" defaultChecked={base?.prorata.actif ?? true} className={CASE} /> Prorata temporis actif (jours inclus / 365)
-              </label>
-              <label className="mb-4 flex min-h-10 items-center gap-2 text-sm font-medium lg:min-h-0">
-                <input type="checkbox" name="dureeImposeeUnAn" defaultChecked={base?.dureeImposeeUnAn ?? false} className={CASE} /> Durée du contrat imposée : 1 an, sans prorata (échéance = effet + 1 an − 1 jour)
-              </label>
-              <Champ nom="tranchesMax" libelle="Nombre maximal de tranches (1 à 12)" valeur={String(base?.fractionnement.tranchesMax ?? 1)} autoComplete="off" />
-              <Champ nom="repartition" libelle="Répartition en % (ex. 40 ; 30 ; 30), vide = tranches égales" requis={false} valeur={base?.fractionnement.repartitionPourcent?.join(" ; ") ?? ""} autoComplete="off" />
-              <Champ nom="decalages" libelle="Décalages en mois (ex. 0 ; 3 ; 6), vide = réguliers" requis={false} valeur={base?.fractionnement.decalagesMois?.join(" ; ") ?? ""} autoComplete="off" />
-              <ChampMontant nom="frais" libelle="Frais de fractionnement (ajoutés aux accessoires)" valeur={base ? net(base.fractionnement.frais) : "0"} />
-              <Champ nom="validiteMois" libelle="Validité d'une cotation (mois, à partir de la date d'établissement)" valeur={String(base?.cotation.validiteMois ?? 3)} autoComplete="off" />
-              <Champ nom="formulesMax" libelle="Formules comparées au plus" valeur={String(base?.cotation.formulesMax ?? 3)} autoComplete="off" aide="Nombre maximal de formules que l'on peut comparer dans une même cotation." />
-            </div>
-            {/* D63 : la section ne s'affiche que pour une version « Par garanties ». */}
-            <SectionSelonMode mode="GARANTIES" modeInitial={modeInitial}>
-            <h3 className={SOUS_TITRE}>Garanties du produit</h3>
-            <p className="mb-2 text-sm text-muted-foreground">
-              Une garantie par ligne : « Libellé ; CATÉGORIE_TAXE ; MONTANT_GARANTI ; ACCESSOIRES » (catégorie de taxe proposée, montant garanti par défaut en FCFA ≥ 0 facultatif,
-              accessoires par défaut en FCFA ≥ 0 facultatifs). Elles pré-remplissent la composition de la prime. Aucune formule n&apos;est nécessaire dans ce mode.
-            </p>
-            <div className="mb-4 max-w-4xl">
-              <input type="hidden" name="garantiesPresentes" value="1" />
-              <div className="mb-2">
-                <ZoneTexte
-                  label="Garanties"
-                  name="garanties"
-                  rows={6}
-                  defaultValue={(base?.garanties ?? []).map(formaterGarantieSaisie).join("\n")}
-                  placeholder={"Incendie ; INCENDIE ; 50000000 ; 5000\nVol ; IARD ; 10000000 ; 2500"}
-                />
-              </div>
-              <label className="flex min-h-10 items-center gap-2 text-sm font-medium lg:min-h-0">
-                <input type="checkbox" name="garantiesSaisieLibre" defaultChecked={base?.garantiesSaisieLibre ?? true} className={CASE} /> Saisie libre autorisée (décochée : seuls les libellés de la liste sont acceptés)
-              </label>
-            </div>
-            </SectionSelonMode>
-            <h3 className={SOUS_TITRE}>Références contractuelles (CDC §7)</h3>
-            <p className="mb-2 text-sm text-muted-foreground">
-              Les conditions générales ne se saisissent plus ici : le produit reçoit celles de sa branche principale, avec le visa de leur
-              version publiée (écran « Conditions générales »). Seules les conventions spéciales (codes de la bibliothèque « Modèles Word »)
-              restent propres au produit ; à l'émission, le visa cité doit être celui des CS jointes, sinon l'émission est refusée.
-            </p>
-            <div className="mb-4 grid max-w-4xl gap-x-6 sm:grid-cols-2">
-              <Champ nom="csModeleCode" libelle="Code du modèle de CS (facultatif)" requis={false} valeur={base?.references?.csModeleCode ?? ""} autoComplete="off" />
-              <Champ nom="csVisa" libelle="Visa des CS" requis={false} valeur={base?.references?.csVisa ?? ""} autoComplete="off" />
-            </div>
-            <h3 className="mb-2 text-base font-bold text-foreground">Formules</h3>
-            <LignesFormules
-              initiales={(base?.formules ?? []).map((f) => ({
-                code: f.code,
-                libelle: f.libelle,
-                tauxCouverture: f.tauxCouverture ? net(f.tauxCouverture) : "",
-                primeUnitaire: net(f.primeUnitaire),
-                accessoireMode: f.accessoireMode,
-                accessoireValeur: net(f.accessoireValeur),
-                ageMin: f.ageMin == null ? "" : String(f.ageMin),
-                ageMax: f.ageMax == null ? "" : String(f.ageMax),
-              }))}
-            />
-          </FormulaireAction>
-        </Carte>
+        <FormulaireNouvelleVersion codeProduit={produit.code} base={base ?? null} action={ajouterUneVersion} baremePublie={baremePublie} />
       ) : (
         <Bandeau ton="neutre">Consultation seule.</Bandeau>
       )}

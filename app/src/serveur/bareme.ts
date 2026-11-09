@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 
 import type { Prisma } from "@/generated/prisma/client";
 
-import { aujourdhui, ajouterJours, type DateIso } from "@/domaine/calcul/dates";
+import { aujourdhui, ajouterJours, formaterDate, type DateIso } from "@/domaine/calcul/dates";
+import { estEffetALaPublication } from "@/domaine/calcul/parametrage";
 import { estCompositionBareme } from "@/domaine/calcul/composition";
 import { versionEnVigueur, type StatutVersion, type VersionCycle } from "@/domaine/documents/modeles";
 import type { RegimeTaxe } from "@/domaine/calcul/taxes";
@@ -99,7 +100,7 @@ export function validerDocumentBareme(document: unknown, options: { publication?
 export async function verrouillerVersion(tx: Client, versionId: number) {
   // Verrou de ligne sur la version : deux enregistrements ou deux publications simultanés d'une même version s'enchaînent.
   await tx.$queryRaw`SELECT id FROM produit_versions WHERE id = ${versionId} FOR NO KEY UPDATE`;
-  const v = await tx.produitVersion.findUnique({ where: { id: versionId }, include: { formules: true } });
+  const v = await tx.produitVersion.findUnique({ where: { id: versionId }, include: { formules: true, baremes: { select: { statut: true } } } });
   if (!v) throw new ErreurMetier("Version de produit introuvable.");
   return v;
 }
@@ -107,6 +108,13 @@ export async function verrouillerVersion(tx: Client, versionId: number) {
 type VersionChargee = Awaited<ReturnType<typeof verrouillerVersion>>;
 
 export const depuisDate = (d: Date): DateIso => d.toISOString().slice(0, 10);
+const versDate = (iso: DateIso) => new Date(`${iso}T00:00:00.000Z`);
+
+/** Date à laquelle la version prendrait effet si elle l'était maintenant : « dès la publication » (date provisoire, D66) vaut aujourd'hui. */
+export const effetPrevu = (v: { dateEffet: Date }): DateIso => {
+  const d = depuisDate(v.dateEffet);
+  return estEffetALaPublication(d) ? aujourdhui() : d;
+};
 
 /**
  * Un barème se prépare avant la mise en vigueur de sa version (créée dans un autre mode, à une date future), puis la version
@@ -125,7 +133,7 @@ export function exigerPreparable(v: VersionChargee): void {
  */
 async function parametresDEssai(tx: Client, version: VersionChargee, bareme: Bareme): Promise<ParametresBareme> {
   const lue = versVersion(version);
-  const dateEffet: DateIso = lue.dateEffet > aujourdhui() ? lue.dateEffet : aujourdhui();
+  const dateEffet: DateIso = effetPrevu(version) > aujourdhui() ? effetPrevu(version) : aujourdhui();
   return parametresDeCalcul(tx, lue, bareme, "INDIVIDUEL", dateEffet, ajouterJours(dateEffet, 364));
 }
 
@@ -285,7 +293,7 @@ export async function controlerAvantPublication(acteur: UtilisateurCourant, vers
     const ligne = await tx.baremeDocument.findFirst({ where: { versionId, statut: "BROUILLON" } });
     if (!ligne) throw new ErreurMetier("Cette version n'a pas de brouillon de barème à contrôler : enregistrez d'abord le barème.");
     const bareme = validerDocumentBareme(ligne.contenu, { publication: true });
-    const balises = await balisesDesModelesSansCle(tx, version.produitId, depuisDate(version.dateEffet), bareme);
+    const balises = await balisesDesModelesSansCle(tx, version.produitId, effetPrevu(version), bareme);
     return { nombreEssais: bareme.jeuxEssai.length, ecarts: rejouerJeuxEssai(bareme, await parametresDEssai(tx, version, bareme)), balises };
   });
 }
@@ -294,24 +302,54 @@ export async function controlerAvantPublication(acteur: UtilisateurCourant, vers
  * Publie le brouillon de la version, dans une transaction : revalidation (au moins un jeu d'essai), jeux d'essai tous verts (sinon
  * `ErreurPublicationBareme` avec les écarts), motif obligatoire, empreinte recalculée, publieur et avant/après journalisés.
  * Le verrou de ligne sur la version fait attendre une seconde publication simultanée, qui ne trouve plus de brouillon.
+ *
+ * D66 : si la version est au barème et « en préparation », la publication la fait ENTRER EN VIGUEUR, dans la même transaction que le reste :
+ * « dès la publication » (date provisoire) prend la date du jour ; une date future reste la sienne. Une seule version par jour : si une autre
+ * version du produit existe déjà à la date du jour, la publication est refusée et rien n'est écrit.
  */
 export async function publierBareme(acteur: UtilisateurCourant, versionId: number, motif: string, adresseIp: string | null): Promise<{ id: number; empreinte: string }> {
+  const { id, empreinte } = await publierBaremeDetaille(acteur, versionId, motif, adresseIp);
+  return { id, empreinte };
+}
+
+/** `publierBareme` avec le détail de ce que la publication a fait : mode de la version et date à laquelle elle est entrée en vigueur (D66). */
+export async function publierBaremeDetaille(acteur: UtilisateurCourant, versionId: number, motif: string, adresseIp: string | null): Promise<PublicationFaite> {
   await exigerEcriture(acteur);
+  const motifPropre = motifValide(motif);
+
+  const issue = await obtenirPrisma().$transaction((tx) => publierDansTransaction(tx, acteur, versionId, motifPropre, adresseIp, { journaliserLesRefus: true }));
+  if ("erreur" in issue) throw issue.erreur;
+  return issue.publie;
+}
+
+/** Motif de publication : obligatoire, 500 caractères au plus. Rend le motif nettoyé. */
+export function motifValide(motif: string): string {
   const motifPropre = motif.trim();
   if (motifPropre.length === 0) throw new ErreurMetier("Le motif de publication est obligatoire.");
   if (motifPropre.length > LONGUEUR_MAX_MOTIF) throw new ErreurMetier(`Le motif de publication est limité à ${LONGUEUR_MAX_MOTIF} caractères.`);
+  return motifPropre;
+}
 
-  const issue = await obtenirPrisma().$transaction(async (tx) => {
-    const version = await verrouillerVersion(tx, versionId);
-    exigerPreparable(version);
-    const brouillon = await tx.baremeDocument.findFirst({ where: { versionId, statut: "BROUILLON" } });
-    if (!brouillon) {
-      const publie = await tx.baremeDocument.findFirst({ where: { versionId, statut: "PUBLIE" }, select: { id: true } });
-      throw new ErreurMetier(publie ? "Le barème de cette version est déjà publié." : "Cette version n'a pas de brouillon de barème à publier.");
-    }
-    const acteurAudit = { id: acteur.id, identifiant: acteur.identifiant };
-    // Un refus de contenu (barème invalide, essai en écart) est journalisé : la transaction est validée avec son journal, l'erreur est levée après.
-    const refuser = async (erreur: ErreurBaremeInvalide | ErreurPublicationBareme | ErreurBalisesAbsentes, raison: string) => {
+export type PublicationFaite = { id: number; empreinte: string; modeTarification: string; dateEffet: DateIso; entreEnVigueurLe: DateIso | null };
+type IssuePublication = { erreur: ErreurBaremeInvalide | ErreurPublicationBareme | ErreurBalisesAbsentes } | { publie: PublicationFaite };
+
+/**
+ * Corps de `publierBareme`, dans la transaction de l'appelant (le droit et le motif sont vérifiés par l'appelant). `journaliserLesRefus` :
+ * un refus de contenu est journalisé (la transaction est validée avec son journal) ; faux quand l'appelant annule tout en cas de refus (« Ajouter
+ * une version » au barème : aucune version ne doit rester).
+ */
+export async function publierDansTransaction(tx: Client, acteur: UtilisateurCourant, versionId: number, motifPropre: string, adresseIp: string | null, options: { journaliserLesRefus: boolean }): Promise<IssuePublication> {
+  const version = await verrouillerVersion(tx, versionId);
+  exigerPreparable(version);
+  const brouillon = await tx.baremeDocument.findFirst({ where: { versionId, statut: "BROUILLON" } });
+  if (!brouillon) {
+    const publie = await tx.baremeDocument.findFirst({ where: { versionId, statut: "PUBLIE" }, select: { id: true } });
+    throw new ErreurMetier(publie ? "Le barème de cette version est déjà publié." : "Cette version n'a pas de brouillon de barème à publier.");
+  }
+  const acteurAudit = { id: acteur.id, identifiant: acteur.identifiant };
+  // Un refus de contenu (barème invalide, essai en écart) est journalisé : la transaction est validée avec son journal, l'erreur est levée après.
+  const refuser = async (erreur: ErreurBaremeInvalide | ErreurPublicationBareme | ErreurBalisesAbsentes, raison: string) => {
+    if (options.journaliserLesRefus) {
       await journaliser(
         {
           acteur: acteurAudit,
@@ -324,42 +362,74 @@ export async function publierBareme(acteur: UtilisateurCourant, versionId: numbe
         },
         tx,
       );
-      return { erreur };
-    };
-    let bareme: Bareme;
-    try {
-      bareme = validerDocumentBareme(brouillon.contenu, { publication: true });
-    } catch (e) {
-      if (!(e instanceof ErreurBaremeInvalide)) throw e;
-      return refuser(e, "BAREME_INVALIDE");
     }
-    const balises = await balisesDesModelesSansCle(tx, version.produitId, depuisDate(version.dateEffet), bareme);
-    if (balises.length > 0) return refuser(new ErreurBalisesAbsentes(balises), "BALISES_ABSENTES");
-    const ecarts = rejouerJeuxEssai(bareme, await parametresDEssai(tx, version, bareme));
-    if (ecarts.length > 0) return refuser(new ErreurPublicationBareme(ecarts), "ESSAIS_EN_ECART");
+    return { erreur };
+  };
+  let bareme: Bareme;
+  try {
+    bareme = validerDocumentBareme(brouillon.contenu, { publication: true });
+  } catch (e) {
+    if (!(e instanceof ErreurBaremeInvalide)) throw e;
+    return refuser(e, "BAREME_INVALIDE");
+  }
+  const balises = await balisesDesModelesSansCle(tx, version.produitId, effetPrevu(version), bareme);
+  if (balises.length > 0) return refuser(new ErreurBalisesAbsentes(balises), "BALISES_ABSENTES");
+  const ecarts = rejouerJeuxEssai(bareme, await parametresDEssai(tx, version, bareme));
+  if (ecarts.length > 0) return refuser(new ErreurPublicationBareme(ecarts), "ESSAIS_EN_ECART");
 
-    const empreinte = empreinteBareme(bareme);
-    const publieLe = new Date();
-    await tx.baremeDocument.update({
-      where: { id: brouillon.id },
-      data: { statut: "PUBLIE", contenu: enJson(bareme), empreinte, schemaVersion: VERSION_SCHEMA_BAREME, publiePar: acteur.identifiant, publieLe, motifPublication: motifPropre, modifieLe: publieLe },
-    });
+  // D66 : date d'effet d'une version au barème « en préparation ». Les essais sont verts : on décide de la date avant d'écrire quoi que ce soit.
+  const dateAvant = depuisDate(version.dateEffet);
+  let entreEnVigueurLe: DateIso | null = null;
+  if (version.modeTarification === "BAREME") {
+    if (estEffetALaPublication(dateAvant)) {
+      entreEnVigueurLe = aujourdhui();
+      // Verrou du produit : deux publications « dès la publication » de deux versions du même produit s'enchaînent, la seconde voit la première.
+      await tx.$queryRaw`SELECT id FROM produits WHERE id = ${version.produitId} FOR NO KEY UPDATE`;
+      const autre = await tx.produitVersion.findFirst({ where: { produitId: version.produitId, dateEffet: versDate(entreEnVigueurLe), id: { not: versionId } }, select: { id: true } });
+      if (autre) {
+        throw new ErreurMetier(`Une seule version par jour : ce produit a déjà une version au ${formaterDate(entreEnVigueurLe)}. Publiez avec effet demain ou plus tard.`);
+      }
+    } else if (dateAvant <= aujourdhui()) {
+      throw new ErreurMetier(
+        `La date d'effet prévue de cette version (${formaterDate(dateAvant)}) est passée : une version ne prend jamais effet rétroactivement. Créez une nouvelle version, « dès la publication » ou à une date future, à partir d'un barème publié.`,
+      );
+    }
+  }
+
+  const empreinte = empreinteBareme(bareme);
+  const publieLe = new Date();
+  await tx.baremeDocument.update({
+    where: { id: brouillon.id },
+    data: { statut: "PUBLIE", contenu: enJson(bareme), empreinte, schemaVersion: VERSION_SCHEMA_BAREME, publiePar: acteur.identifiant, publieLe, motifPublication: motifPropre, modifieLe: publieLe },
+  });
+  if (entreEnVigueurLe) {
+    await tx.produitVersion.update({ where: { id: versionId }, data: { dateEffet: versDate(entreEnVigueurLe) } });
     await journaliser(
       {
         acteur: acteurAudit,
         action: "PARAMETRE_MODIFIE",
-        objetType: "bareme_document",
-        objetId: brouillon.id,
-        avant: { versionId, statut: "BROUILLON", empreinte: brouillon.empreinte },
-        apres: { versionId, statut: "PUBLIE", empreinte, motif: motifPropre, publiePar: acteur.identifiant, ...resume(bareme) },
+        objetType: "produit_version",
+        objetId: versionId,
+        avant: { dateEffet: "dès la publication" },
+        apres: { dateEffet: entreEnVigueurLe, motif: "version entrée en vigueur à la publication de son barème (D66)" },
         adresseIp,
       },
       tx,
     );
-    return { publie: { id: brouillon.id, empreinte } };
-  });
-  if ("erreur" in issue) throw issue.erreur;
-  return issue.publie;
+  }
+  await journaliser(
+    {
+      acteur: acteurAudit,
+      action: "PARAMETRE_MODIFIE",
+      objetType: "bareme_document",
+      objetId: brouillon.id,
+      avant: { versionId, statut: "BROUILLON", empreinte: brouillon.empreinte },
+      apres: { versionId, statut: "PUBLIE", empreinte, motif: motifPropre, publiePar: acteur.identifiant, ...(entreEnVigueurLe ? { dateEffet: entreEnVigueurLe } : {}), ...resume(bareme) },
+      adresseIp,
+    },
+    tx,
+  );
+  return { publie: { id: brouillon.id, empreinte, modeTarification: version.modeTarification, dateEffet: entreEnVigueurLe ?? dateAvant, entreEnVigueurLe } };
 }
 
 /**

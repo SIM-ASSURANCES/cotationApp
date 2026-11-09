@@ -20,6 +20,7 @@ import { calculerCotationBareme, creerBrouillon, lireCotation, type SaisieCotati
 import { debutTest } from "./dates-test";
 import { initialiserProfilsEtDroits } from "./droits";
 import { creerProduit, creerTaxe, creerVersion } from "./parametrage";
+import { ajouterVersionHeritee } from "./produit-bareme-test";
 import { obtenirPrisma } from "./prisma";
 import type { UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
@@ -158,7 +159,7 @@ describe("Recette B5 : SECURPRO inventé saisi entièrement à l'écran, publié
 
 /** Une seconde version (à venir) du même produit, pour y importer le classeur du barème publié. */
 async function creerVersionPourLeClasseur(codeProduit: string): Promise<number> {
-  await creerVersion(technique, codeProduit, { ...version, dateEffet: ajouterJours(aujourdhui(), 60) }, null);
+  await ajouterVersionHeritee(technique, codeProduit, { ...version, dateEffet: ajouterJours(aujourdhui(), 60) }); // version « Par garanties » héritée (D66 : creerVersion ne change plus le mode)
   const v = await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produit: { code: codeProduit }, dateEffet: { gt: new Date(`${ajouterJours(aujourdhui(), 30)}T00:00:00Z`) } } });
   return v.id;
 }

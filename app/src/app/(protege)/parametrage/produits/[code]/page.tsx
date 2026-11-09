@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { FormulaireAction } from "@/composants/FormulaireAction";
 import { Bandeau, Carte, EnTetePage, EtatVide, LienBouton, ListeDeroulante, Tableau, type ColonneTableau } from "@/composants/ui";
 import { formaterDate } from "@/domaine/calcul/dates";
-import { afficheTableauFormules, baseDeNouvelleVersion, estEffetALaPublication, versionsProvisoiresSansBareme } from "@/domaine/calcul/parametrage";
+import { afficheTableauFormules, baseDeNouvelleVersion, titreDeVersion, versionsProvisoiresSansBareme } from "@/domaine/calcul/parametrage";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
 import { etatDuBareme } from "@/serveur/bareme";
@@ -37,13 +37,7 @@ function formaterGarantieResume(g: NonNullable<VersionProduit["garanties"]>[numb
 function Resume({ v, codeProduit, peutEcrire, autreVersionAvecBareme }: { v: VersionProduit; codeProduit: string; peutEcrire: boolean; autreVersionAvecBareme?: { id: number; dateEffet: string; publie: boolean } }) {
   return (
     <Carte>
-      <h3 className="mb-2 text-base font-bold text-foreground">
-        {v.enPreparation
-          ? estEffetALaPublication(v.dateEffet)
-            ? "Version au barème en préparation : en vigueur dès la publication de son barème"
-            : `Version au barème en préparation : prévue le ${formaterDate(v.dateEffet)}, en vigueur à la publication de son barème`
-          : `Version en vigueur depuis le ${formaterDate(v.dateEffet)}`}
-      </h3>
+      <h3 className="mb-2 text-base font-bold text-foreground">{titreDeVersion(v, aujourdhui(), formaterDate)}</h3>
       <p className="mb-3 text-sm text-muted-foreground">
         Tarification : {LIBELLE_MODE[v.modeTarification] ?? v.modeTarification}
         {v.garanties && v.garanties.length > 0 ? ` — garanties : ${v.garanties.map(formaterGarantieResume).join(", ")}${v.garantiesSaisieLibre === false ? " ; saisie libre interdite" : ""}` : ""} ·{" "}

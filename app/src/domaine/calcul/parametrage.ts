@@ -356,6 +356,19 @@ export function enVigueur<T extends { dateEffet: DateIso; enPreparation?: boolea
 }
 
 /**
+ * Titre d'une version sur la fiche du produit. Une version dont la date d'effet n'est pas atteinte est « À venir » (elle ne sert à aucun document
+ * avant sa date) ; une version au barème en préparation (D66) n'a pas de date atteinte non plus. `formaterLaDate` : mise en forme JJ/MM/AAAA.
+ */
+export function titreDeVersion(v: { dateEffet: DateIso; enPreparation?: boolean }, jour: DateIso, formaterLaDate: (d: DateIso) => string): string {
+  if (v.enPreparation === true) {
+    return estEffetALaPublication(v.dateEffet)
+      ? "Version au barème en préparation : en vigueur dès la publication de son barème"
+      : `Version au barème en préparation : prévue le ${formaterLaDate(v.dateEffet)}, en vigueur à la publication de son barème`;
+  }
+  return v.dateEffet > jour ? `À venir : en vigueur à partir du ${formaterLaDate(v.dateEffet)}` : `Version en vigueur depuis le ${formaterLaDate(v.dateEffet)}`;
+}
+
+/**
  * Ce que l'écran propose sur le barème d'une version (D66, H212). Le mode est figé par produit : on ne CRÉE un barème (vide ou importé) que sur une version
  * déjà au barème. Une version « Par formule » ou « Par garanties » n'a aucune action de barème, SAUF une version provisoire d'avant D66 (H140) qui a DÉJÀ un
  * barème (brouillon ou publié) : elle reste modifiable à l'écran, publiable et basculable.

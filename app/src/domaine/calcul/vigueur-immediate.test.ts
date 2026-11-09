@@ -1,7 +1,7 @@
 // D66 : version au barème « en préparation », date provisoire « dès la publication », mode figé par produit. Pur, sans base.
 import { describe, expect, it } from "vitest";
 
-import { actionsDeBareme, baseDeNouvelleVersion, DATE_EFFET_A_LA_PUBLICATION, enVigueur, estEffetALaPublication, estEnPreparation, problemeChangementDeMode, problemesVersion, versionPourCotation, type VersionSaisie } from "./parametrage";
+import { actionsDeBareme, baseDeNouvelleVersion, DATE_EFFET_A_LA_PUBLICATION, titreDeVersion, enVigueur, estEffetALaPublication, estEnPreparation, problemeChangementDeMode, problemesVersion, versionPourCotation, type VersionSaisie } from "./parametrage";
 
 const base: VersionSaisie = {
   dateEffet: "2026-11-09",
@@ -114,5 +114,18 @@ describe("D66, H212 : actions de barème par version", () => {
     expect(actionsDeBareme({ modeTarification: "GARANTIES", dateEffet: "2026-12-01" }, { brouillon: {}, publie: null }, jour)).toEqual({ afficher: true, creerVide: false, importer: false, rejouerEtPublier: true, nouvelleVersion: false, basculer: false });
     expect(actionsDeBareme({ modeTarification: "GARANTIES", dateEffet: "2026-12-01" }, { brouillon: null, publie: {} }, jour)).toMatchObject({ nouvelleVersion: true, basculer: true, importer: false });
     expect(actionsDeBareme({ modeTarification: "GARANTIES", dateEffet: "2026-11-09" }, { brouillon: null, publie: {} }, jour)).toMatchObject({ nouvelleVersion: true, basculer: false });
+  });
+});
+
+describe("Titre d'une version sur la fiche du produit", () => {
+  const f = (d: string) => d.split("-").reverse().join("/");
+  it("« À venir » tant que la date n'est pas atteinte, « en vigueur depuis » le jour même et après", () => {
+    expect(titreDeVersion({ dateEffet: "2026-11-10" }, "2026-11-09", f)).toBe("À venir : en vigueur à partir du 10/11/2026");
+    expect(titreDeVersion({ dateEffet: "2026-11-09" }, "2026-11-09", f)).toBe("Version en vigueur depuis le 09/11/2026");
+    expect(titreDeVersion({ dateEffet: "2026-01-01" }, "2026-11-09", f)).toBe("Version en vigueur depuis le 01/01/2026");
+  });
+  it("une version au barème en préparation garde son titre propre", () => {
+    expect(titreDeVersion({ dateEffet: DATE_EFFET_A_LA_PUBLICATION, enPreparation: true }, "2026-11-09", f)).toMatch(/en préparation : en vigueur dès la publication/);
+    expect(titreDeVersion({ dateEffet: "2026-11-20", enPreparation: true }, "2026-11-09", f)).toMatch(/en préparation : prévue le 20\/11\/2026/);
   });
 });

@@ -15,9 +15,8 @@ import { ajouterJours, aujourdhui } from "@/domaine/calcul/dates";
 import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 
 import { assurerBranche, rattacherCgDeTest } from "./branches-test";
-import { basculerVersionAuBareme, lireBaremePublie, publierBareme } from "./bareme";
-import { construireClasseur } from "./bareme-classeur-ecriture";
-import { importerBaremeXlsx } from "./bareme-excel";
+import { enregistrerBrouillonBareme, basculerVersionAuBareme, lireBaremePublie, publierBareme } from "./bareme";
+
 import { obtenirConfig } from "./config";
 import { accepter, creerBrouillon, soumettre } from "./cotations";
 import { debutTest } from "./dates-test";
@@ -54,7 +53,6 @@ let versionId: number;
 async function compte(identifiant: string): Promise<UtilisateurCourant> {
   return versUtilisateurCourant(await obtenirPrisma().utilisateur.findUniqueOrThrow({ where: { identifiant }, include: { profil: true } }));
 }
-
 
 async function publierFichier(type: "CG" | "CP" | "COTATION" | "SOUS_MODELE", produitCode: string | null, nom: string, surcharge: Record<string, unknown> = {}, bloc: { blocNom: string; blocCle: string } | null = null) {
   const id = await creerModele(
@@ -135,7 +133,7 @@ beforeAll(async () => {
     null,
   );
   versionId = (await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produit: { code: produit } } })).id;
-  await importerBaremeXlsx(technique, versionId, "securpro.xlsx", await construireClasseur(baremeAuxBranches(), { titre: "SECURPRO inventé (e2e documents par garantie)" }), null);
+  await enregistrerBrouillonBareme(technique, versionId, baremeAuxBranches(), null); // D66 : le classeur ne s'importe plus sur une version qui n'est pas au barème
   await publierBareme(technique, versionId, "Barème SECURPRO inventé (e2e documents par garantie)", null);
   await basculerVersionAuBareme(technique, versionId, null);
   await contournerLesDeclencheurs(`UPDATE produit_versions SET date_effet = DATE '2020-01-01' WHERE id = ${versionId}`);

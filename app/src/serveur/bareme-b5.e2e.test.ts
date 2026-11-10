@@ -12,7 +12,7 @@ import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Souscripteur } from "@/domaine/cotation/saisie";
 
 import { assurerBranche } from "./branches-test";
-import { basculerVersionAuBareme, controlerAvantPublication, empreinteBareme, enregistrerBrouillonBareme, lireBaremePublie, publierBareme } from "./bareme";
+import { controlerAvantPublication, empreinteBareme, enregistrerBrouillonBareme, lireBaremePublie, publierBareme } from "./bareme";
 import { construireClasseur } from "./bareme-classeur-ecriture";
 import { creerBaremeVide, lireBaremePourEdition } from "./bareme-edition";
 import { importerBaremeXlsx } from "./bareme-excel";
@@ -20,6 +20,7 @@ import { calculerCotationBareme, creerBrouillon, lireCotation, type SaisieCotati
 import { debutTest } from "./dates-test";
 import { initialiserProfilsEtDroits } from "./droits";
 import { creerProduit, creerTaxe, creerVersion } from "./parametrage";
+import { ajouterVersionHeritee } from "./produit-bareme-test";
 import { obtenirPrisma } from "./prisma";
 import type { UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
@@ -82,7 +83,7 @@ describe("Recette B5 : SECURPRO inventé saisi entièrement à l'écran, publié
   it("139 420 F TTC de l'écran à la cotation", async () => {
     const code = CODE("SECURPRO_ECRAN");
     await creerProduit(technique, { code, libelle: "Sécur Pro saisi à l'écran (inventé)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: IARD }, null);
-    await creerVersion(technique, code, version, null);
+    await creerVersion(technique, code, { ...version, modeTarification: "BAREME" }, null); // D66 : née au barème, en préparation
     const { id: versionId } = await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produit: { code } } });
 
     // 1. « Créer un barème vide », puis tout se saisit à l'écran : aucun classeur.
@@ -106,8 +107,7 @@ describe("Recette B5 : SECURPRO inventé saisi entièrement à l'écran, publié
     await expect(publierBareme(technique, versionId, "  ", null)).rejects.toThrow(/motif/i);
     const publie = await publierBareme(technique, versionId, "SECURPRO inventé saisi à l'écran (recette B5)", null);
     expect(publie.empreinte).toBe(r.empreinte);
-    await basculerVersionAuBareme(technique, versionId, null);
-    expect((await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { id: versionId } })).modeTarification).toBe("BAREME");
+    expect((await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { id: versionId } })).modeTarification).toBe("BAREME"); // née au barème : plus de bascule
 
     // 5. Le barème publié est exactement le document saisi, et il passe par le classeur sans rien perdre (même document que l'import).
     const lu = await lireBaremePublie(obtenirPrisma(), versionId);
@@ -158,7 +158,7 @@ describe("Recette B5 : SECURPRO inventé saisi entièrement à l'écran, publié
 
 /** Une seconde version (à venir) du même produit, pour y importer le classeur du barème publié. */
 async function creerVersionPourLeClasseur(codeProduit: string): Promise<number> {
-  await creerVersion(technique, codeProduit, { ...version, dateEffet: ajouterJours(aujourdhui(), 60) }, null);
+  await ajouterVersionHeritee(technique, codeProduit, { ...version, modeTarification: "BAREME", dateEffet: ajouterJours(aujourdhui(), 60) }); // version « Par garanties » héritée (D66 : creerVersion ne change plus le mode)
   const v = await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produit: { code: codeProduit }, dateEffet: { gt: new Date(`${ajouterJours(aujourdhui(), 30)}T00:00:00Z`) } } });
   return v.id;
 }

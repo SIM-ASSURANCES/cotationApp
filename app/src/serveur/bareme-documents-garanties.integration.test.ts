@@ -3,7 +3,6 @@
 // Modèle de mise en place : cotation-bareme.integration.test.ts.
 import { createHash } from "node:crypto";
 
-
 process.env.URL_PUBLIQUE = "https://documents.exemple.ci";
 
 import { beforeAll, describe, expect, it } from "vitest";
@@ -16,9 +15,8 @@ import type { Souscripteur } from "@/domaine/cotation/saisie";
 import type { Analyse } from "@/domaine/documents/analyse";
 
 import { assurerBranche, rattacherCgDeTest } from "./branches-test";
-import { basculerVersionAuBareme, lireBaremePublie, publierBareme } from "./bareme";
-import { construireClasseur } from "./bareme-classeur-ecriture";
-import { importerBaremeXlsx } from "./bareme-excel";
+import { enregistrerBrouillonBareme, basculerVersionAuBareme, lireBaremePublie, publierBareme } from "./bareme";
+
 import { accepter, calculerCotationBareme, creerBrouillon, lireCotation, soumettre, type SaisieCotation } from "./cotations";
 import { debutTest } from "./dates-test";
 import { emettreCotation, emettreCp, reediter } from "./documents";
@@ -32,7 +30,6 @@ import { assurerSignature } from "./societe-test";
 import { remplacerStockage } from "./stockage";
 import { ErreurMetier, type UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
-
 
 const MDP = "phrase-de-passe-inventee-2026";
 const unique = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`;
@@ -311,7 +308,7 @@ beforeAll(async () => {
     null,
   );
   versionId = (await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produit: { code: codeSecurpro } } })).id;
-  await importerBaremeXlsx(technique, versionId, "securpro.xlsx", await construireClasseur(baremeAuxBranches(), { titre: "SECURPRO inventé (test documents par garantie)" }), null);
+  await enregistrerBrouillonBareme(technique, versionId, baremeAuxBranches(), null); // D66 : le classeur ne s'importe plus sur une version qui n'est pas au barème
   await publierBareme(technique, versionId, "Barème SECURPRO inventé (test documents par garantie)", null);
   await basculerVersionAuBareme(technique, versionId, null);
   await contournerLesDeclencheurs(`UPDATE produit_versions SET date_effet = DATE '2020-01-01' WHERE id = ${versionId}`);
@@ -499,7 +496,7 @@ describe("B. Contrôles au dépôt et aperçu", () => {
       null,
     );
     const vId = (await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produit: { code } } })).id;
-    await importerBaremeXlsx(technique, vId, "securpro.xlsx", await construireClasseur(baremeAuxBranches(), { titre: "bis" }), null);
+    await enregistrerBrouillonBareme(technique, vId, baremeAuxBranches(), null); // D66 : le classeur ne s'importe plus sur une version qui n'est pas au barème
     await publierBareme(technique, vId, "Barème bis", null);
 
     const cp = await creerModele(technique, { type: "CP", code: CODE("CP_BIS"), libelle: "CP bis", produitCode: code, ...sans }, null);

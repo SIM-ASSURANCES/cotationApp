@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { EditeurBareme } from "@/composants/bareme/EditeurBareme";
 import { Bandeau, EnTetePage, EtatVide, LienBouton } from "@/composants/ui";
 import { schemaBareme } from "@/domaine/bareme";
+import { estEffetALaPublication } from "@/domaine/calcul/parametrage";
 import { aujourdhui, formaterDate } from "@/domaine/calcul/dates";
 import { peutAgir } from "@/domaine/droits";
 import { lireBaremePourEdition } from "@/serveur/bareme-edition";
@@ -24,7 +25,7 @@ export default async function PageEditionBareme(props: PageProps<"/parametrage/p
   const retour = `/parametrage/produits/${code}`;
   const ligne = donnees.brouillon ?? donnees.publie;
   const lu = ligne ? schemaBareme.safeParse(ligne.contenu) : null;
-  const titre = `Barème de la version du ${formaterDate(donnees.version.dateEffet)}`;
+  const titre = estEffetALaPublication(donnees.version.dateEffet) ? "Barème de la version en préparation (dès la publication)" : `Barème de la version du ${formaterDate(donnees.version.dateEffet)}`;
   const etat = donnees.brouillon
     ? `Brouillon enregistré par ${donnees.brouillon.creePar} (modifié le ${formaterDate(iso(donnees.brouillon.modifieLe))}, empreinte ${donnees.brouillon.empreinte}). Il n'est pas encore publié.`
     : donnees.publie

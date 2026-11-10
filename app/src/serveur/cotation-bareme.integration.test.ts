@@ -22,9 +22,8 @@ import type { Souscripteur } from "@/domaine/cotation/saisie";
 import type { Analyse } from "@/domaine/documents/analyse";
 
 import { assurerBranche, rattacherCgDeTest } from "./branches-test";
-import { basculerVersionAuBareme, lireBaremePublie, publierBareme } from "./bareme";
-import { construireClasseur } from "./bareme-classeur-ecriture";
-import { importerBaremeXlsx } from "./bareme-excel";
+import { enregistrerBrouillonBareme, basculerVersionAuBareme, lireBaremePublie, publierBareme } from "./bareme";
+
 import { debutTest } from "./dates-test";
 import { fixerSeuilGlobalDeTest, retablirSeuilGlobalDeTest } from "./parametres-test";
 
@@ -261,11 +260,10 @@ beforeAll(async () => {
     null,
   );
   versionId = (await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produit: { code: codeSecurpro } } })).id;
-  await importerBaremeXlsx(technique, versionId, "securpro.xlsx", await construireClasseur(baremeAuxBranches(), { titre: "SECURPRO inventé (test B6a)" }), null);
+  await enregistrerBrouillonBareme(technique, versionId, baremeAuxBranches(), null); // D66 : le classeur ne s'importe plus sur une version qui n'est pas au barème
   await publierBareme(technique, versionId, "Barème SECURPRO inventé (test B6a)", null);
   await basculerVersionAuBareme(technique, versionId, null);
   await changerLaVersionPourTest(versionId, "date_effet = DATE '2020-01-01'");
-
 
   await publierModele("COTATION", codeSecurpro, analyse(CONTENU_COTATION));
   await publierModele("CP", codeSecurpro, analyse(CONTENU_CP));
@@ -619,7 +617,7 @@ describe("B6b, D52 : import en masse sur une police au barème (plafond = effect
       null,
     );
     const id = (await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produit: { code: produitParTete } } })).id;
-    await importerBaremeXlsx(technique, id, "partete.xlsx", await construireClasseur(baremeParTete(), { titre: "Par tête inventé (test B6b)" }), null);
+    await enregistrerBrouillonBareme(technique, id, baremeParTete(), null); // D66 : le classeur ne s'importe plus sur une version qui n'est pas au barème
     await publierBareme(technique, id, "Barème par tête inventé (test B6b)", null);
     await basculerVersionAuBareme(technique, id, null);
     await changerLaVersionPourTest(id, "date_effet = DATE '2020-01-01'");

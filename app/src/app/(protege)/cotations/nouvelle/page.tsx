@@ -1,6 +1,6 @@
 import { ChoixProduitCotation } from "@/composants/ChoixProduitCotation";
 import { Bandeau, EnTetePage } from "@/composants/ui";
-import { compositionPossible, dateDeVersionAnticipee, enVigueur } from "@/domaine/calcul/parametrage";
+import { compositionPossible, versionPourCotation } from "@/domaine/calcul/parametrage";
 import { peutAgir } from "@/domaine/droits";
 import { listerClients } from "@/serveur/clients";
 import { lireDescripteurBareme } from "@/serveur/cotations";
@@ -30,8 +30,7 @@ export default async function PageNouvelleCotation(props: PageProps<"/cotations/
   }
 
   const donnees = await listerVersions(utilisateur, code);
-  const dateVersion = donnees ? dateDeVersionAnticipee(donnees.versions.map((v) => v.dateEffet), aujourdhui()) : aujourdhui();
-  const version = donnees ? enVigueur(donnees.versions, dateVersion) : null;
+  const { dateVersion, version } = donnees ? versionPourCotation(donnees.versions, aujourdhui()) : { dateVersion: aujourdhui(), version: null };
   if (!donnees || !version) {
     return (
       <main className="space-y-6">

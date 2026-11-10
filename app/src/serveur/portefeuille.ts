@@ -153,6 +153,8 @@ export async function listerProduitsPortefeuille(
     where: { branchePrincipale: codeBranche, actif: true },
     include: {
       versions: {
+        // D66 : hors version au barème en préparation (jamais retenue).
+        where: { NOT: { modeTarification: "BAREME", baremes: { none: { statut: "PUBLIE" } } } },
         orderBy: { dateEffet: "desc" },
         take: 1,
         select: { modeTarification: true },

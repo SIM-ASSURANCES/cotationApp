@@ -68,7 +68,8 @@ async function formulesEnVigueur(produitCode: string) {
   const produit = await obtenirPrisma().produit.findUnique({ where: { code: produitCode }, select: { id: true, code: true, libelle: true } });
   if (!produit) throw new ErreurMetier("Produit introuvable.");
   const version = await obtenirPrisma().produitVersion.findFirst({
-    where: { produitId: produit.id, dateEffet: { lte: versDate(aujourdhui()) } },
+    // D66 : une version au barème dont le barème n'est pas publié (en préparation) n'est jamais la version en vigueur.
+    where: { produitId: produit.id, dateEffet: { lte: versDate(aujourdhui()) }, NOT: { modeTarification: "BAREME", baremes: { none: { statut: "PUBLIE" } } } },
     orderBy: { dateEffet: "desc" },
     include: { formules: { orderBy: { code: "asc" } } },
   });

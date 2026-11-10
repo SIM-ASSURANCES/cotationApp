@@ -14,6 +14,7 @@ import { assurerBranche } from "./branches-test";
 import { accepter, creerBrouillon, lireCotation, modifierBrouillon, renvoyerEnBrouillon, soumettre, valider, type SaisieCotation } from "./cotations";
 import { contexteProduit, montantsDu } from "./documents";
 import { initialiserProfilsEtDroits } from "./droits";
+import { ajouterVersionHeritee } from "./produit-bareme-test";
 import { aujourdhui, calculerPourProduit, construireEntree, creerProduit, creerTaxe, creerVersion, listerVersions, resoudreContexte } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { ErreurMetier, type UtilisateurCourant } from "./types";
@@ -232,7 +233,7 @@ describe("GARANTIES : aucun montant automatique", () => {
     const brouillon = await creerBrouillon(commercial, saisie(code), null);
 
     // La version GARANTIES s'applique aux documents datés d'aujourd'hui.
-    await creerVersion(technique, code, versionGaranties(aujourdhui()), null);
+    await ajouterVersionHeritee(technique, code, versionGaranties(aujourdhui()), null);
 
     await expect(soumettre(commercial, brouillon, null)).rejects.toThrow(MESSAGE_BROUILLON_A_FORMULES);
     await expect(modifierBrouillon(commercial, brouillon, saisie(code), null)).rejects.toThrow(MESSAGE_BROUILLON_A_FORMULES);
@@ -264,7 +265,7 @@ describe("GARANTIES : aucun montant automatique", () => {
     expect((await soumettre(commercial, id, null)).statut).toBe("A_VALIDER");
 
     // Pendant l'attente, la Technique passe le produit en GARANTIES (version du jour). Chemin réel de l'application, sans SQL.
-    await creerVersion(technique, code, versionGaranties(aujourdhui()), null);
+    await ajouterVersionHeritee(technique, code, versionGaranties(aujourdhui()), null);
 
     await expect(valider(technique2, id, null)).rejects.toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
     const apres = (await lireCotation(technique2, id))!;
@@ -282,7 +283,7 @@ describe("GARANTIES : aucun montant automatique", () => {
     const id = await creerBrouillon(commercial, saisie(code, { lignes: [{ codeFormule: "FAMILLE", effectif: 100 }] }), null);
     expect((await soumettre(commercial, id, null)).statut).toBe("A_VALIDER");
     // La version GARANTIES est datée dans l'avenir (donc sans effet sur la version « en vigueur » d'aujourd'hui) : seul le rattachement fabriqué compte.
-    await creerVersion(technique, code, versionGaranties("2099-01-01"), null);
+    await ajouterVersionHeritee(technique, code, versionGaranties("2099-01-01"), null);
     expect(await sql(`UPDATE cotations SET version_date_effet = DATE '2099-01-01' WHERE id = ${id}`)).toBe("accepté");
 
     await expect(valider(technique2, id, null)).rejects.toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
@@ -293,7 +294,7 @@ describe("GARANTIES : aucun montant automatique", () => {
     const code = CODE("FUT");
     await creerProduit(technique, { code, libelle: "Version future (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
     await creerVersion(technique, code, versionBeni(), null);
-    await creerVersion(technique, code, versionGaranties("2099-01-01"), null);
+    await ajouterVersionHeritee(technique, code, versionGaranties("2099-01-01"), null);
     const lignes = [{ codeFormule: "SOLO", effectif: 3 }, { codeFormule: "FAMILLE", effectif: 60 }];
 
     const r = await calculerPourProduit(technique, { codeProduit: code, regimeTaxe: "GROUPE", ...ANNEE, lignes });
@@ -308,7 +309,7 @@ describe("GARANTIES : aucun montant automatique", () => {
     const code = CODE("DOC");
     await creerProduit(technique, { code, libelle: "Documents (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
     await creerVersion(technique, code, versionBeni(), null);
-    await creerVersion(technique, code, versionGaranties("2026-06-01"), null);
+    await ajouterVersionHeritee(technique, code, versionGaranties("2026-06-01"), null);
     const produit = await obtenirPrisma().produit.findUniqueOrThrow({ where: { code } });
     const entree = (await creerEntreeDeReference()) as EntreeCalcul;
 
@@ -327,7 +328,7 @@ describe("Version : lecture, journal et immutabilité du mode", () => {
     const code = CODE("JNL");
     await creerProduit(technique, { code, libelle: "Journal (test)", gamme: "RELAX", branchePrincipale: "MALADIE", branche: brancheSante }, null);
     await creerVersion(technique, code, versionGaranties("2020-01-01"), null);
-    await creerVersion(technique, code, versionBeni({ dateEffet: "2026-03-01" }), null);
+    await ajouterVersionHeritee(technique, code, versionBeni({ dateEffet: "2026-03-01" }), null);
 
     const { versions } = (await listerVersions(technique, code))!;
     expect(versions.map((v) => [v.dateEffet, v.modeTarification])).toEqual([["2026-03-01", "FORMULE"], ["2020-01-01", "GARANTIES"]]);

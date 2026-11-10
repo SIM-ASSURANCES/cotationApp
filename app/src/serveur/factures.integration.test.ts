@@ -40,6 +40,7 @@ import { remplacerGenerateur, type DemandePdf } from "./generateur";
 import { refusDuDeclencheur } from "./refus-base";
 import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
 import { aujourdhui, creerProduit, creerTaxe, creerVersion, listerVersions } from "./parametrage";
+import { ajouterVersionHeritee } from "./produit-bareme-test";
 import { obtenirPrisma } from "./prisma";
 import { assurerSignature } from "./societe-test";
 import { consulterFormatsNumero, enregistrerFormatNumero } from "./societe";
@@ -903,7 +904,7 @@ describe("session 6.2a : un produit tarifé par garanties ne produit aucune fact
     expect((await lireFacture(technique, renA))!.ttc).toBe("101500");
 
     // La Technique passe le produit en GARANTIES à compter du 01/01/2027, date d'effet des renouvellements.
-    await creerVersion(
+    await ajouterVersionHeritee(
       technique,
       code,
       {

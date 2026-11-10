@@ -1,11 +1,12 @@
 import "server-only";
 
 import { baremeSecurpro } from "@/domaine/bareme/securpro-fixture";
+import { estEffetALaPublication } from "@/domaine/calcul/parametrage";
 
 import { journaliser } from "./audit";
 import { construireClasseur } from "./bareme-classeur-ecriture";
 import { analyserClasseur, ErreurImportBareme, TAILLE_MAX_CLASSEUR } from "./bareme-classeur-lecture";
-import { enregistrerBrouillonBareme, lireBaremePublie } from "./bareme";
+import { enregistrerBrouillonBareme, exigerVersionAuBareme, lireBaremePublie } from "./bareme";
 import { exigerEcriture } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { ErreurMetier, type UtilisateurCourant } from "./types";
@@ -21,14 +22,16 @@ export const TYPE_XLSX = "application/vnd.openxmlformats-officedocument.spreadsh
 async function versionEtProduit(versionId: number) {
   const v = await obtenirPrisma().produitVersion.findUnique({ where: { id: versionId }, include: { produit: { select: { code: true, libelle: true } } } });
   if (!v) throw new ErreurMetier("Version de produit introuvable.");
-  return { code: v.produit.code, libelle: v.produit.libelle, dateEffet: v.dateEffet.toISOString().slice(0, 10) };
+  const dateEffet = v.dateEffet.toISOString().slice(0, 10);
+  // D66 : « dès la publication » (date provisoire 9999-12-31) ne s'écrit jamais comme une date.
+  return { code: v.produit.code, libelle: v.produit.libelle, dateEffet: estEffetALaPublication(dateEffet) ? "en-preparation" : dateEffet, version: estEffetALaPublication(dateEffet) ? "version en préparation" : `version du ${dateEffet}` };
 }
 
 /** Modèle de classeur : le SECURPRO INVENTÉ en exemple, à remplacer par le barème du produit. */
 export async function modeleBaremeXlsx(acteur: UtilisateurCourant, versionId: number): Promise<{ nom: string; contenu: Uint8Array }> {
   await exigerEcriture(acteur);
   const p = await versionEtProduit(versionId);
-  const contenu = await construireClasseur(baremeSecurpro(), { titre: `Modèle de barème pour ${p.libelle} (${p.code}), version du ${p.dateEffet}`, modele: true });
+  const contenu = await construireClasseur(baremeSecurpro(), { titre: `Modèle de barème pour ${p.libelle} (${p.code}), ${p.version}`, modele: true });
   return { nom: `modele_bareme_${p.code}.xlsx`, contenu };
 }
 
@@ -37,7 +40,7 @@ export async function exporterBaremePublieXlsx(acteur: UtilisateurCourant, versi
   await exigerEcriture(acteur);
   const p = await versionEtProduit(versionId);
   const { bareme, empreinte } = await lireBaremePublie(obtenirPrisma(), versionId);
-  const contenu = await construireClasseur(bareme, { titre: `Barème publié de ${p.libelle} (${p.code}), version du ${p.dateEffet}`, empreinte });
+  const contenu = await construireClasseur(bareme, { titre: `Barème publié de ${p.libelle} (${p.code}), ${p.version}`, empreinte });
   return { nom: `bareme_${p.code}_${p.dateEffet}.xlsx`, contenu };
 }
 
@@ -50,6 +53,10 @@ export async function importerBaremeXlsx(acteur: UtilisateurCourant, versionId: 
   await exigerEcriture(acteur);
   if (!/\.xlsx$/i.test(nomFichier)) throw new ErreurMetier("Format non pris en charge : déposez un classeur .xlsx (Excel).");
   if (contenu.byteLength > TAILLE_MAX_CLASSEUR) throw new ErreurMetier(`Le fichier dépasse ${TAILLE_MAX_CLASSEUR / 1024 / 1024} Mo.`);
+  // D66, H212 : le classeur ne s'importe que sur une version déjà au barème (le mode est figé par produit).
+  const version = await obtenirPrisma().produitVersion.findUnique({ where: { id: versionId }, select: { modeTarification: true } });
+  if (!version) throw new ErreurMetier("Version de produit introuvable.");
+  exigerVersionAuBareme(version.modeTarification);
   const lu = await analyserClasseur(contenu);
   if (lu.erreurs.length > 0 || !lu.bareme) throw new ErreurImportBareme(lu.erreurs);
   const brouillon = await enregistrerBrouillonBareme(acteur, versionId, lu.bareme, adresseIp);

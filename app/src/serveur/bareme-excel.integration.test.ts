@@ -9,7 +9,7 @@ import type { VersionSaisie } from "@/domaine/calcul/parametrage";
 
 import { lireJournal } from "./audit";
 import { assurerBranche } from "./branches-test";
-import { basculerVersionAuBareme, calculerAvecBaremePublie, enregistrerBrouillonBareme, ErreurPublicationBareme, lireBaremePublie, publierBareme } from "./bareme";
+import { calculerAvecBaremePublie, enregistrerBrouillonBareme, ErreurPublicationBareme, lireBaremePublie, publierBareme } from "./bareme";
 import { construireClasseur } from "./bareme-classeur-ecriture";
 import { ErreurImportBareme, FEUILLE } from "./bareme-classeur-lecture";
 import { exporterBaremePublieXlsx, importerBaremeXlsx, modeleBaremeXlsx } from "./bareme-excel";
@@ -45,7 +45,7 @@ const classeurDeTest = (b: Bareme = baremeDeTest()) => construireClasseur(b, { t
 
 const versionSaisie: VersionSaisie = {
   dateEffet: debutTest(),
-  modeTarification: "GARANTIES",
+  modeTarification: "BAREME",
   arrondi: { precision: 1, sens: "PROCHE", niveau: "LIGNE", composanteAbsorbante: "NETTE" },
   prorata: { actif: false, primeMinimale: null },
   fractionnement: { tranchesMax: 4, repartitionPourcent: null, decalagesMois: null, frais: "0" },
@@ -94,8 +94,7 @@ describe("Import Excel du barème", () => {
     expect(publie.empreinte).toBe(empreinte);
     const lu = await lireBaremePublie(obtenirPrisma(), versionId);
     expect(lu.bareme.jeuxEssai[0].attendu.ttc).toBe("139420");
-    await basculerVersionAuBareme(technique, versionId, null);
-    expect((await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { id: versionId } })).modeTarification).toBe("BAREME");
+    expect((await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { id: versionId } })).modeTarification).toBe("BAREME"); // née au barème (D66) : plus de bascule
 
     const journal = (await lireJournal({ action: "BAREME_IMPORTE" })).lignes.find((l) => l.objet === `bareme_document ${id}`)!;
     expect(journal.apres).toMatchObject({ versionId, fichier: "securpro.xlsx", empreinte });

@@ -23,9 +23,10 @@ import {
   publierBareme,
   rejouerLesEssaisBareme,
 } from "./bareme";
+import { ajouterJours } from "@/domaine/calcul/dates";
 import { debutTest } from "./dates-test";
 import { initialiserProfilsEtDroits } from "./droits";
-import { creerProduit, creerTaxe, creerVersion, exigerCalculAutomatiqueEnVigueur, exigerModeCoherent, exigerModeCoherentEnVigueur, resoudreContexte, resoudreContexteComposition } from "./parametrage";
+import { creerProduit, creerTaxe, creerVersion, exigerCalculAutomatiqueEnVigueur, exigerModeCoherent, exigerModeCoherentEnVigueur, listerVersions, resoudreContexte, resoudreContexteComposition } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { ErreurAcces, ErreurMetier, type UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
@@ -106,16 +107,17 @@ beforeAll(async () => {
 });
 
 describe("Mode BAREME de la version", () => {
-  it("une version ne naît pas au barème : service et base la refusent", async () => {
+  it("D66 : une version naît au barème, « en préparation » (sans barème publié, jamais retenue) ; la base admet cette insertion mais refuse toujours la bascule d'une version existante sans barème publié", async () => {
     const code = CODE("BAREME");
     await creerProduit(technique, { code, libelle: "Produit (inventé)", gamme: "SECUR", branchePrincipale: "INCENDIE_DOMMAGES", branche: IARD }, null);
-    await expect(creerVersion(technique, code, { ...versionBase("BAREME"), dateEffet: debutTest() }, null)).rejects.toThrow(/ne se crée pas directement au barème/);
+    const creee = await creerVersion(technique, code, { ...versionBase("BAREME"), dateEffet: debutTest() }, null);
+    expect(creee).toMatchObject({ modeTarification: "BAREME", baremePublie: false, dateEffet: debutTest() });
+    expect((await listerVersions(technique, code))!.versions[0]).toMatchObject({ modeTarification: "BAREME", enPreparation: true });
+    // Les déclencheurs « barème publié » sont inchangés : la bascule d'une version existante exige un barème publié (testée plus bas).
     const { id } = await obtenirPrisma().produit.findUniqueOrThrow({ where: { code } });
-    await expect(
-      obtenirPrisma().$executeRawUnsafe(
-        `INSERT INTO produit_versions (produit_id, date_effet, arrondi_precision, arrondi_sens, arrondi_niveau, arrondi_composante, prorata_actif, mode_tarification, cree_par) VALUES (${id}, '${debutTest()}', 1, 'PROCHE', 'LIGNE', 'NETTE', false, 'BAREME', 'test')`,
-      ),
-    ).rejects.toThrow(/barème est publié/);
+    await obtenirPrisma().$executeRawUnsafe(
+      `INSERT INTO produit_versions (produit_id, date_effet, arrondi_precision, arrondi_sens, arrondi_niveau, arrondi_composante, prorata_actif, mode_tarification, cree_par) VALUES (${id}, '${ajouterJours(debutTest(), 40)}', 1, 'PROCHE', 'LIGNE', 'NETTE', false, 'BAREME', 'test')`,
+    ); // insertion en mode BAREME admise : version en préparation
   });
 
   it("la bascule exige un barème publié (service et base), puis réussit et se journalise ; la base refuse un mode inconnu", async () => {

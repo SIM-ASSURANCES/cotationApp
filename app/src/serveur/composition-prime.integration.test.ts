@@ -19,6 +19,7 @@ import { contexteProduit, montantsDu } from "./documents";
 import { initialiserProfilsEtDroits } from "./droits";
 import { controlerImport, lireLot, modeleImport } from "./imports";
 import { aujourdhui, creerProduit, creerTaxe, creerVersion, MESSAGE_NON_COMPOSEE } from "./parametrage";
+import { ajouterVersionHeritee } from "./produit-bareme-test";
 import { obtenirPrisma } from "./prisma";
 import { ErreurAcces, type UtilisateurCourant } from "./types";
 import { creerAdministrateurInitial, creerUtilisateur, versUtilisateurCourant } from "./utilisateurs";
@@ -155,7 +156,7 @@ async function sql(requete: string): Promise<string> {
 const LIGNE_FORMULE = { code: "F", libelle: "F", tauxCouverture: null, primeUnitaire: "1000", accessoireMode: "AUCUN", accessoireValeur: "0" } as const;
 /** Le produit repasse « à la formule » pour tout document daté d'aujourd'hui (chemin réel de l'application). */
 const repasserALaFormule = (code: string) =>
-  creerVersion(technique, code, { ...versionGaranties(), dateEffet: aujourdhui(), modeTarification: "FORMULE", garanties: [], formules: [{ ...LIGNE_FORMULE }] }, null);
+  ajouterVersionHeritee(technique, code, { ...versionGaranties(), dateEffet: aujourdhui(), modeTarification: "FORMULE", garanties: [], formules: [{ ...LIGNE_FORMULE }] });
 
 afterAll(async () => {
   fixerDateMinimumEffetPourTests(null);

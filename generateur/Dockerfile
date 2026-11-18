@@ -3,23 +3,37 @@
 # Base Debian (trixie). Contexte de construction : le dossier generateur/ (voir docker-compose.yml).
 FROM python:3.14-slim-trixie
 
-# LibreOffice (Writer seulement, sans interface graphique) et polices libres :
+# LibreOffice (Writer seulement, sans interface graphique) et polices LIBRES (D69) : aucune police Microsoft n'est nécessaire.
 #   - Carlito : métriquement compatible avec Calibri ; Liberation : avec Arial et Times New Roman ;
-#   - DejaVu : polices de secours ; fontconfig : gestion des polices.
-# Tahoma, Segoe UI, etc. n'ont pas d'équivalent libre : elles viennent de polices/ (ci-dessous).
+#   - fonts-wine : la police de remplacement du projet Wine pour Tahoma (famille « Tahoma », licence LGPL-2.1+), de mêmes
+#     dimensions de caractères : les retours à la ligne, donc les sauts de page, sont ceux de Word ;
+#   - DejaVu : polices de secours (aux dimensions différentes : ce n'est PAS un remplaçant, voir app/polices.py) ;
+#   - fontconfig : gestion des polices ; il résout Calibri en Carlito, Arial et Times New Roman en Liberation (30-metric-aliases).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       libreoffice-writer-nogui \
       fontconfig \
       fonts-crosextra-carlito \
       fonts-liberation \
+      fonts-wine \
       fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
 
-# Polices fournies par Thierry (dossier ignoré par Git, voir polices/README.md).
+# fonts-wine range ses polices dans /usr/share/wine/fonts, hors des dossiers de fontconfig, avec d'autres polices dont on n'a pas
+# besoin (Marlett, Wingdings…) : on n'expose à fontconfig que les deux fichiers Tahoma (normale et gras), par des liens.
+# `test -f` fait échouer la construction si le paquet change d'emplacement : mieux vaut cela qu'une image sans Tahoma.
+RUN mkdir -p /usr/local/share/fonts/wine \
+ && test -f /usr/share/wine/fonts/tahoma.ttf && test -f /usr/share/wine/fonts/tahomabd.ttf \
+ && ln -s /usr/share/wine/fonts/tahoma.ttf /usr/local/share/fonts/wine/tahoma.ttf \
+ && ln -s /usr/share/wine/fonts/tahomabd.ttf /usr/local/share/fonts/wine/tahomabd.ttf
+
+# Polices facultatives, sous licence, que SIM fournirait (dossier ignoré par Git, voir polices/README.md). Absent ou vide : l'image
+# fonctionne avec les polices libres ci-dessus.
 COPY polices/ /usr/local/share/fonts/sim/
 RUN fc-cache -f \
- && echo "Polices installées :" && fc-list : family | sort -u
+ && echo "Polices installées :" && fc-list : family | sort -u \
+ && echo "Résolution des polices des modèles :" \
+ && for police in Tahoma Calibri Arial "Times New Roman"; do echo "  $police -> $(fc-match -f '%{family}' "$police")"; done
 
 # Utilisateur sans privilèges ; /donnees reçoit les documents émis et le profil LibreOffice
 # (volume persistant, voir docker-compose.yml).

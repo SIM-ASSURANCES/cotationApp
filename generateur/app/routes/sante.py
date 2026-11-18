@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from app import __version__
 from app.config import Parametres, obtenir_parametres
-from app.polices import POLICES_REQUISES, familles_installees, polices_absentes
+from app.polices import POLICES_REQUISES, Resolveur, familles_installees, polices_absentes, resolution_fontconfig
 
 router = APIRouter(tags=["santé"])
 
@@ -19,7 +19,8 @@ class Sante(BaseModel):
     statut: Literal["ok", "degrade"]
     version: str
     libreoffice_trouve: bool
-    # Polices indispensables absentes ; None si la liste des polices est impossible à obtenir.
+    # Polices indispensables ni installées ni couvertes par un remplaçant libre autorisé (D69) ; None si la liste des
+    # polices est impossible à obtenir.
     polices_manquantes: list[str] | None
 
 
@@ -28,14 +29,20 @@ def obtenir_familles() -> frozenset[str] | None:
     return familles_installees()
 
 
+def obtenir_resolveur() -> Resolveur:
+    """Dépendance remplaçable dans les tests : ce que fontconfig retient pour une police demandée (`fc-match`)."""
+    return resolution_fontconfig
+
+
 @router.get("/sante", summary="État du générateur")
 def sante(
     parametres: Annotated[Parametres, Depends(obtenir_parametres)],
     familles: Annotated[frozenset[str] | None, Depends(obtenir_familles)],
+    resolveur: Annotated[Resolveur, Depends(obtenir_resolveur)],
 ) -> Sante:
     # Vérifie seulement que l'exécutable existe : LibreOffice n'est pas lancé ici.
     libreoffice_trouve = parametres.libreoffice_chemin.is_file()
-    manquantes = None if familles is None else polices_absentes(POLICES_REQUISES, familles)
+    manquantes = None if familles is None else polices_absentes(POLICES_REQUISES, familles, resolveur)
     en_forme = libreoffice_trouve and manquantes == []
     return Sante(
         statut="ok" if en_forme else "degrade",

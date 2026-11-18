@@ -23,7 +23,7 @@ from lxml import etree
 from pydantic import BaseModel
 
 from app.filtres import FILTRES
-from app.polices import familles_installees, polices_absentes
+from app.polices import familles_installees, polices_absentes, resolution_fontconfig
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 A = "http://schemas.openxmlformats.org/drawingml/2006/main"
@@ -579,5 +579,5 @@ def analyser(contenu: bytes) -> Analyse:
     analyse.filtres = sorted(filtres)
     analyse.polices = _polices(archive, [r for _, r in parties])
     familles = familles_installees()
-    analyse.polices_absentes = None if familles is None else polices_absentes(analyse.polices, familles)
+    analyse.polices_absentes = None if familles is None else polices_absentes(analyse.polices, familles, resolution_fontconfig)
     return analyse

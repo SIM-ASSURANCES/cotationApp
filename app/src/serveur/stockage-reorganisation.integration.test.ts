@@ -99,6 +99,7 @@ describe("script idempotent de rangement des documents dev (Étape 5, D41)", () 
           empreinte: "a".repeat(64),
           commentaire: "version initiale",
           dateEffet: new Date("2026-01-01"),
+          instantEffet: new Date("2026-01-01"), // D68 : une version publiée a son instant de mise en vigueur
           analyse: {},
           auteurId: 1,
           auteurIdentifiant: "admin",

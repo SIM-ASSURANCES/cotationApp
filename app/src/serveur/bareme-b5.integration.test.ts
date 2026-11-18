@@ -99,6 +99,8 @@ async function modelePublie(codeProduit: string, type: string, chemins: string[]
         empreinte: "b".repeat(64),
         commentaire: "version de test",
         dateEffet: new Date(options.dateEffet ?? "2020-01-01"),
+        // D68 : une version publiée a son instant de mise en vigueur (minuit de sa date) ; une version non publiée n'en a pas.
+        instantEffet: (options.statut ?? "PUBLIE") === "PUBLIE" ? new Date(options.dateEffet ?? "2020-01-01") : null,
         analyse: { champs: chemins },
         auteurId: 1,
         auteurIdentifiant: "test",

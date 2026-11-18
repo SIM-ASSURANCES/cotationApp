@@ -9,7 +9,7 @@ process.env.URL_PUBLIQUE = "https://documents.exemple.ci";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { fixerDateMinimumEffetPourTests } from "@/domaine/calcul/dates";
+import { fixerDateMinimumEffetPourTests, fixerHorlogePourTests } from "@/domaine/calcul/dates";
 import { MESSAGE_RENOUVELLEMENT_GARANTIES, MESSAGE_TARIFICATION_PAR_GARANTIES, type VersionSaisie } from "@/domaine/calcul/parametrage";
 import type { Analyse } from "@/domaine/documents/analyse";
 import type { Assure } from "@/domaine/cotation/saisie";
@@ -1601,3 +1601,80 @@ describe("D67 : chaque document lit la version de SA cotation ou de SA facture, 
     expect(lue.versionDateEffet).toBe("2020-01-01");
   });
 });
+
+describe("D68 : facturation sur un produit qui a deux versions le MÊME JOUR", () => {
+  afterAll(() => fixerHorlogePourTests(null));
+
+  it("une cotation émise entre les deux versions garde la 1re : facture, paiement, reçu, avoir et renouvellement du jour lisent la version de leur cotation", async () => {
+    const prisma = obtenirPrisma();
+    // L'horloge simulée reste APRÈS l'instant réel (les modèles ont été publiés à l'heure réelle) : des minutes à partir de maintenant.
+    const base = Date.now();
+    const horloge = (minutes: number) => fixerHorlogePourTests(new Date(base + minutes * 60_000));
+    await prisma.parametre.upsert({
+      where: { cle_dateEffet: { cle: "seuil_validation_global", dateEffet: new Date("2020-01-01T00:00:00.000Z") } },
+      update: { valeur: "20000000" },
+      create: { cle: "seuil_validation_global", valeur: "20000000", dateEffet: new Date("2020-01-01T00:00:00.000Z"), creePar: "test" },
+    });
+    const code = CODE("MEMEJ");
+    const branche = await assurerBranche(`SANTE_${code}`);
+    await creerTaxe(technique, { branche, typeContrat: "INDIVIDUEL", tauxMixte: false, commentaire: null, tauxPourcent: "1.5", assiette: "NETTE_ACCESSOIRES", dateEffet: "2020-01-01", dateFin: null }, null);
+    await creerProduit(technique, { code, libelle: "Produit à deux versions du jour (test D68)", gamme: "RELAX", branchePrincipale: "MALADIE", branche }, null);
+    const references = (await listerVersions(technique, produitIndividuel))!.versions[0].references;
+    const regles = {
+      arrondi: { precision: 1 as const, sens: "PROCHE" as const, niveau: "LIGNE" as const, composanteAbsorbante: "TAXE" as const },
+      prorata: { actif: true, primeMinimale: null },
+      fractionnement: { tranchesMax: 1, repartitionPourcent: null, decalagesMois: null, frais: "0" },
+      cotation: { validiteMois: 3, formulesMax: 3 },
+      seuilValidationTtc: null,
+      references,
+    };
+    const formule = (libelle: string, primeUnitaire: string) => [{ code: "F", libelle, tauxCouverture: null, primeUnitaire, accessoireMode: "AUCUN" as const, accessoireValeur: "0" }];
+    await creerVersion(technique, code, { ...regles, dateEffet: "2020-01-01", formules: formule("Formule du matin", "100000") }, null);
+    await publier("CP", code, analyse(CONTENU_CP));
+
+    horloge(1);
+    await creerVersion(technique, code, { ...regles, dateEffet: aujourdhui(), formules: formule("Formule de 10 h", "200000") }, null); // 1re version du jour
+    const saisie = {
+      codeProduit: code, typeContrat: "INDIVIDUEL" as const,
+      souscripteur: { type: "PHYSIQUE" as const, nom: "TRAORE", prenoms: "Mariam (inventée)", raison_sociale: "", telephone: "0700000000", email: "", adresse: "Cocody, rue inventée" },
+      clientId: null, motifForcage: null, beneficiaires: [], contactsUrgence: [], risque: {},
+      dateEffet: "2026-01-01", dateEcheance: "2026-12-31", nombreTranches: 1, lignes: [{ codeFormule: "F", effectif: 1 }], assures: [],
+    };
+    horloge(2);
+    const cotation = await creerBrouillon(commercial, saisie, null);
+    expect((await soumettre(commercial, cotation, null)).statut).toBe("EMISE"); // émise ENTRE les deux versions du jour
+    const [, premiereDuJour] = (await prisma.produitVersion.findMany({ where: { produitId: (await prisma.produit.findUniqueOrThrow({ where: { code } })).id }, orderBy: { instantEffet: "asc" } })).map((v) => v.id);
+    expect((await prisma.cotation.findUniqueOrThrow({ where: { id: cotation } })).versionId).toBe(premiereDuJour);
+
+    horloge(3);
+    await creerVersion(technique, code, { ...regles, dateEffet: aujourdhui(), formules: formule("Formule de 11 h", "300000") }, null); // 2e version du jour
+    const secondeDuJour = (await prisma.produitVersion.findFirstOrThrow({ where: { produit: { code } }, orderBy: { instantEffet: "desc" } })).id;
+    expect(secondeDuJour).not.toBe(premiereDuJour);
+
+    horloge(4);
+    const { numeroPolice: numero } = await accepter(commercial, cotation, ["F"], await numeroPourCotation(cotation), null);
+    await emettreCp(technique, cotation, null);
+    const policeId = (await prisma.police.findUniqueOrThrow({ where: { numero } })).id;
+    expect(await libelleDeLaFormuleDeLaFacture(await creerFactureAffaireNouvelle(technique, policeId, null, null))).toEqual(["Formule de 10 h"]);
+    const an = (await prisma.facture.findFirstOrThrow({ where: { policeId, type: "AFFAIRE_NOUVELLE" } })).id;
+    expect(await prisma.facture.findUniqueOrThrow({ where: { id: an } })).toMatchObject({ versionId: premiereDuJour });
+    expect((await prisma.facture.findUniqueOrThrow({ where: { id: an } })).ttc.toFixed()).toBe("203000"); // 200 000 + taxe 1,5 % : la version de 10 h, pas celle de 11 h (304 500)
+    expect((await emettreFacture(technique, an, null)).statut).toBe("EMISE");
+    const pay = await enregistrerPaiement(comptable, an, paiement("50 000"), null);
+    expect(pay.productions.map((x) => [x.type, x.ok])).toEqual([["RECU", true], ["FACTURE", true]]);
+    // Avoir puis nouvelle facture : toujours la version de la cotation.
+    await emettreAvoir(comptable, an, "Erreur (test D68)", null);
+    expect((await prisma.facture.findFirstOrThrow({ where: { type: "AVOIR", factureOrigineId: an } })).versionId).toBe(premiereDuJour);
+    const remplacante = await creerFactureAffaireNouvelle(technique, policeId, null, null);
+    expect(await prisma.facture.findUniqueOrThrow({ where: { id: remplacante } })).toMatchObject({ versionId: premiereDuJour });
+    // Le renouvellement, lui, lit la version EN VIGUEUR à sa date d'effet (01/01/2027) : celle de 11 h, la plus récente.
+    expect((await emettreFacture(technique, remplacante, null)).statut).toBe("EMISE");
+    const ren = await creerFactureRenouvellement(technique, policeId, { lignes: null, nombreTranches: 1, envoyeA: null }, null);
+    expect(await prisma.facture.findUniqueOrThrow({ where: { id: ren } })).toMatchObject({ versionId: secondeDuJour });
+    expect(await libelleDeLaFormuleDeLaFacture(ren)).toEqual(["Formule de 11 h"]);
+  });
+});
+
+async function libelleDeLaFormuleDeLaFacture(factureId: number): Promise<string[]> {
+  return (await lireFacture(technique, factureId))!.contenu.formules.map((x) => x.libelle);
+}

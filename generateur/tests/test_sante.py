@@ -100,7 +100,9 @@ def test_lecture_du_registre_windows() -> None:
 
 # ------------------------------------------------------------------ D69 : remplaçants libres autorisés (sorties fc-list / fc-match simulées)
 
-IMAGE_LIBRE = frozenset({"Tahoma", "Carlito", "Liberation Sans", "Liberation Serif", "DejaVu Sans"})  # fc-list de l'image : aucune police Microsoft
+# fc-list de l'image par défaut (aucune police Microsoft, pas de Tahoma : elle est fournie par SIM) et de l'image d'ESSAI (TAHOMA_LIBRE=oui).
+IMAGE_PAR_DEFAUT = frozenset({"Carlito", "Liberation Sans", "Liberation Serif", "DejaVu Sans"})
+IMAGE_ESSAI = IMAGE_PAR_DEFAUT | {"Wine Tahoma"}
 
 
 @pytest.mark.usefixtures("libreoffice_present")
@@ -112,10 +114,24 @@ def test_sante_ok_quand_les_polices_sont_installees(client: TestClient) -> None:
 
 @pytest.mark.usefixtures("libreoffice_present")
 def test_sante_ok_quand_fontconfig_resout_vers_un_remplacant_autorise(client: TestClient) -> None:
-    # L'image libre : Calibri n'est pas installée, fontconfig la résout en Carlito ; Tahoma est la police de Wine, nommée « Tahoma ».
-    polices(IMAGE_LIBRE, {"Calibri": {"Carlito"}, "Tahoma": {"Tahoma"}})
+    # L'image d'essai : Calibri n'est pas installée, fontconfig la résout en Carlito ; Tahoma, en la police de Wine, exposée sous « Wine Tahoma ».
+    polices(IMAGE_ESSAI, {"Calibri": {"Carlito"}, "Tahoma": {"Wine Tahoma"}})
     corps = client.get("/sante").json()
     assert (corps["statut"], corps["polices_manquantes"]) == ("ok", [])
+
+
+@pytest.mark.usefixtures("libreoffice_present")
+def test_sante_image_par_defaut_calibri_est_libre_mais_tahoma_reste_exigee(client: TestClient) -> None:
+    # Décision de Thierry (D69) : Tahoma reste fournie par SIM. Sans elle, fontconfig se replie sur DejaVu : /sante le dit.
+    polices(IMAGE_PAR_DEFAUT, {"Calibri": {"Carlito"}, "Tahoma": {"DejaVu Sans"}})
+    corps = client.get("/sante").json()
+    assert (corps["statut"], corps["polices_manquantes"]) == ("degrade", ["Tahoma"])
+
+
+@pytest.mark.usefixtures("libreoffice_present")
+def test_sante_ok_avec_une_vraie_tahoma_deposee(client: TestClient) -> None:
+    polices(IMAGE_PAR_DEFAUT | {"Tahoma"}, {"Calibri": {"Carlito"}, "Tahoma": {"Tahoma"}})  # polices/ de SIM : Tahoma installée telle quelle
+    assert client.get("/sante").json()["polices_manquantes"] == []
 
 
 @pytest.mark.usefixtures("libreoffice_present")
@@ -137,7 +153,7 @@ def test_sante_ko_quand_le_remplacant_est_celui_d_une_autre_police(client: TestC
 def test_la_table_des_remplacants_autorises_est_la_seule_source() -> None:
     assert REMPLACANTS_AUTORISES == {
         "Calibri": ("Carlito",),
-        "Tahoma": ("Tahoma",),
+        "Tahoma": ("Wine Tahoma",),
         "Arial": ("Liberation Sans",),
         "Times New Roman": ("Liberation Serif",),
     }
@@ -154,16 +170,20 @@ def test_la_table_des_remplacants_autorises_est_la_seule_source() -> None:
 def test_polices_remplacees_et_absentes_selon_la_resolution() -> None:
     resoudre = {"Calibri": frozenset({"Carlito"}), "Arial": frozenset({"Liberation Sans"}), "Aptos": frozenset({"DejaVu Sans"})}.get
     polices_demandees = ("Tahoma", "Calibri", "Arial", "Aptos", "Segoe UI")
-    assert polices_absentes(polices_demandees, IMAGE_LIBRE, resoudre) == ["Aptos", "Segoe UI"]
-    assert polices_remplacees(polices_demandees, IMAGE_LIBRE, resoudre) == {"Arial": "Liberation Sans", "Calibri": "Carlito"}
+    assert polices_absentes(polices_demandees, IMAGE_PAR_DEFAUT | {"Tahoma"}, resoudre) == ["Aptos", "Segoe UI"]  # Tahoma installée
+    assert polices_absentes(polices_demandees, IMAGE_PAR_DEFAUT, resoudre) == ["Aptos", "Segoe UI", "Tahoma"]  # image par défaut : Tahoma manque
+    essai = {**resoudre.__self__, "Tahoma": frozenset({"Wine Tahoma"})}.get  # type: ignore[attr-defined]
+    assert polices_absentes(polices_demandees, IMAGE_ESSAI, essai) == ["Aptos", "Segoe UI"]
+    assert polices_remplacees(polices_demandees, IMAGE_ESSAI, essai) == {"Arial": "Liberation Sans", "Calibri": "Carlito", "Tahoma": "Wine Tahoma"}
     # Sans résolveur, seule l'installation compte (comportement d'avant D69).
-    assert polices_absentes(polices_demandees, IMAGE_LIBRE) == ["Aptos", "Arial", "Calibri", "Segoe UI"]
+    assert polices_absentes(polices_demandees, IMAGE_ESSAI) == ["Aptos", "Arial", "Calibri", "Segoe UI", "Tahoma"]
 
 
 def test_resolution_supposee_a_partir_d_une_liste_de_familles() -> None:
     resoudre = resolution_supposee(frozenset({"Carlito", "Liberation Sans", "DejaVu Sans"}))
     assert resoudre("Calibri") == {"Carlito"} and resoudre("Arial") == {"Liberation Sans"}
     assert resoudre("Tahoma") is None and resoudre("Aptos") is None  # un repli quelconque n'est jamais supposé
+    assert resolution_supposee(frozenset({"Wine Tahoma", "DejaVu Sans"}))("Tahoma") == {"Wine Tahoma"}
 
 
 def _simuler_fc_match(monkeypatch: pytest.MonkeyPatch, sorties: dict[str, str] | None) -> list[list[str]]:

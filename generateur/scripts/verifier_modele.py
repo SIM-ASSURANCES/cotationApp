@@ -231,7 +231,7 @@ def rapport(analyse: Analyse, pont: dict, fichier_polices: str | None) -> tuple[
         ajouter("  remplacées par une police libre de mêmes dimensions (rien à fournir, D69) : " + ", ".join(f"{p} → {r}" for p, r in remplacees.items()))
     for police in absentes or []:
         if police in REMPLACANTS_AUTORISES:
-            ajouter(f"  {police} : son remplaçant libre ({', '.join(REMPLACANTS_AUTORISES[police])}) n'est pas dans l'image : vérifiez les paquets de polices de l'image (generateur/Dockerfile).")
+            ajouter(f"  {police} : son remplaçant libre ({', '.join(REMPLACANTS_AUTORISES[police])}) n'est pas dans l'image : fournissez la police dans generateur/polices/, ou vérifiez les paquets de polices de l'image (generateur/Dockerfile).")
         else:
             ajouter(
                 f"  {police} : sans remplaçant libre de mêmes dimensions. Elle sera remplacée par une police de secours aux dimensions différentes : "

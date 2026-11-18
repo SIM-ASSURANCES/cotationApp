@@ -170,7 +170,13 @@ def test_un_remplacant_libre_absent_de_l_image_est_signale_avec_son_nom(tmp_path
     sortie = lancer(modele, "--type", "ANNEXE", "--polices-image", image).stdout
     assert ligne_de(sortie, "  absentes :") == "  absentes : Calibri, Tahoma"
     assert "remplaçant libre (Carlito) n'est pas dans l'image" in ligne_de(sortie, "  Calibri :")
-    assert "remplaçant libre (Tahoma) n'est pas dans l'image" in ligne_de(sortie, "  Tahoma :")
+    assert "remplaçant libre (Wine Tahoma) n'est pas dans l'image" in ligne_de(sortie, "  Tahoma :")
+    assert "generateur/polices/" in ligne_de(sortie, "  Tahoma :")  # Tahoma reste à fournir : le message dit où
+    # Image d'essai (TAHOMA_LIBRE=oui) : la Tahoma de Wine, exposée sous « Wine Tahoma », couvre Tahoma.
+    essai = ecrire(tmp_path, "image-essai.txt", "Carlito\nWine Tahoma\nCambria\n".encode())
+    sortie = lancer(modele, "--type", "ANNEXE", "--polices-image", essai).stdout
+    assert ligne_de(sortie, "  absentes :") == "  absentes : aucune"
+    assert "Tahoma → Wine Tahoma" in ligne_de(sortie, "  remplacées par une police libre")
 
 
 def test_rien_n_est_envoye_ni_stocke() -> None:

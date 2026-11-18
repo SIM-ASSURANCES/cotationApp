@@ -82,6 +82,9 @@ services:
   generateur:
     build:
       context: ./generateur
+      args:
+        # ESSAI de la Tahoma libre de Wine (D69) : « oui » l'ajoute à l'image, sous le nom « Wine Tahoma ». Défaut « non » : Tahoma est fournie dans generateur/polices/.
+        TAHOMA_LIBRE: ${TAHOMA_LIBRE:-non}
     <<: *securite
     # Limites de ressources (audit M5) : le VPS est partagé avec le portail RH ; un service qui s'emballe ne doit pas l'emporter avec lui.
     mem_limit: 2g

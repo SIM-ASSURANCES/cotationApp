@@ -31,10 +31,11 @@ POLICES_REQUISES = ("Tahoma", "Calibri")
 REMPLACANTS_AUTORISES: dict[str, tuple[str, ...]] = {
     # Carlito : métriquement compatible avec Calibri (paquet fonts-crosextra-carlito) ; fontconfig l'y résout lui-même.
     "Calibri": ("Carlito",),
-    # La police de remplacement du projet Wine (paquet fonts-wine, licence LGPL-2.1+) se nomme « Tahoma » : une fois
-    # exposée à fontconfig, elle EST la famille Tahoma, sans alias. Une vraie Tahoma déposée dans generateur/polices/
-    # porterait le même nom : /sante ne les distingue pas, `fc-match -f '%{file}' Tahoma` dit laquelle est retenue.
-    "Tahoma": ("Tahoma",),
+    # ESSAI (D69) : la police de remplacement du projet Wine (paquet fonts-wine, LGPL-2.1+), exposée par l'image sous le nom « Wine Tahoma »
+    # seulement avec TAHOMA_LIBRE=oui (fontconfig/tahoma-wine.conf), et seulement si aucune vraie Tahoma n'est installée. Sans cet argument,
+    # aucune police n'est résolue ici : Tahoma est exigée (polices/). Une vraie Tahoma, installée, couvre Tahoma sans passer par cette table.
+    # La mesure de recette.md §1.2 (C', 06/10/2026) trouvait sa pagination différente de Word : retirer cette ligne si l'essai échoue.
+    "Tahoma": ("Wine Tahoma",),
     # Liberation : métriquement compatible avec Arial et Times New Roman (paquet fonts-liberation).
     "Arial": ("Liberation Sans",),
     "Times New Roman": ("Liberation Serif",),

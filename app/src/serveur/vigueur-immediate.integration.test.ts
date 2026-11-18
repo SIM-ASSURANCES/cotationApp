@@ -68,7 +68,10 @@ const demande = (code: string, e: Entrees) => ({ codeProduit: code, typeContrat:
 
 const versionsDe = (code: string) => obtenirPrisma().produitVersion.findMany({ where: { produit: { code } }, orderBy: { dateEffet: "asc" } });
 const baremesDe = (code: string) => obtenirPrisma().baremeDocument.findMany({ where: { version: { produit: { code } } }, orderBy: { id: "asc" } });
-const dateDe = async (versionId: number) => depuisDate((await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { id: versionId } })).dateEffet);
+const dateDe = async (versionId: number) => {
+  const d = (await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { id: versionId } })).dateEffet;
+  return d === null ? null : depuisDate(d);
+};
 
 const versionFormule = (dateEffet: string, prime = "1000", extra: Partial<VersionSaisie> = {}): VersionSaisie => ({
   dateEffet,
@@ -126,7 +129,8 @@ describe("D66 test 1 — correction d'un barème « dès la publication »", () 
     const { versionId: v2 } = await creerVersionDepuisBareme(technique, v1, "", null);
     const prep = await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { id: v2 } });
     expect(prep.modeTarification).toBe("BAREME");
-    expect(depuisDate(prep.dateEffet)).toBe(DATE_EFFET_A_LA_PUBLICATION);
+    // D68 : plus de date 9999-12-31 en base (ancienne attente : "9999-12-31") : ni date ni instant en préparation.
+    expect([prep.dateEffet, prep.instantEffet]).toEqual([null, null]);
     expect((await baremesDe(code)).filter((b) => b.versionId === v2).map((b) => b.statut)).toEqual(["BROUILLON"]);
 
     // Pendant le brouillon : la v1 sert à tous les sites, sans refus.
@@ -154,23 +158,40 @@ describe("D66 test 1 — correction d'un barème « dès la publication »", () 
   });
 });
 
-describe("D66 test 2 — une seule version par jour", () => {
-  it("la publication « dès la publication » d'une seconde version le même jour est refusée, rien n'est écrit", async () => {
+// D68 : la règle D66 « une seule version par jour » est retirée (décision de Thierry : plusieurs modifications le même jour, chaque version servant dès
+// sa mise en vigueur). Ces deux tests décrivaient le REFUS de la seconde version du jour (messages « Une seule version par jour… ») ; ils décrivent
+// maintenant son ACCEPTATION : la seconde version entre en vigueur à son instant, la première a servi jusque-là.
+describe("D68 (ancien D66 test 2) — deux versions le même jour", () => {
+  const instantsDe = async (code: string) =>
+    (await versionsDe(code)).map((v) => ({ id: v.id, dateEffet: depuisDate(v.dateEffet!), instantEffet: v.instantEffet!.toISOString() }));
+
+  it("la publication « dès la publication » d'une seconde version le même jour est acceptée : elle sert dès son instant, la première jusque-là", async () => {
     const code = CODE("SECURPRO_V2");
     const { versionId: v1 } = await creerProduitAuBareme(technique, code, branches, 0); // v1 entre en vigueur AUJOURD'HUI
     const { versionId: v2 } = await creerVersionDepuisBareme(technique, v1, "", null);
-    await expect(publierBareme(technique, v2, "Deuxième version du jour (test D66)", null)).rejects.toThrow(/Une seule version par jour.*demain ou plus tard/);
-    expect(await dateDe(v2)).toBe(DATE_EFFET_A_LA_PUBLICATION);
-    expect((await baremesDe(code)).filter((b) => b.versionId === v2).map((b) => b.statut)).toEqual(["BROUILLON"]);
-    expect((await resoudreVersion(obtenirPrisma(), code, aujourdhui())).version.id).toBe(v1);
+    // Ancienne attente : refus /Une seule version par jour.*demain ou plus tard/ ; v2 restait sans date, en préparation.
+    await publierBareme(technique, v2, "Deuxième version du jour (test D68)", null);
+    expect(await dateDe(v2)).toBe(aujourdhui());
+    const versions = await instantsDe(code);
+    const [premiere, seconde] = [versions.find((v) => v.id === v1)!, versions.find((v) => v.id === v2)!];
+    expect(seconde.instantEffet > premiere.instantEffet).toBe(true);
+    expect((await baremesDe(code)).filter((b) => b.versionId === v2).map((b) => b.statut)).toEqual(["PUBLIE"]);
+    // Maintenant : la seconde. À l'instant de la première : la première (la seconde n'existait pas encore).
+    expect((await resoudreVersion(obtenirPrisma(), code, aujourdhui())).version.id).toBe(v2);
+    expect(enVigueur(versions, premiere.instantEffet)?.id).toBe(v1);
+    expect(enVigueur(versions, seconde.instantEffet)?.id).toBe(v2);
   });
 
-  it("« Ajouter une version » dès la publication le même jour : refus, aucune version ni barème créés", async () => {
+  it("« Ajouter une version » dès la publication le même jour : acceptée, publiée aussitôt, les deux versions du jour coexistent", async () => {
     const code = CODE("SECURPRO_V2B");
-    await creerProduitAuBareme(technique, code, branches, 0);
-    const [versionsAvant, baremesAvant] = [(await versionsDe(code)).length, (await baremesDe(code)).length];
-    await expect(creerVersion(technique, code, versionAuBareme(DATE_EFFET_A_LA_PUBLICATION, { dureeImposeeUnAn: true }), null, { motifPublication: "Durée imposée (test D66)" })).rejects.toThrow(/Une seule version par jour/);
-    expect([(await versionsDe(code)).length, (await baremesDe(code)).length]).toEqual([versionsAvant, baremesAvant]);
+    const { versionId: v1 } = await creerProduitAuBareme(technique, code, branches, 0);
+    // Ancienne attente : refus /Une seule version par jour/, aucune version ni barème créés.
+    const creee = await creerVersion(technique, code, versionAuBareme(DATE_EFFET_A_LA_PUBLICATION, { dureeImposeeUnAn: true }), null, { motifPublication: "Durée imposée (test D68)" });
+    expect(creee).toMatchObject({ modeTarification: "BAREME", dateEffet: aujourdhui(), baremePublie: true });
+    const versions = await instantsDe(code);
+    expect(versions.map((v) => v.id).sort()).toEqual([v1, creee.versionId].sort());
+    expect(new Set(versions.map((v) => v.dateEffet))).toEqual(new Set([aujourdhui()]));
+    expect((await resoudreVersion(obtenirPrisma(), code, aujourdhui())).version.id).toBe(creee.versionId);
   });
 });
 
@@ -434,7 +455,7 @@ describe("D66 relecture — la date provisoire 9999-12-31 ne sort nulle part", (
     const futur = ajouterJours(aujourdhui(), 25);
     const creee = await creerVersion(technique, code, versionAuBareme(futur, { dureeImposeeUnAn: true }), null, { motifPublication: "Durée imposée (test D66)" });
     expect(creee).toMatchObject({ dateEffet: futur, baremePublie: true });
-    expect(await dateDe(v2)).toBe(DATE_EFFET_A_LA_PUBLICATION); // la préparation n'a pas bougé
+    expect(await dateDe(v2)).toBeNull(); // la préparation n'a pas bougé (D68 : sans date ; ancienne attente : 9999-12-31)
     expect((await baremesDe(code)).filter((b) => b.versionId === v2).map((b) => b.statut)).toEqual(["BROUILLON"]);
     expect((await resoudreVersion(obtenirPrisma(), code, aujourdhui())).version.id).toBe(v1);
   });
@@ -504,7 +525,7 @@ describe("D66, H212 — un barème ne se crée que sur une version déjà au bar
       await produitSimple(code);
       await creerVersion(technique, code, mode === "FORMULE" ? versionFormule("2020-01-01") : versionGaranties("2020-01-01"), null);
       await creerVersion(technique, code, version, null);
-      const futur = (await versionsDe(code)).find((v) => depuisDate(v.dateEffet) > aujourdhui())!;
+      const futur = (await versionsDe(code)).find((v) => v.dateEffet === null || depuisDate(v.dateEffet) > aujourdhui())!;
       await expect(creerBaremeVide(technique, futur.id, null), mode).rejects.toThrow(refus);
       await expect(importerBaremeXlsx(technique, futur.id, "securpro.xlsx", classeur, null), mode).rejects.toThrow(refus);
       expect(await baremesDe(code), mode).toHaveLength(0);

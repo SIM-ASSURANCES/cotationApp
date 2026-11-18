@@ -121,7 +121,8 @@ export async function contexteVersion(versionId: number): Promise<ContexteProdui
       branche_libelle: version.produit.branchePrincipaleRef?.libelle ?? libelleBranchePrincipale(version.produit.branchePrincipale),
       branchePrincipale: version.produit.branchePrincipale,
     },
-    versionDateEffet: depuisDate(version.dateEffet),
+    // Une version désignée par une cotation ou une facture a toujours une date (la base refuse de désigner une version en préparation).
+    versionDateEffet: depuisDate(version.dateEffet!),
     modeTarification: version.modeTarification,
     formules: new Map(version.formules.map((f) => [f.code, { libelle: f.libelle, tauxCouverture: f.tauxCouverture ? f.tauxCouverture.toFixed() : null }])),
     references: { csModeleCode: version.csModeleCode, csVisa: version.csVisa },
@@ -133,7 +134,7 @@ export async function contexteVersion(versionId: number): Promise<ContexteProdui
  * d'intégration d'avant D67, qui désignent la version par sa date, et se retire avec eux.
  */
 export async function contexteProduit(produitId: number, versionDateEffet: Date): Promise<ContexteProduit> {
-  const { id } = await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { produitId_dateEffet: { produitId, dateEffet: versionDateEffet } }, select: { id: true } });
+  const { id } = await obtenirPrisma().produitVersion.findFirstOrThrow({ where: { produitId, dateEffet: versionDateEffet }, orderBy: { instantEffet: "desc" }, select: { id: true } });
   return contexteVersion(id);
 }
 

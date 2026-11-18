@@ -6,7 +6,7 @@ import { Prisma } from "@/generated/prisma/client";
 
 import { baremeTarifeParEffectif } from "@/domaine/bareme";
 import { estComposition, estCompositionBareme, type BaremeFige, type DonneesCalcul } from "@/domaine/calcul/composition";
-import { dateValide, formaterDate, type DateIso } from "@/domaine/calcul/dates";
+import { dateValide, formaterDate, heureCourante, type DateIso } from "@/domaine/calcul/dates";
 import { estContratDeGroupe } from "@/domaine/cotation/adherents";
 import { normaliserNumeroPolice, numeroCertificatParDefaut } from "@/domaine/cotation/police";
 import type { Assure } from "@/domaine/cotation/saisie";
@@ -69,8 +69,8 @@ async function formulesEnVigueur(produitCode: string) {
   if (!produit) throw new ErreurMetier("Produit introuvable.");
   const version = await obtenirPrisma().produitVersion.findFirst({
     // D66 : une version au barème dont le barème n'est pas publié (en préparation) n'est jamais la version en vigueur.
-    where: { produitId: produit.id, dateEffet: { lte: versDate(aujourdhui()) }, NOT: { modeTarification: "BAREME", baremes: { none: { statut: "PUBLIE" } } } },
-    orderBy: { dateEffet: "desc" },
+    where: { produitId: produit.id, instantEffet: { lte: heureCourante() }, NOT: { modeTarification: "BAREME", baremes: { none: { statut: "PUBLIE" } } } },
+    orderBy: { instantEffet: "desc" },
     include: { formules: { orderBy: { code: "asc" } } },
   });
   if (!version) throw new ErreurMetier(`Le produit ${produitCode} n'a pas de version en vigueur.`);

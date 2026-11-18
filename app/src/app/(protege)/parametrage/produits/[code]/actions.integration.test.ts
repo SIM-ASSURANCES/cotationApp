@@ -67,7 +67,7 @@ describe("saisie des montants : analyseur unique, du formulaire à la base", () 
     const etat = await ajouterUneVersion({}, formulaire(date, saisie));
 
     expect(etat.erreur).toBeUndefined();
-    const v = (await versions()).find((x) => x.dateEffet.toISOString().startsWith(date))!;
+    const v = (await versions()).find((x) => x.dateEffet?.toISOString().startsWith(date))!;
     expect(v.formules.find((f) => f.code === "SOLO")!.primeUnitaire.toFixed()).toBe("93581.33");
     expect(v.seuilValidationTtc).toBeNull();
   });

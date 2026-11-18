@@ -1482,7 +1482,7 @@ describe("D67 : chaque document lit la version de SA cotation ou de SA facture, 
     await creerVersion(technique, code, { ...REGLES, references, dateEffet: "2020-01-01", formules: FORMULE("Formule A (ancienne)", "100000") }, null);
     await publier("CP", code, analyse(CONTENU_CP));
     const produit = await prisma.produit.findUniqueOrThrow({ where: { code } });
-    const versionA = await prisma.produitVersion.findUniqueOrThrow({ where: { produitId_dateEffet: { produitId: produit.id, dateEffet: new Date("2020-01-01T00:00:00.000Z") } } });
+    const versionA = await prisma.produitVersion.findFirstOrThrow({ where: { produitId: produit.id, dateEffet: new Date("2020-01-01T00:00:00.000Z") } });
 
     const saisie = {
       codeProduit: code,
@@ -1511,7 +1511,7 @@ describe("D67 : chaque document lit la version de SA cotation ou de SA facture, 
 
     // … puis une version B, plus récente et en vigueur, au tarif et aux libellés différents.
     await creerVersion(technique, code, { ...REGLES, references, dateEffet: "2026-06-01", formules: FORMULE("Formule B (récente)", "250000") }, null);
-    const versionB = await prisma.produitVersion.findUniqueOrThrow({ where: { produitId_dateEffet: { produitId: produit.id, dateEffet: new Date("2026-06-01T00:00:00.000Z") } } });
+    const versionB = await prisma.produitVersion.findFirstOrThrow({ where: { produitId: produit.id, dateEffet: new Date("2026-06-01T00:00:00.000Z") } });
     expect(versionB.id).not.toBe(versionA.id);
     deuxVersions.b = versionB.id;
 

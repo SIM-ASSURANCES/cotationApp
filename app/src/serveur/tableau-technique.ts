@@ -243,7 +243,7 @@ export async function tableauTechnique(
       versionId: b.versionId,
       produitCode: b.version.produit.code,
       produitLibelle: b.version.produit.libelle,
-      dateEffet: depuisDate(b.version.dateEffet),
+      dateEffet: b.version.dateEffet ? depuisDate(b.version.dateEffet) : "dès la publication",
       modifieLe: depuisDate(b.modifieLe),
     })),
     transformation: { parProduit },

@@ -87,7 +87,9 @@ const versionsDe = (code: string) => obtenirPrisma().produitVersion.findMany({ w
 async function changerLaVersionPourTest(id: number, affectation: string): Promise<void> {
   await obtenirPrisma().$transaction(async (tx) => {
     await tx.$executeRawUnsafe("SET LOCAL session_replication_role = replica;");
-    await tx.$executeRawUnsafe(`UPDATE produit_versions SET ${affectation} WHERE id = ${id}`);
+    // D68 : la date d'effet d'une version est celle de son instant ; sous « replica » les déclencheurs ne la synchronisent pas, le test pose les deux.
+    const avecInstant = affectation.replace(/date_effet = DATE '(\d{4}-\d{2}-\d{2})'/, "date_effet = DATE '$1', instant_effet = TIMESTAMPTZ '$1 00:00:00+00'");
+    await tx.$executeRawUnsafe(`UPDATE produit_versions SET ${avecInstant} WHERE id = ${id}`);
   });
 }
 
@@ -347,7 +349,7 @@ describe("Corriger un barème publié : une nouvelle version, par le service exi
     expect(cree.codeProduit).toBe(code);
     expect(await versionsDe(code)).toHaveLength(nombreDeVersions + 1);
     const nouvelle = await prisma.produitVersion.findUniqueOrThrow({ where: { id: cree.versionId } });
-    expect(nouvelle.dateEffet.toISOString().slice(0, 10)).toBe(date);
+    expect(nouvelle.dateEffet!.toISOString().slice(0, 10)).toBe(date);
     expect(nouvelle.modeTarification).toBe("BAREME");
     expect(nouvelle.arrondiPrecision).toBe(sourceAvant.arrondiPrecision);
     expect(nouvelle.validiteMois).toBe(sourceAvant.validiteMois);
@@ -394,7 +396,8 @@ describe("Corriger un barème publié : une nouvelle version, par le service exi
     const creee = await creerVersionDepuisBareme(technique, versionId, "", null);
     expect(await versionsDe(code)).toHaveLength(nombre + 1);
     const ligne = await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { id: creee.versionId } });
-    expect([ligne.modeTarification, ligne.dateEffet.toISOString().slice(0, 10)]).toEqual(["BAREME", "9999-12-31"]);
+    // D68 : plus de date provisoire 9999-12-31 en base : une version « dès la publication » n'a ni date ni instant tant qu'elle est en préparation.
+    expect([ligne.modeTarification, ligne.dateEffet, ligne.instantEffet]).toEqual(["BAREME", null, null]);
   });
 
   it("refuse quand une version à venir a déjà un barème (en la nommant), et ne crée rien", async () => {

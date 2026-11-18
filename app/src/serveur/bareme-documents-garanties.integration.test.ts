@@ -557,4 +557,27 @@ describe("A. Facture à l'écran (après la publication des sous-modèles : la f
     expect(relue.contenu.garanties![0].code).toBe("incendie");
     void cotationId;
   });
+
+  it("D68 : deux publications du sous-modèle « vol » le même jour : le CP émis avant la 2e garde la 1re (réédition identique), le CP émis après prend la 2e", async () => {
+    const decode = (u: Uint8Array) => new TextDecoder().decode(u);
+    const avant = await nouvellePolice(await entrees(true));
+    const docAvant = await emettreCp(technique, avant.cotationId, null);
+    const emissionAvant = derniereDemande("CP");
+    const vol = await obtenirPrisma().modele.findFirstOrThrow({ where: { type: "SOUS_MODELE", blocNom: "garanties", blocCle: "vol", produit: { code: codeSecurpro } } });
+    const volAvant = decode(emissionAvant.sousModeles!.garanties.vol);
+
+    // 2e publication du même sous-modèle, AUJOURD'HUI : accepté, elle sert dès son instant.
+    await deposerEtPublier(vol.id, analyse(["garantie.libelle"]), "garantie_vol_meme_jour", "sous-modèle inventé vol (2e publication du jour)", aujourdhui());
+    const apres = await nouvellePolice(await entrees(true));
+    await emettreCp(technique, apres.cotationId, null);
+    expect(decode(derniereDemande("CP").sousModeles!.garanties.vol)).toBe("sous-modèle inventé vol (2e publication du jour)");
+
+    // Le CP d'avant se réédite à l'identique : la 1re version du sous-modèle.
+    const reedite = await reediter(technique, docAvant.id, null);
+    expect(reedite.version).toBe(2);
+    expect(decode(derniereDemande("CP").sousModeles!.garanties.vol)).toBe(volAvant);
+    expect(volAvant).not.toBe("sous-modèle inventé vol (2e publication du jour)");
+    const versions = (await obtenirPrisma().documentEmis.findUniqueOrThrow({ where: { id: reedite.id } })).versionsAssociees as { sousModeles: { garanties: Record<string, number> } };
+    expect(versions.sousModeles.garanties.vol).toBe(((await obtenirPrisma().documentEmis.findUniqueOrThrow({ where: { id: docAvant.id } })).versionsAssociees as { sousModeles: { garanties: Record<string, number> } }).sousModeles.garanties.vol);
+  });
 });

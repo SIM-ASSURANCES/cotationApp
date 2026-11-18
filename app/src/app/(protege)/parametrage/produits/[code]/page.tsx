@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { FormulaireAction } from "@/composants/FormulaireAction";
 import { Bandeau, Carte, EnTetePage, EtatVide, LienBouton, ListeDeroulante, Tableau, type ColonneTableau } from "@/composants/ui";
 import { formaterDate, heureCourante } from "@/domaine/calcul/dates";
-import { afficheTableauFormules, baseDeNouvelleVersion, titreDeVersionHorodate, versionsProvisoiresSansBareme } from "@/domaine/calcul/parametrage";
+import { afficheTableauFormules, baseDeNouvelleVersion, versionsProvisoiresSansBareme } from "@/domaine/calcul/parametrage";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
 import { etatDuBareme } from "@/serveur/bareme";
@@ -14,6 +14,7 @@ import { ajouterUneVersion, renseignerBranchePrincipale } from "./actions";
 import { FormulaireNouvelleVersion } from "./formulaire-version";
 import { LIBELLE_MODE, LIBELLE_NIVEAU, LIBELLE_SENS, net } from "./libelles-produit";
 import { PanneauBareme } from "./panneau-bareme";
+import { TitreDeVersion } from "./titre-version";
 
 type Formule = VersionProduit["formules"][number];
 
@@ -37,7 +38,7 @@ function formaterGarantieResume(g: NonNullable<VersionProduit["garanties"]>[numb
 function Resume({ v, toutes, codeProduit, peutEcrire, autreVersionAvecBareme }: { v: VersionProduit; toutes: VersionProduit[]; codeProduit: string; peutEcrire: boolean; autreVersionAvecBareme?: { id: number; dateEffet: string; publie: boolean } }) {
   return (
     <Carte>
-      <h3 className="mb-2 text-base font-bold text-foreground">{titreDeVersionHorodate(v, toutes, heureCourante().toISOString())}</h3>
+      <TitreDeVersion v={v} toutes={toutes} maintenant={heureCourante().toISOString()} />
       <p className="mb-3 text-sm text-muted-foreground">
         Tarification : {LIBELLE_MODE[v.modeTarification] ?? v.modeTarification}
         {v.garanties && v.garanties.length > 0 ? ` — garanties : ${v.garanties.map(formaterGarantieResume).join(", ")}${v.garantiesSaisieLibre === false ? " ; saisie libre interdite" : ""}` : ""} ·{" "}

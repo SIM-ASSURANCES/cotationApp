@@ -1,4 +1,4 @@
-import { dateValide, type DateIso } from "../calcul/dates";
+import { dateValide, finDeJourAbidjan, heureCourante, minuitAbidjan, type DateIso, type Instant } from "../calcul/dates";
 
 /**
  * Bibliothèque de modèles Word (CDC §6.1, §6.6) : types, saisie, cycle de vie. Règles pures.
@@ -217,22 +217,33 @@ export const LIBELLE_STATUT_VERSION: Record<StatutAffiche, string> = {
   REMPLACEE: "Archivé (remplacé)",
 };
 
-export type VersionCycle = { id: number; numero: number; statut: StatutVersion; dateEffet: DateIso; auteurId: number };
+/** `instantEffet` (D68) : instant de mise en vigueur d'une version publiée ; absent (donnée d'avant D68, objet de test) : minuit de sa date. */
+export type VersionCycle = { id: number; numero: number; statut: StatutVersion; dateEffet: DateIso; instantEffet?: Instant | null; auteurId: number };
 
-/** Version publiée en vigueur à une date : date d'effet la plus récente qui n'est pas après `date`. */
-export function versionEnVigueur<V extends VersionCycle>(versions: readonly V[], date: DateIso): V | null {
+/** Instant de mise en vigueur d'une version de modèle (D68), `instantEffet` ou, à défaut, minuit de sa date d'effet. */
+export const instantDeVersionModele = (v: Pick<VersionCycle, "dateEffet" | "instantEffet">): Instant => v.instantEffet ?? minuitAbidjan(v.dateEffet);
+
+/**
+ * Version publiée en vigueur à `quand` : celle dont l'instant de mise en vigueur est le plus récent sans dépasser `quand` (D68). `quand` est un
+ * instant, ou un JOUR (AAAA-MM-JJ) qui vaut la fin de ce jour : toute version publiée avec cette date ou avant compte, comme avant D68.
+ */
+export function versionEnVigueur<V extends VersionCycle>(versions: readonly V[], quand: DateIso | Instant): V | null {
+  const limite = quand.length === 10 ? finDeJourAbidjan(quand) : quand;
   let retenue: V | null = null;
   for (const v of versions) {
-    if (v.statut !== "PUBLIE" || v.dateEffet > date) continue;
-    if (!retenue || v.dateEffet > retenue.dateEffet || (v.dateEffet === retenue.dateEffet && v.numero > retenue.numero)) retenue = v;
+    if (v.statut !== "PUBLIE" || instantDeVersionModele(v) > limite) continue;
+    const [a, b] = retenue ? [instantDeVersionModele(v), instantDeVersionModele(retenue)] : ["", ""];
+    if (!retenue || a > b || (a === b && v.numero > retenue.numero)) retenue = v;
   }
   return retenue;
 }
 
-export function statutAffiche(v: VersionCycle, versions: readonly VersionCycle[], aujourdhui: DateIso): StatutAffiche {
+/** `quand` : un jour (comme avant) ou l'instant présent (D68) ; une version publiée dont l'instant n'est pas atteint est « programmée ». */
+export function statutAffiche(v: VersionCycle, versions: readonly VersionCycle[], quand: DateIso | Instant): StatutAffiche {
   if (v.statut !== "PUBLIE") return v.statut;
-  if (v.dateEffet > aujourdhui) return "PROGRAMMEE";
-  return versionEnVigueur(versions, aujourdhui)?.id === v.id ? "EN_VIGUEUR" : "REMPLACEE";
+  const limite = quand.length === 10 ? finDeJourAbidjan(quand) : quand;
+  if (instantDeVersionModele(v) > limite) return "PROGRAMMEE";
+  return versionEnVigueur(versions, quand)?.id === v.id ? "EN_VIGUEUR" : "REMPLACEE";
 }
 
 /** Seul l'auteur soumet sa version. */
@@ -242,12 +253,19 @@ export const peutSoumettre = (v: VersionCycle, acteurId: number): boolean => v.s
 export const peutPublier = (v: VersionCycle, acteurId: number): boolean => v.statut === "SOUMIS" && v.auteurId !== acteurId;
 export const peutRenvoyer = (v: VersionCycle, acteurId: number): boolean => v.statut === "SOUMIS" && v.auteurId !== acteurId;
 
-/** Une publication n'est jamais rétroactive, et deux versions publiées ne partagent pas une date. */
-export function problemesPublication(v: VersionCycle, dateEffet: DateIso, aujourdhui: DateIso, versions: readonly VersionCycle[]): string[] {
+/**
+ * Instant de mise en vigueur d'une publication (D68) : la date du jour = l'instant de la publication ; toute autre date = son minuit. Deux
+ * publications le même jour sont donc possibles, à des heures différentes.
+ */
+export const instantDePublication = (dateEffet: DateIso, aujourdhui: DateIso, maintenant: Date = heureCourante()): Instant => (dateEffet === aujourdhui ? maintenant.toISOString() : minuitAbidjan(dateEffet));
+
+/** Une publication n'est jamais rétroactive, et deux versions publiées ne partagent pas un instant de mise en vigueur (D68 : plus une date). */
+export function problemesPublication(v: VersionCycle, dateEffet: DateIso, aujourdhui: DateIso, versions: readonly VersionCycle[], maintenant: Date = heureCourante()): string[] {
   const p: string[] = [];
   if (!dateValide(dateEffet)) return ["Date d'effet invalide (AAAA-MM-JJ)."];
   if (dateEffet < aujourdhui) p.push("La date d'effet ne peut pas être passée : une publication n'est jamais rétroactive.");
-  if (versions.some((autre) => autre.id !== v.id && autre.statut === "PUBLIE" && autre.dateEffet === dateEffet)) {
+  const instant = instantDePublication(dateEffet, aujourdhui, maintenant);
+  if (versions.some((autre) => autre.id !== v.id && autre.statut === "PUBLIE" && instantDeVersionModele(autre) === instant)) {
     p.push("Une version de ce modèle est déjà publiée avec cette date d'effet.");
   }
   return p;

@@ -248,7 +248,7 @@ describe("réédition", () => {
     const prisma = obtenirPrisma();
     await prisma.$executeRawUnsafe(`ALTER TABLE modele_versions DISABLE TRIGGER modele_versions_figees`);
     try {
-      await prisma.$executeRawUnsafe(`UPDATE modele_versions SET date_effet = '2020-01-01' WHERE id = ${v1.versionId}`);
+      await prisma.$executeRawUnsafe(`UPDATE modele_versions SET date_effet = '2020-01-01', instant_effet = TIMESTAMPTZ '2020-01-01 00:00:00+00' WHERE id = ${v1.versionId}`);
     } finally {
       await prisma.$executeRawUnsafe(`ALTER TABLE modele_versions ENABLE TRIGGER modele_versions_figees`);
     }

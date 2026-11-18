@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 
 import type { Prisma } from "@/generated/prisma/client";
 
-import { aujourdhui, ajouterJours, formaterDate, heureCourante, type DateIso } from "@/domaine/calcul/dates";
+import { aujourdhui, ajouterJours, formaterDate, heureCourante, instantDeReference, type DateIso } from "@/domaine/calcul/dates";
 import { estEffetALaPublication } from "@/domaine/calcul/parametrage";
 import { estCompositionBareme } from "@/domaine/calcul/composition";
 import { versionEnVigueur, type StatutVersion, type VersionCycle } from "@/domaine/documents/modeles";
@@ -202,15 +202,15 @@ export async function balisesDesModelesSansCle(client: Pick<Client, "modeleVersi
   const jour = dateEffetVersion > aujourdhui() ? dateEffetVersion : aujourdhui();
   const versions = await client.modeleVersion.findMany({
     where: { statut: "PUBLIE", modele: { produitId, type: { in: ["CP", "COTATION", "CERTIFICAT"] } } },
-    select: { id: true, numero: true, statut: true, dateEffet: true, auteurId: true, analyse: true, modeleId: true, modele: { select: { code: true, type: true } } },
+    select: { id: true, numero: true, statut: true, dateEffet: true, instantEffet: true, auteurId: true, analyse: true, modeleId: true, modele: { select: { code: true, type: true } } },
   });
   type Ligne = (typeof versions)[number];
   const parModele = new Map<number, Ligne[]>();
   for (const v of versions) parModele.set(v.modeleId, [...(parModele.get(v.modeleId) ?? []), v]);
   const publies: { description: string; chemins: string[] }[] = [];
   for (const groupe of parModele.values()) {
-    const cycles = groupe.map((v): VersionCycle & { source: Ligne } => ({ id: v.id, numero: v.numero, statut: v.statut as StatutVersion, dateEffet: depuisDate(v.dateEffet), auteurId: v.auteurId, source: v }));
-    const enVigueur = versionEnVigueur(cycles, jour);
+    const cycles = groupe.map((v): VersionCycle & { source: Ligne } => ({ id: v.id, numero: v.numero, statut: v.statut as StatutVersion, dateEffet: depuisDate(v.dateEffet), instantEffet: v.instantEffet?.toISOString() ?? null, auteurId: v.auteurId, source: v }));
+    const enVigueur = versionEnVigueur(cycles, instantDeReference(jour));
     if (enVigueur) {
       const v = enVigueur.source;
       publies.push({ description: `modèle ${v.modele.type} ${v.modele.code} v${v.numero}`, chemins: ((v.analyse as { champs?: string[] }).champs ?? []) as string[] });

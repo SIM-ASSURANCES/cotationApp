@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 
-import type { DateIso } from "@/domaine/calcul/dates";
+import { heureCourante, instantDeReference, type DateIso } from "@/domaine/calcul/dates";
 import { avertissementsDeGaranties, avertissementsRisque, CLE_BLOC_DE_GARANTIE, controlerDepot, type Constat } from "@/domaine/documents/controles";
 import { IMAGES, donneesExemple } from "@/domaine/documents/dictionnaire";
 import {
@@ -17,6 +17,7 @@ import {
   estTypeModele,
   peutPublier,
   peutRenvoyer,
+  instantDePublication,
   peutSoumettre,
   problemesPublication,
   problemesSaisieModele,
@@ -122,19 +123,21 @@ const champsVersion = {
   numero: true,
   statut: true,
   dateEffet: true,
+  instantEffet: true,
   auteurId: true,
 } as const;
 
-const cycle = (v: { id: number; numero: number; statut: string; dateEffet: Date; auteurId: number }): VersionCycle => ({
+const cycle = (v: { id: number; numero: number; statut: string; dateEffet: Date; instantEffet: Date | null; auteurId: number }): VersionCycle => ({
   id: v.id,
   numero: v.numero,
   statut: v.statut as StatutVersion,
   dateEffet: depuisDate(v.dateEffet),
+  instantEffet: v.instantEffet?.toISOString() ?? null,
   auteurId: v.auteurId,
 });
 
 function resume(v: VersionCycle, toutes: VersionCycle[], jour: DateIso): ResumeVersion {
-  const statut = statutAffiche(v, toutes, jour);
+  const statut = statutAffiche(v, toutes, instantDeReference(jour));
   return { id: v.id, numero: v.numero, statut, libelleStatut: LIBELLE_STATUT_VERSION[statut], dateEffet: v.dateEffet };
 }
 
@@ -171,7 +174,7 @@ function ligne(
   libellesBranches: Map<string, string>,
 ): LigneModele {
   const type = m.type as TypeModele;
-  const enVigueur = versionEnVigueur(versions, jour);
+  const enVigueur = versionEnVigueur(versions, instantDeReference(jour));
   const derniere = versions.reduce<VersionCycle | null>((max, v) => (!max || v.numero > max.numero ? v : max), null);
   const brancheCode = m.produit?.branchePrincipale ?? m.brancheCg?.[0]?.branchePrincipale ?? null;
   return {
@@ -489,7 +492,8 @@ export async function publierVersion(acteur: UtilisateurCourant, versionId: numb
   if (!peutPublier(c, acteur.id)) {
     throw new ErreurMetier(v.statut !== "SOUMIS" ? "Seule une version soumise peut être publiée." : "Le valideur ne peut pas être l'auteur de la version (CDC §4.1) : un autre utilisateur doit publier.");
   }
-  const problemes = problemesPublication(c, dateEffet, aujourdhui(), v.modele.versions.map(cycle));
+  const maintenant = heureCourante();
+  const problemes = problemesPublication(c, dateEffet, aujourdhui(maintenant), v.modele.versions.map(cycle), maintenant);
   if (problemes.length > 0) throw new ErreurMetier(problemes.join(" "));
 
   const type = v.modele.type as TypeModele;
@@ -510,6 +514,8 @@ export async function publierVersion(acteur: UtilisateurCourant, versionId: numb
         data: {
           statut: "PUBLIE",
           dateEffet: versDate(dateEffet),
+          // D68 : la date du jour = l'instant de la publication ; toute autre date = son minuit.
+          instantEffet: new Date(instantDePublication(dateEffet, aujourdhui(maintenant), maintenant)),
           valideurId: acteur.id,
           valideurIdentifiant: acteur.identifiant,
           publieLe: new Date(),
@@ -584,7 +590,7 @@ export async function modelesAssocies(produitId: number | null, jour: DateIso, a
   const choix = new Map<string, { versionId: number; m: Candidat }>();
   for (const m of modeles) {
     const versions = m.versions.map(cycle);
-    const retenue = versionEnVigueur(versions, jour) ?? (apercu ? versions.reduce<VersionCycle | null>((max, v) => (!max || v.numero > max.numero ? v : max), null) : null);
+    const retenue = versionEnVigueur(versions, instantDeReference(jour)) ?? (apercu ? versions.reduce<VersionCycle | null>((max, v) => (!max || v.numero > max.numero ? v : max), null) : null);
     if (!retenue) continue;
     const cle = m.type === "ANNEXE" ? `A:${m.listeAnnexe}` : `S:${m.blocNom}:${m.blocCle}`;
     choix.set(cle, { versionId: retenue.id, m: { modeleId: m.id, ...m } });
@@ -683,7 +689,7 @@ export async function versionPublieeEnVigueur(
     orderBy: { id: "asc" },
   });
   for (const m of modeles) {
-    const enVigueur = versionEnVigueur(m.versions.map(cycle), date);
+    const enVigueur = versionEnVigueur(m.versions.map(cycle), instantDeReference(date));
     if (enVigueur) {
       const v = m.versions.find((x) => x.id === enVigueur.id)!;
       return { modele: { id: m.id, code: m.code, libelle: m.libelle, type: m.type }, version: { id: v.id, numero: v.numero, visa: v.visa, dateDocument: v.dateDocument ? depuisDate(v.dateDocument) : null } };

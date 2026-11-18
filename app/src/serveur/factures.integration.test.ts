@@ -1586,17 +1586,18 @@ describe("D67 : chaque document lit la version de SA cotation ou de SA facture, 
     expect((await prisma.facture.findUniqueOrThrow({ where: { id: ren } })).versionId).toBe(versionB.id);
   });
 
-  it("la version d'une cotation se retrouve par son IDENTIFIANT : si la date enregistrée diverge (brouillon, SQL direct), c'est l'identifiant qui l'emporte", async () => {
+  it("la version d'une cotation se retrouve par son IDENTIFIANT, et la date enregistrée suit la version désignée (H214)", async () => {
     if (!deuxVersions) throw new Error("dépend du test précédent (même describe)");
     const { saisie, a, b } = deuxVersions;
     const prisma = obtenirPrisma();
     const id = await creerBrouillon(commercial, saisie, null);
     expect((await prisma.cotation.findUniqueOrThrow({ where: { id } })).versionId).toBe(b); // créée aujourd'hui : la version en vigueur est B
     expect((await lireCotation(commercial, id))!.libelles).toEqual({ F: "Formule B (récente)" });
-    // Identifiant de A, date de B : la fiche lit A. (Impossible à produire par le code : les deux colonnes s'écrivent ensemble.)
+    // On ne change que l'identifiant (brouillon, SQL direct) : la fiche lit A, et la base recopie la date de A.
     expect(await sql(`UPDATE cotations SET version_id = ${a} WHERE id = ${id}`)).toBe("accepté");
     const lue = (await lireCotation(commercial, id))!;
     expect(lue.libelles).toEqual({ F: "Formule A (ancienne)" });
-    expect(lue.versionDateEffet).toBe("2026-06-01"); // la date reste affichée telle qu'enregistrée (historique)
+    // D68 / H214 (ancienne attente, S1 : « 2026-06-01 », la date enregistrée divergeait) : la base recopie la date de la version désignée.
+    expect(lue.versionDateEffet).toBe("2020-01-01");
   });
 });

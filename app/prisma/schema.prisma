@@ -585,6 +585,8 @@ model ModeleVersion {
   commentaire         String
   /// Utilisée pour les nouvelles générations à partir de cette date (fixée à la publication).
   dateEffet           DateTime            @map("date_effet") @db.Date
+  /// Instant de mise en vigueur d'une version PUBLIÉE (D68) : date future = minuit de cette date, date du jour = instant de la publication. NULL avant publication.
+  instantEffet        DateTime?           @map("instant_effet") @db.Timestamptz(3)
   /// Résultat des contrôles au dépôt : avertissements, polices, données lues.
   analyse             Json
   auteurId            Int                 @map("auteur_id")

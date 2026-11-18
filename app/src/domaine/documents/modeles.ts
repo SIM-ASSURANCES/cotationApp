@@ -1,4 +1,4 @@
-import { dateValide, finDeJourAbidjan, heureCourante, minuitAbidjan, type DateIso, type Instant } from "../calcul/dates";
+import { dateDeInstant, dateValide, estMinuit, finDeJourAbidjan, formaterDate, formaterHeure, formaterInstant, heureCourante, minuitAbidjan, type DateIso, type Instant } from "../calcul/dates";
 
 /**
  * Bibliothèque de modèles Word (CDC §6.1, §6.6) : types, saisie, cycle de vie. Règles pures.
@@ -244,6 +244,22 @@ export function statutAffiche(v: VersionCycle, versions: readonly VersionCycle[]
   const limite = quand.length === 10 ? finDeJourAbidjan(quand) : quand;
   if (instantDeVersionModele(v) > limite) return "PROGRAMMEE";
   return versionEnVigueur(versions, quand)?.id === v.id ? "EN_VIGUEUR" : "REMPLACEE";
+}
+
+/**
+ * État horodaté d'une version PUBLIÉE (D68), comme celui d'une version de produit : « En vigueur depuis le JJ/MM/AAAA à HH h MM », « À venir : en
+ * vigueur à partir du JJ/MM/AAAA » (+ l'heure si ce n'est pas minuit), « Remplacée le JJ/MM/AAAA à HH h MM ». `null` pour une version non publiée.
+ */
+export function etatHorodateDeVersion(v: VersionCycle, versions: readonly VersionCycle[], maintenant: Instant): string | null {
+  if (v.statut !== "PUBLIE") return null;
+  const debut = instantDeVersionModele(v);
+  if (debut > maintenant) return `À venir : en vigueur à partir du ${formaterDate(dateDeInstant(debut))}${estMinuit(debut) ? "" : ` à ${formaterHeure(debut)}`}`;
+  const successeur = versions
+    .filter((w) => w.id !== v.id && w.statut === "PUBLIE")
+    .map(instantDeVersionModele)
+    .filter((i) => i > debut && i <= maintenant)
+    .sort()[0];
+  return successeur ? `Remplacée le ${formaterInstant(successeur)}` : `En vigueur depuis le ${formaterInstant(debut)}`;
 }
 
 /** Seul l'auteur soumet sa version. */

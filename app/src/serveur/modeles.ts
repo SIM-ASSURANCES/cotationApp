@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 
 import { Prisma, type PrismaClient } from "@/generated/prisma/client";
 
-import { heureCourante, instantDeReference, type DateIso } from "@/domaine/calcul/dates";
+import { heureCourante, instantDeReference, type DateIso, type Instant } from "@/domaine/calcul/dates";
 import { avertissementsDeGaranties, avertissementsRisque, CLE_BLOC_DE_GARANTIE, controlerDepot, type Constat } from "@/domaine/documents/controles";
 import { IMAGES, donneesExemple } from "@/domaine/documents/dictionnaire";
 import {
@@ -17,7 +17,9 @@ import {
   estTypeModele,
   peutPublier,
   peutRenvoyer,
+  etatHorodateDeVersion,
   instantDePublication,
+  instantDeVersionModele,
   peutSoumettre,
   problemesPublication,
   problemesSaisieModele,
@@ -76,7 +78,8 @@ async function exiger(acteur: UtilisateurCourant, droit: "lire" | "deposer" | "p
 
 // ---------------------------------------------------------------- Lecture
 
-export type ResumeVersion = { id: number; numero: number; statut: StatutAffiche; libelleStatut: string; dateEffet: DateIso };
+/** `instantEffet` et `etatHorodate` (D68) : l'instant de mise en vigueur et son libellé (« En vigueur depuis le … à HH h MM »), pour une version publiée seulement. */
+export type ResumeVersion = { id: number; numero: number; statut: StatutAffiche; libelleStatut: string; dateEffet: DateIso; instantEffet: Instant | null; etatHorodate: string | null };
 
 export type LigneModele = {
   id: number;
@@ -137,8 +140,17 @@ const cycle = (v: { id: number; numero: number; statut: string; dateEffet: Date;
 });
 
 function resume(v: VersionCycle, toutes: VersionCycle[], jour: DateIso): ResumeVersion {
-  const statut = statutAffiche(v, toutes, instantDeReference(jour));
-  return { id: v.id, numero: v.numero, statut, libelleStatut: LIBELLE_STATUT_VERSION[statut], dateEffet: v.dateEffet };
+  const maintenant = instantDeReference(jour);
+  const statut = statutAffiche(v, toutes, maintenant);
+  return {
+    id: v.id,
+    numero: v.numero,
+    statut,
+    libelleStatut: LIBELLE_STATUT_VERSION[statut],
+    dateEffet: v.dateEffet,
+    instantEffet: v.statut === "PUBLIE" ? instantDeVersionModele(v) : null,
+    etatHorodate: etatHorodateDeVersion(v, toutes, maintenant),
+  };
 }
 
 function precision(m: { type: string; niveauRelance: number | null; listeAnnexe: string | null; blocNom: string | null; blocCle: string | null }): string | null {
@@ -507,6 +519,8 @@ export async function publierVersion(acteur: UtilisateurCourant, versionId: numb
     });
   }
 
+  // D68 : la date du jour = l'instant de la publication ; toute autre date = son minuit.
+  const instantEffet = new Date(instantDePublication(dateEffet, aujourdhui(maintenant), maintenant));
   try {
     await prisma.$transaction(async (tx) => {
       const fait = await tx.modeleVersion.updateMany({
@@ -514,8 +528,7 @@ export async function publierVersion(acteur: UtilisateurCourant, versionId: numb
         data: {
           statut: "PUBLIE",
           dateEffet: versDate(dateEffet),
-          // D68 : la date du jour = l'instant de la publication ; toute autre date = son minuit.
-          instantEffet: new Date(instantDePublication(dateEffet, aujourdhui(maintenant), maintenant)),
+          instantEffet,
           valideurId: acteur.id,
           valideurIdentifiant: acteur.identifiant,
           publieLe: new Date(),
@@ -529,7 +542,7 @@ export async function publierVersion(acteur: UtilisateurCourant, versionId: numb
           action: "MODELE_PUBLIE",
           objetType: "modele_version",
           objetId: v.id,
-          apres: { modele: v.modele.code, numero: v.numero, dateEffet, empreinte: v.empreinte, ...(pdf ? { pdfEmpreinte: sha256(pdf) } : {}) },
+          apres: { modele: v.modele.code, numero: v.numero, dateEffet, instantEffet: instantEffet.toISOString(), empreinte: v.empreinte, ...(pdf ? { pdfEmpreinte: sha256(pdf) } : {}) },
           adresseIp,
         },
         tx,

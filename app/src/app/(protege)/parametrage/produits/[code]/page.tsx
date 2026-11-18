@@ -2,8 +2,8 @@ import { notFound } from "next/navigation";
 
 import { FormulaireAction } from "@/composants/FormulaireAction";
 import { Bandeau, Carte, EnTetePage, EtatVide, LienBouton, ListeDeroulante, Tableau, type ColonneTableau } from "@/composants/ui";
-import { formaterDate } from "@/domaine/calcul/dates";
-import { afficheTableauFormules, baseDeNouvelleVersion, titreDeVersion, versionsProvisoiresSansBareme } from "@/domaine/calcul/parametrage";
+import { formaterDate, heureCourante } from "@/domaine/calcul/dates";
+import { afficheTableauFormules, baseDeNouvelleVersion, titreDeVersionHorodate, versionsProvisoiresSansBareme } from "@/domaine/calcul/parametrage";
 import { peutAgir, peutLire } from "@/domaine/droits";
 import { niveauDuProfil } from "@/serveur/droits";
 import { etatDuBareme } from "@/serveur/bareme";
@@ -34,10 +34,10 @@ function formaterGarantieResume(g: NonNullable<VersionProduit["garanties"]>[numb
   return details.length > 0 ? `${g.libelle} (${details.join(", ")})` : g.libelle;
 }
 
-function Resume({ v, codeProduit, peutEcrire, autreVersionAvecBareme }: { v: VersionProduit; codeProduit: string; peutEcrire: boolean; autreVersionAvecBareme?: { id: number; dateEffet: string; publie: boolean } }) {
+function Resume({ v, toutes, codeProduit, peutEcrire, autreVersionAvecBareme }: { v: VersionProduit; toutes: VersionProduit[]; codeProduit: string; peutEcrire: boolean; autreVersionAvecBareme?: { id: number; dateEffet: string; publie: boolean } }) {
   return (
     <Carte>
-      <h3 className="mb-2 text-base font-bold text-foreground">{titreDeVersion(v, aujourdhui(), formaterDate)}</h3>
+      <h3 className="mb-2 text-base font-bold text-foreground">{titreDeVersionHorodate(v, toutes, heureCourante().toISOString())}</h3>
       <p className="mb-3 text-sm text-muted-foreground">
         Tarification : {LIBELLE_MODE[v.modeTarification] ?? v.modeTarification}
         {v.garanties && v.garanties.length > 0 ? ` — garanties : ${v.garanties.map(formaterGarantieResume).join(", ")}${v.garantiesSaisieLibre === false ? " ; saisie libre interdite" : ""}` : ""} ·{" "}
@@ -143,7 +143,7 @@ export default async function PageProduit(props: PageProps<"/parametrage/produit
         {versions.length === 0 ? (
           <EtatVide message="Aucune version : ce produit ne peut pas encore être calculé." />
         ) : (
-          versions.map((v) => <Resume key={v.id} v={v} codeProduit={produit.code} peutEcrire={peutAgir(niveau)} autreVersionAvecBareme={avenirAvecBareme.find((x) => x.id !== v.id)} />)
+          versions.map((v) => <Resume key={v.id} v={v} toutes={versions} codeProduit={produit.code} peutEcrire={peutAgir(niveau)} autreVersionAvecBareme={avenirAvecBareme.find((x) => x.id !== v.id)} />)
         )}
       </section>
     </main>

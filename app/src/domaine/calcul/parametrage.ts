@@ -1,5 +1,5 @@
 import { MODES_ACCESSOIRE, NIVEAUX_ARRONDI, COMPOSANTES, ASSIETTES_TAXE, type AssietteTaxe, type ModeAccessoire, type RegleArrondi } from "./calcul";
-import { dateValide, finDeJourAbidjan, minuitAbidjan, type DateIso, type Instant } from "./dates";
+import { dateDeInstant, dateValide, estMinuit, finDeJourAbidjan, formaterDate, formaterHeure, formaterInstant, minuitAbidjan, type DateIso, type Instant } from "./dates";
 import { PRECISIONS, SENS_ARRONDI, montant } from "./montant";
 import { NOMBRE_MAX_TRANCHES } from "./echeancier";
 import { REGIMES_TAXE, type TypeContrat } from "./taxes";
@@ -383,6 +383,33 @@ export function titreDeVersion(v: { dateEffet: DateIso; enPreparation?: boolean 
       : `Version au barème en préparation : prévue le ${formaterLaDate(v.dateEffet)}, en vigueur à la publication de son barème`;
   }
   return v.dateEffet > jour ? `À venir : en vigueur à partir du ${formaterLaDate(v.dateEffet)}` : `Version en vigueur depuis le ${formaterLaDate(v.dateEffet)}`;
+}
+
+/**
+ * Titre d'une version sur la fiche du produit, à l'INSTANT (D68) : quatre états.
+ *  - « En préparation » : version au barème dont le barème n'est pas publié (sans date, ou prévue à une date) ;
+ *  - « À venir : en vigueur à partir du JJ/MM/AAAA » (+ « à HH h MM » si ce n'est pas minuit) : instant pas encore atteint ;
+ *  - « En vigueur depuis le JJ/MM/AAAA à HH h MM » : la version qui sert maintenant ;
+ *  - « Remplacée le JJ/MM/AAAA à HH h MM » : une version qui a cédé la place, à l'instant de la version qui l'a remplacée.
+ * `toutes` : les versions du produit, pour trouver celle qui a remplacé `v`. `maintenant` : l'instant présent.
+ */
+export function titreDeVersionHorodate<T extends { id: number; dateEffet: DateIso; instantEffet?: Instant | null; enPreparation?: boolean }>(v: T, toutes: readonly T[], maintenant: Instant): string {
+  if (v.enPreparation === true) {
+    return v.instantEffet == null && estEffetALaPublication(v.dateEffet)
+      ? "En préparation : en vigueur dès la publication de son barème"
+      : `En préparation : prévue le ${formaterDate(v.dateEffet)}, en vigueur à la publication de son barème`;
+  }
+  const debut = instantDeVersion(v);
+  if (debut === null) return "En préparation : en vigueur dès la publication de son barème";
+  if (debut > maintenant) {
+    return `À venir : en vigueur à partir du ${formaterDate(dateDeInstant(debut))}${estMinuit(debut) ? "" : ` à ${formaterHeure(debut)}`}`;
+  }
+  const successeur = toutes
+    .filter((w) => w.id !== v.id && w.enPreparation !== true)
+    .map((w) => instantDeVersion(w))
+    .filter((i): i is Instant => i !== null && i > debut && i <= maintenant)
+    .sort()[0];
+  return successeur ? `Remplacée le ${formaterInstant(successeur)}` : `En vigueur depuis le ${formaterInstant(debut)}`;
 }
 
 /**

@@ -129,6 +129,20 @@ Tests :
 pytest
 ```
 
+### Polices des modèles (D69)
+
+**Aucune police Microsoft n'est à installer ni à fournir pour Calibri, Arial et Times New Roman** : sous Linux (l'image Docker, le VPS), fontconfig les résout vers des polices libres de mêmes dimensions (Carlito, Liberation Sans, Liberation Serif), que l'image installe. Seule **Tahoma** reste à fournir (`generateur/polices/`, dossier facultatif ignoré par Git, voir son [README](../generateur/polices/README.md)) ; la Tahoma libre du projet Wine est à l'essai (`TAHOMA_LIBRE`).
+
+Ce qu'on vérifie, dans l'image ou sur une machine Linux :
+
+```bash
+fc-match -f '%{family} -> %{file}\n' Tahoma      # Tahoma (ou Wine Tahoma, à l'essai) ; sinon un repli (DejaVu, Inter…) : Tahoma manque
+fc-match -f '%{family} -> %{file}\n' Calibri     # Carlito
+curl -s http://127.0.0.1:8001/sante               # "polices_manquantes": []
+```
+
+`fc-match` renvoie **toujours** une police : seule la table des remplaçants autorisés (`generateur/app/polices.py`, `REMPLACANTS_AUTORISES`) décide si ce qu'il renvoie est un remplaçant de mêmes dimensions. `/sante` et `generateur/scripts/verifier_modele.py` l'utilisent tous deux. Sous Windows (poste de développement), la liste vient du registre et les polices du poste sont utilisées telles quelles.
+
 Lancement en développement (rechargement automatique quand le code change) :
 
 ```powershell

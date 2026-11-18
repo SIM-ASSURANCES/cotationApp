@@ -1,7 +1,7 @@
 # SIM Documents : application, générateur, base PostgreSQL et Redis sur un seul hôte (VPS Linux).
 #
 # Lancement :  docker compose up -d --build
-# Prérequis  : fichier .env à la racine (modèle : .env.example) ; polices dans generateur/polices/.
+# Prérequis  : fichier .env à la racine (modèle : .env.example) ; Tahoma dans generateur/polices/ (les autres polices des modèles sont libres, D69).
 # Seul le port de l'application est publié (APP_PORT, 3000 par défaut), et SEULEMENT sur 127.0.0.1 : un proxy inverse
 # (Dokploy/Traefik, Caddy, nginx...) assure le HTTPS public et lui transmet les requêtes.
 # La base, Redis et le générateur ne sont joignables que depuis ce réseau Docker.

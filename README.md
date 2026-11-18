@@ -125,7 +125,7 @@ Prérequis à fournir par l'administrateur :
 - **Domaine** et certificat HTTPS de l'application : `URL_PUBLIQUE` (les QR codes y renvoient ; vide, aucun document ne peut être émis).
 - **Port libre** sur l'hôte : `APP_PORT` (3000 par défaut ; le VPS est partagé avec le portail RH).
 - **Ressources du VPS** (processeurs, mémoire) : elles fixent `CONVERSIONS_SIMULTANEES` (autour du nombre de processeurs moins un).
-- **Polices des modèles** (Tahoma notamment) dans `generateur/polices/`, sous licence, jamais dans le dépôt (question Q2).
+- **Tahoma** dans `generateur/polices/`, sous licence, jamais dans le dépôt (question Q2) : c'est la seule police à fournir ; Calibri, Arial et Times New Roman sont remplacées dans l'image par des polices libres de mêmes dimensions (D69).
 - **Sauvegarde quotidienne** de la base **et** du volume `documents`, copiée hors du VPS, avec un test de restauration.
 
 ## Documentation

@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Carte, Pastille, PastilleStatut, Tableau, type ColonneTableau } from "@/composants/ui";
-import { formaterDate } from "@/domaine/calcul/dates";
+import { formaterDate, formaterInstant } from "@/domaine/calcul/dates";
 import type { GroupeBranche, GroupeProduit } from "@/domaine/documents/regroupement-modeles";
 import type { LigneAPublier, LigneModele } from "@/serveur/modeles";
 
@@ -17,7 +17,7 @@ const lienModele = (m: LigneModele) => (
   </span>
 );
 
-const enVigueur = (m: LigneModele) => (m.enVigueur ? `v${m.enVigueur.numero} depuis le ${formaterDate(m.enVigueur.dateEffet)}` : "aucune");
+const enVigueur = (m: LigneModele) => (m.enVigueur ? `v${m.enVigueur.numero} depuis le ${m.enVigueur.instantEffet ? formaterInstant(m.enVigueur.instantEffet) : formaterDate(m.enVigueur.dateEffet)}` : "aucune");
 const derniere = (m: LigneModele) =>
   m.derniere ? (
     <span className="inline-flex flex-wrap items-center gap-2">

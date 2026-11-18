@@ -207,6 +207,8 @@ async function exigerLecture(acteur: UtilisateurCourant): Promise<void> {
 // ---------------------------------------------------------------- Calcul d'une saisie
 
 type Calcul = {
+  /** Version du produit utilisée, désignée par son identifiant (D67) : c'est elle que la cotation retrouvera, jamais la date. */
+  versionId: number;
   versionDateEffet: DateIso;
   validiteMois: number;
   seuil: string | null;
@@ -290,6 +292,7 @@ async function calculerSaisie(tx: Tx, acteur: UtilisateurCourant, saisieRecue: S
   const { resultat, echeancier } = executerCalcul(entree, version.fractionnement, saisie.nombreTranches);
   const seuilValidation = await lireSeuilValidationGlobal(saisie.dateEffet);
   return {
+    versionId: version.id,
     versionDateEffet: version.dateEffet,
     validiteMois: version.cotation.validiteMois,
     seuil: seuilValidation,
@@ -405,6 +408,7 @@ async function calculerAuBareme(tx: Tx, saisie: SaisieCotation, dateDocument: Da
   const { resultat, echeancier } = executerCalcul(entree, version.fractionnement, saisie.nombreTranches);
   const seuilValidation = await lireSeuilValidationGlobal(saisie.dateEffet);
   return {
+    versionId: version.id,
     versionDateEffet: version.dateEffet,
     validiteMois: version.cotation.validiteMois,
     seuil: seuilValidation,
@@ -600,6 +604,7 @@ async function calculerComposition(tx: Tx, saisie: SaisieCotation, dateDocument:
   const { resultat, echeancier } = executerCalcul(entree, version.fractionnement, lignes.length > 0 ? saisie.nombreTranches : 1);
   const seuilValidation = await lireSeuilValidationGlobal(saisie.dateEffet);
   return {
+    versionId: version.id,
     versionDateEffet: version.dateEffet,
     validiteMois: version.cotation.validiteMois,
     seuil: seuilValidation,
@@ -657,6 +662,7 @@ const listeOuNull = (liste: unknown[] | null) => (liste === null ? Prisma.DbNull
 function donneesAEcrire(saisie: SaisieCotation, c: Calcul) {
   return {
     produitId: c.produitId,
+    versionId: c.versionId,
     versionDateEffet: versDate(c.versionDateEffet),
     clientId: saisie.clientId,
     typeContrat: c.typeContrat,
@@ -915,9 +921,7 @@ type CotationChargee = Prisma.CotationGetPayload<{ include: { produit: true } }>
 /** Attribue le numéro et fige la cotation. Appelée dans la transaction de la soumission ou de la validation. */
 async function emettre(tx: Tx, acteur: UtilisateurCourant, cotation: CotationChargee, adresseIp: string | null, valideur: UtilisateurCourant | null): Promise<string> {
   const aujourdhuiIso = aujourdhui();
-  const version = await tx.produitVersion.findUniqueOrThrow({
-    where: { produitId_dateEffet: { produitId: cotation.produitId, dateEffet: cotation.versionDateEffet } },
-  });
+  const version = await tx.produitVersion.findUniqueOrThrow({ where: { id: cotation.versionId } });
   // Sessions 6.2a et 6.2b : la nature du calcul figé (automatique ou composition) doit correspondre au mode de la version. Deux contrôles :
   // la version figée de la cotation (ceinture) et la version EN VIGUEUR aujourd'hui (une cotation « À valider » d'avant une bascule de mode
   // ne s'émet plus). Une composition vide (prime « à composer ») ne s'émet jamais.
@@ -1122,7 +1126,7 @@ async function accepterDansTransaction(
     }
 
     // Recalcul sur les seules formules retenues, avec les paramètres FIGÉS de la cotation.
-    const version = await tx.produitVersion.findUniqueOrThrow({ where: { produitId_dateEffet: { produitId: cotation.produitId, dateEffet: cotation.versionDateEffet } } });
+    const version = await tx.produitVersion.findUniqueOrThrow({ where: { id: cotation.versionId } });
     const { resultat, echeancier } = executerCalcul(
       entreeRetenue,
       { repartitionPourcent: (version.fractionnementRepartition as string[] | null) ?? null, decalagesMois: (version.fractionnementDecalagesMois as number[] | null) ?? null },
@@ -1303,7 +1307,7 @@ export async function lireCotation(acteur: UtilisateurCourant, id: number): Prom
   });
   if (!c) return null;
   const version = await obtenirPrisma().produitVersion.findUniqueOrThrow({
-    where: { produitId_dateEffet: { produitId: c.produitId, dateEffet: c.versionDateEffet } },
+    where: { id: c.versionId },
     include: { formules: true },
   });
   const statut = c.statut as StatutCotation;

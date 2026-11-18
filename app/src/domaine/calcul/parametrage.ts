@@ -1,5 +1,5 @@
 import { MODES_ACCESSOIRE, NIVEAUX_ARRONDI, COMPOSANTES, ASSIETTES_TAXE, type AssietteTaxe, type ModeAccessoire, type RegleArrondi } from "./calcul";
-import { dateValide, type DateIso } from "./dates";
+import { dateDeInstant, dateValide, estMinuit, finDeJourAbidjan, formaterDate, formaterHeure, formaterInstant, minuitAbidjan, type DateIso, type Instant } from "./dates";
 import { PRECISIONS, SENS_ARRONDI, montant } from "./montant";
 import { NOMBRE_MAX_TRANCHES } from "./echeancier";
 import { REGIMES_TAXE, type TypeContrat } from "./taxes";
@@ -336,9 +336,9 @@ export function problemesTaxe(t: TaxeSaisie): string[] {
 }
 
 /**
- * Date d'effet PROVISOIRE d'une version au barème « dès la publication » (D66). La colonne `date_effet` est obligatoire et unique par produit : on y
- * range une date lointaine, qu'aucun document n'atteint, jusqu'à la publication du barème, qui la remplace par la date du jour. Elle ne s'affiche
- * jamais comme une date : l'écran écrit « dès la publication ». Une seule version par produit peut l'occuper (unicité existante).
+ * « Dès la publication » (D66), au NIVEAU DE L'APPLICATION : la valeur qu'on passe à `creerVersion` (formulaire, import) et que le domaine lit pour une
+ * version en préparation sans date. D68 : la BASE ne la connaît plus, une telle version y a `instant_effet` et `date_effet` NULL ; seule la
+ * traduction `versVersion` / `creerVersionDansTransaction` fait le lien. Elle ne s'affiche jamais comme une date.
  */
 export const DATE_EFFET_A_LA_PUBLICATION: DateIso = "9999-12-31";
 export const estEffetALaPublication = (dateEffet: DateIso): boolean => dateEffet === DATE_EFFET_A_LA_PUBLICATION;
@@ -350,9 +350,26 @@ export const estEffetALaPublication = (dateEffet: DateIso): boolean => dateEffet
  */
 export const estEnPreparation = (v: { modeTarification: string }, aUnBaremePublie: boolean): boolean => v.modeTarification === "BAREME" && !aUnBaremePublie;
 
-/** Version en vigueur à une date : la plus récente dont la date d'effet n'est pas postérieure. Une version en préparation (D66) n'est jamais retenue. */
-export function enVigueur<T extends { dateEffet: DateIso; enPreparation?: boolean }>(versions: T[], date: DateIso): T | null {
-  return versions.filter((v) => v.dateEffet <= date && v.enPreparation !== true).sort((a, b) => (a.dateEffet < b.dateEffet ? 1 : -1))[0] ?? null;
+/**
+ * Instant de mise en vigueur d'une version (D68) : `instantEffet` s'il est connu ; une version sans instant connu (`undefined`, donnée d'avant D68 ou
+ * objet de test) entre en vigueur à minuit de sa date, comme la migration l'a posé. `null` : en préparation, jamais en vigueur.
+ */
+export const instantDeVersion = (v: { dateEffet: DateIso; instantEffet?: Instant | null }): Instant | null => (v.instantEffet === undefined ? minuitAbidjan(v.dateEffet) : v.instantEffet);
+
+/**
+ * Version en vigueur à `quand` : celle dont l'instant de mise en vigueur est le plus récent sans dépasser `quand` (D68). `quand` est un INSTANT, ou un
+ * JOUR (AAAA-MM-JJ) qui vaut alors la fin de ce jour : toute version datée de ce jour ou avant compte, comme avant D68. Une version en préparation
+ * (D66, sans instant ou au barème non publié) n'est jamais retenue.
+ */
+export function enVigueur<T extends { dateEffet: DateIso; instantEffet?: Instant | null; enPreparation?: boolean }>(versions: T[], quand: DateIso | Instant): T | null {
+  const limite = quand.length === 10 ? finDeJourAbidjan(quand) : quand;
+  return (
+    versions
+      .filter((v) => v.enPreparation !== true)
+      .map((v) => ({ v, debut: instantDeVersion(v) }))
+      .filter((x): x is { v: T; debut: Instant } => x.debut !== null && x.debut <= limite)
+      .sort((a, b) => (a.debut < b.debut ? 1 : -1))[0]?.v ?? null
+  );
 }
 
 /**
@@ -366,6 +383,33 @@ export function titreDeVersion(v: { dateEffet: DateIso; enPreparation?: boolean 
       : `Version au barème en préparation : prévue le ${formaterLaDate(v.dateEffet)}, en vigueur à la publication de son barème`;
   }
   return v.dateEffet > jour ? `À venir : en vigueur à partir du ${formaterLaDate(v.dateEffet)}` : `Version en vigueur depuis le ${formaterLaDate(v.dateEffet)}`;
+}
+
+/**
+ * Titre d'une version sur la fiche du produit, à l'INSTANT (D68) : quatre états.
+ *  - « En préparation » : version au barème dont le barème n'est pas publié (sans date, ou prévue à une date) ;
+ *  - « À venir : en vigueur à partir du JJ/MM/AAAA » (+ « à HH h MM » si ce n'est pas minuit) : instant pas encore atteint ;
+ *  - « En vigueur depuis le JJ/MM/AAAA à HH h MM » : la version qui sert maintenant ;
+ *  - « Remplacée le JJ/MM/AAAA à HH h MM » : une version qui a cédé la place, à l'instant de la version qui l'a remplacée.
+ * `toutes` : les versions du produit, pour trouver celle qui a remplacé `v`. `maintenant` : l'instant présent.
+ */
+export function titreDeVersionHorodate<T extends { id: number; dateEffet: DateIso; instantEffet?: Instant | null; enPreparation?: boolean }>(v: T, toutes: readonly T[], maintenant: Instant): string {
+  if (v.enPreparation === true) {
+    return v.instantEffet == null && estEffetALaPublication(v.dateEffet)
+      ? "En préparation : en vigueur dès la publication de son barème"
+      : `En préparation : prévue le ${formaterDate(v.dateEffet)}, en vigueur à la publication de son barème`;
+  }
+  const debut = instantDeVersion(v);
+  if (debut === null) return "En préparation : en vigueur dès la publication de son barème";
+  if (debut > maintenant) {
+    return `À venir : en vigueur à partir du ${formaterDate(dateDeInstant(debut))}${estMinuit(debut) ? "" : ` à ${formaterHeure(debut)}`}`;
+  }
+  const successeur = toutes
+    .filter((w) => w.id !== v.id && w.enPreparation !== true)
+    .map((w) => instantDeVersion(w))
+    .filter((i): i is Instant => i !== null && i > debut && i <= maintenant)
+    .sort()[0];
+  return successeur ? `Remplacée le ${formaterInstant(successeur)}` : `En vigueur depuis le ${formaterInstant(debut)}`;
 }
 
 /**

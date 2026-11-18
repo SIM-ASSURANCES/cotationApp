@@ -230,7 +230,11 @@ model Produit {
 model ProduitVersion {
   id                          Int       @id @default(autoincrement())
   produitId                   Int       @map("produit_id")
-  dateEffet                   DateTime  @map("date_effet") @db.Date
+  /// Date (à Abidjan) de l'instant de mise en vigueur, tenue par la base (D68) ; NULL tant qu'une version « dès la publication » est en préparation.
+  dateEffet                   DateTime? @map("date_effet") @db.Date
+  /// Instant de mise en vigueur (D68) : date future = minuit de cette date, date du jour = instant de l'enregistrement, « dès la publication » =
+  /// instant de la publication. NULL tant que la version est en préparation (une seule par produit).
+  instantEffet                DateTime? @map("instant_effet") @db.Timestamptz(3)
   arrondiPrecision            Int       @map("arrondi_precision")
   arrondiSens                 String    @map("arrondi_sens")
   arrondiNiveau               String    @map("arrondi_niveau")
@@ -266,8 +270,12 @@ model ProduitVersion {
   produit                     Produit   @relation(fields: [produitId], references: [id], onDelete: Restrict)
   formules                    Formule[]
   baremes                     BaremeDocument[]
+  cotations                   Cotation[]
+  factures                    Facture[]
 
-  @@unique([produitId, dateEffet])
+  @@unique([produitId, instantEffet])
+  @@unique([id, produitId])
+  @@index([produitId, dateEffet])
   @@map("produit_versions")
 }
 
@@ -374,8 +382,10 @@ model Cotation {
   /// BROUILLON, A_VALIDER, EMISE, ACCEPTEE, REFUSEE ou EXPIREE.
   statut            String
   produitId         Int                     @map("produit_id")
-  /// Date d'effet de la version du produit utilisée pour le calcul.
+  /// Date d'effet de la version du produit utilisée pour le calcul (affichage et historique : la version se retrouve par `versionId`, D67).
   versionDateEffet  DateTime                @map("version_date_effet") @db.Date
+  /// Version du produit utilisée pour le calcul, désignée par son identifiant (D67) ; figée avec la cotation émise (déclencheur cotation_figee).
+  versionId         Int                     @map("version_id")
   clientId          Int?                    @map("client_id")
   /// Dictionnaire souscripteur.* (copie : une cotation émise ne bouge pas si le client est modifié).
   souscripteur      Json
@@ -425,6 +435,7 @@ model Cotation {
   creeLe            DateTime                @default(now()) @map("cree_le")
   modifieLe         DateTime                @updatedAt @map("modifie_le")
   produit           Produit                 @relation(fields: [produitId], references: [id], onDelete: Restrict)
+  version           ProduitVersion          @relation(fields: [versionId, produitId], references: [id, produitId], onDelete: Restrict, map: "cotations_version_id_fkey")
   client            Client?                 @relation(fields: [clientId], references: [id], onDelete: Restrict)
   police            Police?
   intermediaires    CotationIntermediaire[]
@@ -432,6 +443,7 @@ model Cotation {
   @@index([statut])
   @@index([dateValidite])
   @@index([produitId])
+  @@index([versionId])
   @@index([auteurIdentifiant])
   @@index([creeLe])
   @@index([emiseLe])
@@ -573,6 +585,8 @@ model ModeleVersion {
   commentaire         String
   /// Utilisée pour les nouvelles générations à partir de cette date (fixée à la publication).
   dateEffet           DateTime            @map("date_effet") @db.Date
+  /// Instant de mise en vigueur d'une version PUBLIÉE (D68) : date future = minuit de cette date, date du jour = instant de la publication. NULL avant publication.
+  instantEffet        DateTime?           @map("instant_effet") @db.Timestamptz(3)
   /// Résultat des contrôles au dépôt : avertissements, polices, données lues.
   analyse             Json
   auteurId            Int                 @map("auteur_id")
@@ -672,8 +686,10 @@ model Facture {
   numero           String?             @unique
   policeId         Int                 @map("police_id")
   produitId        Int                 @map("produit_id")
-  /// Version du produit dont vient le tarif (et le seuil de validation).
+  /// Date d'effet de la version du produit dont vient le tarif (et le seuil de validation) : affichage et historique, D67.
   versionDateEffet DateTime            @map("version_date_effet") @db.Date
+  /// Version du produit dont vient le tarif, désignée par son identifiant (D67) ; protégée comme le reste d'une facture émise (facture_intangible).
+  versionId        Int                 @map("version_id")
   /// Avoir : la facture qu'il annule (doc.facture_origine).
   factureOrigineId Int?                @map("facture_origine_id")
   /// Nouvelle facture qui remplace une facture annulée par un avoir (T4).
@@ -715,6 +731,7 @@ model Facture {
   contributeurs    Int[]               @default([])
   police           Police              @relation(fields: [policeId], references: [id], onDelete: Restrict)
   produit          Produit             @relation(fields: [produitId], references: [id], onDelete: Restrict)
+  version          ProduitVersion      @relation(fields: [versionId, produitId], references: [id, produitId], onDelete: Restrict, map: "factures_version_id_fkey")
   factureOrigine   Facture?            @relation("Avoir", fields: [factureOrigineId], references: [id], onDelete: Restrict)
   avoirs           Facture[]           @relation("Avoir")
   remplace         Facture?            @relation("Remplacement", fields: [remplaceId], references: [id], onDelete: Restrict)
@@ -731,6 +748,7 @@ model Facture {
   elementsLots ElementLotEcheances[]
 
   @@index([policeId])
+  @@index([versionId])
   @@index([statut])
   @@index([dateEmission])
   @@map("factures")

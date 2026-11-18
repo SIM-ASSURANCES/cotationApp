@@ -70,14 +70,79 @@ const formateurAbidjan = new Intl.DateTimeFormat("fr-FR", {
   day: "2-digit",
 });
 
+/**
+ * Instant : date et heure absolues, en ISO 8601 UTC (AAAA-MM-JJThh:mm:ss.sssZ). Le fuseau de la compagnie, Africa/Abidjan, est UTC+0 toute
+ * l'année (aucun passage à l'heure d'été) : minuit à Abidjan est minuit UTC. D68.
+ */
+export type Instant = string;
+
+let horlogeTest: Date | null = null;
+
+/** Réservé aux tests : fige l'horloge de l'application (`null` : l'horloge réelle). Les instants de mise en vigueur et « aujourd'hui » la suivent. */
+export function fixerHorlogePourTests(instant: Date | null): void {
+  horlogeTest = instant;
+}
+
+/** L'heure de l'application : l'horloge réelle, sauf en test. Seule source de « maintenant » pour les versions (D68). */
+export function heureCourante(): Date {
+  return horlogeTest ? new Date(horlogeTest.getTime()) : new Date();
+}
+
 /** Date du jour dans le fuseau de la compagnie (Africa/Abidjan, UTC+0 sans heure d'été), en AAAA-MM-JJ. */
-export function aujourdhui(maintenant: Date = new Date()): DateIso {
+export function aujourdhui(maintenant: Date = heureCourante()): DateIso {
   const parties = formateurAbidjan.formatToParts(maintenant);
   const annee = parties.find((p) => p.type === "year")?.value ?? "";
   const mois = parties.find((p) => p.type === "month")?.value ?? "";
   const jour = parties.find((p) => p.type === "day")?.value ?? "";
   return `${annee}-${mois}-${jour}`;
 }
+
+/** Minuit (début) du jour donné, à Abidjan. */
+export function minuitAbidjan(jour: DateIso): Instant {
+  return new Date(enUtc(jour)).toISOString();
+}
+
+/** Dernière milliseconde du jour donné, à Abidjan. */
+export function finDeJourAbidjan(jour: DateIso): Instant {
+  return new Date(enUtc(jour) + MS_PAR_JOUR - 1).toISOString();
+}
+
+/** Le jour (à Abidjan) d'un instant. */
+export function dateDeInstant(instant: Instant): DateIso {
+  return aujourdhui(new Date(instant));
+}
+
+/**
+ * Instant auquel on cherche la version en vigueur pour un document daté de `jour` (D68) : aujourd'hui, c'est MAINTENANT (une version publiée à 11 h
+ * ne sert pas un document de 10 h 30) ; un autre jour, c'est la fin de ce jour (toute version datée de ce jour ou avant compte, comme avant).
+ */
+export function instantDeReference(jour: DateIso, maintenant: Date = heureCourante()): Instant {
+  return jour === aujourdhui(maintenant) ? maintenant.toISOString() : finDeJourAbidjan(jour);
+}
+
+/**
+ * Instant de mise en vigueur d'une version datée de `jour` à sa création (D68) : la date du jour = l'instant de l'enregistrement ; toute autre
+ * date (passée ou future) = minuit de cette date. Deux versions peuvent ainsi entrer en vigueur le même jour, à des heures différentes.
+ */
+export function instantDeMiseEnVigueur(jour: DateIso, maintenant: Date = heureCourante()): Instant {
+  return jour === aujourdhui(maintenant) ? maintenant.toISOString() : minuitAbidjan(jour);
+}
+
+const formateurHeureAbidjan = new Intl.DateTimeFormat("fr-FR", { timeZone: FUSEAU_ABIDJAN, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+/** « 10 h 05 » : l'heure d'un instant, à Abidjan. */
+export function formaterHeure(instant: Instant): string {
+  const parties = formateurHeureAbidjan.formatToParts(new Date(instant));
+  return `${parties.find((p) => p.type === "hour")?.value ?? "00"} h ${parties.find((p) => p.type === "minute")?.value ?? "00"}`;
+}
+
+/** « 18/11/2026 à 10 h 05 » : date et heure d'un instant, à Abidjan. */
+export function formaterInstant(instant: Instant): string {
+  return `${formaterDate(dateDeInstant(instant))} à ${formaterHeure(instant)}`;
+}
+
+/** Vrai si l'instant est minuit à Abidjan (une version à date future n'affiche pas d'heure). */
+export const estMinuit = (instant: Instant): boolean => instant === minuitAbidjan(dateDeInstant(instant));
 
 /** Affiche une date ISO (AAAA-MM-JJ) au format français JJ/MM/AAAA, ou « — » si absente. */
 export function formaterDate(date: DateIso | null | undefined): string {

@@ -7,12 +7,11 @@ import { aujourdhui, dateValide, formaterDate, type DateIso } from "@/domaine/ca
 import { DATE_EFFET_A_LA_PUBLICATION, estEffetALaPublication, problemesVersion, type VersionSaisie } from "@/domaine/calcul/parametrage";
 
 import { journaliser } from "./audit";
-import { depuisDate, empreinteBareme, enJson, exigerPreparable, exigerVersionAuBareme, motifValide, publierDansTransaction, resume, verrouillerVersion } from "./bareme";
-import { creerVersionDansTransaction, exigerEcriture, versVersion } from "./parametrage";
+import { empreinteBareme, enJson, exigerPreparable, exigerVersionAuBareme, instantAtteint, motifValide, publierDansTransaction, resume, verrouillerVersion } from "./bareme";
+import { creerVersionDansTransaction, dateDeVersion, exigerEcriture, PLUS_RECENTE_D_ABORD, versVersion } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { ErreurMetier, type UtilisateurCourant } from "./types";
 
-const versDate = (iso: DateIso) => new Date(`${iso}T00:00:00.000Z`);
 
 /**
  * Barème d'une version, côté ÉCRAN d'édition (session B4, D58). L'écran édite le même document que l'import (`bareme_documents`,
@@ -58,8 +57,8 @@ export async function lireBaremePourEdition(acteur: UtilisateurCourant, versionI
   const lu = b ? schemaBareme.safeParse(b.contenu) : null;
   return {
     produit: { code: v.produit.code, libelle: v.produit.libelle, branche: v.produit.branche },
-    version: { id: v.id, dateEffet: depuisDate(v.dateEffet), modeTarification: v.modeTarification },
-    preparable: v.modeTarification === "BAREME" || depuisDate(v.dateEffet) > aujourdhui(),
+    version: { id: v.id, dateEffet: dateDeVersion(v.dateEffet), modeTarification: v.modeTarification },
+    preparable: v.modeTarification === "BAREME" || !instantAtteint(v),
     brouillon: b ? { id: b.id, contenu: b.contenu, empreinte: b.empreinte, modifieLe: b.modifieLe, creePar: b.creePar } : null,
     publie: p && p.publieLe && p.publiePar ? { id: p.id, contenu: p.contenu, empreinte: p.empreinte, publieLe: p.publieLe, publiePar: p.publiePar, motif: p.motifPublication ?? "" } : null,
     codesFiges: [...codesFiges],
@@ -108,7 +107,7 @@ function dateEffetDemandee(dateEffet: string): DateIso {
 
 /** Le barème publié le plus récent d'un produit (par date d'effet de sa version), relu et contrôlé ; `null` si le produit n'en a pas. */
 async function baremePublieLePlusRecent(tx: Prisma.TransactionClient, produitId: number) {
-  const publie = await tx.baremeDocument.findFirst({ where: { statut: "PUBLIE", version: { produitId } }, orderBy: { version: { dateEffet: "desc" } } });
+  const publie = await tx.baremeDocument.findFirst({ where: { statut: "PUBLIE", version: { produitId } }, orderBy: { version: { instantEffet: "desc" } } });
   if (!publie) return null;
   if (publie.schemaVersion !== VERSION_SCHEMA_BAREME || empreinteBareme(publie.contenu) !== publie.empreinte) {
     throw new ErreurMetier("Le barème publié ne correspond plus à son empreinte : il a été altéré hors de l'application. Aucune copie n'est faite.");
@@ -164,22 +163,22 @@ export async function creerVersionDepuisBareme(acteur: UtilisateurCourant, versi
     const avenir = await tx.produitVersion.findMany({
       where: { produitId: source.produitId, id: { not: versionSourceId }, baremes: { some: {} } },
       include: { baremes: { select: { statut: true } } },
-      orderBy: { dateEffet: "asc" },
+      orderBy: { instantEffet: { sort: "asc", nulls: "last" } },
     });
-    const deja = avenir.find((x) => depuisDate(x.dateEffet) > aujourdhui());
+    const deja = avenir.find((x) => !instantAtteint(x));
     if (deja) {
       const etat = deja.baremes.some((x) => x.statut === "PUBLIE") ? "un barème publié" : "un brouillon de barème";
-      const quand = estEffetALaPublication(depuisDate(deja.dateEffet)) ? "« dès la publication » (en préparation)" : `du ${formaterDate(depuisDate(deja.dateEffet))} (à venir)`;
+      const quand = estEffetALaPublication(dateDeVersion(deja.dateEffet)) ? "« dès la publication » (en préparation)" : `du ${formaterDate(dateDeVersion(deja.dateEffet))} (à venir)`;
       throw new ErreurMetier(`La version ${quand} a déjà ${etat} : ouvrez-la sur la fiche du produit plutôt que d'en créer une autre.`);
     }
-    if (estEffetALaPublication(date) && (await tx.produitVersion.findUnique({ where: { produitId_dateEffet: { produitId: source.produitId, dateEffet: versDate(date) } }, select: { id: true } }))) {
+    if (estEffetALaPublication(date) && (await tx.produitVersion.findFirst({ where: { produitId: source.produitId, instantEffet: null }, select: { id: true } }))) {
       throw new ErreurMetier("Une version « dès la publication » est déjà en préparation pour ce produit : ouvrez-la sur la fiche du produit, ou publiez-la d'abord.");
     }
 
     // Paramètres de la dernière version RETENUE (D66) : une version au barème en préparation n'est pas encore un paramétrage qui sert.
     const derniere = await tx.produitVersion.findFirstOrThrow({
       where: { produitId: source.produitId, NOT: { modeTarification: "BAREME", baremes: { none: { statut: "PUBLIE" } } } },
-      orderBy: { dateEffet: "desc" },
+      orderBy: PLUS_RECENTE_D_ABORD,
       include: { formules: true, baremes: { select: { statut: true } } },
     });
     // Mêmes paramètres qu'un ajout ordinaire (pré-remplissage par la dernière version), AU BARÈME (D66).
@@ -205,7 +204,7 @@ export async function creerVersionAuBaremeDansTransaction(tx: Prisma.Transaction
   const produit = await tx.produit.findUniqueOrThrow({ where: { code: codeProduit }, select: { id: true } });
   const source = await baremePublieLePlusRecent(tx, produit.id);
   const motif = source ? motifValide(motifPublication) : "";
-  if (estEffetALaPublication(date) && (await tx.produitVersion.findUnique({ where: { produitId_dateEffet: { produitId: produit.id, dateEffet: versDate(date) } }, select: { id: true } }))) {
+  if (estEffetALaPublication(date) && (await tx.produitVersion.findFirst({ where: { produitId: produit.id, instantEffet: null }, select: { id: true } }))) {
     throw new ErreurMetier("Une version « dès la publication » est déjà en préparation pour ce produit : ouvrez-la sur la fiche du produit, ou publiez-la d'abord.");
   }
 

@@ -71,7 +71,9 @@ async function pdfDe(numero: string, version: number): Promise<Uint8Array> {
 async function changerLaVersionPourTest(id: number, affectation: string): Promise<void> {
   await obtenirPrisma().$transaction(async (tx) => {
     await tx.$executeRawUnsafe("SET LOCAL session_replication_role = replica;");
-    await tx.$executeRawUnsafe(`UPDATE produit_versions SET ${affectation} WHERE id = ${id}`);
+    // D68 : la date d'effet d'une version est celle de son instant ; sous « replica » les déclencheurs ne la synchronisent pas, le test pose les deux.
+    const avecInstant = affectation.replace(/date_effet = DATE '(\d{4}-\d{2}-\d{2})'/, "date_effet = DATE '$1', instant_effet = TIMESTAMPTZ '$1 00:00:00+00'");
+    await tx.$executeRawUnsafe(`UPDATE produit_versions SET ${avecInstant} WHERE id = ${id}`);
   });
 }
 

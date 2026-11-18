@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 
 import type { Prisma } from "@/generated/prisma/client";
 
-import { aujourdhui, ajouterJours, formaterDate, type DateIso } from "@/domaine/calcul/dates";
+import { aujourdhui, ajouterJours, formaterDate, heureCourante, instantDeReference, type DateIso } from "@/domaine/calcul/dates";
 import { estEffetALaPublication } from "@/domaine/calcul/parametrage";
 import { estCompositionBareme } from "@/domaine/calcul/composition";
 import { versionEnVigueur, type StatutVersion, type VersionCycle } from "@/domaine/documents/modeles";
@@ -37,7 +37,7 @@ import {
 } from "@/domaine/bareme";
 
 import { journaliser } from "./audit";
-import { exigerEcriture, taxeEnVigueur, versVersion, type VersionProduit } from "./parametrage";
+import { dateDeVersion, exigerEcriture, taxeEnVigueur, versVersion, type VersionProduit } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
 import { ErreurMetier, type UtilisateurCourant } from "./types";
 
@@ -108,20 +108,22 @@ export async function verrouillerVersion(tx: Client, versionId: number) {
 type VersionChargee = Awaited<ReturnType<typeof verrouillerVersion>>;
 
 export const depuisDate = (d: Date): DateIso => d.toISOString().slice(0, 10);
-const versDate = (iso: DateIso) => new Date(`${iso}T00:00:00.000Z`);
 
 /** Date à laquelle la version prendrait effet si elle l'était maintenant : « dès la publication » (date provisoire, D66) vaut aujourd'hui. */
-export const effetPrevu = (v: { dateEffet: Date }): DateIso => {
-  const d = depuisDate(v.dateEffet);
+export const effetPrevu = (v: { dateEffet: Date | null }): DateIso => {
+  const d = dateDeVersion(v.dateEffet);
   return estEffetALaPublication(d) ? aujourdhui() : d;
 };
+
+/** Vrai si la version est déjà en vigueur (D68) : son instant de mise en vigueur est atteint. Une version sans instant (en préparation) ne l'est pas. */
+export const instantAtteint = (v: { instantEffet: Date | null }): boolean => v.instantEffet !== null && v.instantEffet.getTime() <= heureCourante().getTime();
 
 /**
  * Un barème se prépare avant la mise en vigueur de sa version (créée dans un autre mode, à une date future), puis la version
  * bascule au barème ; une version déjà au barème (B3) reste préparable. Une version en vigueur dans un autre mode, jamais.
  */
 export function exigerPreparable(v: VersionChargee): void {
-  if (v.modeTarification !== "BAREME" && depuisDate(v.dateEffet) <= aujourdhui()) {
+  if (v.modeTarification !== "BAREME" && instantAtteint(v)) {
     throw new ErreurMetier("Cette version est déjà en vigueur dans un autre mode : elle ne peut plus recevoir de barème. Créez une nouvelle version, à une date d'effet postérieure à aujourd'hui.");
   }
 }
@@ -182,8 +184,9 @@ export const enJson = (b: Bareme) => JSON.parse(jsonCanonique(b)) as Prisma.Inpu
  */
 async function baremeDOrigine(tx: Client, version: VersionChargee): Promise<Bareme | null> {
   const ligne = await tx.baremeDocument.findFirst({
-    where: { statut: "PUBLIE", version: { produitId: version.produitId, dateEffet: { lt: version.dateEffet } } },
-    orderBy: { version: { dateEffet: "desc" } },
+    // Une version en préparation sans instant est la plus récente : toute version publiée la précède.
+    where: { statut: "PUBLIE", version: { produitId: version.produitId, instantEffet: { lt: version.instantEffet ?? heureCourante() } } },
+    orderBy: { version: { instantEffet: "desc" } },
   });
   if (!ligne) return null;
   const lu = schemaBareme.safeParse(ligne.contenu);
@@ -199,15 +202,15 @@ export async function balisesDesModelesSansCle(client: Pick<Client, "modeleVersi
   const jour = dateEffetVersion > aujourdhui() ? dateEffetVersion : aujourdhui();
   const versions = await client.modeleVersion.findMany({
     where: { statut: "PUBLIE", modele: { produitId, type: { in: ["CP", "COTATION", "CERTIFICAT"] } } },
-    select: { id: true, numero: true, statut: true, dateEffet: true, auteurId: true, analyse: true, modeleId: true, modele: { select: { code: true, type: true } } },
+    select: { id: true, numero: true, statut: true, dateEffet: true, instantEffet: true, auteurId: true, analyse: true, modeleId: true, modele: { select: { code: true, type: true } } },
   });
   type Ligne = (typeof versions)[number];
   const parModele = new Map<number, Ligne[]>();
   for (const v of versions) parModele.set(v.modeleId, [...(parModele.get(v.modeleId) ?? []), v]);
   const publies: { description: string; chemins: string[] }[] = [];
   for (const groupe of parModele.values()) {
-    const cycles = groupe.map((v): VersionCycle & { source: Ligne } => ({ id: v.id, numero: v.numero, statut: v.statut as StatutVersion, dateEffet: depuisDate(v.dateEffet), auteurId: v.auteurId, source: v }));
-    const enVigueur = versionEnVigueur(cycles, jour);
+    const cycles = groupe.map((v): VersionCycle & { source: Ligne } => ({ id: v.id, numero: v.numero, statut: v.statut as StatutVersion, dateEffet: depuisDate(v.dateEffet), instantEffet: v.instantEffet?.toISOString() ?? null, auteurId: v.auteurId, source: v }));
+    const enVigueur = versionEnVigueur(cycles, instantDeReference(jour));
     if (enVigueur) {
       const v = enVigueur.source;
       publies.push({ description: `modèle ${v.modele.type} ${v.modele.code} v${v.numero}`, chemins: ((v.analyse as { champs?: string[] }).champs ?? []) as string[] });
@@ -387,23 +390,24 @@ export async function publierDansTransaction(tx: Client, acteur: UtilisateurCour
   if (ecarts.length > 0) return refuser(new ErreurPublicationBareme(ecarts), "ESSAIS_EN_ECART");
 
   // D66 : date d'effet d'une version au barème « en préparation ». Les essais sont verts : on décide de la date avant d'écrire quoi que ce soit.
-  const dateAvant = depuisDate(version.dateEffet);
-  let entreEnVigueurLe: DateIso | null = null;
+  // D68 : « dès la publication » = l'INSTANT de cette transaction ; plus de refus « une seule version par jour » (deux publications le même jour
+  // entrent en vigueur à des heures différentes). Une date prévue dont l'instant est atteint ne se publie plus : jamais de mise en vigueur rétroactive.
+  let entreEnVigueurA: Date | null = null;
   if (version.modeTarification === "BAREME") {
-    if (estEffetALaPublication(dateAvant)) {
-      entreEnVigueurLe = aujourdhui();
+    if (version.instantEffet === null) {
       // Verrou du produit : deux publications « dès la publication » de deux versions du même produit s'enchaînent, la seconde voit la première.
       await tx.$queryRaw`SELECT id FROM produits WHERE id = ${version.produitId} FOR NO KEY UPDATE`;
-      const autre = await tx.produitVersion.findFirst({ where: { produitId: version.produitId, dateEffet: versDate(entreEnVigueurLe), id: { not: versionId } }, select: { id: true } });
-      if (autre) {
-        throw new ErreurMetier(`Une seule version par jour : ce produit a déjà une version au ${formaterDate(entreEnVigueurLe)}. Publiez avec effet demain ou plus tard.`);
+      entreEnVigueurA = heureCourante();
+      if (await tx.produitVersion.findFirst({ where: { produitId: version.produitId, instantEffet: entreEnVigueurA }, select: { id: true } })) {
+        throw new ErreurMetier("Une autre version de ce produit entre en vigueur à cet instant même : réessayez dans un instant.");
       }
-    } else if (dateAvant <= aujourdhui()) {
+    } else if (instantAtteint(version)) {
       throw new ErreurMetier(
-        `La date d'effet prévue de cette version (${formaterDate(dateAvant)}) est passée : une version ne prend jamais effet rétroactivement. Créez une nouvelle version, « dès la publication » ou à une date future, à partir d'un barème publié.`,
+        `La date d'effet prévue de cette version (${formaterDate(dateDeVersion(version.dateEffet))}) est passée : une version ne prend jamais effet rétroactivement. Créez une nouvelle version, « dès la publication » ou à une date future, à partir d'un barème publié.`,
       );
     }
   }
+  const entreEnVigueurLe: DateIso | null = entreEnVigueurA ? aujourdhui(entreEnVigueurA) : null;
 
   const empreinte = empreinteBareme(bareme);
   const publieLe = new Date();
@@ -412,7 +416,7 @@ export async function publierDansTransaction(tx: Client, acteur: UtilisateurCour
     data: { statut: "PUBLIE", contenu: enJson(bareme), empreinte, schemaVersion: VERSION_SCHEMA_BAREME, publiePar: acteur.identifiant, publieLe, motifPublication: motifPropre, modifieLe: publieLe },
   });
   if (entreEnVigueurLe) {
-    await tx.produitVersion.update({ where: { id: versionId }, data: { dateEffet: versDate(entreEnVigueurLe) } });
+    await tx.produitVersion.update({ where: { id: versionId }, data: { instantEffet: entreEnVigueurA } });
     await journaliser(
       {
         acteur: acteurAudit,
@@ -420,7 +424,7 @@ export async function publierDansTransaction(tx: Client, acteur: UtilisateurCour
         objetType: "produit_version",
         objetId: versionId,
         avant: { dateEffet: "dès la publication" },
-        apres: { dateEffet: entreEnVigueurLe, motif: "version entrée en vigueur à la publication de son barème (D66)" },
+        apres: { dateEffet: entreEnVigueurLe, instantEffet: entreEnVigueurA?.toISOString(), motif: "version entrée en vigueur à la publication de son barème (D66, D68)" },
         adresseIp,
       },
       tx,
@@ -438,7 +442,7 @@ export async function publierDansTransaction(tx: Client, acteur: UtilisateurCour
     },
     tx,
   );
-  return { publie: { id: brouillon.id, empreinte, modeTarification: version.modeTarification, dateEffet: entreEnVigueurLe ?? dateAvant, entreEnVigueurLe } };
+  return { publie: { id: brouillon.id, empreinte, modeTarification: version.modeTarification, dateEffet: entreEnVigueurLe ?? dateDeVersion(version.dateEffet), entreEnVigueurLe } };
 }
 
 /**
@@ -450,7 +454,7 @@ export async function basculerVersionAuBareme(acteur: UtilisateurCourant, versio
   await obtenirPrisma().$transaction(async (tx) => {
     const v = await verrouillerVersion(tx, versionId);
     if (v.modeTarification === "BAREME") throw new ErreurMetier("Cette version est déjà tarifée au barème.");
-    if (depuisDate(v.dateEffet) <= aujourdhui()) {
+    if (instantAtteint(v)) {
       throw new ErreurMetier("Cette version est déjà en vigueur : son mode ne peut plus changer. Créez une nouvelle version à une date d'effet postérieure à aujourd'hui, importez et publiez son barème, puis basculez-la.");
     }
     const publie = await tx.baremeDocument.findFirst({ where: { versionId, statut: "PUBLIE" }, select: { empreinte: true } });
@@ -534,7 +538,7 @@ export async function codesRisqueDuProduit(client: Pick<Client, "baremeDocument"
  */
 export async function baremePourApercu(client: Pick<Client, "baremeDocument">, produitId: number, jour: DateIso): Promise<Bareme | null> {
   const lignes = await client.baremeDocument.findMany({ where: { version: { produitId } }, include: { version: { select: { dateEffet: true } } } });
-  const effet = (l: (typeof lignes)[number]) => l.version.dateEffet.toISOString().slice(0, 10);
+  const effet = (l: (typeof lignes)[number]) => dateDeVersion(l.version.dateEffet);
   const recent = (a: (typeof lignes)[number], b: (typeof lignes)[number]) => effet(b).localeCompare(effet(a)) || b.id - a.id;
   const publies = lignes.filter((l) => l.statut === "PUBLIE").sort(recent);
   const candidats = [...publies.filter((l) => effet(l) <= jour), ...publies.filter((l) => effet(l) > jour).reverse(), ...lignes.filter((l) => l.statut === "BROUILLON").sort(recent)];

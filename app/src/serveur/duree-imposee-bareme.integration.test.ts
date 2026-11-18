@@ -110,7 +110,7 @@ beforeAll(async () => {
   await basculerVersionAuBareme(technique, versionId, null);
   await obtenirPrisma().$transaction(async (tx) => {
     await tx.$executeRawUnsafe("SET LOCAL session_replication_role = replica;");
-    await tx.$executeRawUnsafe(`UPDATE produit_versions SET date_effet = DATE '2020-01-01' WHERE id = ${versionId}`);
+    await tx.$executeRawUnsafe(`UPDATE produit_versions SET date_effet = DATE '2020-01-01', instant_effet = TIMESTAMPTZ '2020-01-01 00:00:00+00' WHERE id = ${versionId}`);
   });
   const jeu = (await lireBaremePublie(obtenirPrisma(), versionId)).bareme.jeuxEssai[0];
   expect(jeu.attendu.ttc).toBe("139420");

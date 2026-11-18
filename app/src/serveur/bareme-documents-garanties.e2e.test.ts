@@ -136,7 +136,7 @@ beforeAll(async () => {
   await enregistrerBrouillonBareme(technique, versionId, baremeAuxBranches(), null); // D66 : le classeur ne s'importe plus sur une version qui n'est pas au barème
   await publierBareme(technique, versionId, "Barème SECURPRO inventé (e2e documents par garantie)", null);
   await basculerVersionAuBareme(technique, versionId, null);
-  await contournerLesDeclencheurs(`UPDATE produit_versions SET date_effet = DATE '2020-01-01' WHERE id = ${versionId}`);
+  await contournerLesDeclencheurs(`UPDATE produit_versions SET date_effet = DATE '2020-01-01', instant_effet = TIMESTAMPTZ '2020-01-01 00:00:00+00' WHERE id = ${versionId}`);
 
   await publierFichier("COTATION", produit, "cotation_garanties_test.docx");
   await publierFichier("CP", produit, "cp_garanties_par_garantie_test.docx");

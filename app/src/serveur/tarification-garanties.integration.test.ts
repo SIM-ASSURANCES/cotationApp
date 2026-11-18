@@ -284,7 +284,8 @@ describe("GARANTIES : aucun montant automatique", () => {
     expect((await soumettre(commercial, id, null)).statut).toBe("A_VALIDER");
     // La version GARANTIES est datée dans l'avenir (donc sans effet sur la version « en vigueur » d'aujourd'hui) : seul le rattachement fabriqué compte.
     await ajouterVersionHeritee(technique, code, versionGaranties("2099-01-01"), null);
-    expect(await sql(`UPDATE cotations SET version_date_effet = DATE '2099-01-01' WHERE id = ${id}`)).toBe("accepté");
+    // D67 : la version se désigne par son identifiant ; l'état fabriqué pose donc aussi version_id (la date seule ne rattache plus rien).
+    expect(await sql(`UPDATE cotations SET version_date_effet = DATE '2099-01-01', version_id = (SELECT id FROM produit_versions WHERE produit_id = cotations.produit_id AND date_effet = DATE '2099-01-01') WHERE id = ${id}`)).toBe("accepté");
 
     await expect(valider(technique2, id, null)).rejects.toThrow(MESSAGE_TARIFICATION_PAR_GARANTIES);
     expect((await lireCotation(technique2, id))!.statut).toBe("A_VALIDER");

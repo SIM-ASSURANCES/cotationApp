@@ -53,7 +53,7 @@ import {
 
 import { avecRisqueDuDocument, calculAvecDetail } from "./bareme";
 import { journaliser, type ActeurAudit } from "./audit";
-import { contexteProduit, montantsDu } from "./documents";
+import { contexteVersion, montantsDu } from "./documents";
 import { avanceDisponible, encaissementsDe, inclusionImputations, reportsEnAttente, versEncaissements, type ReportEnAttente } from "./encaissements";
 import { niveauDuProfil } from "./droits";
 import { versIntermediairesDocument } from "./intermediaires";
@@ -134,7 +134,7 @@ async function exigerLecture(acteur: UtilisateurCourant) {
 export const chargerPolice = async (client: Tx, policeId: number) =>
   avecRisqueDuDocument(
     client,
-    await client.police.findUnique({ where: { id: policeId }, include: { adherents: { orderBy: { numero: "asc" } }, cotation: { select: { produitId: true, versionDateEffet: true, regimeTaxe: true, intermediaires: true, compositionParId: true, compositionPar: true, compositionLe: true, compositionMotif: true } } } }),
+    await client.police.findUnique({ where: { id: policeId }, include: { adherents: { orderBy: { numero: "asc" } }, cotation: { select: { produitId: true, versionId: true, versionDateEffet: true, regimeTaxe: true, intermediaires: true, compositionParId: true, compositionPar: true, compositionLe: true, compositionMotif: true } } } }),
   );
 type PoliceChargee = NonNullable<Awaited<ReturnType<typeof chargerPolice>>>;
 
@@ -172,12 +172,12 @@ function prorataAvenant(type: string, contenu: ContenuFacture): boolean | null {
 
 async function contenuCalcule(
   police: PoliceChargee,
-  produitId: number,
-  versionDateEffet: Date,
+  /** Version du produit de la facture, désignée par son identifiant (D67). */
+  versionId: number,
   entree: DonneesCalcul,
   o: { assures: Assure[]; ordresSansPrime: number[]; echeances: ContenuFacture["echeances"]; envoyeA: EnvoyeA | null },
 ): Promise<ContenuFacture> {
-  const contexte = await contexteProduit(produitId, versionDateEffet);
+  const contexte = await contexteVersion(versionId);
   const m = montantsDu(entree, contexte);
   const groupe = estContratDeGroupe(police.typeContrat);
   return {
@@ -228,6 +228,8 @@ async function creer(
   d: {
     type: TypeFacture;
     produitId: number;
+    /** Version du produit (D67) : identifiant et date d'effet, issus de la MÊME version. */
+    versionId: number;
     versionDateEffet: Date;
     contenu: ContenuFacture;
     remplaceId: number | null;
@@ -247,6 +249,7 @@ async function creer(
       statut: "BROUILLON",
       policeId: police.id,
       produitId: d.produitId,
+      versionId: d.versionId,
       versionDateEffet: d.versionDateEffet,
       remplaceId: d.remplaceId,
       adherentsVersion: d.adherentsVersion ?? null,
@@ -298,7 +301,7 @@ export async function creerFactureAffaireNouvelle(acteur: UtilisateurCourant, po
     if (existante) throw new ErreurMetier(`La facture d'affaire nouvelle de cette police existe déjà (${existante.numero ?? "brouillon"}).`);
     const initiale = police.adherents.find((v) => v.motif === "INITIALE");
     const assures = estContratDeGroupe(police.typeContrat) && initiale ? (initiale.adherents as unknown as Assure[]) : listeCourante(police);
-    const contenu = await contenuCalcule(police, police.cotation.produitId, police.cotation.versionDateEffet, police.donneesCalcul as unknown as DonneesCalcul, {
+    const contenu = await contenuCalcule(police, police.cotation.versionId, police.donneesCalcul as unknown as DonneesCalcul, {
       assures,
       ordresSansPrime: [],
       echeances: echeancesJson(police.echeancier),
@@ -312,7 +315,7 @@ export async function creerFactureAffaireNouvelle(acteur: UtilisateurCourant, po
       tx,
       acteur,
       police,
-      { type: "AFFAIRE_NOUVELLE", produitId: police.cotation.produitId, versionDateEffet: police.cotation.versionDateEffet, contenu, remplaceId: await factureRemplacee(tx, policeId, "AFFAIRE_NOUVELLE", {}), ...figee },
+      { type: "AFFAIRE_NOUVELLE", produitId: police.cotation.produitId, versionId: police.cotation.versionId, versionDateEffet: police.cotation.versionDateEffet, contenu, remplaceId: await factureRemplacee(tx, policeId, "AFFAIRE_NOUVELLE", {}), ...figee },
       adresseIp,
     );
   }, "La facture d'affaire nouvelle de cette police existe déjà.");
@@ -357,6 +360,7 @@ async function calculRenouvellement(tx: Tx, police: PoliceChargee, precedente: L
     const { echeancier } = executerCalcul(entree, contexte.version.fractionnement, nombreTranches);
     return {
       produitId: contexte.produit.id,
+      versionId: contexte.version.id,
       versionDateEffet: versDate(contexte.version.dateEffet),
       entree,
       echeances: (echeancier ?? []).map((t) => ({ numero: t.numero, date: t.date, montant: t.montant.toFixed() })),
@@ -374,6 +378,7 @@ async function calculRenouvellement(tx: Tx, police: PoliceChargee, precedente: L
   const { echeancier } = executerCalcul(entree, contexte.version.fractionnement, nombreTranches);
   return {
     produitId: contexte.produit.id,
+    versionId: contexte.version.id,
     versionDateEffet: versDate(contexte.version.dateEffet),
     entree,
     echeances: (echeancier ?? []).map((t) => ({ numero: t.numero, date: t.date, montant: t.montant.toFixed() })),
@@ -391,7 +396,7 @@ export async function creerFactureRenouvellement(acteur: UtilisateurCourant, pol
     }
     if (!precedente || precedente.statut !== "EMISE") throw new ErreurMetier("Le renouvellement suit une facture émise (affaire nouvelle ou renouvellement précédent) : émettez-la d'abord.");
     const calcul = await calculRenouvellement(tx, police, precedente, saisie);
-    const contenu = await contenuCalcule(police, calcul.produitId, calcul.versionDateEffet, calcul.entree, {
+    const contenu = await contenuCalcule(police, calcul.versionId, calcul.entree, {
       assures: listeCourante(police),
       ordresSansPrime: [],
       echeances: calcul.echeances,
@@ -401,7 +406,7 @@ export async function creerFactureRenouvellement(acteur: UtilisateurCourant, pol
       tx,
       acteur,
       police,
-      { type: "RENOUVELLEMENT", produitId: calcul.produitId, versionDateEffet: calcul.versionDateEffet, contenu, remplaceId: await factureRemplacee(tx, policeId, "RENOUVELLEMENT", { dateEffet: versDate(calcul.entree.dateEffet) }) },
+      { type: "RENOUVELLEMENT", produitId: calcul.produitId, versionId: calcul.versionId, versionDateEffet: calcul.versionDateEffet, contenu, remplaceId: await factureRemplacee(tx, policeId, "RENOUVELLEMENT", { dateEffet: versDate(calcul.entree.dateEffet) }) },
       adresseIp,
     );
   }, "Un renouvellement existe déjà pour cette période.");
@@ -445,7 +450,7 @@ export async function creerFactureAvenant(
     // compose la prime additionnelle (mêmes règles : lignes, branche, motif). Pas de prorata automatique.
     if (estComposition(baseFigee)) {
       const contexteComp = await resoudreContexteComposition(tx, police.produitCode, date);
-      const cp = await contexteProduit(periode.produitId, periode.versionDateEffet);
+      const cp = await contexteVersion(periode.versionId);
       const entree: EntreeComposition = {
         type: "COMPOSITION",
         version: 1,
@@ -487,6 +492,7 @@ export async function creerFactureAvenant(
         {
           type: "AVENANT",
           produitId: periode.produitId,
+          versionId: periode.versionId,
           versionDateEffet: periode.versionDateEffet,
           contenu,
           adherentsVersion,
@@ -511,7 +517,7 @@ export async function creerFactureAvenant(
       parametres: { prorata: { actif: prorata, primeMinimale: null }, arrondi: base.parametres.arrondi, taxe: base.parametres.taxe },
     };
     executerCalcul(entree, { repartitionPourcent: null, decalagesMois: null }, 1); // contrôle : refus lisible si le calcul est impossible
-    const contenu = await contenuCalcule(police, periode.produitId, periode.versionDateEffet, entree, {
+    const contenu = await contenuCalcule(police, periode.versionId, entree, {
       assures: incorpores,
       ordresSansPrime: [],
       echeances: [],
@@ -521,7 +527,7 @@ export async function creerFactureAvenant(
       tx,
       acteur,
       police,
-      { type: "AVENANT", produitId: periode.produitId, versionDateEffet: periode.versionDateEffet, contenu, adherentsVersion, remplaceId: await factureRemplacee(tx, policeId, "AVENANT", { adherentsVersion }) },
+      { type: "AVENANT", produitId: periode.produitId, versionId: periode.versionId, versionDateEffet: periode.versionDateEffet, contenu, adherentsVersion, remplaceId: await factureRemplacee(tx, policeId, "AVENANT", { adherentsVersion }) },
       adresseIp,
       { prorata },
     );
@@ -585,7 +591,7 @@ export async function modifierFacture(acteur: UtilisateurCourant, factureId: num
     const avant = contenuDe(f);
     const envoyeA = envoyeAControle(saisie.envoyeA, avant.souscripteur);
     let contenu: ContenuFacture = { ...avant, envoyeA };
-    let produit = { produitId: f.produitId, versionDateEffet: f.versionDateEffet };
+    let produit = { produitId: f.produitId, versionId: f.versionId, versionDateEffet: f.versionDateEffet };
     if (f.type === "RENOUVELLEMENT" && (saisie.lignes || saisie.nombreTranches)) {
       if (estComposition(avant.entree)) {
         if (saisie.lignes && saisie.lignes.length > 0) {
@@ -604,8 +610,8 @@ export async function modifierFacture(acteur: UtilisateurCourant, factureId: num
         });
         if (!precedente) throw new ErreurMetier("Période précédente introuvable.");
         const calcul = await calculRenouvellement(tx, police, precedente, saisie);
-        contenu = await contenuCalcule(police, calcul.produitId, calcul.versionDateEffet, calcul.entree, { assures: avant.assures, ordresSansPrime: [], echeances: calcul.echeances, envoyeA });
-        produit = { produitId: calcul.produitId, versionDateEffet: calcul.versionDateEffet };
+        contenu = await contenuCalcule(police, calcul.versionId, calcul.entree, { assures: avant.assures, ordresSansPrime: [], echeances: calcul.echeances, envoyeA });
+        produit = { produitId: calcul.produitId, versionId: calcul.versionId, versionDateEffet: calcul.versionDateEffet };
       }
     } else if (saisie.lignes || saisie.nombreTranches) {
       throw new ErreurMetier("Les montants d'une affaire nouvelle ou d'un avenant viennent de la police : seul « Envoyé à » se modifie.");
@@ -661,7 +667,7 @@ export async function composerFacture(
     const entree = construireComposition(contexte, { dateEffet, dateEcheance, lignes: lignesComposees, nombreTranches });
     const { echeancier } = executerCalcul(entree, contexte.version.fractionnement, nombreTranches);
     const echeances = (echeancier ?? []).map((t) => ({ numero: t.numero, date: t.date, montant: t.montant.toFixed() }));
-    const nouveauContenu = await contenuCalcule(police, contexte.produit.id, versDate(contexte.version.dateEffet), entree, {
+    const nouveauContenu = await contenuCalcule(police, contexte.version.id, entree, {
       assures: avant.assures,
       ordresSansPrime: avant.ordresSansPrime,
       echeances,
@@ -676,6 +682,7 @@ export async function composerFacture(
         contenu: json(nouveauContenu),
         ttc,
         produitId: contexte.produit.id,
+        versionId: contexte.version.id,
         versionDateEffet: versDate(contexte.version.dateEffet),
         compositionParId: acteur.id,
         compositionPar: acteur.identifiant,
@@ -968,6 +975,7 @@ export async function emettreAvoir(acteur: UtilisateurCourant, factureId: number
         numero,
         policeId: f.policeId,
         produitId: f.produitId,
+        versionId: f.versionId,
         versionDateEffet: f.versionDateEffet,
         factureOrigineId: f.id,
         dateEffet: f.dateEffet,
@@ -1475,7 +1483,7 @@ export async function lireFacture(acteur: UtilisateurCourant, id: number): Promi
   const [version, branches] = await Promise.all([
     estComp
       ? prisma.produitVersion.findUnique({
-          where: { produitId_dateEffet: { produitId: f.produitId, dateEffet: f.versionDateEffet } },
+          where: { id: f.versionId },
           select: { garanties: true, garantiesSaisieLibre: true },
         })
       : null,

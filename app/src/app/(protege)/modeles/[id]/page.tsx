@@ -52,7 +52,7 @@ export default async function PageModele(props: PageProps<"/modeles/[id]">) {
             <div className="flex flex-wrap items-center gap-3">
               <h3 className="text-base font-semibold text-foreground">Version {v.numero}</h3>
               <PastilleVersion statut={v.statut} libelle={v.libelleStatut} />
-              <span className="text-sm text-muted-foreground">date d'effet {formaterDate(v.dateEffet)}</span>
+              <span className="text-sm text-muted-foreground">{v.etatHorodate ?? `date d'effet ${formaterDate(v.dateEffet)}`}</span>
             </div>
             <ListeDefinitions
               elements={[

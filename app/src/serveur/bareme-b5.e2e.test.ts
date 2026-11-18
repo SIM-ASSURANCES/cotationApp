@@ -120,7 +120,7 @@ describe("Recette B5 : SECURPRO inventé saisi entièrement à l'écran, publié
     // 6. En vigueur (test seulement : on ne peut pas attendre la date d'effet), le Commercial cote : 139 420 F TTC, comme l'essai que la Technique avait tapé.
     await obtenirPrisma().$transaction(async (tx) => {
       await tx.$executeRawUnsafe("SET LOCAL session_replication_role = replica;");
-      await tx.$executeRawUnsafe(`UPDATE produit_versions SET date_effet = DATE '2020-01-01' WHERE id = ${versionId}`);
+      await tx.$executeRawUnsafe(`UPDATE produit_versions SET date_effet = DATE '2020-01-01', instant_effet = TIMESTAMPTZ '2020-01-01 00:00:00+00' WHERE id = ${versionId}`);
     });
     const essai = lu.bareme.jeuxEssai[0];
     const brut = {

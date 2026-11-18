@@ -58,6 +58,10 @@ describe("script idempotent de rangement des documents dev (Étape 5, D41)", () 
         creePar: "admin",
       },
     });
+    // D67 : une cotation ou une facture désigne sa version par son identifiant : la version existe en base.
+    const version = await prisma.produitVersion.create({
+      data: { produitId: produit.id, dateEffet: new Date("2026-01-01"), arrondiPrecision: 1, arrondiSens: "PROCHE", arrondiNiveau: "LIGNE", arrondiComposante: "TAXE", prorataActif: false, creePar: "admin" },
+    });
     const client = await prisma.client.create({
       data: { nom: "CLIENT REORG", type: "MORALE", creePar: "admin" },
     });
@@ -67,6 +71,7 @@ describe("script idempotent de rangement des documents dev (Étape 5, D41)", () 
         produitId: produit.id,
         clientId: client.id,
         numero: numCotation,
+        versionId: version.id,
         versionDateEffet: new Date("2026-01-01"),
         statut: "EMISE",
         dateEffet: new Date("2026-01-01"),
@@ -94,6 +99,7 @@ describe("script idempotent de rangement des documents dev (Étape 5, D41)", () 
           empreinte: "a".repeat(64),
           commentaire: "version initiale",
           dateEffet: new Date("2026-01-01"),
+          instantEffet: new Date("2026-01-01"), // D68 : une version publiée a son instant de mise en vigueur
           analyse: {},
           auteurId: 1,
           auteurIdentifiant: "admin",

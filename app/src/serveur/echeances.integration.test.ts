@@ -140,7 +140,7 @@ async function antidater(versionId: number, dateEffet: string): Promise<void> {
   try {
     await client.query("BEGIN");
     await client.query("SET LOCAL session_replication_role = replica");
-    await client.query("UPDATE modele_versions SET date_effet = $1 WHERE id = $2", [dateEffet, versionId]);
+    await client.query("UPDATE modele_versions SET date_effet = $1::date, instant_effet = ($1::date)::timestamp AT TIME ZONE 'Africa/Abidjan' WHERE id = $2", [dateEffet, versionId]);
     await client.query("COMMIT");
   } finally {
     await client.end();

@@ -17,7 +17,7 @@ import { annulerParAvoir, documentsDe, documentsDuClient, emettreCotation, emett
 import { initialiserProfilsEtDroits } from "./droits";
 import { creerIntermediaire, modifierIntermediaire } from "./intermediaires";
 import { remplacerGenerateur, type DemandePdf } from "./generateur";
-import { creerModele, deposerVersion, publierVersion, soumettreVersion } from "./modeles";
+import { creerModele, deposerVersion, lireModele, publierVersion, soumettreVersion } from "./modeles";
 import { assurerSignature } from "./societe-test";
 import { aujourdhui, creerProduit, creerTaxe, creerVersion } from "./parametrage";
 import { obtenirPrisma } from "./prisma";
@@ -248,7 +248,7 @@ describe("réédition", () => {
     const prisma = obtenirPrisma();
     await prisma.$executeRawUnsafe(`ALTER TABLE modele_versions DISABLE TRIGGER modele_versions_figees`);
     try {
-      await prisma.$executeRawUnsafe(`UPDATE modele_versions SET date_effet = '2020-01-01' WHERE id = ${v1.versionId}`);
+      await prisma.$executeRawUnsafe(`UPDATE modele_versions SET date_effet = '2020-01-01', instant_effet = TIMESTAMPTZ '2020-01-01 00:00:00+00' WHERE id = ${v1.versionId}`);
     } finally {
       await prisma.$executeRawUnsafe(`ALTER TABLE modele_versions ENABLE TRIGGER modele_versions_figees`);
     }
@@ -275,6 +275,49 @@ describe("réédition", () => {
     demandes.length = 0;
     await emettreCotation(commercial, await cotationT1(p), null);
     expect(new TextDecoder().decode(demandes[0].modele)).toBe("modele cotation v2");
+  });
+
+  it("D68 : deux publications du même modèle le même jour : le document émis avant la 2e garde la 1re (réédition identique, T10), celui émis après prend la 2e", async () => {
+    const p = await produit();
+    const v1 = await publier("COTATION", p, "modele cotation v1 du jour", SOCLE("doc.numero")); // publiée aujourd'hui, à son instant
+    const doc1 = await emettreCotation(commercial, await cotationT1(p), null); // émis AVANT la 2e publication
+    prochaineAnalyse = analyse(SOCLE("doc.numero"));
+    await deposerVersion(technique, v1.modeleId, { fichier: texte("modele cotation v2 du jour"), nomFichier: "m.docx", commentaire: "Version 2", dateEffet: aujourdhui(), visa: null, dateDocument: null }, null);
+    const prisma = obtenirPrisma();
+    const v2 = await prisma.modeleVersion.findFirstOrThrow({ where: { modeleId: v1.modeleId, numero: 2 } });
+    await soumettreVersion(technique, v2.id, null);
+    await publierVersion(dg, v2.id, aujourdhui(), null); // MÊME jour : plus de refus, la 2e entre en vigueur à son instant
+
+    const lignes = await prisma.modeleVersion.findMany({ where: { modeleId: v1.modeleId, statut: "PUBLIE" }, orderBy: { numero: "asc" } });
+    expect(lignes.map((l) => l.dateEffet.toISOString().slice(0, 10))).toEqual([aujourdhui(), aujourdhui()]);
+    expect(lignes[1].instantEffet!.getTime()).toBeGreaterThan(lignes[0].instantEffet!.getTime());
+
+    // La fiche du modèle affiche l'état à l'instant (D68) : la 1re « Remplacée le … à HH h MM », la 2e « En vigueur depuis le … à HH h MM ».
+    const fiche = (await lireModele(technique, v1.modeleId))!;
+    const jourFr = aujourdhui().split("-").reverse().join("/");
+    expect(fiche.versions.find((v) => v.numero === 1)!.etatHorodate).toMatch(new RegExp(`^Remplacée le ${jourFr} à \\d{2} h \\d{2}$`));
+    expect(fiche.versions.find((v) => v.numero === 2)!.etatHorodate).toMatch(new RegExp(`^En vigueur depuis le ${jourFr} à \\d{2} h \\d{2}$`));
+
+    // Le document d'avant garde la 1re : sa réédition est identique.
+    demandes.length = 0;
+    const reedite = await reediter(commercial, doc1.id, null);
+    expect(new TextDecoder().decode(demandes[0].modele)).toBe("modele cotation v1 du jour");
+    expect((await prisma.documentEmis.findUniqueOrThrow({ where: { id: reedite.id } })).modeleVersionId).toBe(v1.versionId);
+    // Un document émis après la 2e publication prend la 2e.
+    demandes.length = 0;
+    const doc2 = await emettreCotation(commercial, await cotationT1(p), null);
+    expect(new TextDecoder().decode(demandes[0].modele)).toBe("modele cotation v2 du jour");
+    expect((await prisma.documentEmis.findUniqueOrThrow({ where: { id: doc2.id } })).modeleVersionId).toBe(v2.id);
+    expect((await prisma.documentEmis.findUniqueOrThrow({ where: { id: doc1.id } })).modeleVersionId).toBe(v1.versionId);
+    // Deux publications au même instant (même date future) restent refusées.
+    const demain = new Date(Date.now() + 86_400_000 * 3).toISOString().slice(0, 10);
+    await deposerVersion(technique, v1.modeleId, { fichier: texte("v3"), nomFichier: "m.docx", commentaire: "Version 3", dateEffet: demain, visa: null, dateDocument: null }, null);
+    await deposerVersion(technique, v1.modeleId, { fichier: texte("v4"), nomFichier: "m.docx", commentaire: "Version 4", dateEffet: demain, visa: null, dateDocument: null }, null);
+    const [v3, v4] = await prisma.modeleVersion.findMany({ where: { modeleId: v1.modeleId, numero: { in: [3, 4] } }, orderBy: { numero: "asc" } });
+    await soumettreVersion(technique, v3.id, null);
+    await soumettreVersion(technique, v4.id, null);
+    await publierVersion(dg, v3.id, demain, null);
+    await expect(publierVersion(dg, v4.id, demain, null)).rejects.toThrow(/déjà publiée avec cette date d'effet/);
   });
 
   it("T11 : réédition d'une cotation expirée → filigrane « EXPIRÉE » ; page de vérification « Expirée »", async () => {

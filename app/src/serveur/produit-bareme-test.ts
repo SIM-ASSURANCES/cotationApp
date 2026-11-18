@@ -64,7 +64,7 @@ export async function ajouterVersionHeritee(acteur: UtilisateurCourant, code: st
 export async function dateDeVersion(versionId: number, dateEffet: string): Promise<void> {
   await obtenirPrisma().$transaction(async (tx) => {
     await tx.$executeRawUnsafe("SET LOCAL session_replication_role = replica;");
-    await tx.$executeRawUnsafe(`UPDATE produit_versions SET date_effet = DATE '${dateEffet}' WHERE id = ${versionId}`);
+    await tx.$executeRawUnsafe(`UPDATE produit_versions SET date_effet = DATE '${dateEffet}', instant_effet = TIMESTAMPTZ '${dateEffet} 00:00:00+00' WHERE id = ${versionId}`);
   });
 }
 

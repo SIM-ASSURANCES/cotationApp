@@ -1,7 +1,8 @@
 import "server-only";
 
 import { baremeSecurpro } from "@/domaine/bareme/securpro-fixture";
-import { estEffetALaPublication } from "@/domaine/calcul/parametrage";
+import { formaterInstant } from "@/domaine/calcul/dates";
+import { DATE_EFFET_A_LA_PUBLICATION, estEffetALaPublication } from "@/domaine/calcul/parametrage";
 
 import { journaliser } from "./audit";
 import { construireClasseur } from "./bareme-classeur-ecriture";
@@ -22,9 +23,9 @@ export const TYPE_XLSX = "application/vnd.openxmlformats-officedocument.spreadsh
 async function versionEtProduit(versionId: number) {
   const v = await obtenirPrisma().produitVersion.findUnique({ where: { id: versionId }, include: { produit: { select: { code: true, libelle: true } } } });
   if (!v) throw new ErreurMetier("Version de produit introuvable.");
-  const dateEffet = v.dateEffet.toISOString().slice(0, 10);
+  const dateEffet = v.dateEffet ? v.dateEffet.toISOString().slice(0, 10) : DATE_EFFET_A_LA_PUBLICATION;
   // D66 : « dès la publication » (date provisoire 9999-12-31) ne s'écrit jamais comme une date.
-  return { code: v.produit.code, libelle: v.produit.libelle, dateEffet: estEffetALaPublication(dateEffet) ? "en-preparation" : dateEffet, version: estEffetALaPublication(dateEffet) ? "version en préparation" : `version du ${dateEffet}` };
+  return { code: v.produit.code, libelle: v.produit.libelle, dateEffet: estEffetALaPublication(dateEffet) ? "en-preparation" : dateEffet, version: v.instantEffet ? `version du ${formaterInstant(v.instantEffet.toISOString())}` : "version en préparation" };
 }
 
 /** Modèle de classeur : le SECURPRO INVENTÉ en exemple, à remplacer par le barème du produit. */

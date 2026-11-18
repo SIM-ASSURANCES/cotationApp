@@ -102,9 +102,13 @@ export type ContexteProduit = {
   references: { csModeleCode: string | null; csVisa: string | null };
 };
 
-export async function contexteProduit(produitId: number, versionDateEffet: Date): Promise<ContexteProduit> {
+/**
+ * Contexte de la version figée d'une cotation ou d'une facture, retrouvée par son IDENTIFIANT (D67) : deux versions d'un même produit,
+ * même datées du même jour, ne se confondent jamais. Voie de tout le code de production.
+ */
+export async function contexteVersion(versionId: number): Promise<ContexteProduit> {
   const version = await obtenirPrisma().produitVersion.findUniqueOrThrow({
-    where: { produitId_dateEffet: { produitId, dateEffet: versionDateEffet } },
+    where: { id: versionId },
     include: { formules: true, produit: { include: { branchePrincipaleRef: true } } },
   });
   return {
@@ -117,11 +121,20 @@ export async function contexteProduit(produitId: number, versionDateEffet: Date)
       branche_libelle: version.produit.branchePrincipaleRef?.libelle ?? libelleBranchePrincipale(version.produit.branchePrincipale),
       branchePrincipale: version.produit.branchePrincipale,
     },
-    versionDateEffet: depuisDate(versionDateEffet),
+    versionDateEffet: depuisDate(version.dateEffet),
     modeTarification: version.modeTarification,
     formules: new Map(version.formules.map((f) => [f.code, { libelle: f.libelle, tauxCouverture: f.tauxCouverture ? f.tauxCouverture.toFixed() : null }])),
     references: { csModeleCode: version.csModeleCode, csVisa: version.csVisa },
   };
+}
+
+/**
+ * Contexte de la version d'un produit à une date d'effet EXACTE. Aucun code de production ne l'appelle plus (D67) : il ne sert qu'aux tests
+ * d'intégration d'avant D67, qui désignent la version par sa date, et se retire avec eux.
+ */
+export async function contexteProduit(produitId: number, versionDateEffet: Date): Promise<ContexteProduit> {
+  const { id } = await obtenirPrisma().produitVersion.findUniqueOrThrow({ where: { produitId_dateEffet: { produitId, dateEffet: versionDateEffet } }, select: { id: true } });
+  return contexteVersion(id);
 }
 
 /**
@@ -530,7 +543,7 @@ export async function emettreCotation(acteur: UtilisateurCourant, cotationId: nu
     throw new ErreurMetier("Le PDF de cette cotation est déjà émis : utilisez « Rééditer ».");
   }
   const date = c.dateEtablissement ? depuisDate(c.dateEtablissement) : aujourdhui();
-  const contexte = await contexteProduit(c.produitId, c.versionDateEffet);
+  const contexte = await contexteVersion(c.versionId);
   const modele = await modeleEnVigueur("COTATION", c.produitId, c.produit.code, date, c.donneesCalcul as unknown as DonneesCalcul);
   const associes = await modelesAssocies(c.produitId, date, false);
   if ((modele.blocs ?? []).some((b) => b.nom === "garanties")) exigerSousModelesDesGaranties("cotation", modele.blocs, montantsDu(c.donneesCalcul as unknown as DonneesCalcul, contexte).garanties, associes.sousModeles);
@@ -566,7 +579,7 @@ export async function apercuCotation(acteur: UtilisateurCourant, cotationId: num
   await exigerSurType(acteur, "COTATION", false);
   const c = await chargerCotation(cotationId);
   const date = aujourdhui();
-  const contexte = await contexteProduit(c.produitId, c.versionDateEffet);
+  const contexte = await contexteVersion(c.versionId);
   const modele = await modeleEnVigueur("COTATION", c.produitId, c.produit.code, date, c.donneesCalcul as unknown as DonneesCalcul);
   const associes = await modelesAssocies(c.produitId, date, false);
   const commun = await sourceCommune(contexte, date);
@@ -619,7 +632,7 @@ const derniereVersionAdherents = (police: PoliceChargee): number | null => (poli
  */
 async function productionCp(c: CotationChargee, police: PoliceChargee): Promise<Production> {
   const date = aujourdhui();
-  const contexte = await contexteProduit(c.produitId, c.versionDateEffet);
+  const contexte = await contexteVersion(c.versionId);
   const modele = await modeleEnVigueur("CP", c.produitId, c.produit.code, date, police.donneesCalcul as unknown as DonneesCalcul);
   const associes = await modelesAssocies(c.produitId, date, false);
   const commun = await sourceCommune(contexte, date);
@@ -788,7 +801,7 @@ export async function emettreCertificat(acteur: UtilisateurCourant, policeId: nu
 
   const c = await chargerCotation(police.cotationId);
   const date = aujourdhui();
-  const contexte = await contexteProduit(c.produitId, c.versionDateEffet);
+  const contexte = await contexteVersion(c.versionId);
   const modele = await modeleEnVigueur("CERTIFICAT", c.produitId, c.produit.code, date);
   const associes = await modelesAssocies(c.produitId, date, false);
   const commun = await sourceCommune(contexte, date);

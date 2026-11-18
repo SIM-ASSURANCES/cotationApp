@@ -28,11 +28,16 @@ describe("stockage arborescent (Étape 5, D41)", () => {
         creePar: "admin",
       },
     });
+    // D67 : une cotation ou une facture désigne sa version par son identifiant : la version existe en base.
+    const version = await prisma.produitVersion.create({
+      data: { produitId: produit.id, dateEffet: new Date("2026-01-01"), arrondiPrecision: 1, arrondiSens: "PROCHE", arrondiNiveau: "LIGNE", arrondiComposante: "TAXE", prorataActif: false, creePar: "admin" },
+    });
 
     // Cotation prospect (sans clientId)
     const cotationProspect = await prisma.cotation.create({
       data: {
         produitId: produit.id,
+        versionId: version.id,
         versionDateEffet: new Date("2026-01-01"),
         statut: "BROUILLON",
         dateEffet: new Date("2026-06-01"),
@@ -83,6 +88,7 @@ describe("stockage arborescent (Étape 5, D41)", () => {
         produitId: produit.id,
         clientId: client.id,
         numero: numCotationClient,
+        versionId: version.id,
         versionDateEffet: new Date("2026-01-01"),
         statut: "BROUILLON",
         dateEffet: new Date("2026-06-01"),
@@ -120,6 +126,10 @@ describe("stockage arborescent (Étape 5, D41)", () => {
         creePar: "admin",
       },
     });
+    // D67 : une cotation ou une facture désigne sa version par son identifiant : la version existe en base.
+    const version = await prisma.produitVersion.create({
+      data: { produitId: produit.id, dateEffet: new Date("2026-01-01"), arrondiPrecision: 1, arrondiSens: "PROCHE", arrondiNiveau: "LIGNE", arrondiComposante: "TAXE", prorataActif: false, creePar: "admin" },
+    });
 
     const numCotation = CODE("COT");
     const numPolice = CODE("POL");
@@ -135,6 +145,7 @@ describe("stockage arborescent (Étape 5, D41)", () => {
         produitId: produit.id,
         clientId: client.id,
         numero: numCotation,
+        versionId: version.id,
         versionDateEffet: new Date("2026-01-01"),
         statut: "ACCEPTEE",
         dateEffet: new Date("2026-01-01"),
@@ -201,6 +212,7 @@ describe("stockage arborescent (Étape 5, D41)", () => {
         emisePar: "admin",
         policeId: police.id,
         produitId: produit.id,
+        versionId: version.id,
         versionDateEffet: new Date("2026-01-01"),
         dateEffet: new Date("2026-01-01"),
         dateEcheance: new Date("2026-12-31"),
@@ -234,6 +246,7 @@ describe("stockage arborescent (Étape 5, D41)", () => {
         emisePar: "admin",
         policeId: police.id,
         produitId: produit.id,
+        versionId: version.id,
         versionDateEffet: new Date("2026-01-01"),
         adherentsVersion: 2,
         dateEffet: new Date("2026-03-01"),
@@ -292,6 +305,7 @@ describe("stockage arborescent (Étape 5, D41)", () => {
         emisePar: "admin",
         policeId: police.id,
         produitId: produit.id,
+        versionId: version.id,
         versionDateEffet: new Date("2026-01-01"),
         factureOrigineId: factureAn.id,
         dateEffet: new Date("2026-01-01"),

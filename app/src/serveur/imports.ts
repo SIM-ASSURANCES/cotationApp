@@ -231,7 +231,7 @@ export async function lireFichierImport(nom: string, contenu: Uint8Array, option
 
 // ---------------------------------------------------------------- Contrôle
 
-type PoliceAvecVersion = Prisma.PoliceGetPayload<{ include: { cotation: { select: { produitId: true; versionDateEffet: true } } } }>;
+type PoliceAvecVersion = Prisma.PoliceGetPayload<{ include: { cotation: { select: { produitId: true; versionId: true } } } }>;
 
 /** Effectif figé dans la cotation, si le barème de la police tarife par effectif (D52) ; sinon aucun plafond. */
 async function effectifMaximal(client: Prisma.TransactionClient, bareme: BaremeFige): Promise<number | undefined> {
@@ -242,7 +242,7 @@ async function effectifMaximal(client: Prisma.TransactionClient, bareme: BaremeF
 
 async function contexteControle(police: PoliceAvecVersion, dateEffet: DateIso, numeros: string[], lotEnCours: number | null = null, client: Prisma.TransactionClient = obtenirPrisma()): Promise<ContexteControle> {
   const version = await client.produitVersion.findUniqueOrThrow({
-    where: { produitId_dateEffet: { produitId: police.cotation.produitId, dateEffet: police.cotation.versionDateEffet } },
+    where: { id: police.cotation.versionId },
     include: { formules: true },
   });
   const adherents = police.assures as unknown as Assure[];
@@ -278,7 +278,7 @@ async function contexteControle(police: PoliceAvecVersion, dateEffet: DateIso, n
 }
 
 async function policeMere(policeId: number, client: Prisma.TransactionClient = obtenirPrisma()): Promise<PoliceAvecVersion> {
-  const police = await client.police.findUnique({ where: { id: policeId }, include: { cotation: { select: { produitId: true, versionDateEffet: true } } } });
+  const police = await client.police.findUnique({ where: { id: policeId }, include: { cotation: { select: { produitId: true, versionId: true } } } });
   if (!police) throw new ErreurMetier("Police introuvable.");
   if (!estContratDeGroupe(police.typeContrat)) throw new ErreurMetier("L'import en masse ne concerne que les adhérents d'un contrat de groupe (police mère).");
   return police;

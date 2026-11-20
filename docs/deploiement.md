@@ -24,7 +24,7 @@ Volumes persistants : `donnees_postgres`, `donnees_redis`, `documents` (document
 - Un **port libre** sur l'hôte pour l'application : `APP_PORT` dans `.env` (3000 par défaut). Le VPS est **partagé avec le portail RH**, qui peut déjà occuper 3000 : vérifier avec `ss -ltn` et choisir un autre port (ex. 3010) si besoin.
 - Un **proxy inverse HTTPS** devant `127.0.0.1:${APP_PORT}` (Dokploy/Traefik, Caddy ou nginx : voir la question Q1) avec un certificat valide. Il doit transmettre `Host`, `X-Forwarded-For` et `X-Forwarded-Proto`. Le pare-feu n'ouvre que les ports 80 et 443 : **jamais** `APP_PORT`, 5432, 6379 ni 8001.
 - **`PROXIES_DE_CONFIANCE`** (audit M1, défaut 1) : nombre de proxys inverses entre Internet et l'application. L'adresse du client est le N-ième élément de `X-Forwarded-For` en partant de la **droite** (ce que les proxys ajoutent), jamais celui de gauche, que le visiteur écrit lui-même. **À faire vérifier le jour du déploiement sur le proxy réellement installé** (Dokploy/Traefik, Caddy, nginx, avec ou sans CDN devant) : `curl -s -H 'X-Forwarded-For: 6.6.6.6' https://<domaine>/verif/x` plusieurs fois, puis lire dans le journal d'audit l'adresse d'une connexion de test : ce doit être la vôtre, pas `6.6.6.6`. Trop bas, l'adresse est celle d'un proxy ; trop haut, un visiteur choisit la sienne ; `0` : l'en-tête n'est pas lu.
-- Les polices des modèles dans `generateur/polices/` (voir son README et la question Q2).
+- **Polices (D69)** : l'image du générateur apporte des polices **libres de mêmes dimensions** (Carlito pour Calibri, Liberation pour Arial et Times New Roman) : **rien à copier pour elles**. Seule **Tahoma** reste à fournir par SIM, dans `generateur/polices/` (voir son README et la question Q2) ; la Tahoma libre du projet Wine est à l'essai (`TAHOMA_LIBRE`). `/api/sante` le vérifie.
 
 ### Prérequis à fournir par l'administrateur
 
@@ -34,7 +34,7 @@ Volumes persistants : `donnees_postgres`, `donnees_redis`, `documents` (document
 - **Port libre** sur l'hôte : `APP_PORT` (3000 par défaut ; le VPS est partagé avec le portail RH).
 - **Ressources du VPS** (processeurs, mémoire) : elles fixent `CONVERSIONS_SIMULTANEES` (autour du nombre de processeurs moins un).
 - **Limites par service** (audit M5, `docker-compose.yml`) : `generateur` 2 Go / 2 processeurs, `app`, `travailleur`, `postgres` et `outils` 1 Go / 1 processeur, `redis` 256 Mo / 0,5. Valeurs de départ pour un VPS partagé avec le portail RH : les contrôler avec `docker stats` pendant la recette (import de 500 adhérents compris) et les ajuster dans le fichier.
-- **Polices des modèles** (Tahoma notamment) dans `generateur/polices/`, sous licence, jamais dans le dépôt (question Q2).
+- **Tahoma** (`tahoma.ttf`, `tahomabd.ttf`) dans `generateur/polices/`, sous licence, jamais dans le dépôt (question Q2) : c'est la seule police à fournir. Calibri, Arial et Times New Roman sont remplacées dans l'image par des polices libres de mêmes dimensions (D69) ; `/api/sante` vérifie le tout.
 - **Dossier cible des sauvegardes** (`DOSSIER_SAUVEGARDE`, disque ou serveur distinct du VPS) : à fixer par le superviseur, puis lignes `cron` du §7 ; test de restauration trimestriel.
 
 ## 3. Installation initiale
@@ -47,7 +47,7 @@ cp .env.example .env
 nano .env     # générer chaque secret : python3 -c "import secrets; print(secrets.token_hex(32))"
 chmod 600 .env
 
-# 2. Polices : copier les fichiers dans generateur/polices/ (voir son README)
+# 2. Polices : copier Tahoma (tahoma.ttf, tahomabd.ttf) dans generateur/polices/ (voir son README) ; aucune autre police n'est à fournir (D69)
 
 # 3. Construction et démarrage (les migrations s'appliquent avant le démarrage de l'application)
 docker compose up -d --build
@@ -59,6 +59,8 @@ docker compose run --rm outils npm run creer-admin
 
 `POSTGRES_PASSWORD` doit rester en hexadécimal : il est inséré tel quel dans l'adresse de connexion de la base.
 
+**Polices à la construction (D69)** : l'étape `fc-list` de `docker compose build generateur` affiche les familles installées, puis **ce que fontconfig retient** pour Tahoma, Calibri, Arial et Times New Roman. À lire à chaque construction : Calibri doit donner Carlito, Arial Liberation Sans, Times New Roman Liberation Serif, et Tahoma **Tahoma** (la vôtre). Un repli sur DejaVu ou une autre police signale un fichier manquant. **Essai de la Tahoma libre de Wine** : `TAHOMA_LIBRE=oui` dans `.env` (voir `generateur/polices/README.md`) ; ne pas l'adopter avant le test de fidélité de [recette.md](recette.md) §1.2.
+
 ## 4. Vérifications après déploiement
 
 ```bash
@@ -67,6 +69,8 @@ curl -s http://127.0.0.1:${APP_PORT:-3000}/api/sante # {"statut":"ok","base":"ok
 curl -s -o /dev/null -w "%{http_code}\n" https://<domaine>/api/documents    # 401 : les routes sont protégées
 docker compose exec generateur python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8001/sante').read().decode())"
                                                     # "libreoffice_trouve": true, "polices_manquantes": []
+docker compose exec generateur sh -c 'for p in Tahoma Calibri Arial "Times New Roman"; do fc-match -f "$p -> %{family} (%{file})\n" "$p"; done'
+                                                    # Tahoma -> Tahoma (ou Wine Tahoma, à l'essai) ; Calibri -> Carlito ; Arial -> Liberation Sans ; Times New Roman -> Liberation Serif
 docker compose logs travailleur | tail -3           # « [travailleur] démarré : 0 lot(s) d'import, 0 lot(s) d'avis et de relances et 0 écriture(s) différée(s) repris. »
 ```
 
@@ -78,23 +82,40 @@ docker compose logs travailleur | tail -3           # « [travailleur] démarré
 
 Puis, dans un navigateur : connexion, page « Journal d'audit » (la connexion y apparaît), déconnexion. Lancer enfin le **test de fidélité sous Linux** (recette.md, §1.2).
 
-`generateur: "ko"` dans `/api/sante` signifie que le générateur est arrêté, que LibreOffice est introuvable dans l'image, **ou** que Tahoma ou Calibri manque (polices non copiées dans `generateur/polices/` avant la construction) : le `/sante` du générateur en donne le détail (`"polices_manquantes"`).
+`generateur: "ko"` dans `/api/sante` signifie que le générateur est arrêté, que LibreOffice est introuvable dans l'image, **ou** qu'une police indispensable manque : Tahoma (non copiée dans `generateur/polices/` avant la construction) ou Calibri. Une police est couverte si elle est installée **ou** si fontconfig la résout vers son remplaçant libre autorisé (Calibri : Carlito ; Arial : Liberation Sans ; Times New Roman : Liberation Serif), jamais vers un repli quelconque (DejaVu…). Le `/sante` du générateur en donne le détail (`"polices_manquantes"`).
 
-## Après l'installation : produits à paramétrer par la Technique (D31, D32)
+## Après l'installation : produit à paramétrer par la Technique (D31, D32, D66)
 
-> **À faire sur le serveur, par la Technique, avant la première cotation de ces produits.** Le dépôt, les données de démarrage et les migrations ne créent **aucun produit réel** : cette étape est une étape de mise en production, pas de développement.
+> **À faire sur le serveur, par la Technique, avant la première cotation.** Le dépôt, les données de démarrage et les migrations ne créent **aucun produit réel** : cette étape est une étape de mise en production, pas de développement.
 
-**SECURPRO, SECURHOME, SECURHOME + et RELAXACCIDENTS se tarifient par barème.** Chacun doit être créé (écran « Paramétrage > Produits ») avec une **première version en mode « par barème »**, jamais en mode « Par formule » : une version « Par formule » plus ancienne continuerait de calculer, avec une prime fausse, tout document daté avant la date d'effet de la version 
-Ordre à suivre, après `docker compose run --rm outils npm run initialiser` (qui crée les branches et les taux de démarrage, dont **INCENDIE à 12,5 %** et **IARD à 7,25 %**) :
+**Au lancement, SEUL SECURPRO est configuré, et il se tarife au barème.** SECURHOME, SECURHOME + et RELAXACCIDENTS sont **hors lancement** : ils ne sont ni créés ni configurés ici, et rien de ce qui suit ne vaut pour eux.
+
+**Le mode de tarification est figé par produit (D66).** Il se choisit à la première version du produit, puis il ne change plus : « Ajouter une version » affiche le mode en lecture seule et refuse tout autre mode. Sur un produit au barème, **ne jamais créer de version « Par garanties » ni « Par formule »** ; **changer de mode, c'est créer un nouveau produit.**
+
+Ordre à suivre, après `docker compose run --rm outils npm run initialiser` (qui crée les branches et les taux de démarrage) :
 
 1. **Branches et taxes** (installation faite **avant** la session 6.2b) : `initialiser` n'écrase jamais ce qui existe déjà.
-   - Dans l'écran « Taxes », la branche IARD a gardé sa ligne « taux mixte » : ajouter une nouvelle ligne IARD à 7,25 %, avec sa date d'effet (l'ancienne ligne est clôturée la veille).
-   - Dans l'écran « Branches », IARD a gardé son ancien libellé « Incendie, accidents et risques divers (IARD) » alors que INCENDIE existe maintenant à côté : le renommer (« Autres dommages aux biens (IARD) ») pour qu'on ne les confonde pas.
+   - Dans l'écran « Taxes », la branche IARD a pu garder sa ligne « taux mixte » : ajouter une nouvelle ligne IARD au taux prévu, avec sa date d'effet (l'ancienne ligne est clôturée la veille).
+   - Dans l'écran « Branches », IARD a pu garder son ancien libellé « Incendie, accidents et risques divers (IARD) » alors que INCENDIE existe maintenant à côté : le renommer (« Autres dommages aux biens (IARD) ») pour qu'on ne les confonde pas.
    - Vérifier, pour finir, les taux de chaque branche utilisée par les lignes de prime (INCENDIE, IARD, IA, DECES…).
-2. **Produit** : créer le produit (code, libellé, gamme, branche principale), puis sa première version avec le mode « Au barème », importer le barème ou crée le barème du produit (facultative) et ses références contractuelles (CG).
-3. **Modèles Word**, **déposés par la Technique** puis **publiés par la Direction Générale** (la Technique ne publie pas) : pour chaque produit, le modèle de **cotation**, celui des **conditions particulières**, celui de la **facture** et, pour un contrat de groupe, le **certificat d'adhésion** (sans prime). Cotation, CP et facture citent la boucle `garanties_souscrites` (guide de balisage) ; sans elle, leur émission est refusée. Sans modèle de facture propre au produit, c'est le modèle commun qui serait retenu : il ne détaille pas les garanties, et la facture est refusée avant tout numéro.
-4. **Droits** : le droit « Composer une prime » est « Oui » pour le profil Technique et sans accès pour les autres ; il se règle dans l'écran des droits de l'Admin système.
-5. **Essai** : le faire de préférence dans un environnement de recette ([recette.md](recette.md)). Une cotation de test émise en production consomme de **vrais numéros** (cotation, police, facture) et laisse des documents émis **intangibles** : n'en faire que sur décision de Thierry, avec un souscripteur de test sans équivoque.
+2. **Produit**, **dans cet ordre** :
+   1. **La CG de la branche, avec son visa, AVANT le produit** : le modèle de conditions générales de la branche principale du produit est déposé par la Technique, publié par la Direction Générale, et rattaché à la branche. Sans lui, l'émission des CP est refusée.
+   2. **Créer le produit** (écran « Paramétrage > Produits ») : code, libellé, gamme, branche principale.
+   3. **Première version, en mode « Au barème »** : entrée en vigueur **« dès la publication »** ; case **« Durée du contrat imposée : 1 an, sans prorata » cochée** et **« Prorata temporis actif » décochée** (les deux ensemble sont refusés, H193) ; les autres paramètres (arrondi, fractionnement, validité) selon la fiche validée par la Technique. La version naît **en préparation** : elle ne sert à aucun document tant que son barème n'est pas publié.
+   4. **Importer le classeur du barème** (fourni hors du dépôt, **jamais commité**), sur la fiche de la version.
+   5. **Rejouer les essais : TOUS verts.** La publication est refusée, avec l'écart ligne à ligne, tant qu'un essai est rouge.
+   6. **Publier, avec un motif.** La version entre en vigueur à cet instant.
+3. **Versions à l'heure près (D68)** : une correction de produit ou de modèle, une fois publiée, sert **dès sa publication**, et on peut en publier plusieurs le même jour ; la fiche affiche « En vigueur depuis le … à HH h MM », « Remplacée le … à HH h MM ». **Les documents déjà émis gardent leur version** (la réédition est identique, T10). Corriger un barème publié = créer une nouvelle version à partir de lui (« Créer une nouvelle version à partir de ce barème »), jamais modifier le publié.
+4. **Modèles Word**, **déposés par la Technique** puis **publiés par la Direction Générale** (la Technique ne publie pas). Pour SECURPRO :
+   - le modèle de **cotation** et celui des **conditions particulières (CP)** ;
+   - **un sous-modèle « garanties » par garantie** : la clé du sous-modèle est le **code de la garantie dans le barème**. **Une garantie souscrite sans sous-modèle publié bloque l'émission** : c'est le cas de Tempête et de TRI tant que leurs CP n'existent pas ;
+   - la **facture** : le modèle commun convient s'il cite la boucle `garanties_souscrites` (guide de balisage) ; sans elle, l'émission est refusée ;
+   - les modèles **communs, sans produit** : **RECU**, **AVOIR**, **AVIS_ECHEANCE** et **RELANCE** (un modèle par niveau, de 1 à 3) ;
+   - pour un contrat de groupe, le **certificat d'adhésion** (sans prime).
+   Aucun modèle réel n'entre dans le dépôt : se servir de `generateur/scripts/verifier_modele.py` avant le dépôt.
+5. **Droits** : le droit « Composer une prime » ne sert qu'aux produits **par garanties** ; il n'est **pas nécessaire pour SECURPRO**, qui se tarife au barème. Les droits se règlent dans l'écran des droits de l'Admin système.
+6. **Données Société** (écran « Paramétrage > Société ») : à saisir **et à faire vérifier par la Comptabilité avant la première émission**, car **tous les documents les affichent** : RCCM, NCC, RIB, Mobile Money, téléphone, adresse de réclamation.
+7. **Essai** : le faire de préférence dans un environnement de recette ([recette.md](recette.md)). Une cotation de test émise en production consomme de **vrais numéros** (cotation, police, facture) et laisse des documents émis **intangibles** : n'en faire que sur décision de Thierry, avec un souscripteur de test sans équivoque.
 
 Le **renouvellement** et la **facturation de l'incorporation d'adhérents** d'une police à garanties ne sont pas encore gérés (D32, H90) : la facture de renouvellement et la facture d'avenant sont refusées avec un message explicite, et l'écran de la police ne les propose pas. **L'incorporation elle-même reste possible** (les adhérents sont ajoutés à la liste, sans formule) mais elle n'est **ni facturée ni accompagnée d'une prime** : la tâche « Facture d'avenant à émettre » qu'elle crée ne peut pas être exécutée tant que Thierry n'a pas tranché H90. Ne pas incorporer d'adhérents dans une police à garanties avant cette décision.
 

@@ -1,12 +1,14 @@
 """Script d'aide au balisage `scripts/verifier_modele.py` (session 6.1) : modèles de TEST générés par du code, écrits HORS du dépôt
 (dossier temporaire de pytest) ; aucun modèle réel. Les contrôles et le dictionnaire viennent de l'application (pont Node)."""
 
+import io
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+from docx import Document
 
 from app.analyse import analyser
 from tests.fabrique import avec_champ_word, avec_texte_supprime, document
@@ -126,6 +128,55 @@ def test_liste_de_polices_ecrite_par_powershell_en_utf16(tmp_path: Path) -> None
     modele = ecrire(tmp_path, "annexe.docx", document("{{ police.numero }}", police="Tahoma"))
     liste = ecrire(tmp_path, "image.txt", "Tahoma\nCambria\n".encode("utf-16"))  # « > » de Windows PowerShell : UTF-16 avec BOM
     assert "absentes : aucune" in lancer(modele, "--type", "ANNEXE", "--polices-image", liste).stdout
+
+
+def document_avec_polices(*polices: str) -> bytes:
+    """Modèle de TEST inventé : un paragraphe par police, plus une balise valide pour une annexe."""
+    doc = Document()
+    for police in polices:
+        doc.add_paragraph().add_run(f"Texte en {police}").font.name = police
+    doc.add_paragraph("{{ police.numero }}")
+    sortie = io.BytesIO()
+    doc.save(sortie)
+    return sortie.getvalue()
+
+
+def ligne_de(sortie: str, debut: str) -> str:
+    return next(ligne for ligne in sortie.splitlines() if ligne.startswith(debut))
+
+
+@avec_pont
+def test_une_police_couverte_par_un_remplacant_libre_n_est_plus_signalee_mais_aptos_l_est_encore(tmp_path: Path) -> None:
+    """D69 : l'image n'a AUCUNE police Microsoft ; Calibri, Tahoma, Arial et Times New Roman sont couvertes par leur remplaçant libre."""
+    modele = ecrire(tmp_path, "m.docx", document_avec_polices("Calibri", "Tahoma", "Arial", "Times New Roman", "Aptos", "Segoe UI"))
+    # fc-list de l'image libre : Carlito, la Tahoma de Wine, Liberation, DejaVu ; Cambria seulement parce que le gabarit python-docx la relève.
+    image = ecrire(tmp_path, "image.txt", "Carlito\nTahoma\nLiberation Sans\nLiberation Serif\nDejaVu Sans\nCambria\n".encode())
+    sortie = lancer(modele, "--type", "ANNEXE", "--polices-image", image).stdout
+    assert ligne_de(sortie, "  absentes :") == "  absentes : Aptos, Segoe UI"
+    remplacees = ligne_de(sortie, "  remplacées par une police libre")
+    assert "Calibri → Carlito" in remplacees and "Arial → Liberation Sans" in remplacees and "Times New Roman → Liberation Serif" in remplacees
+    assert "Tahoma" not in remplacees  # installée telle quelle : rien n'est remplacé
+    # Une police sans remplaçant reste signalée, avec ce qui l'attend.
+    for police in ("Aptos", "Segoe UI"):
+        ligne = ligne_de(sortie, f"  {police} :")
+        assert "sans remplaçant libre de mêmes dimensions" in ligne and "police de secours aux dimensions différentes" in ligne
+    assert "sans équivalent libre (fidélité de la pagination" not in sortie  # l'ancien avertissement sur Tahoma et Calibri a disparu
+
+
+@avec_pont
+def test_un_remplacant_libre_absent_de_l_image_est_signale_avec_son_nom(tmp_path: Path) -> None:
+    modele = ecrire(tmp_path, "m.docx", document_avec_polices("Calibri", "Tahoma"))
+    image = ecrire(tmp_path, "image.txt", "DejaVu Sans\nCambria\n".encode())  # image sans Carlito ni Tahoma
+    sortie = lancer(modele, "--type", "ANNEXE", "--polices-image", image).stdout
+    assert ligne_de(sortie, "  absentes :") == "  absentes : Calibri, Tahoma"
+    assert "remplaçant libre (Carlito) n'est pas dans l'image" in ligne_de(sortie, "  Calibri :")
+    assert "remplaçant libre (Wine Tahoma) n'est pas dans l'image" in ligne_de(sortie, "  Tahoma :")
+    assert "generateur/polices/" in ligne_de(sortie, "  Tahoma :")  # Tahoma reste à fournir : le message dit où
+    # Image d'essai (TAHOMA_LIBRE=oui) : la Tahoma de Wine, exposée sous « Wine Tahoma », couvre Tahoma.
+    essai = ecrire(tmp_path, "image-essai.txt", "Carlito\nWine Tahoma\nCambria\n".encode())
+    sortie = lancer(modele, "--type", "ANNEXE", "--polices-image", essai).stdout
+    assert ligne_de(sortie, "  absentes :") == "  absentes : aucune"
+    assert "Tahoma → Wine Tahoma" in ligne_de(sortie, "  remplacées par une police libre")
 
 
 def test_rien_n_est_envoye_ni_stocke() -> None:

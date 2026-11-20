@@ -16,6 +16,9 @@ Options :
     --polices-image FICHIER  liste des polices de l'image du générateur (voir ci-dessous) : sans elle, les polices sont
                            comparées à celles de CETTE machine, ce qui n'est exact que sous Linux.
                            docker compose exec generateur fc-list : family > polices-image.txt
+                           Une police est couverte si elle est dans la liste OU si un remplaçant libre de mêmes dimensions
+                           l'est (Calibri : Carlito ; Tahoma : la Tahoma de Wine ; Arial : Liberation Sans ; Times New Roman :
+                           Liberation Serif), d'après la table unique `app.polices.REMPLACANTS_AUTORISES` (D69).
 
 Code de sortie : 0 si le dépôt serait accepté, 1 s'il serait refusé, 2 si le script n'a pas pu s'exécuter.
 """
@@ -33,7 +36,15 @@ sys.path.insert(0, str(RACINE_GENERATEUR))
 
 from app.analyse import Analyse, Probleme, analyser  # noqa: E402
 from app.filtres import FILTRES  # noqa: E402
-from app.polices import POLICES_REQUISES, analyser_fc_list, polices_absentes  # noqa: E402
+from app.polices import (  # noqa: E402
+    REMPLACANTS_AUTORISES,
+    analyser_fc_list,
+    familles_installees,
+    polices_absentes,
+    polices_remplacees,
+    resolution_fontconfig,
+    resolution_supposee,
+)
 
 RACINE_DEPOT = RACINE_GENERATEUR.parent
 DOSSIER_APP = RACINE_DEPOT / "app"
@@ -94,17 +105,27 @@ def lire_texte(chemin: Path) -> str:
     return brut.decode("utf-8-sig", errors="replace")
 
 
-def polices_de_l_image(fichier: str | None, analyse: Analyse) -> tuple[list[str] | None, str]:
-    """(polices absentes, origine de la liste). Sans fichier : celles de cette machine, comme le service."""
+def polices_de_l_image(fichier: str | None, analyse: Analyse) -> tuple[list[str] | None, dict[str, str], str]:
+    """(polices absentes, polices remplacées par un équivalent libre autorisé, origine de la liste).
+
+    Sans fichier : celles de cette machine, comme le service (fontconfig). Avec une liste de familles : la résolution est
+    SUPPOSÉE (chaque police vers son remplaçant autorisé, s'il est dans la liste) ; seul /sante interroge fontconfig."""
     if fichier is not None:
         chemin = Path(fichier).expanduser()
         if not chemin.is_file():
             raise ErreurUsage(f"Liste de polices introuvable : {chemin}")
         familles = analyser_fc_list(lire_texte(chemin))
-        return polices_absentes(analyse.polices, familles), "l'image du générateur (liste fournie)"
-    if analyse.polices_absentes is None:
-        return None, "cette machine (liste impossible à obtenir)"
-    return analyse.polices_absentes, "CETTE machine (exact sous Linux seulement ; sous Windows, passez --polices-image)"
+        resolveur = resolution_supposee(familles)
+        return (
+            polices_absentes(analyse.polices, familles, resolveur),
+            polices_remplacees(analyse.polices, familles, resolveur),
+            "l'image du générateur (liste fournie)",
+        )
+    familles_locales = familles_installees()
+    if analyse.polices_absentes is None or familles_locales is None:
+        return None, {}, "cette machine (liste impossible à obtenir)"
+    remplacees = polices_remplacees(analyse.polices, familles_locales, resolution_fontconfig)
+    return analyse.polices_absentes, remplacees, "CETTE machine (exact sous Linux seulement ; sous Windows, passez --polices-image)"
 
 
 # ------------------------------------------------------------------ Lecture des faits
@@ -198,7 +219,7 @@ def rapport(analyse: Analyse, pont: dict, fichier_polices: str | None) -> tuple[
         for p in autres:
             ajouter(f"  {lieu(p.emplacement) if p.emplacement else '?'} — {p.message}")
 
-    absentes, origine = polices_de_l_image(fichier_polices, analyse)
+    absentes, remplacees, origine = polices_de_l_image(fichier_polices, analyse)
     section(f"Polices ({len(analyse.polices)} utilisée(s))")
     ajouter(f"  utilisées : {', '.join(analyse.polices) or 'aucune relevée'}")
     ajouter(f"  comparées aux polices de {origine}")
@@ -206,9 +227,16 @@ def rapport(analyse: Analyse, pont: dict, fichier_polices: str | None) -> tuple[
         ajouter("  absentes : non vérifiable")
     else:
         ajouter(f"  absentes : {', '.join(absentes) or 'aucune'}")
-    requises = [p for p in POLICES_REQUISES if p in analyse.polices]
-    if requises:
-        ajouter(f"  sans équivalent libre (fidélité de la pagination, voir generateur/polices/README.md) : {', '.join(requises)}")
+    if remplacees:
+        ajouter("  remplacées par une police libre de mêmes dimensions (rien à fournir, D69) : " + ", ".join(f"{p} → {r}" for p, r in remplacees.items()))
+    for police in absentes or []:
+        if police in REMPLACANTS_AUTORISES:
+            ajouter(f"  {police} : son remplaçant libre ({', '.join(REMPLACANTS_AUTORISES[police])}) n'est pas dans l'image : fournissez la police dans generateur/polices/, ou vérifiez les paquets de polices de l'image (generateur/Dockerfile).")
+        else:
+            ajouter(
+                f"  {police} : sans remplaçant libre de mêmes dimensions. Elle sera remplacée par une police de secours aux dimensions différentes : "
+                "les retours à la ligne et les sauts de page peuvent se décaler (voir generateur/polices/README.md)."
+            )
 
     filtres = filtres_sur_champs_obligatoires(analyse, set(pont["facultatifs"]))
     section(f"Filtres appliqués à un champ obligatoire ({len(filtres)})")
